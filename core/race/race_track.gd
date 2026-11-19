@@ -47,7 +47,7 @@ var keep_lines: Array[Dictionary] = []
 ## them), the road width, the spots the checkpoints stand nearest to, and
 ## how far behind the line the start slots wait.
 static func build(p_id: String, p_name: String, control: Array[Vector3], p_width: float,
-		checkpoint_spots: Array[Vector3], line_spot: Vector3, p_laps := 3, slot_count := 4) -> RaceTrack:
+		checkpoint_spots: Array[Vector3], line_spot: Vector3, p_laps := 3, slot_count := 8) -> RaceTrack:
 	var track := RaceTrack.new()
 	track.id = p_id
 	track.display_name = p_name

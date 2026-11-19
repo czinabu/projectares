@@ -44,6 +44,7 @@ var _recording_lap := -1
 var _ghost_node: Node3D
 var _ghost_machine := ""
 var _go_flash := 0.0
+var _board_in := 0.0
 var _was_phase := ""
 
 
@@ -78,6 +79,7 @@ func _ready() -> void:
 	race.run_changed.connect(_on_run_changed)
 	race.lap_finished.connect(_on_lap_finished)
 	race.board_changed.connect(_draw_board)
+	race.heat_changed.connect(_draw_board)
 	if race.mode != Raid.Mode.CLIENT:
 		# Solo: your saved bests are the board's first times.
 		_seed_board()
@@ -111,6 +113,14 @@ func _process(delta: float) -> void:
 				_splits[g].text = ""
 	_record(view)
 	_update_ghost(view)
+	# A forming race's countdown on the board.
+	_board_in -= delta
+	if _board_in <= 0.0:
+		_board_in = 0.5
+		for t in race.circuits:
+			if str(race.heat_view(t.id).get("phase", "")) == "forming":
+				_draw_board()
+				break
 	_was_phase = str(view.get("phase", ""))
 
 
@@ -167,12 +177,18 @@ func _split_time(view: Dictionary) -> float:
 
 func _draw_board() -> void:
 	for board in _boards:
-		board.text = board_text(race.board_for(_track_of(board)))
+		var on := _track_of(board)
+		board.text = board_text(race.board_for(on), race.heat_view(on))
 
 
-## A board's rows as its screen shows them.
-static func board_text(rows: Array[Dictionary]) -> String:
-	var text := ""
+## A board's rows as its screen shows them: a live race forming or running
+## on top, its results while they are up, else the best laps.
+static func board_text(rows: Array[Dictionary], heat := {}) -> String:
+	var text := heat_text(heat)
+	if str(heat.get("phase", "")) == "done":
+		return text
+	if text != "":
+		text += "\n"
 	if rows.is_empty():
 		text = "No times yet\nTake a machine from the pit bays"
 	for i in rows.size():
@@ -180,6 +196,26 @@ static func board_text(rows: Array[Dictionary]) -> String:
 		text += "%d   %-14s %-8s %s\n" % [i + 1, str(row.name).left(14), _machine_tag(str(row.machine)),
 				Race.format_time(float(row.time))]
 	return text.strip_edges(false, true)
+
+
+## A live race's lines on the board, or "" with none.
+static func heat_text(heat: Dictionary) -> String:
+	match str(heat.get("phase", "")):
+		"forming":
+			var since := (Time.get_ticks_msec() - int(heat.get("made", 0))) / 1000.0
+			return "NEXT RACE %s · %d/%d riders, AI fill the rest\n" % [
+					Race.format_countdown(float(heat.get("starts_in", 0.0)) - since), int(heat.get("people", 0)),
+					Race.GRID_SIZE]
+		"racing":
+			return "RACE ON · %d on the grid\n" % int(heat.get("field", 0))
+		"done":
+			var text := "RESULTS\n"
+			for row: Dictionary in heat.get("results", []):
+				var time := float(row.get("time", -1.0))
+				text += "%d   %-14s %-8s %s\n" % [int(row.get("place", 0)), str(row.get("name", "?")).left(14),
+						_machine_tag(str(row.get("machine", ""))), Race.format_time(time) if time >= 0.0 else "DNF"]
+			return text.strip_edges(false, true)
+	return ""
 
 
 static func _machine_tag(id: String) -> String:

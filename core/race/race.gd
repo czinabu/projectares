@@ -18,6 +18,19 @@ extends Raid
 ## `send_request`. The ghost, the gantry, the splits on the arches and the
 ## board are drawn by `RaceView`, which only reads `view_run` and `board`.
 ##
+## Live races (`heats`): a racer on a machine asks to race (the race icon's
+## "race" pick, `join_race`), and the track's next race forms on the grid:
+## everyone who gets on a machine there while it forms joins it, held at a
+## slot. When `FORM_TIME` runs out (sooner once the grid is full of
+## people), AI racers (`RaceDriver`) take every empty slot up to
+## `GRID_SIZE`, so nobody races alone, and everyone goes under one set of
+## lights. Places are worked out every tick from how far round each run is
+## (`run_distance`); a lap off the track costs `OFF_TRACK_PENALTY` on the
+## finish. Once the first racer finishes the rest have `FINISH_GRACE` to
+## cross the line, then the results go on the pit board and the AI racers
+## leave. An AI racer is a bot on a stock bay machine, driven through its
+## `ActorCommand` like a player: its laps never go on the board.
+##
 ## A world may lay out several tracks (Meridian has Coilrun and Skyhook),
 ## each with its own pit bays, grid, gantry, gates and board. A run is on
 ## the track whose road the machine was nearest when it was got on
@@ -37,12 +50,32 @@ const BOARD_SIZE := 8
 ## A racing machine resting this far under the track has fallen off it
 ## (into the Spillway's channel) and is put back (`_back_on_track`).
 const FALLEN_DEPTH := 3.0
+## A live race's grid: people first, AI racers in every slot left.
+const GRID_SIZE := 8
+## Seconds a race forms on the grid before it goes, and once it is full of
+## people.
+const FORM_TIME := 30.0
+const FULL_FORM := 8.0
+## Seconds the rest have to finish once the winner is home.
+const FINISH_GRACE := 20.0
+## Seconds the results stay up before the AI racers leave.
+const RESULTS_TIME := 12.0
+## Seconds added to a finish for each lap that left the track.
+const OFF_TRACK_PENALTY := 3.0
+## An AI racer stopped this long in a race is put back at the last
+## checkpoint, as anyone down in a channel is (it costs it the time).
+const AI_STUCK := 3.0
+## The AI racers' callsigns.
+const AI_NAMES: Array[String] = ["Vex Morrow", "Juno Kade", "Rook Halloran", "Sable Ito", "Dax Ferro",
+		"Mika Strand", "Tavi Okonkwo", "Wren Castell", "Bodhi Lark", "Ines Varga", "Cass Rennick", "Oto Brandt"]
 
 ## A racer's run changed: started, a gate, a lap, finished or retired.
 signal run_changed(actor: Actor)
 ## A lap was finished. `counted` is false when it strayed off the track.
 signal lap_finished(actor: Actor, lap_time: float, counted: bool)
 signal board_changed
+## A live race formed, started, changed its field or finished.
+signal heat_changed
 
 ## The first track, and every track the map lays out (`circuits`; `tracks`
 ## is the `Raid`'s footprints).
@@ -57,6 +90,17 @@ var board: Array[Dictionary] = []
 ## the local time it arrived (`Time.get_ticks_msec`).
 var remote_run := {}
 var remote_at := 0
+## Track id -> Heat: each track's live race, forming, running or showing
+## its results. Authority only; clients get `remote_heats`.
+var heats := {}
+## Online client: each track's race as the server last sent it
+## (`heat_view`), with "made" the local time it arrived.
+var remote_heats := {}
+## How good the AI racers are (0 to 1); each on a grid is spread about it.
+var ai_skill := 0.5
+## Actor -> RaceDriver, the AI racers on the authority.
+var drivers := {}
+var _ai_made := 0
 ## Online client: sends a request (`request`'s action) to the server.
 var send_request: Callable
 
@@ -88,6 +132,37 @@ class Run:
 	var best_lap := -1.0
 	var total := -1.0
 	var slot := 0
+	## The live race this run is in, or null for a time trial.
+	var heat: Heat
+	## Driven by a `RaceDriver`, not a person.
+	var ai := false
+	## Place in the race now, and at the finish (0: none yet).
+	var place := 0
+	var finish_place := 0
+	## Laps that left the track, each `OFF_TRACK_PENALTY` on the finish.
+	var off_laps := 0
+	## Seconds an AI racer has been stopped, racing (`AI_STUCK`).
+	var stuck_for := 0.0
+
+
+## One track's live race.
+class Heat:
+	extends RefCounted
+	var track: RaceTrack
+	## "forming" (on the grid, waiting for racers), "racing", "done".
+	var phase := "forming"
+	var starts_at := 0.0
+	## Set once the winner is home: when the rest are out of time.
+	var ends_at := INF
+	## When the results come down and the AI racers leave.
+	var closes_at := INF
+	var runs: Array[Run] = []
+	## Once done: [{"name", "machine", "time", "place", "ai", "penalty"}],
+	## first place first; "time" is -1 for a racer who did not finish.
+	var results: Array[Dictionary] = []
+
+	func people() -> int:
+		return runs.filter(func(r: Run) -> bool: return not r.ai).size()
 
 
 # --- Setting up ---------------------------------------------------------------
@@ -158,6 +233,7 @@ func _physics_process(delta: float) -> void:
 	_keep_racers_safe()
 	for actor: Actor in runs.keys():
 		_tick_run(runs[actor], delta)
+	_tick_heats(delta)
 
 
 func _on_vehicle_mounted(actor: Actor, vehicle: Node3D) -> void:
@@ -185,6 +261,10 @@ func start_run(actor: Actor, vehicle: Node3D) -> void:
 		run.best_lap = old.best_lap
 		run.best_splits = old.best_splits
 	runs[actor] = run
+	var heat: Heat = heats.get(run.track.id)
+	if heat != null and heat.phase == "forming" and heat.runs.size() < GRID_SIZE:
+		_join(run, heat)
+		return
 	_to_grid(run)
 	actor.notice.emit("Time trial · %s · %d laps" % [run.track.display_name, run.track.laps])
 
@@ -193,7 +273,7 @@ func _to_grid(run: Run) -> void:
 	var rt := run.track
 	var taken := {}
 	for other: Run in runs.values():
-		if other != run and other.phase == "grid" and other.track == rt:
+		if other != run and other.phase in ["grid", "waiting"] and other.track == rt:
 			taken[other.slot] = true
 	run.slot = 0
 	while taken.has(run.slot) and run.slot < rt.start_slots.size() - 1:
@@ -206,6 +286,10 @@ func _to_grid(run: Run) -> void:
 	vehicle.set("speed", 0.0)
 	vehicle.set("velocity", Vector3.ZERO)
 	vehicle.set("held", true)
+	run.heat = null
+	run.place = 0
+	run.finish_place = 0
+	run.off_laps = 0
 	run.phase = "grid"
 	run.go_at = clock + LIGHTS * LIGHT_STEP
 	run.lap = 1
@@ -228,6 +312,9 @@ func _tick_run(run: Run, _delta: float) -> void:
 		retire(run.actor)
 		return
 	var pos: Vector3 = vehicle.global_position
+	if run.phase == "waiting":
+		run.last_pos = pos
+		return
 	if run.phase == "grid":
 		if clock >= run.go_at:
 			run.phase = "racing"
@@ -243,7 +330,8 @@ func _tick_run(run: Run, _delta: float) -> void:
 		return
 	if run.clean and rt.is_off_track(pos, run.hint):
 		run.clean = false
-		run.actor.notice.emit("Off the track: this lap will not count")
+		run.actor.notice.emit("Off the track: this lap will not count" if run.heat == null
+				else "Off the track: %d s on your finish" % int(OFF_TRACK_PENALTY))
 		run_changed.emit(run.actor)
 	var t := rt.cross(run.next_gate, from, pos)
 	if t < 0.0:
@@ -269,11 +357,15 @@ func _finish_lap(run: Run, at: float) -> void:
 	var i := run.splits.size() - 1
 	run.last_delta = run.splits[i] - run.best_splits[i] if i < run.best_splits.size() else NAN
 	var counted := run.clean
+	if not counted and run.heat != null:
+		run.off_laps += 1
 	if counted and (run.best_lap < 0.0 or lap_time < run.best_lap):
 		run.best_lap = lap_time
 		run.best_splits = run.splits.duplicate()
 		var state := state_for(run.actor)
-		add_record(run.actor.display_name, run.machine, lap_time, state.owner if state != null else "", run.track.id)
+		# An AI racer's laps are not people's times.
+		if not run.ai:
+			add_record(run.actor.display_name, run.machine, lap_time, state.owner if state != null else "", run.track.id)
 	lap_finished.emit(run.actor, lap_time, counted)
 	run.splits.clear()
 	run.clean = true
@@ -282,7 +374,10 @@ func _finish_lap(run: Run, at: float) -> void:
 	if run.lap >= run.track.laps:
 		run.phase = "done"
 		run.total = at - run.go_at
-		run.actor.notice.emit("Finished in %s" % format_time(run.total))
+		if run.heat != null:
+			_finished_in_heat(run)
+		else:
+			run.actor.notice.emit("Finished in %s" % format_time(run.total))
 	else:
 		run.lap += 1
 	run_changed.emit(run.actor)
@@ -295,6 +390,10 @@ func retire(actor: Actor) -> void:
 	if run == null:
 		return
 	runs.erase(actor)
+	if run.heat != null and run.phase != "done":
+		# Out of the race: a racer who did not finish.
+		run.phase = "retired"
+		heat_changed.emit()
 	if is_instance_valid(run.vehicle):
 		run.vehicle.set("held", false)
 	if is_instance_valid(actor):
@@ -311,6 +410,8 @@ func request(actor: Actor, action: String) -> Dictionary:
 		return {"ok": true}
 	var run: Run = runs.get(actor)
 	match action:
+		"race":
+			return join_race(actor)
 		"restart":
 			if run == null:
 				var vehicle: Node3D = actor.vehicle
@@ -318,6 +419,8 @@ func request(actor: Actor, action: String) -> Dictionary:
 					return {"ok": false, "error": "Get on a machine in the pit bays first"}
 				start_run(actor, vehicle)
 				return {"ok": true}
+			# Out of a live race and back to a time trial.
+			_leave_heat(run)
 			_to_grid(run)
 			return {"ok": true}
 		"retire":
@@ -398,8 +501,11 @@ func _keep_racers_safe() -> void:
 			continue
 		var pos: Vector3 = run.vehicle.global_position
 		if pos.y < -20.0:
-			# Fell off the world: back to the grid.
-			_to_grid(run)
+			# Fell off the world: back to the grid, or on in a race.
+			if run.heat != null and run.phase in ["racing", "done"]:
+				_back_on_track(run)
+			elif run.heat == null:
+				_to_grid(run)
 		elif run.phase == "racing" and run.hint >= 0 and pos.y < run.track.points[run.hint].y - FALLEN_DEPTH \
 				and run.vehicle.get("airborne_time") == 0.0:
 			# Down in a channel or a pit with no way out: back on the track at
@@ -432,8 +538,415 @@ func _back_on_track(run: Run) -> void:
 func _hold_remote() -> void:
 	if player == null or not is_instance_valid(player) or player.vehicle == null:
 		return
-	var held := str(remote_run.get("phase", "")) == "grid" and run_go_in(remote_run) > 0.0
+	var phase := str(remote_run.get("phase", ""))
+	var held := phase == "waiting" or (phase == "grid" and run_go_in(remote_run) > 0.0)
 	player.vehicle.set("held", held)
+
+
+# --- Live races -----------------------------------------------------------------
+
+## `actor`, on a machine, asks to race: they join the track's race forming
+## on the grid, or start one. Returns {"ok"} or {"ok": false, "error"}.
+func join_race(actor: Actor) -> Dictionary:
+	var run: Run = runs.get(actor)
+	if run == null:
+		var vehicle: Node3D = actor.vehicle
+		if vehicle == null or vehicle.get("rider") != actor:
+			return {"ok": false, "error": "Get on a machine in the pit bays first"}
+		start_run(actor, vehicle)
+		run = runs.get(actor)
+		if run == null:
+			return {"ok": false, "error": "No machine to race"}
+	if run.heat != null and run.heat.phase in ["forming", "racing"]:
+		return {"ok": true}
+	var heat: Heat = heats.get(run.track.id)
+	if heat != null and heat.phase == "racing":
+		return {"ok": false, "error": "A race is running here: the next forms once it is over"}
+	if heat != null and heat.phase == "forming" and heat.runs.size() >= GRID_SIZE:
+		return {"ok": false, "error": "The grid is full"}
+	if heat == null or heat.phase == "done":
+		if heat != null:
+			_close_out(heat)
+		heat = Heat.new()
+		heat.track = run.track
+		heat.starts_at = clock + FORM_TIME
+		heats[run.track.id] = heat
+	_join(run, heat)
+	return {"ok": true}
+
+
+## Puts `run` on `heat`'s grid, held at a free slot.
+func _join(run: Run, heat: Heat) -> void:
+	_leave_heat(run)
+	var taken := {}
+	for other: Run in heat.runs:
+		taken[other.slot] = true
+	run.slot = 0
+	while taken.has(run.slot):
+		run.slot += 1
+	heat.runs.append(run)
+	run.heat = heat
+	_place_at_slot(run)
+	run.phase = "waiting"
+	run.place = 0
+	run.finish_place = 0
+	run.off_laps = 0
+	if heat.people() >= GRID_SIZE:
+		heat.starts_at = minf(heat.starts_at, clock + FULL_FORM)
+	if not run.ai:
+		run.actor.notice.emit("Race · %s · %d laps · starts in %s" % [heat.track.display_name, heat.track.laps,
+				format_countdown(heat.starts_at - clock)])
+	run_changed.emit(run.actor)
+	heat_changed.emit()
+
+
+## Takes `run` out of the race it is in, if one is still forming or
+## running.
+func _leave_heat(run: Run) -> void:
+	var heat := run.heat
+	if heat == null:
+		return
+	run.heat = null
+	run.place = 0
+	run.finish_place = 0
+	if heat.phase == "forming":
+		heat.runs.erase(run)
+	heat_changed.emit()
+
+
+## Sets a run's machine at its start slot, stopped and held.
+func _place_at_slot(run: Run) -> void:
+	var at: Transform3D = run.track.start_slots[mini(run.slot, run.track.start_slots.size() - 1)]
+	var vehicle := run.vehicle
+	var yaw := at.basis.get_euler().y
+	vehicle.global_position = at.origin + Vector3(0, 0.4, 0)
+	vehicle.set("heading", yaw)
+	vehicle.rotation = Vector3(0, yaw, 0)
+	vehicle.set("speed", 0.0)
+	vehicle.set("slip", 0.0)
+	vehicle.set("velocity", Vector3.ZERO)
+	vehicle.set("held", true)
+	run.last_pos = vehicle.global_position
+	run.hint = run.track.locate(run.last_pos)
+
+
+func _tick_heats(delta: float) -> void:
+	for id: String in heats.keys():
+		var heat: Heat = heats[id]
+		match heat.phase:
+			"forming":
+				# Racers who got off or went: their slot is free again.
+				for run: Run in heat.runs.duplicate():
+					if run.heat != heat or not runs.has(run.actor):
+						heat.runs.erase(run)
+				if heat.people() == 0:
+					heats.erase(id)
+					heat_changed.emit()
+				elif clock >= heat.starts_at:
+					_start_heat(heat)
+			"racing":
+				_drive_ai(heat, delta)
+				_update_places(heat)
+				var running := heat.runs.filter(func(r: Run) -> bool:
+					return not r.ai and r.phase in ["grid", "racing"] and r.heat == heat)
+				if clock >= heat.ends_at or running.is_empty():
+					_close_heat(heat)
+			"done":
+				_drive_ai(heat, delta)
+				if clock >= heat.closes_at:
+					_close_out(heat)
+					heats.erase(id)
+					heat_changed.emit()
+
+
+## The lights: AI racers take every slot left, and everyone goes together.
+func _start_heat(heat: Heat) -> void:
+	var taken := {}
+	for run: Run in heat.runs:
+		taken[run.slot] = true
+	var slots := mini(GRID_SIZE, heat.track.start_slots.size())
+	var spread_rng := RandomNumberGenerator.new()
+	spread_rng.seed = rng.randi()
+	for slot in slots:
+		if not taken.has(slot):
+			var run := _add_ai(heat, slot, spread_rng)
+			if run != null:
+				heat.runs.append(run)
+	heat.phase = "racing"
+	var go := clock + LIGHTS * LIGHT_STEP
+	for run: Run in heat.runs:
+		if not is_instance_valid(run.vehicle):
+			continue
+		_place_at_slot(run)
+		run.phase = "grid"
+		run.go_at = go
+		run.lap = 1
+		run.next_gate = 1
+		run.clean = true
+		run.splits.clear()
+		run.last_gate = -1
+		run.last_delta = NAN
+		run.last_lap = -1.0
+		run.total = -1.0
+		run.off_laps = 0
+		run_changed.emit(run.actor)
+	_update_places(heat)
+	heat_changed.emit()
+
+
+## An AI racer on a stock machine of the track's class at `slot`.
+func _add_ai(heat: Heat, slot: int, spread_rng: RandomNumberGenerator) -> Run:
+	var machines := _class_machines(heat.track)
+	if machines.is_empty():
+		return null
+	var callsign := _ai_name()
+	var at: Transform3D = heat.track.start_slots[slot]
+	var bot := spawn_bot("Racer%d" % _ai_made, at.origin + Vector3(2.0, 0.2, 0.0), spread_rng.randi(), false,
+			"racer", -2, [Loadout.BARE])
+	_ai_made += 1
+	bot.display_name = callsign
+	Look.set_appearance(bot, Human.for_name(callsign))
+	bot.weapons_locked = true
+	bot.set_meta("race_ai", true)
+	actor_spawned.emit(bot)
+	var machine: String = machines[spread_rng.randi() % machines.size()]
+	var vehicle := spawn_vehicle(machine, at.origin + Vector3(0, 0.4, 0), at.basis.get_euler().y)
+	vehicle.call("mount", bot)
+	var run := Run.new()
+	run.actor = bot
+	run.vehicle = vehicle
+	run.track = heat.track
+	run.machine = machine
+	run.ai = true
+	run.slot = slot
+	run.heat = heat
+	runs[bot] = run
+	var skill := clampf(ai_skill + spread_rng.randf_range(-0.2, 0.2), 0.0, 1.0)
+	drivers[bot] = RaceDriver.make(skill, spread_rng.randi())
+	return run
+
+
+## The machines that race `track`'s class: the ones in its pit bays.
+func _class_machines(rt: RaceTrack) -> Array[String]:
+	var out: Array[String] = []
+	for v: Variant in vehicles:
+		if not is_instance_valid(v):
+			continue
+		var id := str((v as Node3D).get("item_id"))
+		if id != "" and id not in out and track_near((v as Node3D).global_position) == rt:
+			out.append(id)
+	out.sort()
+	return out
+
+
+## A callsign nobody here is using.
+func _ai_name() -> String:
+	var used := {}
+	for actor: Variant in runs.keys():
+		if is_instance_valid(actor):
+			used[(actor as Actor).display_name] = true
+	for state in players:
+		if is_instance_valid(state.actor):
+			used[state.actor.display_name] = true
+	var start := _ai_made % AI_NAMES.size()
+	for k in AI_NAMES.size():
+		var callsign: String = AI_NAMES[(start + k) % AI_NAMES.size()]
+		if not used.has(callsign):
+			return callsign
+	return "Racer %d" % (_ai_made + 1)
+
+
+## Each AI racer of `heat` drives one tick. Home, it rolls on gently.
+func _drive_ai(heat: Heat, delta: float) -> void:
+	var machines: Array = []
+	for run: Run in heat.runs:
+		if is_instance_valid(run.vehicle):
+			machines.append(run.vehicle)
+	for run: Run in heat.runs:
+		if not run.ai or not is_instance_valid(run.actor) or not is_instance_valid(run.vehicle):
+			continue
+		run.actor.thin(1)
+		var driver: RaceDriver = drivers.get(run.actor)
+		if driver == null:
+			continue
+		driver.drive(run.actor, run.vehicle, run.track, run.phase in ["racing", "done"], machines, delta)
+		if run.phase == "racing" and absf(float(run.vehicle.get("speed"))) < 2.0:
+			run.stuck_for += delta
+			if run.stuck_for >= AI_STUCK:
+				run.stuck_for = 0.0
+				_back_on_track(run)
+		else:
+			run.stuck_for = 0.0
+		if run.phase == "done":
+			run.actor.cmd.move.y = minf(run.actor.cmd.move.y, 0.35)
+			run.actor.cmd.sprint = false
+			run.actor.cmd.jump = false
+
+
+## How far round a run is, in metres from the line at the start: laps done,
+## then the way along the centre line from the line, counted from the gates
+## so a grid behind the line is a little under nothing.
+func run_distance(run: Run) -> float:
+	var rt := run.track
+	var n := rt.points.size()
+	var line_i := int(rt.gates[0].index)
+	var hint := run.hint if run.hint >= 0 else rt.locate(run.last_pos)
+	var along := posmod(hint - line_i, n)
+	if run.next_gate == 1 and along > n * 3 / 4:
+		along -= n
+	elif run.next_gate == 0 and along < n / 4:
+		along += n
+	return ((run.lap - 1) * n + along) * RaceTrack.STEP
+
+
+## Places in a running race: finishers in the order they came home, then
+## everyone else by how far round they are.
+func _update_places(heat: Heat) -> void:
+	var home: Array[Run] = []
+	var out: Array[Run] = []
+	for run: Run in heat.runs:
+		if run.phase == "done" and run.total >= 0.0:
+			home.append(run)
+		elif run.phase in ["grid", "racing"] and run.heat == heat:
+			out.append(run)
+	home.sort_custom(func(a: Run, b: Run) -> bool: return a.total < b.total)
+	var far := {}
+	for run in out:
+		far[run] = run_distance(run)
+	out.sort_custom(func(a: Run, b: Run) -> bool: return float(far[a]) > float(far[b]))
+	var order := home + out
+	for i in order.size():
+		if order[i].place != i + 1:
+			order[i].place = i + 1
+			if not order[i].ai:
+				run_changed.emit(order[i].actor)
+
+
+## A racer in a live race crossed the line on their last lap.
+func _finished_in_heat(run: Run) -> void:
+	var heat := run.heat
+	if heat.ends_at == INF:
+		heat.ends_at = clock + FINISH_GRACE
+		for other: Run in heat.runs:
+			if other != run and not other.ai and other.phase == "racing":
+				other.actor.notice.emit("%s won: %d s to finish" % [run.actor.display_name, int(FINISH_GRACE)])
+	var penalty := run.off_laps * OFF_TRACK_PENALTY
+	if not run.ai:
+		run.actor.notice.emit("Home in %s%s" % [format_time(run.total),
+				" · +%d s off the track" % int(penalty) if penalty > 0.0 else ""])
+	heat_changed.emit()
+
+
+## The race is over: the results, each finish with its penalty, then those
+## who did not finish by how far round they got.
+func _close_heat(heat: Heat) -> void:
+	var home: Array[Run] = []
+	var rest: Array[Run] = []
+	for run: Run in heat.runs:
+		if run.phase == "done" and run.total >= 0.0 and run.heat == heat:
+			home.append(run)
+		else:
+			rest.append(run)
+	var finish := func(r: Run) -> float: return r.total + r.off_laps * OFF_TRACK_PENALTY
+	home.sort_custom(func(a: Run, b: Run) -> bool: return finish.call(a) < finish.call(b))
+	var far := {}
+	for run in rest:
+		far[run] = run_distance(run) if run.phase == "racing" else -INF
+	rest.sort_custom(func(a: Run, b: Run) -> bool: return float(far[a]) > float(far[b]))
+	heat.results.clear()
+	var order := home + rest
+	for i in order.size():
+		var run := order[i]
+		var finished := home.has(run)
+		heat.results.append({"name": run.actor.display_name if is_instance_valid(run.actor) else "?",
+				"machine": run.machine, "time": finish.call(run) if finished else -1.0, "place": i + 1,
+				"ai": run.ai, "penalty": run.off_laps * OFF_TRACK_PENALTY})
+		if run.heat != heat:
+			continue
+		run.finish_place = i + 1
+		run.place = i + 1
+		if run.phase == "racing":
+			# Out of time: the run ends where it is.
+			run.phase = "done"
+			run.total = -1.0
+		if not run.ai and is_instance_valid(run.actor):
+			run.actor.notice.emit("P%d of %d%s" % [i + 1, order.size(), "" if finished else " · did not finish"])
+			run_changed.emit(run.actor)
+	heat.phase = "done"
+	heat.closes_at = clock + RESULTS_TIME
+	heat_changed.emit()
+
+
+## The results come down: the AI racers leave with their machines, and
+## the people's runs are time trials again.
+func _close_out(heat: Heat) -> void:
+	for run: Run in heat.runs:
+		if run.ai:
+			_remove_ai(run)
+		elif run.heat == heat:
+			run.heat = null
+			run.place = 0
+			if is_instance_valid(run.actor) and runs.has(run.actor):
+				run_changed.emit(run.actor)
+	heat.runs.clear()
+
+
+func _remove_ai(run: Run) -> void:
+	var bot := run.actor
+	runs.erase(bot)
+	drivers.erase(bot)
+	var vehicle := run.vehicle
+	if is_instance_valid(vehicle):
+		vehicle.call("dismount")
+	if is_instance_valid(bot):
+		_remove_actor(bot)
+	if is_instance_valid(vehicle):
+		remove_vehicle(vehicle)
+
+
+## Whether `actor` is an AI racer.
+func is_ai_racer(actor: Actor) -> bool:
+	return is_instance_valid(actor) and actor.has_meta("race_ai")
+
+
+## A track's live race as plain data, for the pit board and to send to
+## clients: empty with none. Times are from the moment it was made.
+func heat_view(track_id: String) -> Dictionary:
+	if mode == Mode.CLIENT:
+		return remote_heats.get(track_id, {})
+	var heat: Heat = heats.get(track_id)
+	if heat == null:
+		return {}
+	return {
+		"track": track_id,
+		"phase": heat.phase,
+		"people": heat.people(),
+		"field": heat.runs.size() if heat.phase != "forming" else GRID_SIZE,
+		"starts_in": maxf(heat.starts_at - clock, 0.0) if heat.phase == "forming" else 0.0,
+		"results": heat.results.duplicate(true),
+		"made": Time.get_ticks_msec(),
+	}
+
+
+## Every track's live race, as sent to clients.
+func public_heats() -> Array:
+	var out: Array = []
+	for t in circuits:
+		var view := heat_view(t.id)
+		if not view.is_empty():
+			out.append(view)
+	return out
+
+
+## Online client: the races the server sent.
+func set_remote_heats(rows: Array) -> void:
+	remote_heats.clear()
+	for row: Variant in rows:
+		if row is Dictionary and row.has("track"):
+			var view: Dictionary = (row as Dictionary).duplicate(true)
+			view["made"] = Time.get_ticks_msec()
+			remote_heats[str(view.track)] = view
+	heat_changed.emit()
 
 
 # --- Views --------------------------------------------------------------------
@@ -461,6 +974,12 @@ func run_view(actor: Actor) -> Dictionary:
 		"last_lap": run.last_lap,
 		"best_lap": run.best_lap,
 		"total": run.total,
+		"heat": run.heat.phase if run.heat != null else "",
+		"place": run.place,
+		"field": run.heat.runs.size() if run.heat != null else 0,
+		"people": run.heat.people() if run.heat != null else 0,
+		"finish_place": run.finish_place,
+		"starts_in": maxf(run.heat.starts_at - clock, 0.0) if run.heat != null and run.heat.phase == "forming" else 0.0,
 		"made": Time.get_ticks_msec(),
 	}
 
@@ -503,12 +1022,18 @@ static func lights_lit(view: Dictionary) -> int:
 static func run_line(view: Dictionary) -> String:
 	if view.is_empty():
 		return ""
+	var place := place_tag(view)
 	match str(view.get("phase", "")):
+		"waiting":
+			return "Next race in %s · %d/%d on the grid" % [format_countdown(run_starts_in(view)),
+					int(view.get("people", 1)), GRID_SIZE]
 		"grid":
 			return "On the grid · lights %d/%d" % [lights_lit(view), LIGHTS]
 		"racing":
 			var line := "Lap %d/%d · %s" % [int(view.get("lap", 1)), int(view.get("laps", 1)),
 					format_time(run_lap_time(view))]
+			if place != "":
+				line = place + " · " + line
 			var delta := format_delta(float(view.get("last_delta", NAN)))
 			if delta != "":
 				line += " · " + delta
@@ -516,9 +1041,37 @@ static func run_line(view: Dictionary) -> String:
 				line += " · off track"
 			return line
 		"done":
+			if str(view.get("heat", "")) != "":
+				var finish := int(view.get("finish_place", 0))
+				if finish <= 0:
+					return "%s · finished %s · waiting for the rest" % [place, format_time(float(view.get("total", -1.0)))]
+				if float(view.get("total", -1.0)) < 0.0:
+					return "P%d/%d · did not finish" % [finish, int(view.get("field", 1))]
+				return "P%d/%d · %s" % [finish, int(view.get("field", 1)), format_time(float(view.get("total", -1.0)))]
 			return "Finished %s · best %s" % [format_time(float(view.get("total", -1.0))),
 					format_time(float(view.get("best_lap", -1.0)))]
 	return ""
+
+
+## "P3/8" in a live race, else "".
+static func place_tag(view: Dictionary) -> String:
+	if str(view.get("heat", "")) == "" or int(view.get("place", 0)) <= 0:
+		return ""
+	return "P%d/%d" % [int(view.place), int(view.get("field", 1))]
+
+
+## Seconds until a forming race goes, from a run view.
+static func run_starts_in(view: Dictionary) -> float:
+	if view.is_empty():
+		return 0.0
+	var since := (Time.get_ticks_msec() - int(view.get("made", 0))) / 1000.0
+	return maxf(float(view.get("starts_in", 0.0)) - since, 0.0)
+
+
+## A countdown as 0:25.
+static func format_countdown(seconds: float) -> String:
+	var whole := ceili(maxf(seconds, 0.0))
+	return "%d:%02d" % [whole / 60, whole % 60]
 
 
 ## How far round the run is, from 0 at the line to 1 at the finish.
