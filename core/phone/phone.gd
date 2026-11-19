@@ -175,7 +175,7 @@ const CONTROLS := [
 		["Use your artifact (watch up, on the artifact icon)", "{fire}"],
 		["Ping where you look for your squad (watch up, on the ping icon)", "{fire}"],
 		["Emote: wave, salute, sit and more (watch up, Status tab, on the emote icon); move to stop", "{fire}"],
-		["Raise the watch straight onto the emotes, or lower it", "{emote_wheel}"],
+		["Emote wheel: hold, point with the mouse, let go to play (tap to keep it up, click to play)", "{emote_wheel}"],
 		["Play the emote last picked, or stop it", "{quick_emote}"],
 		["Raise the watch straight onto the map, or lower it", "{watch_map}"],
 		["Ping where you look for your squad, watch down", "{ping}"],
