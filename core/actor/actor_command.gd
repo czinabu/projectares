@@ -83,6 +83,11 @@ var inspect := false
 ## toggles it in the controller). It travels as a held key, so the take off
 ## predicts and everyone sees it; `Actor.helmet_stow` follows it.
 var helmet_off := false
+## Held: the lamp on the helmet's brow is switched on (its own key, J). A
+## held state like `helmet_off`, so the server relays it and everyone sees
+## the beam; it shines only while the helmet is on the head
+## (`Actor.lamp_lit`).
+var lamp := false
 
 const HOLSTER := -2
 
@@ -158,10 +163,11 @@ const FLAG_INSPECT := 33554432
 const FLAG_CROUCH := 67108864
 const FLAG_KICK_PRESSED := 1 << 29
 const FLAG_HELMET_OFF := 1 << 30
+const FLAG_LAMP := 1 << 31
 ## Flags that describe a held key, and flags that last a single tick.
 const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY | VISOR_LEVEL_MASK \
 		| FLAG_DESCEND | FLAG_PHONE | FLAG_FREE_LOOK | FLAG_WATCH_UP | FLAG_INSPECT | FLAG_CROUCH \
-		| FLAG_HELMET_OFF
+		| FLAG_HELMET_OFF | FLAG_LAMP
 const ONE_SHOT_MASK := FLAG_JUMP_PRESSED | FLAG_DASH | FLAG_PRIMARY_PRESSED | FLAG_SECONDARY_PRESSED \
 		| FLAG_TERTIARY_PRESSED | FLAG_RELOAD_PRESSED | FLAG_INTERACT_PRESSED | FLAG_HEAL_PRESSED \
 		| FLAG_ABILITY_PRESSED | FLAG_SLIDE | FLAG_VISOR_PRESSED | FLAG_SPRINT_PRESSED | FLAG_ARTIFACT_PRESSED \
@@ -196,6 +202,7 @@ func flags() -> int:
 	if crouch: out |= FLAG_CROUCH
 	if kick_pressed: out |= FLAG_KICK_PRESSED
 	if helmet_off: out |= FLAG_HELMET_OFF
+	if lamp: out |= FLAG_LAMP
 	out |= clampi(visor_level, 0, 3) << VISOR_LEVEL_SHIFT
 	return out
 
@@ -251,6 +258,7 @@ func apply_array(data: Array) -> void:
 	crouch = bits & FLAG_CROUCH != 0
 	kick_pressed = bits & FLAG_KICK_PRESSED != 0
 	helmet_off = bits & FLAG_HELMET_OFF != 0
+	lamp = bits & FLAG_LAMP != 0
 	visor_level = (bits & VISOR_LEVEL_MASK) >> VISOR_LEVEL_SHIFT
 	phone = bits & FLAG_PHONE != 0
 	var held := maxi(int(_number(data[STANCE_INDEX])), 0)
