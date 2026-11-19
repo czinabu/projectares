@@ -623,7 +623,9 @@ func _fire() -> void:
 	if _noise_left <= 0.0:
 		_noise_left = noise_every
 		Combat.noise(actor, from, noise_reach())
-	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0,
+	# Your own shot is heard the tick it fires, flat; anyone else's from where
+	# it went off, by distance and by whether a roof is over it.
+	Sfx.shot(shot_sound, from, actor, actor.is_player, -14.0 if quiet else 0.0,
 			(SUPPRESSED_REACH if quiet else SHOT_REACH) * carry, Sfx.UNIT_SIZE * carry)
 
 

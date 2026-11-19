@@ -294,6 +294,12 @@ var eye_ahead := 0.12
 ## head bobbed several centimetres a stride).
 var aim_steady_time := 0.3
 var eye_steady := 0.9
+## The most the steadied eyes may trail the head (metres): enough to take
+## out a stride's bob, never so much that a big move of the head (a hard
+## landing's squat, a dive pulled out of, a flight pose) leaves the eyes
+## behind inside the neck, the collar or the chest (Caleb's first-person
+## clipping: the camera saw the inside of the armor's gorget).
+var eye_steady_reach := 0.05
 var _steady_head := Vector3.INF
 ## The raised watch's glow on the left wrist, and how far it is up (0..1).
 var _watch_glow: Node3D
@@ -685,6 +691,7 @@ func _update(delta: float) -> void:
 	_update_cloak()
 	_update_breath(delta)
 	_update_materialize()
+	_update_weapon_hum()
 	_update_toy(delta)
 	_update_bark(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
@@ -845,13 +852,28 @@ func hide_head(on: bool) -> void:
 					_head_hidden.append(visual)
 
 
+## Emitted each time the skeleton is posed, with how far (world) the eyes
+## (`eye_point`, steadied) moved with the head since it was last posed. The first-person camera was placed from the
+## head as last posed, before this frame's pose, so it follows by as much
+## (`PlayerController._on_head_posed`): a quick move of the head (a landing's
+## squat and spring) otherwise left the eyes a frame behind, in the neck.
+signal head_posed(by: Vector3)
+
+
 ## Keeps the head bone as posed, which is only final inside the skeleton's
 ## update (see `eye_point`).
 func _note_head() -> void:
 	if _head_bone == -2:
 		_head_bone = _skeleton.find_bone("Head") if _skeleton else -1
 	if _head_bone >= 0:
+		var before := _posed_head
 		_posed_head = _skeleton.get_bone_global_pose(_head_bone).origin
+		if before.is_finite():
+			# The eyes as `eye_point` places them, steadied, before and after.
+			var moved := _posed_head - before
+			if _steady_head.is_finite():
+				moved += _steady_offset(_posed_head) - _steady_offset(before)
+			head_posed.emit(_skeleton.global_basis * moved)
 
 
 ## Where the model's eyes are, for a first-person camera: in front of the
@@ -866,9 +888,8 @@ func eye_point(look: Basis) -> Variant:
 	if _head_bone < 0:
 		return null
 	var local := _head_local()
-	var steady := lerpf(eye_steady, 1.0, ActionPose.of(actor).ads) if _steady_head.is_finite() else 0.0
-	if steady > 0.0:
-		local = local.lerp(_steady_head, steady)
+	if _steady_head.is_finite():
+		local += _steady_offset(local)
 	var head: Vector3 = _skeleton.global_transform * local
 	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
 
@@ -881,9 +902,16 @@ func eye_point(look: Basis) -> Variant:
 func eye_steadying() -> Vector3:
 	if _skeleton == null or _head_bone < 0 or not _steady_head.is_finite():
 		return Vector3.ZERO
-	var steady := lerpf(eye_steady, 1.0, ActionPose.of(actor).ads)
 	var head := _skeleton.get_bone_global_pose(_head_bone).origin
-	return _skeleton.global_basis * ((_steady_head - head) * steady)
+	return _skeleton.global_basis * _steady_offset(head)
+
+
+## How far the steadied eyes stand off `head` (skeleton space): the share of
+## the lag the view takes (`eye_steady`, all of it while aimed), never more
+## than `eye_steady_reach`, so the eyes stay in the drawn head.
+func _steady_offset(head: Vector3) -> Vector3:
+	var steady := lerpf(eye_steady, 1.0, ActionPose.of(actor).ads)
+	return ((_steady_head - head) * steady).limit_length(eye_steady_reach)
 
 
 ## Follows the head (`_head_local`) with a lag of `aim_steady_time`, which
@@ -895,7 +923,7 @@ func _steady_eyes(delta: float) -> void:
 	# stance and every other turn in. Read outside the skeleton's update the
 	# bone is only the clip's, and the arm (which reaches inside it) and the
 	# camera would follow two different heads.
-	var local := _posed_head if _posed_head.is_finite() else _head_local()
+	var local := _head_local()
 	if not _steady_head.is_finite() or _steady_head.distance_to(local) > 0.5:
 		# First frame, or a jump (a teleport, getting on a bike): no lag.
 		_steady_head = local
@@ -903,23 +931,16 @@ func _steady_eyes(delta: float) -> void:
 	_steady_head = _steady_head.lerp(local, 1.0 - exp(-delta / maxf(aim_steady_time, 0.01)))
 
 
-## The head, in the skeleton's space, as the body is posed.
+## The head, in the skeleton's space, as the body is posed: as it was last
+## drawn (`_note_head`). Outside the skeleton's update the bone is only the
+## clip's, and much of what moves the head happens only in the posed
+## skeleton (riding, crouching, sliding, a landing's squat, the air and
+## flight poses, the head on the aim), so eyes on the clip's head stood in
+## the body's neck or collar whenever those moved it.
 func _head_local() -> Vector3:
-	var local := _skeleton.get_bone_global_pose(_head_bone).origin
-	if actor.vehicle != null and _posed_head.is_finite():
-		# Seated, the ride pose moves the whole body onto the seat, and that
-		# only shows in the posed skeleton: outside its update the bone still
-		# stands at the actor's feet, which put the eyes in a seated rider's
-		# neck, looking out through their own collar and pack.
-		local = _posed_head
-	elif _posed_head.is_finite():
-		# Crouched or sliding, the body sinks only in the posed skeleton too
-		# (`Locomotion._crouch_pose`, `_slide_pose`): follow it in as the
-		# body goes down, so first person crouches with the body.
-		var low := smoothstep(0.0, 1.0, maxf(actor.crouch, actor.slide_low))
-		if low > 0.0:
-			local = local.lerp(_posed_head, low)
-	return local
+	if _posed_head.is_finite():
+		return _posed_head
+	return _skeleton.get_bone_global_pose(_head_bone).origin
 
 
 ## True while the actor holds their phone up (`ActorCommand.phone`, which
@@ -1152,6 +1173,10 @@ func _update_switch(delta: float) -> void:
 		_plan_t = 0.0
 		if _plan.is_empty():
 			_in_hand = active
+		# The draw is heard as the hand takes it (a summon has its own sound).
+		if active != null and actor.materialize_left <= 0.0:
+			Sfx.play("draw_gun" if active is Gun else "draw_blade", actor.global_position + Vector3.UP * 1.2,
+					-8.0 if actor.is_player else -12.0, 18.0)
 	if not _plan.is_empty():
 		_plan_t += delta
 		_play_plan()
@@ -1866,13 +1891,13 @@ const FRAME_STYLES := {
 	"runner": {"plate": Color(0.48, 0.52, 0.58), "plate2": Color(0.26, 0.29, 0.33), "fabric": Color(0.3, 0.32, 0.35),
 			"strap": Color(0.14, 0.15, 0.17), "suit": Color(0.13, 0.14, 0.16), "accent": Color(0.3, 0.85, 1.0),
 			"metal": Color(0.5, 0.53, 0.56), "details": ["spine"]},
-	"trooper": {"plate": Color(0.36, 0.37, 0.27), "plate2": Color(0.24, 0.25, 0.19), "fabric": Color(0.42, 0.38, 0.28),
+	"trooper": {"plate": Color(0.36, 0.37, 0.27), "plate2": Color(0.24, 0.25, 0.19), "fabric": Color(0.46, 0.42, 0.31),
 			"strap": Color(0.2, 0.19, 0.15), "suit": Color(0.07, 0.07, 0.065), "accent": Color(1.0, 0.7, 0.28),
 			"metal": Color(0.48, 0.48, 0.46), "details": ["radio", "admin", "hydration"]},
-	"thermal": {"plate": Color(0.56, 0.58, 0.6), "plate2": Color(0.38, 0.41, 0.45), "fabric": Color(0.36, 0.38, 0.41),
-			"strap": Color(0.18, 0.19, 0.21), "suit": Color(0.12, 0.13, 0.15), "accent": Color(1.0, 0.45, 0.12),
-			"metal": Color(0.6, 0.62, 0.64), "rough": 0.75, "details": ["quilt", "coils", "heater"]},
-	"bulwark": {"plate": Color(0.26, 0.27, 0.29), "plate2": Color(0.14, 0.145, 0.155), "fabric": Color(0.13, 0.13, 0.14),
+	"thermal": {"plate": Color(0.54, 0.55, 0.54), "plate2": Color(0.36, 0.38, 0.4), "fabric": Color(0.4, 0.42, 0.45),
+			"strap": Color(0.24, 0.25, 0.27), "suit": Color(0.2, 0.21, 0.23), "accent": Color(1.0, 0.45, 0.12),
+			"metal": Color(0.6, 0.62, 0.64), "rough": 0.78, "details": ["quilt", "coils", "heater"]},
+	"bulwark": {"plate": Color(0.26, 0.27, 0.29), "plate2": Color(0.14, 0.145, 0.155), "fabric": Color(0.19, 0.19, 0.2),
 			"strap": Color(0.08, 0.08, 0.085), "suit": Color(0.045, 0.045, 0.05), "accent": Color(1.0, 0.42, 0.12),
 			"metal": Color(0.62, 0.6, 0.56), "metal_finish": 0.35, "details": ["vents", "chevrons"]},
 }
@@ -2319,6 +2344,47 @@ void fragment() {
 ## `Actor.materialize_left` runs down, and one stored back fades out the same
 ## way as `Actor.dematerialize_left` runs down. It is the one weapon in the one hand,
 ## so both views and everyone around see the same thing.
+## A charging rail's whine and a rotary gun's barrels spinning, heard by
+## everyone near, from the gun's own state (simulated from the command, so a
+## remote player's charge is heard too). One player each, made on first use.
+var _hum: AudioStreamPlayer3D
+var _hum_sound := ""
+
+
+func _update_weapon_hum() -> void:
+	var gun := actor.get_active_weapon() as Gun
+	var want := ""
+	var level := 0.0
+	if gun != null and not actor.is_dead:
+		if gun.charge_time > 0.0 and gun.charge_fraction() > 0.0:
+			want = "rail_charge"
+			level = 1.0
+		elif gun.spin_fraction() > 0.0:
+			want = "storm_spin"
+			level = gun.spin_fraction()
+	if want != _hum_sound:
+		_hum_sound = want
+		if _hum != null:
+			_hum.stop()
+		var stream := Sfx.get_stream(want) if want != "" else null
+		if stream != null:
+			if _hum == null:
+				_hum = AudioStreamPlayer3D.new()
+				_hum.name = "WeaponHum"
+				_hum.position = Vector3(0.0, 1.3, 0.0)
+				_hum.max_distance = 60.0
+				add_child(_hum)
+			_hum.stream = stream
+			_hum.pitch_scale = 1.0
+			_hum.play()
+	if _hum != null and want == "storm_spin":
+		# The whirr climbs with the barrels.
+		_hum.pitch_scale = 0.5 + 0.6 * level
+		_hum.volume_db = linear_to_db(0.2 + 0.8 * level) - 4.0
+	elif _hum != null:
+		_hum.volume_db = -2.0
+
+
 func _update_materialize() -> void:
 	var weapon := actor.get_active_weapon()
 	# Stored back through the watch, it runs the other way: the solid model

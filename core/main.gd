@@ -2083,11 +2083,13 @@ func _new_session(host: String) -> NetSession:
 	# Travelling on within the same servers: the token the last one gave.
 	session.ticket = str(_tickets.get(host, ""))
 	session.look = Profile.appearance
-	# `-- --lag 120 --loss 10` fakes a bad connection: milliseconds of delay
-	# each way, and the percent of input packets lost.
+	# `-- --lag 120 --loss 10 --jitter 60` fakes a bad connection:
+	# milliseconds of delay each way, the percent of input packets lost, and
+	# up to that many more milliseconds, unevenly, on the server's updates.
 	var args := OS.get_cmdline_user_args()
 	session.simulated_lag = float(_arg(args, "--lag", "0")) / 1000.0
 	session.simulated_loss = float(_arg(args, "--loss", "0")) / 100.0
+	session.simulated_jitter = float(_arg(args, "--jitter", "0")) / 1000.0
 	return session
 
 

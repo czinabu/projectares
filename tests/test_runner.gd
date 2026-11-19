@@ -56,6 +56,7 @@ const BotSensesTests := preload("res://tests/bot_senses_tests.gd")
 const MeleeBotTests := preload("res://tests/melee_bot_tests.gd")
 const RecoilTests := preload("res://tests/recoil_tests.gd")
 const HitFeedbackTests := preload("res://tests/hit_feedback_tests.gd")
+const WeaponSoundTests := preload("res://tests/weapon_sound_tests.gd")
 const ErrorSpamTests := preload("res://tests/error_spam_tests.gd")
 const PeekTests := preload("res://tests/peek_tests.gd")
 const AdsTests := preload("res://tests/ads_tests.gd")
@@ -412,6 +413,7 @@ func _run() -> void:
 	await _test_melee_bots()
 	await _test_recoil()
 	await _test_hit_feedback()
+	await _test_weapon_sounds()
 	await _test_error_spam()
 	await _test_peek()
 	await _test_ads()
@@ -592,6 +594,10 @@ func _test_recoil() -> void:
 
 func _test_hit_feedback() -> void:
 	await HitFeedbackTests.run(self)
+
+
+func _test_weapon_sounds() -> void:
+	await WeaponSoundTests.run(self)
 
 
 func _test_error_spam() -> void:
@@ -5165,22 +5171,41 @@ func _test_online_movement() -> void:
 	# Other players glide between updates instead of stepping.
 	me.cmd.move = Vector2(1, 0)
 	await frames(30)
-	var biggest := 0.0
-	var smallest := 99.0
-	var prev := seen.global_position
-	for i in 60:
-		await frames(1)
-		var moved := seen.global_position.distance_to(prev)
-		prev = seen.global_position
-		biggest = maxf(biggest, moved)
-		smallest = minf(smallest, moved)
+	var even := await _step_spread(seen, 60)
+	check(even.x > 0.0 and even.y < even.x * 2.5 + 0.02,
+			"another player's movement is even from tick to tick (%.3f to %.3f m)" % [even.x, even.y])
+	# And when updates come unevenly, late and then several at once (a bad
+	# connection, or a busy machine): a late update is about an earlier
+	# moment, so it must not pull the body back to it.
+	eli.simulated_jitter = 0.08
+	await frames(30)
+	var uneven := await _step_spread(seen, 180)
+	eli.simulated_jitter = 0.0
 	me.cmd.move = Vector2.ZERO
-	check(smallest > 0.0 and biggest < smallest * 2.5 + 0.02,
-			"another player's movement is even from tick to tick (%.3f to %.3f m)" % [smallest, biggest])
+	check(uneven.x > 0.0 and uneven.y < uneven.x * 2.0 + 0.02,
+			"another player's movement stays even when updates arrive unevenly (%.3f to %.3f m)" % [uneven.x, uneven.y])
+	await frames(90)
+	var settled := seen.global_position.distance_to(me.global_position) if is_instance_valid(seen) else 99.0
+	check(settled < 0.5, "and they still end up where they are (%.2f m apart)" % settled)
 	await _leave(eli)
 	await _leave(dana)
 	OS.kill(pid)
 	await frames(30)
+
+
+## The least and most `actor` moves in one tick, over `ticks` ticks, as
+## (least, most).
+func _step_spread(actor: Actor, ticks: int) -> Vector2:
+	var least := 99.0
+	var most := 0.0
+	var prev := actor.global_position
+	for i in ticks:
+		await frames(1)
+		var moved := actor.global_position.distance_to(prev)
+		prev = actor.global_position
+		least = minf(least, moved)
+		most = maxf(most, moved)
+	return Vector2(least, most)
 
 
 ## The yaw that turns an actor to look along `dir`.

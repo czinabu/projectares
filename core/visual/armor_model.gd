@@ -105,12 +105,16 @@ static func torso(weight: String, style: Dictionary) -> Node3D:
 		var t := 0.014 if light else 0.018
 		G.add(root, "Chest", G.band(rx + 0.016, rz + 0.018, -pw, pw, low + 0.06, high - 0.01, t, 0.016, 0.08), m.plate, mid, tilt)
 		G.add(root, "Back", G.band(rx + 0.016, rz + 0.018, PI - pw, PI + pw, low + 0.04, high - 0.02, t, 0.012, 0.08), m.plate, mid)
-	# Padded shoulder straps over the top of each shoulder, buckled in front.
+	_plate_depth(root, m, mid, rx, rz, low, high, pw, heavy, light)
+	# Padded shoulder straps over the top of each shoulder, buckled onto
+	# the top of the plate in front and behind.
+	var plate_z := rz + (0.044 if heavy else 0.036)
 	for x: float in [-0.085, 0.085]:
 		G.add(root, "Strap", G.band(0.07, 0.125, -0.15, PI + 0.15, -0.022, 0.022, 0.014), m.fabric,
 				mid + Vector3(x, high - 0.015, 0.0), Basis(Vector3.BACK, PI * 0.5))
-		G.box(root, "StrapBuckle", Vector3(0.05, 0.03, 0.012), m.strap, mid + Vector3(x, high - 0.005, -rz - 0.03), 0.004,
-				Basis(Vector3.RIGHT, 0.35))
+		for z: float in [-plate_z, plate_z]:
+			G.box(root, "StrapBuckle", Vector3(0.048, 0.03, 0.01), m.strap, mid + Vector3(x, high - 0.032, z), 0.004,
+					Basis(Vector3.RIGHT, 0.18 * signf(z)))
 	# The cummerbund round the sides with webbing rows; elastic on light.
 	for side: float in [-1.0, 1.0]:
 		var from := wrap * 0.85 if side > 0 else -PI + wrap * 0.85
@@ -140,6 +144,36 @@ static func torso(weight: String, style: Dictionary) -> Node3D:
 	G.box(root, "Handle", Vector3(0.07, 0.018, 0.012), m.strap, mid + Vector3(0, high, rz + 0.045), 0.005)
 	_torso_details(root, m, mid, rx, rz, low, high, front_z, pz, light)
 	return G.merge(root)
+
+
+## Depth on the hard plates, so they read as moulded armor, never slabs: a
+## raised rim along the top and down each side, two pressed panel lines
+## across them, and an ID placard on the chest plate.
+static func _plate_depth(root: Node3D, m: Kit, mid: Vector3, rx: float, rz: float, low: float, high: float, pw: float,
+		heavy: bool, light: bool) -> void:
+	# Where the plate's face is: its offset off the carrier plus its thickness.
+	var out := 0.044 if heavy else (0.032 if light else 0.036)
+	var top := high + (0.005 if heavy else -0.01)
+	var bottom := low + (0.04 if heavy else 0.06)
+	for back: float in [0.0, PI]:
+		var span := pw * (1.1 if heavy and back == 0.0 else 1.0)
+		var top_here := top - (0.01 if back > 0.0 else 0.0)
+		var bottom_here := bottom - (0.02 if back > 0.0 else 0.0)
+		G.add(root, "PlateRim", G.band(rx + out - 0.006, rz + out - 0.006, back - span, back + span, top_here - 0.012, top_here, 0.008),
+				m.plate2, mid)
+		for side: float in [-1.0, 1.0]:
+			var a := back + side * (span - 0.04)
+			G.add(root, "PlateRim", G.band(rx + out - 0.006, rz + out - 0.006, minf(a, a - side * 0.06), maxf(a, a - side * 0.06),
+					bottom_here, top_here - 0.012, 0.007), m.plate2, mid)
+		for k in 2:
+			var y := lerpf(bottom_here, top_here, 0.36 + k * 0.3)
+			# Following the plate's swell, just proud of it.
+			G.add(root, "PanelLine", G.band(rx + out - 0.002, rz + out - 0.002, back - span * 0.82, back + span * 0.82, y, y + 0.004, 0.004,
+					0.014), m.plate2, mid)
+	if not light:
+		# An ID placard high on the chest, with a lit tag.
+		G.box(root, "Placard", Vector3(0.09, 0.034, 0.008), m.plate2, mid + Vector3(0.0, top - 0.04, -rz - out - 0.012), 0.003)
+		G.box(root, "PlacardTag", Vector3(0.024, 0.01, 0.004), m.dim, mid + Vector3(-0.026, top - 0.04, -rz - out - 0.017), 0.001)
 
 
 ## What says which frame it is, on top of its weight.

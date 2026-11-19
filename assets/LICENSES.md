@@ -34,6 +34,8 @@ and add a row for each new source.
 | --- | --- | --- | --- | --- |
 | `assets/sounds` (not in this repository, see its `README.md`) | Clips from Extreme Winds Vol. 1 (344 Audio), Sci-Fi Drones (Cinematic Sound Design) and Effective Trailer Booms Vol. 2 (Federico Soler), cut, filtered and looped | Sonniss #GameAudioGDC 2026 bundle | Sonniss GDC bundle license: royalty-free, commercial use, no attribution; may ship inside the game but not be sold or handed out as they come | https://gdc.sonniss.com |
 
+`assets/sounds/weapons` (every gun's shots, the hit and kill confirms, draws, the rail's charge and the rotary cannon's spin) was made for this project from code by `assets/sounds/weapons/make_weapon_sounds.py` and is CC0: no samples, nothing to credit.
+
 Shaders in `assets/shaders` were written for this project.
 
 ## Code libraries

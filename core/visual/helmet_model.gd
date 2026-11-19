@@ -81,7 +81,7 @@ const PALETTE := {
 	"zoom": Color(0.44, 0.48, 0.53),
 	"scan": Color(0.36, 0.37, 0.27),
 	"threat": Color(0.26, 0.27, 0.29),
-	"thermal": Color(0.6, 0.62, 0.64),
+	"thermal": Color(0.54, 0.55, 0.54),
 }
 
 
@@ -129,8 +129,9 @@ static func _hood(root: Node3D, m: Kit) -> void:
 	G.cyl(root, "Neck", R.x * 0.62, R.y * 0.5, m.hood, Vector3(0, -R.y * 1.0, R.z * 0.12))
 
 
-## Scrap visor: a dented pot helmet with patches bolted over the holes,
-## goggles on a strap, one lens cracked and flickering, and a cloth wrap.
+## Scrap visor: a dented pot helmet welded from two, with patches bolted
+## over the holes, a work lamp taped to the brow, goggles on a strap, one
+## lens cracked and flickering, and a cloth wrap.
 static func _scav(root: Node3D, m: Kit) -> void:
 	var r := Vector3(0.13, 0.11, 0.148)
 	_r = r
@@ -160,6 +161,20 @@ static func _scav(root: Node3D, m: Kit) -> void:
 	G.box(root, "Bridge", Vector3(0.03, 0.01, 0.012), m.plate2, Vector3(0, 0.0, -0.146), 0.002)
 	for c: Array in [[Vector3(0.04, 0.008, -0.157), 0.7], [Vector3(0.05, -0.006, -0.157), -0.4], [Vector3(0.033, -0.008, -0.157), 2.0]]:
 		G.box(root, "Crack", Vector3(0.022, 0.0025, 0.002), m.dim, c[0], 0.0005, Basis(Vector3.BACK, c[1]))
+	# A welded seam over the crown where two pots were joined, its beads proud.
+	G.add(root, "Weld", hc(r * 1.012, G.const_of(0.05), G.const_of(G.pol(0.2)), -PI * 0.5 - 0.04, -PI * 0.5 + 0.04, 0.006, 2, 10),
+			m.plate2)
+	G.add(root, "Weld", hc(r * 1.012, G.const_of(0.05), G.const_of(G.pol(0.2)), PI * 0.5 - 0.04, PI * 0.5 + 0.04, 0.006, 2, 10),
+			m.plate2)
+	# A scavenged work lamp taped to the brow, its lens lit, and its cell
+	# cabled down the side.
+	G.box(root, "Lamp", Vector3(0.034, 0.024, 0.03), m.plate2, Vector3(-0.045, r.y * 0.62, -r.z * 0.93), 0.004,
+			Basis(Vector3.RIGHT, -0.35))
+	G.cyl(root, "Lamp", 0.01, 0.006, m.visor, Vector3(-0.045, r.y * 0.6, -r.z * 1.02), Basis(Vector3.RIGHT, PI * 0.5 - 0.35), 10)
+	G.box(root, "Tape", Vector3(0.05, 0.008, 0.034), m.fabric, Vector3(-0.045, r.y * 0.62, -r.z * 0.93), 0.002,
+			Basis(Vector3.RIGHT, -0.35))
+	G.box(root, "Cell", Vector3(0.012, 0.04, 0.026), m.plate2, Vector3(-r.x * 1.02, r.y * 0.25, -0.03), 0.003)
+	G.add(root, "Cable", G.band(r.x * 1.03, r.z * 1.0, -1.6, -0.35, r.y * 0.38, r.y * 0.4, 0.004), m.rubber)
 	# A cloth wrap over the mouth and the neck.
 	var wrap := func(p: float, a: float) -> float: return 1.0 + 0.05 * maxf(0.0, cos(a)) * smoothstep(1.9, 2.4, p)
 	G.add(root, "Wrap", G.cap(Vector3(0.122, 0.135, 0.142), G.const_of(G.pol(-0.22)), G.const_of(G.pol(-0.98)), -PI, PI, 0.01,
