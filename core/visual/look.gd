@@ -1360,7 +1360,8 @@ func set_appearance(actor: Actor, appearance: Variant) -> void:
 
 
 ## The model a skin wears, with its materials made: {"model": Node3D,
-## "materials": Array[ShaderMaterial]}, or {} when the art is missing.
+## "materials": Array[ShaderMaterial], "chosen": the person's appearance (empty
+## for a skin that is not a person)}, or {} when the art is missing.
 ## `appearance` only matters for skins of people; `who` picks a steady random
 ## look for anyone who has not chosen one.
 func character(skin_name: String, appearance: Dictionary = {}, who := "") -> Dictionary:
@@ -1380,37 +1381,46 @@ func character(skin_name: String, appearance: Dictionary = {}, who := "") -> Dic
 		if node:
 			node.visible = false
 	var materials: Array[ShaderMaterial] = []
-	var tint: Color = def.get("tint", Color.WHITE)
 	for node in model.find_children("*", "MeshInstance3D", true, false):
-		var mesh_node := node as MeshInstance3D
-		for i in mesh_node.mesh.get_surface_count():
-			var source := mesh_node.get_active_material(i) as BaseMaterial3D
-			if source == null:
-				continue
-			var mat := ShaderMaterial.new()
-			mat.shader = CHARACTER_SHADER
-			if source.albedo_texture:
-				mat.set_shader_parameter("base_tex", source.albedo_texture)
-			mat.set_shader_parameter("base_color", source.albedo_color)
-			mat.set_shader_parameter("tint", tint)
-			for param: String in ["saturation", "brightness", "metal", "rough"]:
-				if def.has(param):
-					mat.set_shader_parameter(param, def[param])
-			if source.emission_enabled:
-				mat.set_shader_parameter("emission_color", source.emission * 2.5)
-			_bind_storm(mat)
-			if not chosen.is_empty() and Human.reshape:
-				mat.set_shader_parameter("has_rest", 1.0)
-				mat.set_shader_parameter("surface_kind",
-						Human.surface_kind(mesh_node.get_meta("slot", ""), source.resource_name))
-				var pick := Human.color_for(chosen, mesh_node.get_meta("slot", ""), source.resource_name)
-				if pick.has("color"):
-					mat.set_shader_parameter("recolor", pick["color"])
-					mat.set_shader_parameter("recolor_amount", 1.0)
-					mat.set_shader_parameter("recolor_shading", 1.0 if pick["keep_shading"] else 0.0)
-			mesh_node.set_surface_override_material(i, mat)
-			materials.append(mat)
-	return {"model": model, "materials": materials}
+		materials.append_array(dress_surfaces(node as MeshInstance3D, def, chosen))
+	return {"model": model, "materials": materials, "chosen": chosen}
+
+
+## Gives each surface of a character's `mesh_node` its own
+## `character.gdshader` material, made from the surface's pack material, and
+## returns them. `def` is the skin's entry in `SKINS`; `chosen`, a person's
+## appearance (empty for a skin that is not a person).
+func dress_surfaces(mesh_node: MeshInstance3D, def: Dictionary, chosen: Dictionary) -> Array[ShaderMaterial]:
+	var materials: Array[ShaderMaterial] = []
+	var tint: Color = def.get("tint", Color.WHITE)
+	for i in mesh_node.mesh.get_surface_count():
+		var source := mesh_node.get_active_material(i) as BaseMaterial3D
+		if source == null:
+			continue
+		var mat := ShaderMaterial.new()
+		mat.shader = CHARACTER_SHADER
+		if source.albedo_texture:
+			mat.set_shader_parameter("base_tex", source.albedo_texture)
+		mat.set_shader_parameter("base_color", source.albedo_color)
+		mat.set_shader_parameter("tint", tint)
+		for param: String in ["saturation", "brightness", "metal", "rough"]:
+			if def.has(param):
+				mat.set_shader_parameter(param, def[param])
+		if source.emission_enabled:
+			mat.set_shader_parameter("emission_color", source.emission * 2.5)
+		_bind_storm(mat)
+		if not chosen.is_empty() and Human.reshape:
+			mat.set_shader_parameter("has_rest", 1.0)
+			mat.set_shader_parameter("surface_kind",
+					Human.surface_kind(mesh_node.get_meta("slot", ""), source.resource_name))
+			var pick := Human.color_for(chosen, mesh_node.get_meta("slot", ""), source.resource_name)
+			if pick.has("color"):
+				mat.set_shader_parameter("recolor", pick["color"])
+				mat.set_shader_parameter("recolor_amount", 1.0)
+				mat.set_shader_parameter("recolor_shading", 1.0 if pick["keep_shading"] else 0.0)
+		mesh_node.set_surface_override_material(i, mat)
+		materials.append(mat)
+	return materials
 
 
 ## Scales a character model to `height` meters and puts its feet at the

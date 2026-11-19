@@ -3834,27 +3834,27 @@ func plan_mark(room: String) -> void:
 	_refresh_plan()
 
 
-## A mannequin wearing the frame: the same plates it is worn as
-## (`ActorSkin.build_frame`, `build_pad`), so the stand shows its look and
-## its weight.
+## A mannequin wearing the frame: the same carrier, belt and shoulder pads
+## it is worn as (`ActorSkin.build_frame`, `build_belt`, `build_pad`), so
+## the stand shows its look and its weight.
 func _build_armor(model: Node3D, id: String, _color: Color) -> void:
 	var dummy := Color(0.22, 0.22, 0.24)
 	model.add_child(_part(Vector3(0.7, 0.08, 0.7), Vector3(0, 0.04, 0), dummy))
 	model.add_child(_part(Vector3(0.1, 0.9, 0.1), Vector3(0, 0.5, 0), dummy))
-	# A torso the plates fit, about a body's (0.26 m by 0.22 m at the chest).
-	model.add_child(_part(Vector3(0.25, 0.5, 0.2), Vector3(0, 1.22, 0), dummy))
+	# A torso the carrier fits, about a body's (0.3 m by 0.25 m at the chest).
+	model.add_child(_part(Vector3(0.28, 0.52, 0.22), Vector3(0, 1.22, 0), dummy))
 	model.add_child(_part(Vector3(0.14, 0.2, 0.14), Vector3(0, 1.6, 0), dummy))
 	# The mannequin faces +Z, the plates are built facing -Z.
-	var plates := SkinScript.build_frame(id)
-	plates.position = Vector3(0, 1.36, 0)
-	plates.rotation.y = PI
-	model.add_child(plates)
-	if int(SkinScript.FRAME_BULK[SkinScript.frame_weight(id)]["pads"]) > 0:
-		for out: float in [-1.0, 1.0]:
-			var pad := SkinScript.build_pad(id, out)
-			pad.position = Vector3(-out * 0.17, 1.43, 0)
-			pad.rotation.y = PI
-			model.add_child(pad)
+	for piece: Array in [[SkinScript.build_frame(id), Vector3(0, 1.36, 0)], [SkinScript.build_belt(id), Vector3(0, 0.98, 0)]]:
+		var plates: Node3D = piece[0]
+		plates.position = piece[1]
+		plates.rotation.y = PI
+		model.add_child(plates)
+	for out: float in [-1.0, 1.0]:
+		var pad := SkinScript.build_pad(id, out)
+		pad.position = Vector3(-out * 0.18, 1.44, 0)
+		pad.rotation.y = PI
+		model.add_child(pad)
 
 
 ## A flight rig on a stand. Its stats pick the shape: wings glide, boots only
