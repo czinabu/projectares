@@ -17,17 +17,20 @@ uniform vec4 facade_top : source_color = vec4(0.11, 0.13, 0.22, 1.0);
 uniform vec4 warm : source_color = vec4(1.0, 0.78, 0.5, 1.0);
 uniform vec4 cool : source_color = vec4(0.55, 0.85, 1.0, 1.0);
 uniform vec4 accent : source_color = vec4(1.0, 0.35, 0.85, 1.0);
-uniform vec4 haze : source_color = vec4(0.33, 0.37, 0.62, 1.0);
-uniform vec4 haze_low : source_color = vec4(0.42, 0.3, 0.36, 1.0);
+uniform vec4 haze : source_color = vec4(0.24, 0.2, 0.4, 1.0);
+uniform vec4 haze_low : source_color = vec4(0.55, 0.3, 0.32, 1.0);
 uniform float bay = 2.4;
 uniform float storey = 3.6;
 uniform float lit_share = 0.3;
 uniform float window_glow = 1.6;
 uniform float band_every = 24.0;
 uniform float band_glow = 2.2;
+// A fin standing out of the glass every so many bays (0 for none): what
+// makes a near tower read as a curtain wall rather than a grid of blocks.
+uniform float fin_every = 0.0;
 // Distance at which the haze has taken about two thirds of a colour.
-uniform float haze_reach = 900.0;
-uniform float haze_max = 0.9;
+uniform float haze_reach = 700.0;
+uniform float haze_max = 0.88;
 // Heights (world y) over which the low haze thins out.
 uniform float low_from = -320.0;
 uniform float low_to = 60.0;
@@ -47,7 +50,12 @@ float hash(vec2 p) {
 }
 
 void fragment() {
-	vec3 n = normalize(world_normal);
+	// The face's own normal from the screen derivatives, not the mesh's,
+	// so a round tower is cut into flat facets that each keep one pattern.
+	vec3 n = normalize(cross(dFdx(world_pos), dFdy(world_pos)));
+	if (dot(n, world_normal) < 0.0) {
+		n = -n;
+	}
 	vec3 col;
 	if (abs(n.y) > 0.5) {
 		// Roofs and the undersides of setbacks: plain, a touch lighter on top.
@@ -77,6 +85,10 @@ void fragment() {
 		float pane_x = smoothstep(0.12 - px.x, 0.12 + px.x, f.x) * (1.0 - smoothstep(0.88 - px.x, 0.88 + px.x, f.x));
 		float pane_y = smoothstep(0.22 - px.y, 0.22 + px.y, f.y) * (1.0 - smoothstep(0.9 - px.y, 0.9 + px.y, f.y));
 		float pane = pane_x * pane_y;
+		if (fin_every > 0.0) {
+			float fin = mod(cell.x, fin_every);
+			pane *= step(0.5, fin);
+		}
 		vec3 near_glow = tint * lit * dim * pane;
 		// The average of all that, for windows too small to see one by one.
 		vec3 average = mix(warm.rgb, cool.rgb, 0.3) * lit_share * 0.55 * 0.6;

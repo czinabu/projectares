@@ -275,18 +275,21 @@ func _build_environment() -> void:
 	# it, a calm, cool sky after the grey of the warzones (Caleb's call: grand
 	# and sci-fi, with the neon glowing).
 	Look.atmosphere(self, {
-		"sky_tint": Color(0.55, 0.6, 0.95),
+		# A deep dusk over the megacity, warm where the canyon's light comes
+		# up into the haze, so the windows and the traffic carry the sky.
+		"sky_tint": Color(0.52, 0.46, 0.9),
 		"sky_saturation": 0.8,
-		"sky_energy": 0.6,
-		"fog_color": Color(0.16, 0.18, 0.3),
+		"sky_energy": 0.42,
+		"fog_color": Color(0.3, 0.22, 0.38),
 		"fog_density": 0.0022,
-		"sun_color": Color(0.65, 0.7, 1.0),
-		"sun_energy": 0.6,
+		"haze_height": 0.3,
+		"sun_color": Color(0.75, 0.65, 1.0),
+		"sun_energy": 0.55,
 		"sun_angles": Vector3(-14, 35, 0),
-		"ambient_color": Color(0.5, 0.55, 0.75),
+		"ambient_color": Color(0.5, 0.52, 0.75),
 		"ambient_energy": 1.0,
 		"saturation": 0.95,
-		"glow": 0.75,
+		"glow": 0.8,
 	})
 	Look.weather(self, "embers", RADIUS * 0.5)
 

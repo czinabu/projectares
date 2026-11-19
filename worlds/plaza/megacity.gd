@@ -19,6 +19,7 @@ extends Node3D
 
 const MEGACITY_SHADER := preload("res://assets/shaders/megacity.gdshader")
 const TRAFFIC_SHADER := preload("res://assets/shaders/sky_traffic.gdshader")
+const SIGN_SHADER := preload("res://assets/shaders/holo_sign.gdshader")
 
 ## The canyon floor, far under the deck.
 const FLOOR_Y := -420.0
@@ -69,6 +70,8 @@ var rng := RandomNumberGenerator.new()
 var rim := 240.0
 var _boxes: Array = []
 var _lights := {}
+## Lit signs, colour -> parts, drawn with `holo_sign.gdshader`.
+var _signs := {}
 ## Towers already placed, [position (xz), half width], so none overlap.
 var _placed: Array = []
 ## Tower tops, for skyways: [position, top].
@@ -92,6 +95,9 @@ static func material_for(near := false) -> ShaderMaterial:
 		mat.set_shader_parameter("haze_max", 0.5)
 		mat.set_shader_parameter("lit_share", 0.4)
 		mat.set_shader_parameter("band_every", 12.0)
+		mat.set_shader_parameter("bay", 1.1)
+		mat.set_shader_parameter("storey", 3.0)
+		mat.set_shader_parameter("fin_every", 3.0)
 	return mat
 
 
@@ -146,7 +152,7 @@ func _free(at: Vector3, half: float) -> bool:
 ## of light and a red beacon.
 func _tower(at: Vector3, w: float, d: float, top: float, yaw: float) -> void:
 	var turn := Basis(Vector3.UP, yaw)
-	var kind := rng.randi_range(0, 3)
+	var kind := rng.randi_range(0, 5)
 	var bottom := FLOOR_Y
 	var accent: Color = [CYAN, MAGENTA, AMBER, Color(0.6, 0.7, 1.0)][rng.randi_range(0, 3)]
 	match kind:
@@ -183,6 +189,21 @@ func _tower(at: Vector3, w: float, d: float, top: float, yaw: float) -> void:
 			_box(Vector3(gap + w * 0.6, 14.0, d * 0.7), at + Vector3(0, link_y, 0), turn)
 			_light(Vector3(gap + w * 0.62, 1.2, d * 0.72), at + Vector3(0, link_y - 7.0, 0), turn, accent)
 			_crown(at + turn * Vector3(-(gap + w * 0.3) * 0.5, 0, 0), Vector3(w * 0.3, 0, d), top, turn, accent, false)
+		4, 5:
+			# A round or six-sided drum, stepping in once or twice, with a
+			# lit ring at each step.
+			var sides := 24 if kind == 4 else 6
+			var y := bottom
+			var tw := w
+			var steps := rng.randi_range(2, 3)
+			var span := top - bottom
+			for t in steps:
+				var tall := span * (0.6 if t == 0 else 0.4 / float(steps - 1))
+				_boxes.append([Vector3(tw, tall, tw), Transform3D(turn, at + Vector3(0, y + tall * 0.5, 0)), sides])
+				_light_round(Vector3(tw + 1.2, 1.6, tw + 1.2), at + Vector3(0, y + tall - 0.8, 0), turn, accent, sides)
+				y += tall
+				tw *= rng.randf_range(0.6, 0.8)
+			_crown(at, Vector3(tw * 0.5, 0, tw * 0.5), top, turn, accent, true)
 		_:
 			# A needle: a broad foot, a slim shaft and a long spire.
 			var foot := (top - bottom) * 0.45
@@ -192,6 +213,7 @@ func _tower(at: Vector3, w: float, d: float, top: float, yaw: float) -> void:
 			_box(Vector3(w * 0.5, shaft, d * 0.5), at + Vector3(0, bottom + foot + shaft * 0.5, 0), turn)
 			_crown(at, Vector3(w * 0.5, 0, d * 0.5), top, turn, accent, true)
 	_tops.append([at, top])
+	_maybe_sign(at, w, top, turn)
 
 
 ## A landmark: a colossal stepped spire over everything, with lit fins up
@@ -308,6 +330,31 @@ func _band(at: Vector3, size: Vector3, y: float, turn: Basis, color: Color) -> v
 	_light(Vector3(size.x + 0.8, 1.6, size.z + 0.8), at + Vector3(0, y - 0.8, 0), turn, color)
 
 
+## A lit ring round a round tower.
+func _light_round(size: Vector3, at: Vector3, turn: Basis, color: Color, sides: int) -> void:
+	if not _lights.has(color):
+		_lights[color] = []
+	(_lights[color] as Array).append([size, Transform3D(turn, at), sides])
+
+
+## Now and then a great lit sign high on a tower's face toward the deck:
+## a tall banner of light, no words, scrolling slowly (`holo_sign.gdshader`).
+func _maybe_sign(at: Vector3, w: float, top: float, _turn: Basis) -> void:
+	var flat := Vector2(at.x, at.z)
+	if flat.length() > 1300.0 or rng.randf() > 0.3 or top < 120.0:
+		return
+	var facing := -flat.normalized()
+	var yaw := atan2(facing.x, facing.y)
+	var tall := rng.randf_range(40.0, minf(140.0, top * 0.35))
+	var wide := minf(w * 0.55, tall * rng.randf_range(0.25, 0.5))
+	var y := rng.randf_range(maxf(20.0, tall * 0.5), top - tall * 0.6)
+	var face := at + Vector3(facing.x, 0, facing.y) * (w * 0.5 + 2.5)
+	var color: Color = [CYAN, MAGENTA, AMBER][rng.randi_range(0, 2)]
+	if not _signs.has(color):
+		_signs[color] = []
+	(_signs[color] as Array).append([Vector3(wide, tall, 0.5), Transform3D(Basis(Vector3.UP, yaw), face + Vector3(0, y, 0))])
+
+
 ## The top of a tower: a lit cap, sometimes a mast, always a red beacon.
 func _crown(at: Vector3, size: Vector3, top: float, turn: Basis, color: Color, mast: bool) -> void:
 	_light(Vector3(size.x * 0.7, 2.0, size.z * 0.7), at + Vector3(0, top + 1.0, 0), turn, color)
@@ -327,8 +374,15 @@ func _flush() -> void:
 		mat.albedo_color = color * 2.4
 		mat.disable_fog = true
 		_mesh(_lights[color], mat)
+	for color: Color in _signs:
+		var sign_mat := ShaderMaterial.new()
+		sign_mat.shader = SIGN_SHADER
+		sign_mat.set_shader_parameter("color", color)
+		sign_mat.set_shader_parameter("seed", rng.randf() * 10.0)
+		_mesh(_signs[color], sign_mat)
 	_boxes.clear()
 	_lights.clear()
+	_signs.clear()
 
 
 func _mesh(parts: Array, material: Material) -> void:
@@ -337,7 +391,23 @@ func _mesh(parts: Array, material: Material) -> void:
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var box := BoxMesh.new()
+	var rounds := {}
 	for part: Array in parts:
+		if part.size() > 2:
+			# A round or many-sided tower: [size, transform, sides].
+			var sides: int = part[2]
+			if not rounds.has(sides):
+				var cyl := CylinderMesh.new()
+				cyl.radial_segments = sides
+				cyl.rings = 1
+				cyl.top_radius = 0.5
+				cyl.bottom_radius = 0.5
+				cyl.height = 1.0
+				rounds[sides] = cyl
+			var size: Vector3 = part[0]
+			var place: Transform3D = part[1]
+			tool.append_from(rounds[sides], 0, place * Transform3D(Basis.from_scale(size), Vector3.ZERO))
+			continue
 		box.size = part[0]
 		tool.append_from(box, 0, part[1])
 	var mesh := tool.commit()
