@@ -180,8 +180,21 @@ residences and Sola at the arena, besides:
   (wardrobe, records, mastery bench, trader), the **Gear hall** (armor
   stands, helmets, rigs, chips) and the **Stores** (supplies and trophies).
   A plate over each doorway names its room; there are no other signs.
+- **The lounge**, a seventh room, is somewhere to sit between lives: warm
+  planks, a slatted ceiling and lamps instead of steel, and a window out
+  over a dusk ridge with fires on it (one painted view, never a world).
+  Its doorway is the seventh: in the front wall left of the door in the
+  hall and the courtyard, and off the corridor to the range in the spine
+  and the ring (their hub walls are full). Like any room it can be moved
+  on the plan table. It starts small (a sofa and a lamp before a sealed
+  wall) and the Lounge upgrade opens the whole room and its window. Three
+  styles: the **Den** (free: two sofas round a rug and a low table, a
+  floor lamp and plants), the **Bar** (a counter with stools and lit
+  shelves, and a booth under the window) and the **Quarters** (a curtained
+  bunk, a desk and a small sofa). It holds no gear and changes nothing in
+  a fight; sitting, a radio and trophies on its walls come later.
 - **Designs** (Caleb's call): beyond moving rooms, the hub itself comes in
-  four shapes, each with the same six doorways: the **Hall** (the square
+  four shapes, each with the same seven doorways: the **Hall** (the square
   hall above, free), the **Ring** (an eight-sided rotunda, every room
   opening onto the table), the **Spine** (a long gallery, three rooms down
   each side) and the **Courtyard** (a big court under a skylight, with
@@ -267,7 +280,7 @@ has. Prices are placeholders until a playtest measures scrip per life.
 | Gunsmith | Master bench | 8,000 | Workshop bench | Looks only |
 | Halls | Gear hall | 1,000 | | 6 armor stands, 4 rig stands, the chip case |
 | Halls | Trophy hall | 1,500 | | The trophy shelf and a full supplies shelf |
-| Halls | Lounge | 800 | | Room for furniture and decor. Not built yet: a seventh room, and no socket for it yet |
+| Halls | Lounge | 800 | | The whole lounge: more to sit on, warm lamps and the window out |
 | Headquarters | Ops consoles | 500 | | The mastery bench and records get their own consoles |
 | Headquarters | Firing range | 2,500 | | The range below |
 | Headquarters | Finish | 1,500 | Any 4 upgrades | Lit trim and light columns |
