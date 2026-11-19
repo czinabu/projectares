@@ -2127,9 +2127,12 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   objective line carries the lap.
 - **Live races (Caleb's go-ahead).** The race icon's first pick is Race:
   it puts you on the grid of the track's next race, and anyone who gets on
-  a machine there while it forms joins it. A race forms for 30 s (8 s once
-  the grid is full of people), then AI racers take every slot left, so a
-  grid of 8 always goes, and everyone starts under one set of lights. The
+  a machine there while it forms joins it. AI racers take every slot left
+  on the grid at once (Caleb's report: starting a race looked like nothing
+  happened), and each person who joins later takes one's place, so a grid
+  of 8 always goes. A race forms for 30 s, 10 s once everyone in the world
+  is on its grid and 8 s once the grid is full of people, and everyone
+  starts under one set of lights. The
   watch and the visor carry your place ("P3/8"), the pit board the next
   race's countdown and then the results. Once the winner is home the rest
   have 20 s to cross the line, and a lap off the track costs 3 s on the
@@ -2198,7 +2201,19 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   visor say "head to the pits" and a column of light marks pit row;
   driving into it sets you down there and the machine goes, and if you
   ride on you are set down anyway 40 s after the finish. A machine a desk
-  made goes when you get off it.
+  made goes when you get off it. Getting off out on the track, or
+  stopping a run from the watch there, sets you down on pit row too
+  (Caleb's report) and the machine goes; in the pits nothing moves. The
+  desks' prompts name the interact key as it is bound.
+- **The tracks are never empty (Caleb's ask).** While anyone is in the
+  world, a track with no race and nobody riding it gets an AI race of its
+  own: six AI racers, the first a few seconds after someone arrives and
+  the next 20 s after one's results come down, at the league of the best
+  person there. It is shown on the pit board and the desks like any race
+  and moves nobody's league. Asking to race there, at a desk or from the
+  watch, calls its field back to the grid to race you; a time trial just
+  shares the track with them. With nobody in the world none run, so an
+  empty server pays nothing.
 
 The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the

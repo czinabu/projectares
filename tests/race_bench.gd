@@ -54,6 +54,8 @@ const AI_NOISE := 0.005
 
 
 func _ready() -> void:
+	# Lap times on empty tracks: no AI races of their own.
+	Race.ambient_races = false
 	_drift = OS.get_cmdline_user_args().has("--drift")
 	_ai = OS.get_cmdline_user_args().has("--ai")
 	_tunes = OS.get_cmdline_user_args().has("--tunes")

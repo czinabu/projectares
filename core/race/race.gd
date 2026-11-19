@@ -109,12 +109,33 @@ const PIT_RADIUS := 9.0
 const PIT_TIME := 40.0
 ## How near a race control desk or a pit bench a person must stand to use it (metres).
 const DESK_REACH := 3.0
+## Getting off a machine further than this from its track's pit (metres)
+## sets you down on pit row, so nobody is left walking the track.
+const PIT_WALK := 60.0
+## Every person in the world is on a forming grid: the lights come on this
+## soon (seconds), so nobody waits half a minute for people who are not there.
+const ALL_IN_FORM := 10.0
+## Ambient races (Caleb's ask, so the world never feels dead): while anyone
+## is in the world, the free track nearest them gets an AI-only race of
+## `AMBIENT_FIELD` racers, the first `AMBIENT_FIRST` seconds after someone
+## is there and the next `AMBIENT_GAP` after one closes. At most
+## `AMBIENT_TRACKS` run at once: each AI racer's machine costs the server
+## about as much as a bot (its move), so the count is kept small. One runs
+## no longer than `AMBIENT_LIMIT`.
+const AMBIENT_FIELD := 6
+const AMBIENT_TRACKS := 1
+const AMBIENT_FIRST := 8.0
+const AMBIENT_GAP := 20.0
+const AMBIENT_LIMIT := 600.0
 
 ## What the race icon's ghost pick turns through, in order.
 const GHOST_PICKS: Array[String] = ["mine", "friend", "leader", "off"]
 ## Solo: where the profile's ghosts are kept (the same file older builds
 ## kept the view's ghosts in, read in either form).
 const GHOST_PATH := "user://race_ghosts.json"
+
+## Off turns ambient races off (the tests that want a quiet track).
+static var ambient_races := true
 
 ## The callsigns of AI racers who are not named rivals.
 const AI_NAMES: Array[String] = ["Vex Morrow", "Juno Kade", "Rook Halloran", "Sable Ito", "Dax Ferro",
@@ -178,6 +199,8 @@ var ghosts := {}
 var _tunes := {}
 var friend_bests: Array = []
 var _leaders := {}
+## Seconds until the next ambient race may form.
+var _ambient_wait := AMBIENT_FIRST
 
 
 class Run:
@@ -249,6 +272,14 @@ class Heat:
 	var runs: Array[Run] = []
 	## The league whose rivals and skill fill the grid (`RaceLeague`).
 	var league := 0
+	## An AI-only race run so the track is never empty (`ambient_races`):
+	## nobody's league moves, and a person asking to race calls its field
+	## back to the grid (`_call_to_grid`).
+	var ambient := false
+	## How many slots the AI fill up to.
+	var field := GRID_SIZE
+	## When the lights went out.
+	var started_at := 0.0
 	## Once done: [{"name", "machine", "time", "place", "ai", "penalty"}],
 	## first place first; "time" is -1 for a racer who did not finish.
 	var results: Array[Dictionary] = []
@@ -451,6 +482,7 @@ func _physics_process(delta: float) -> void:
 	for actor: Actor in runs.keys():
 		_tick_run(runs[actor], delta)
 	_tick_heats(delta)
+	_tick_ambient(delta)
 
 
 func _on_vehicle_mounted(actor: Actor, vehicle: Node3D) -> void:
@@ -464,15 +496,29 @@ func _on_vehicle_dismounted(actor: Actor, vehicle: Node3D) -> void:
 	var run: Run = runs.get(actor)
 	if run != null and run.vehicle == vehicle:
 		retire(actor)
-		if run.desk_made:
-			# A machine a desk made goes when its racer gets off.
-			_drop_machine.call_deferred(vehicle.get_instance_id())
+		if not run.ai:
+			# Once the getting off is done: back to pit row if it was out on
+			# the track, and a desk's machine goes.
+			_off_machine.call_deferred(actor.get_instance_id(), vehicle.get_instance_id(), run.track.id,
+					run.desk_made)
 
 
-## A desk's machine whose racer got off, once the getting off is done.
-func _drop_machine(id: int) -> void:
-	var vehicle := instance_from_id(id) as Node3D
-	if vehicle != null and vehicle.get("rider") == null:
+## A person got off their run's machine (Caleb's ask: never left out on the
+## track). Further than `PIT_WALK` from the pit they are set down on pit row
+## and the machine goes (a bay fills again by itself); a desk's machine
+## goes wherever they got off.
+func _off_machine(actor_id: int, vehicle_id: int, track_id: String, desk_made: bool) -> void:
+	var actor := instance_from_id(actor_id) as Actor
+	var vehicle := instance_from_id(vehicle_id) as Node3D
+	var far := false
+	if is_instance_valid(actor) and not actor.is_dead and actor.vehicle == null:
+		var pit := track_by_id(track_id).pit_spot()
+		far = Vector2(actor.global_position.x - pit.x, actor.global_position.z - pit.z).length() > PIT_WALK
+		if far:
+			actor.velocity = Vector3.ZERO
+			actor.global_position = _stand(pit + Vector3(0, 0.3, 0))
+			actor.notice.emit("On pit row · take a machine or sign up at race control")
+	if is_instance_valid(vehicle) and vehicle.get("rider") == null and (desk_made or far):
 		remove_vehicle(vehicle)
 
 
@@ -493,7 +539,7 @@ func start_run(actor: Actor, vehicle: Node3D) -> void:
 	run.kit = kit_for(run.key, run.machine)
 	fit(vehicle, run.kit)
 	var heat: Heat = heats.get(run.track.id)
-	if heat != null and heat.phase == "forming" and heat.runs.size() < GRID_SIZE:
+	if heat != null and heat.phase == "forming" and heat.people() < GRID_SIZE:
 		_join(run, heat)
 		return
 	_to_grid(run)
@@ -726,9 +772,12 @@ func request(actor: Actor, action: String) -> Dictionary:
 			if run == null:
 				return {"ok": false, "error": "No run to stop"}
 			var vehicle := run.vehicle
-			retire(actor)
 			if is_instance_valid(vehicle) and vehicle.get("rider") == actor:
+				# Getting off ends the run and, out on the track, sets you
+				# down on pit row (`_off_machine`).
 				vehicle.call("dismount")
+			else:
+				retire(actor)
 			return {"ok": true}
 	return {"ok": false, "error": "Unknown request"}
 
@@ -857,12 +906,15 @@ func join_race(actor: Actor) -> Dictionary:
 		run = runs.get(actor)
 		if run == null:
 			return {"ok": false, "error": "No machine to race"}
-	if run.heat != null and run.heat.phase in ["forming", "racing"]:
+	if run.heat != null and run.heat.phase in ["forming", "racing"] and not run.heat.ambient:
 		return {"ok": true}
 	var heat: Heat = heats.get(run.track.id)
+	if heat != null and heat.ambient:
+		# The AI's own race: its field comes back to the grid to race you.
+		_call_to_grid(heat)
 	if heat != null and heat.phase == "racing":
 		return {"ok": false, "error": "A race is running here: the next forms once it is over"}
-	if heat != null and heat.phase == "forming" and heat.runs.size() >= GRID_SIZE:
+	if heat != null and heat.phase == "forming" and heat.people() >= GRID_SIZE:
 		return {"ok": false, "error": "The grid is full"}
 	if heat == null or heat.phase == "done":
 		if heat != null:
@@ -972,10 +1024,12 @@ func sign_up(actor: Actor, track_id: String, machine: String) -> Dictionary:
 	if desk_near(actor, track_id, machine) == null:
 		return {"ok": false, "error": "Sign up at race control's desk"}
 	var heat: Heat = heats.get(rt.id)
+	if heat != null and heat.ambient:
+		_call_to_grid(heat)
 	if heat != null and heat.phase == "racing":
 		return {"ok": false, "error": "%s's race is on: the next forms once it is over. Watch it from the desk beside" \
 				% rt.display_name}
-	if heat != null and heat.phase == "forming" and heat.runs.size() >= GRID_SIZE:
+	if heat != null and heat.phase == "forming" and heat.people() >= GRID_SIZE:
 		return {"ok": false, "error": "The grid is full"}
 	var run: Run = runs.get(actor)
 	if run != null and run.heat == heat and heat != null and heat.phase == "forming" and run.machine == machine:
@@ -1005,9 +1059,13 @@ func _join(run: Run, heat: Heat) -> void:
 	var taken := {}
 	for other: Run in heat.runs:
 		taken[other.slot] = true
+	var slots := mini(GRID_SIZE, run.track.start_slots.size())
 	run.slot = 0
-	while taken.has(run.slot):
+	while taken.has(run.slot) and run.slot < slots:
 		run.slot += 1
+	if run.slot >= slots:
+		# A full grid: a person takes an AI racer's place.
+		run.slot = _bump_ai(heat)
 	heat.runs.append(run)
 	run.heat = heat
 	_place_at_slot(run)
@@ -1017,6 +1075,9 @@ func _join(run: Run, heat: Heat) -> void:
 	run.off_laps = 0
 	if heat.people() >= GRID_SIZE:
 		heat.starts_at = minf(heat.starts_at, clock + FULL_FORM)
+	# The AI take their places on the grid at once, so a forming race shows
+	# its field (Caleb's "nothing happened").
+	_fill_grid(heat)
 	if not run.ai:
 		run.actor.notice.emit("Race · %s · %d laps · starts in %s" % [heat.track.display_name, heat.track.laps,
 				format_countdown(heat.starts_at - clock)])
@@ -1060,49 +1121,73 @@ func _tick_heats(delta: float) -> void:
 		match heat.phase:
 			"forming":
 				# Racers who got off or went: their slot is free again.
+				var left := false
 				for run: Run in heat.runs.duplicate():
 					if run.heat != heat or not runs.has(run.actor):
 						heat.runs.erase(run)
+						left = true
 				if heat.people() == 0:
-					heats.erase(id)
-					heat_changed.emit()
-				elif clock >= heat.starts_at:
+					_end_heat(id)
+					continue
+				if left:
+					_fill_grid(heat)
+				if _all_on_grid(heat):
+					heat.starts_at = minf(heat.starts_at, clock + ALL_IN_FORM)
+				if clock >= heat.starts_at:
 					_start_heat(heat)
 			"racing":
 				_drive_ai(heat, delta)
 				_update_places(heat)
 				var running := heat.runs.filter(func(r: Run) -> bool:
-					return not r.ai and r.phase in ["grid", "racing"] and r.heat == heat)
-				if clock >= heat.ends_at or running.is_empty():
+					return (heat.ambient or not r.ai) and r.phase in ["grid", "racing"] and r.heat == heat)
+				if clock >= heat.ends_at or running.is_empty() \
+						or (heat.ambient and clock - heat.started_at > AMBIENT_LIMIT):
 					_close_heat(heat)
 			"done":
 				_drive_ai(heat, delta)
 				if clock >= heat.closes_at:
-					_close_out(heat)
-					heats.erase(id)
-					heat_changed.emit()
+					_end_heat(id)
+
+
+## A track's race is over and gone: the AI leave, and the next ambient race
+## there waits `AMBIENT_GAP`.
+func _end_heat(id: String) -> void:
+	var heat: Heat = heats.get(id)
+	if heat != null:
+		_close_out(heat)
+	heats.erase(id)
+	_ambient_wait = maxf(_ambient_wait, AMBIENT_GAP)
+	heat_changed.emit()
+
+
+## Whether every person in the world is on `heat`'s grid.
+func _all_on_grid(heat: Heat) -> bool:
+	var here := _people_here()
+	if here.is_empty():
+		return false
+	for actor in here:
+		var run: Run = runs.get(actor)
+		if run == null or run.heat != heat:
+			return false
+	return true
+
+
+## The people in the world, alive (never an AI racer).
+func _people_here() -> Array[Actor]:
+	var out: Array[Actor] = []
+	for state in players:
+		if is_instance_valid(state.actor) and not state.actor.is_dead and not is_ai_racer(state.actor):
+			out.append(state.actor)
+	return out
 
 
 ## The lights: AI racers take every slot left (the league's named rivals
 ## first), and everyone goes together.
 func _start_heat(heat: Heat) -> void:
-	var taken := {}
-	heat.league = 0
-	for run: Run in heat.runs:
-		taken[run.slot] = true
-		if not run.ai:
-			heat.league = maxi(heat.league, int(_league_state(run).league))
-	var slots := mini(GRID_SIZE, heat.track.start_slots.size())
-	var spread_rng := RandomNumberGenerator.new()
-	spread_rng.seed = rng.randi()
-	var rivals := RaceLeague.rivals_in(heat.league)
-	for slot in slots:
-		if not taken.has(slot):
-			var run := _add_ai(heat, slot, spread_rng, rivals.pop_front() if not rivals.is_empty() else "")
-			if run != null:
-				heat.runs.append(run)
+	_fill_grid(heat)
 	heat.phase = "racing"
 	var go := clock + LIGHTS * LIGHT_STEP
+	heat.started_at = go
 	for run: Run in heat.runs:
 		if not is_instance_valid(run.vehicle):
 			continue
@@ -1127,6 +1212,147 @@ func _start_heat(heat: Heat) -> void:
 		for run: Run in heat.runs:
 			if not run.ai:
 				_rival_says(run, on_grid[rng.randi() % on_grid.size()], "lights")
+
+
+## AI racers take every empty slot of `heat`'s grid up to its `field`: the
+## named rivals of its best person's league first (an ambient race keeps
+## the league it was given), then others at that league's skill. Should a
+## better rider join, the grid is filled again from their league.
+func _fill_grid(heat: Heat) -> void:
+	var league := heat.league
+	if heat.people() > 0:
+		league = 0
+		for run: Run in heat.runs:
+			if not run.ai:
+				league = maxi(league, int(_league_state(run).league))
+	if league != heat.league:
+		for run: Run in heat.runs.duplicate():
+			if run.ai:
+				heat.runs.erase(run)
+				_remove_ai(run)
+		heat.league = league
+	var taken := {}
+	var rivals: Array = RaceLeague.rivals_in(heat.league).duplicate()
+	for run: Run in heat.runs:
+		taken[run.slot] = true
+		rivals.erase(run.rival)
+	var slots := mini(heat.field, heat.track.start_slots.size())
+	var spread_rng := RandomNumberGenerator.new()
+	spread_rng.seed = rng.randi()
+	for slot in slots:
+		if taken.has(slot):
+			continue
+		var run := _add_ai(heat, slot, spread_rng, str(rivals.pop_front()) if not rivals.is_empty() else "")
+		if run == null:
+			continue
+		heat.runs.append(run)
+		if heat.phase == "forming":
+			_place_at_slot(run)
+			run.phase = "waiting"
+	heat_changed.emit()
+
+
+## Takes an AI racer off a full grid for a person; returns the slot it
+## leaves. The back of the grid goes first, a named rival last.
+func _bump_ai(heat: Heat) -> int:
+	var out: Run = null
+	for run: Run in heat.runs:
+		if run.ai and (out == null or (out.rival != "" and run.rival == "")
+				or ((out.rival == "") == (run.rival == "") and run.slot > out.slot)):
+			out = run
+	if out == null:
+		return heat.runs.size()
+	heat.runs.erase(out)
+	_remove_ai(out)
+	return out.slot
+
+
+## An ambient race becomes a real one: a person asked to race, so its AI
+## racers come back to the grid, held, and the race forms for people.
+func _call_to_grid(heat: Heat) -> void:
+	heat.ambient = false
+	heat.field = GRID_SIZE
+	heat.phase = "forming"
+	heat.starts_at = clock + FORM_TIME
+	heat.ends_at = INF
+	heat.closes_at = INF
+	heat.results.clear()
+	for run: Run in heat.runs.duplicate():
+		if not run.ai or not is_instance_valid(run.vehicle) or not is_instance_valid(run.actor):
+			heat.runs.erase(run)
+			if run.ai:
+				_remove_ai(run)
+			continue
+		run.heat = heat
+		_place_at_slot(run)
+		run.phase = "waiting"
+		run.place = 0
+		run.finish_place = 0
+		run.off_laps = 0
+		run.total = -1.0
+		run.stuck_for = 0.0
+	heat_changed.emit()
+
+
+## Ambient races: while anyone is here, the track nearest them with no race
+## and nobody riding it gets an AI-only race now and then, `AMBIENT_TRACKS`
+## at a time. With nobody here, none run (a server pays nothing for an
+## empty world).
+func _tick_ambient(delta: float) -> void:
+	var here := _people_here()
+	var quiet := here.is_empty() or not ambient_races
+	var running := 0
+	for rt in circuits:
+		var heat: Heat = heats.get(rt.id)
+		if heat != null and heat.ambient:
+			if quiet:
+				_end_heat(rt.id)
+			else:
+				running += 1
+	if quiet:
+		_ambient_wait = maxf(_ambient_wait, AMBIENT_FIRST)
+		return
+	if running >= AMBIENT_TRACKS:
+		return
+	_ambient_wait -= delta
+	if _ambient_wait > 0.0:
+		return
+	var best: RaceTrack = null
+	var best_d := INF
+	for rt in circuits:
+		if heats.has(rt.id) or _track_ridden(rt):
+			continue
+		var pit := rt.pit_spot()
+		for actor in here:
+			var d := Vector2(actor.global_position.x - pit.x, actor.global_position.z - pit.z).length()
+			if d < best_d:
+				best_d = d
+				best = rt
+	if best != null:
+		_start_ambient(best, here)
+
+
+## Whether a person is riding a run on `rt` (no ambient race starts then).
+func _track_ridden(rt: RaceTrack) -> bool:
+	for run: Run in runs.values():
+		if not run.ai and run.track == rt and run.phase in ["waiting", "grid", "racing"]:
+			return true
+	return false
+
+
+## An AI-only race on `rt` at the league of the best person here.
+func _start_ambient(rt: RaceTrack, here: Array[Actor]) -> void:
+	var heat := Heat.new()
+	heat.track = rt
+	heat.ambient = true
+	heat.field = mini(AMBIENT_FIELD, rt.start_slots.size())
+	if league_bank != null:
+		for actor in here:
+			var state := state_for(actor)
+			if state != null:
+				heat.league = maxi(heat.league, int(league_bank.state(state.owner).get("league", 0)))
+	heats[rt.id] = heat
+	_start_heat(heat)
 
 
 ## An AI racer on a stock machine of the track's class at `slot`: the named
@@ -1483,6 +1709,7 @@ func heat_view(track_id: String) -> Dictionary:
 		"starts_in": maxf(heat.starts_at - clock, 0.0) if heat.phase == "forming" else 0.0,
 		"results": heat.results.duplicate(true),
 		"league": RaceLeague.league_name(heat.league),
+		"ambient": heat.ambient,
 		"made": Time.get_ticks_msec(),
 	}
 

@@ -455,7 +455,7 @@ func _test_racing_online() -> void:
 	check(me.weapons_locked and race.track != null, "weapons are locked and the client has the track")
 	var bike: Node3D = null
 	for v: Node3D in race.vehicles:
-		if v.get("item_id") == "bike_scrapper" and (bike == null
+		if v.get("item_id") == "bike_scrapper" and v.get("rider") == null and (bike == null
 				or v.global_position.distance_to(me.global_position) < bike.global_position.distance_to(me.global_position)):
 			bike = v
 	check(bike != null and is_equal_approx(float(bike.get("max_speed")), float(ItemDB.RACE_SCRAPPER.max_speed)),
@@ -528,11 +528,13 @@ func _test_racing_online() -> void:
 	check(str(race.remote_run.get("heat", "")) == "forming" and str(race.heat_view(race.track.id).get("phase", "")) == "forming",
 			"asking to race puts the client on the grid of the next race, and its board hears of it")
 	await _wait_until(func() -> bool: return str(race.remote_run.get("heat", "")) == "racing", int((Race.FORM_TIME + 5.0) * 60))
-	await _wait_until(func() -> bool:
-		return race.vehicles.filter(func(v: Node3D) -> bool:
-			return is_instance_valid(v) and v.get("rider") != null and v.get("rider") != me).size() >= Race.GRID_SIZE - 1, 240)
-	var riders := race.vehicles.filter(func(v: Node3D) -> bool:
-		return is_instance_valid(v) and v.get("rider") != null and v.get("rider") != me)
+	# Only this track's: the other track runs an AI race of its own.
+	var on_grid := func() -> Array:
+		return race.vehicles.filter(func(v: Variant) -> bool:
+			return (is_instance_valid(v) and (v as Node3D).get("rider") != null and (v as Node3D).get("rider") != me
+					and race.track_near((v as Node3D).global_position) == race.track))
+	await _wait_until(func() -> bool: return on_grid.call().size() >= Race.GRID_SIZE - 1, 240)
+	var riders: Array = on_grid.call()
 	check(riders.size() == Race.GRID_SIZE - 1, "the client sees AI racers fill the grid (%d)" % riders.size())
 	await _wait_until(func() -> bool: return int(race.remote_run.get("place", 0)) > 0, 600)
 	check(int(race.remote_run.get("place", 0)) > 0 and Race.place_tag(race.remote_run).begins_with("P"),
