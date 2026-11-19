@@ -73,6 +73,7 @@ const TRADES := {
 	"furnisher": ["FOR YOUR QUARTERS", Color(0.55, 0.75, 1.0)],
 	"tailor": ["CLOTHES  ·  YOURS FOR GOOD", Color(1.0, 0.4, 0.85)],
 	"exchange": ["PLAYER MARKET", Color(0.3, 0.9, 1.0)],
+	"black_market": ["NO QUESTIONS", Color(1.0, 0.25, 0.2)],
 }
 ## Who works each counter: shop id -> [name, role, lines]. They greet you
 ## when you trade there (`core/social/plaza_locals.gd`).
@@ -92,7 +93,13 @@ const KEEPERS := {
 			"Once it's yours, it's yours. Nobody loots a jacket off you here."]],
 	"exchange": ["Tamsin", "Broker", ["List it, set a price, I'll hold it.",
 			"Other people's finds, at other people's prices."]],
+	"black_market": ["Sable", "Fence", ["Two pieces a day. When they're gone, they're gone.",
+			"You want it cheap, go take it off a body. You want it now, you pay.",
+			"Tomorrow's different. Always is."]],
 }
+## The back room's stall (a shop with "stall" in the shop list): down the
+## alley between the first two fronts on the west side of Market Row.
+const STALL_AT := Vector3(-STREET_HALF, 0, 92.0)
 
 ## The civic square, east of the spire: the clan hall on its far side, the
 ## big screen on its north side, the boards on its south side.
@@ -147,6 +154,7 @@ const DRESS := {
 	"keep_furnisher": {"m": ["Casual_2"]},
 	"keep_tailor": {"f": ["Formal"]},
 	"keep_exchange": {"f": ["Suit"]},
+	"keep_black_market": {"f": ["Punk"]},
 	"clerk": {"m": ["Suit"]},
 	"marlo": {"f": ["Soldier"]},
 	"wren": {"f": ["Formal"]},
@@ -517,8 +525,11 @@ func _build_market_row() -> void:
 		_part(self, Vector3(0.05, 1.3, 0.05), Vector3(0, 8.95, lamp_z), Color(0.3, 0.33, 0.4))
 		_part(self, Vector3(1.4, 0.1, 0.45), Vector3(0, 8.3, lamp_z), WARM, true)
 		_lamps.append(Vector3(0, 7.8, lamp_z))
-	var listed := shops().duplicate()
+	var listed := shops().filter(func(entry: Dictionary) -> bool: return not entry.get("stall", false))
 	listed.append(EXCHANGE)
+	for entry: Dictionary in shops():
+		if entry.get("stall", false):
+			_build_stall(entry, STALL_AT, PI / 2.0)
 	for i in mini(listed.size(), ROW_SLOTS.size()):
 		var slot: Array = ROW_SLOTS[i]
 		var side: float = slot[0]
@@ -623,6 +634,40 @@ func _build_shop(entry: Dictionary, at: Vector3, yaw: float) -> void:
 	_fronts.append({"id": id, "at": at, "yaw": yaw, "color": color,
 			"door": f * Vector3(0, 0, 2.4)})
 	_fit_out(id, f, color)
+
+
+## A stall down an alley (the back room): no front, no windows, a counter
+## across the alley's far end under one red lamp, crates either side and the
+## fence behind it. Local +Z is the street, like a front.
+func _build_stall(entry: Dictionary, at: Vector3, yaw: float) -> void:
+	var id: String = entry.get("id", "")
+	var trade: Array = TRADES.get(id, ["", Color(1.0, 0.3, 0.25)])
+	var color: Color = trade[1]
+	var f := Transform3D(Basis(Vector3.UP, yaw), at)
+	# Back wall closing the alley, a tarp roof over the counter.
+	_solid(Vector3(7.6, 4.0, 0.3), f * Vector3(0, 2.0, -6.2), WALL, yaw)
+	_part(self, Vector3(7.4, 0.05, 3.2), f * Vector3(0, 3.2, -4.6), Color(0.14, 0.1, 0.1), false, yaw)
+	_solid(Vector3(4.0, 1.0, 0.7), f * Vector3(0, 0.5, -3.6), DARK, yaw)
+	_solid(Vector3(4.1, 0.06, 0.8), f * Vector3(0, 1.03, -3.6), STEEL, yaw)
+	_part(self, Vector3(4.0, 0.04, 0.04), f * Vector3(0, 0.08, -3.22), color, true, yaw)
+	for k in 4:
+		var side := -1.0 if k < 2 else 1.0
+		_solid(Vector3(0.9, 0.6, 0.7), f * Vector3(side * 2.9, 0.3 + (k % 2) * 0.6, -2.4 - (k % 2) * 0.3), STEEL, yaw)
+	# A small sign over the counter, and the one lamp.
+	_sign(str(entry.get("name", "")).to_upper(), f * Vector3(0, 2.7, -6.0), yaw, 0.45, color)
+	_sign(trade[0], f * Vector3(0, 2.3, -6.0), yaw, 0.22, Color(0.85, 0.8, 0.8))
+	_part(self, Vector3(0.5, 0.08, 0.5), f * Vector3(0, 3.1, -4.0), color, true, yaw)
+	_shop_lights.append([f * Vector3(0, 2.9, -4.0), color])
+	var portal := _add_portal("shop:%s" % id, "Trade at the %s" % entry.get("name", "stall"),
+			f * Vector3(0, 0, -1.8), 1.6)
+	portal.add_to_group("shop_front")
+	portal.set_meta("shop_id", id)
+	var keeper: Array = KEEPERS.get(id, ["Keeper", "Shopkeeper", ["Have a look round."]])
+	var keeper_id := "keep_%s" % id
+	portal.set_meta("keeper", keeper_id)
+	var keeper_marker := _add_talker(keeper_id, f * Vector3(-0.8, 0, -4.7), yaw + PI,
+			keeper[0], keeper[1], keeper[2], "", color)
+	keeper_marker.set_meta("shop", id)
 
 
 ## What a shop shows of its trade: real gear on show (any node with the meta

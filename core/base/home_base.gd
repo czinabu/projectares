@@ -3041,13 +3041,19 @@ func _fill(display: Display) -> void:
 			_build_armor(model, id, color)
 			box = Vector3(1.2, 2.0, 1.0)
 			box_at = Vector3(0, 1.0, 0)
-			plate_at = Vector3(0, 2.25, 0)
+			# Low in front of the stand's feet: the helmet shelf stands right
+			# over it (its own name plate and bar there), so a plate up at
+			# head height would merge with those.
+			plate_at = Vector3(0, 0.5, 0.7)
 		"helmet_shelf":
 			# A bracket off the wall, the helmet resting on it as it is worn.
 			model.add_child(_part(Vector3(0.6, 0.05, 0.45), Vector3(0, -0.2, 0.1), Color(0.2, 0.2, 0.22)))
 			var stats := ItemDB.item_stats(id)
 			var helmet := SkinScript.build_helmet(str(stats.get("mode", "")), stats.get("glass_color", Color.WHITE),
 					Vector3(0.27, 0.31, 0.31), Color(0.22, 0.23, 0.25), int(stats.get("tier", 1)))
+			# Helmet models face -Z (the way a head does); a display faces
+			# +Z toward the room, so turn it round to look out at you.
+			helmet.rotation.y = PI
 			helmet.position = Vector3(0, -0.02, 0.12)
 			model.add_child(helmet)
 			box = Vector3(0.7, 0.55, 0.55)
@@ -3114,6 +3120,9 @@ func _fill(display: Display) -> void:
 	_near_only(plate, 5.0)
 	plate.name = "Plate"
 	plate.position = plate_at
+	# How far over the plate's middle its hover tag hangs: clear of every
+	# line of it, so the two never merge (`BaseHud._show_tag`).
+	plate.set_meta("tag_lift", 0.12 + plate_size * 0.55 * float(text.count("\n") + 1))
 	display.add_child(plate)
 	if display.equipped:
 		# A lit bar under whatever you are taking on your next run.

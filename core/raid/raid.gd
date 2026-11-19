@@ -142,6 +142,11 @@ var player: Actor
 var players: Array[PlayerState] = []
 var bots: Array[Actor] = []
 var depots: Array[Depot] = []
+## The scrip piles lying in the world (`WorldDef.death_drops_scrip`), on
+## every machine: a client's come from `NetSession`.
+var piles: Array[LootContainer] = []
+## What a scrip pile's bonus item is usually picked from (`pile_bonus`).
+const PILE_SMALL_TAGS := ["consumable", "material", "augment", "attachment", "upgrade_data"]
 var vehicles: Array[Node3D] = []
 # Toy vehicles. A vehicle a player owns rides on their watch as a toy
 # (`PlayerState.stowed`); thrown, it flies in an arc and unpacks where it lands.
@@ -523,6 +528,7 @@ func _physics_process(delta: float) -> void:
 		_keep_everyone_safe()
 		return
 	_tick_outposts()
+	_tick_piles()
 	_tick_hazards(delta)
 	if world.shelling > 0.0 and zone_rules:
 		shelling.tick(self, delta)
@@ -3519,9 +3525,14 @@ func remove_vehicle(vehicle: Node3D) -> void:
 	vehicle.queue_free()
 
 
-func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3) -> LootContainer:
+func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3,
+		pile_scrip := -1, pile_bounty := 0) -> LootContainer:
 	var container := LootContainer.new()
 	container.setup(items, is_bag, label)
+	if pile_scrip >= 0:
+		container.make_pile(pile_scrip, pile_bounty)
+		piles.append(container)
+		container.tree_exiting.connect(func() -> void: piles.erase(container))
 	add_child(container)
 	container.global_position = at
 	container_spawned.emit(container)
@@ -3535,11 +3546,18 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		# A gentler world: a player's equipped gear goes home, not in the bag.
 		drops.assign(actor.inventory.items)
 	_recall_insured(state_for(actor), drops)
-	# Power weapons never go in a bag: they are left on a rack, shots and all.
-	armory.on_death(actor, drops)
 	var dead := state_for(actor)
 	var carried := dead.scrip if dead != null and mode != Mode.CLIENT else 0
-	if not drops.is_empty() or carried > 0:
+	var pile_bounty := 0
+	if world.death_drops_scrip:
+		# No bag: a scrip pile (`_drop_pile`), the bounty in it. A client
+		# hears of it from the server.
+		if mode != Mode.CLIENT:
+			pile_bounty = _drop_pile(actor, info, drops)
+	else:
+		# Power weapons never go in a bag: they are left on a rack, shots and all.
+		armory.on_death(actor, drops)
+	if not world.death_drops_scrip and (not drops.is_empty() or carried > 0):
 		var bag := spawn_container(drops, true, "%s's bag" % actor.display_name if carried <= 0
 				else "%s's bag, %d scrip" % [actor.display_name, carried], actor.global_position)
 		if carried > 0:
@@ -3580,7 +3598,9 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 				pay = Economy.PLAYER_KILL_SCRIP
 			# A bounty on the victim is the killer's, carried like any scrip:
 			# it only counts once they bank it or sign out alive.
-			if bounty > 0 and killer.owner != state.owner:
+			if pile_bounty > 0:
+				killer.actor.notice.emit("Bounty dropped: %d scrip in the pile, grab it" % pile_bounty)
+			elif bounty > 0 and killer.owner != state.owner and not world.death_drops_scrip:
 				pay += Economy.bounty_scrip(bounty)
 				killer.actor.notice.emit("Bounty claimed: +%d scrip, yours once you get it home" % Economy.bounty_scrip(bounty))
 			_pay_scrip(killer, pay)
@@ -3820,6 +3840,101 @@ func _leave(state: PlayerState) -> void:
 		if ridden != null:
 			remove_vehicle(ridden)
 		_remove_actor(actor)
+
+
+## A death where `WorldDef.death_drops_scrip` (Caleb's call, DESIGN.md
+## "Scrip piles"): everything in `drops` is gone but one bonus item from the
+## pack (`pile_bonus`) and any artifact they carried, which drop as
+## themselves, and a scrip pile lies where they fell, worth what a
+## trader pays for the rest (a bot's by `bot_pile_share`, growing with the
+## war), plus the scrip they carried and, if a player took a wanted player
+## down, the bounty. Returns the bounty put in it. Authority only.
+func _drop_pile(actor: Actor, info: DamageInfo, drops: Array[String]) -> int:
+	var dead := state_for(actor)
+	var bonus := pile_bonus(actor, dead, drops, rng)
+	# An artifact, attuned or in the pack, drops as itself and is not sold
+	# into the pile (Caleb's call), so artifacts keep changing hands.
+	var items: Array[String] = []
+	if bonus != "":
+		items.append(bonus)
+	var worth := 0
+	var sold := drops.duplicate()
+	sold.erase(bonus)
+	for id in sold:
+		if ItemDB.has_tag(id, "artifact"):
+			items.append(id)
+		else:
+			worth += Economy.sell_price(id)
+	if dead == null:
+		worth = int(round(worth * world.bot_pile_share * (1.0 + world.pile_war_bonus * war.intensity)))
+	var carried := 0
+	if dead != null and dead.scrip > 0:
+		carried = dead.scrip
+		dead.scrip_lost = carried
+		dead.scrip = 0
+		actor.scrip = 0
+	var bounty := 0
+	var killer := state_for(info.source as Actor) if info.source is Actor else null
+	if dead != null and killer != null and killer.owner != dead.owner:
+		bounty = Economy.bounty_scrip(renown.bounty_of(dead.owner))
+	var total := worth + carried + bounty
+	if total <= 0 and items.is_empty():
+		return 0
+	var pile := spawn_container(items, true, "%s's scrip" % actor.display_name, actor.global_position,
+			total, bounty)
+	pile.scrip_taken.connect(_on_scrip_taken)
+	if bounty > 0:
+		war_feed.emit("%s's bounty of %d lies where they fell" % [_feed_name(actor), bounty])
+	get_tree().create_timer(world.bag_lifetime, false, true).timeout.connect(pile.queue_free)
+	return bounty
+
+
+## The one bonus item a scrip pile keeps from `drops` (DESIGN.md "Scrip
+## piles"), or "": from the pack only, never what was worn or held. Usually
+## something small (a consumable, a material, an attachment); with
+## `WorldDef.pile_found_chance` instead a piece of gear they found this life
+## (in the pack but not brought from the stash: everything a bot carries
+## counts as found). Never the free scrap kit, a heavy weapon or an artifact.
+func pile_bonus(actor: Actor, dead: PlayerState, drops: Array[String], dice: RandomNumberGenerator) -> String:
+	var small: Array[String] = []
+	var found: Array[String] = []
+	var brought: Array[String] = []
+	if dead != null:
+		brought.assign(dead.kit)
+	for id in actor.inventory.items:
+		if id not in drops or ItemDB.has_tag(id, "starter") or ItemDB.has_tag(id, "power") \
+				or ItemDB.has_tag(id, "artifact"):
+			continue
+		if PILE_SMALL_TAGS.any(func(tag: String) -> bool: return ItemDB.has_tag(id, tag)):
+			small.append(id)
+		elif id in brought:
+			brought.erase(id)
+		else:
+			found.append(id)
+	if not found.is_empty() and dice.randf() < world.pile_found_chance:
+		return found[dice.randi() % found.size()]
+	if not small.is_empty():
+		return small[dice.randi() % small.size()]
+	return ""
+
+
+## Grabs piles for any living player standing on one. Authority only.
+func _tick_piles() -> void:
+	if piles.is_empty():
+		return
+	var reach := world.pile_reach
+	for pile: Variant in piles.duplicate():
+		if not is_instance_valid(pile):
+			continue
+		var at := (pile as Node3D).global_position
+		for state in players:
+			var actor := state.actor
+			if state.finished or not is_instance_valid(actor) or actor.is_dead:
+				continue
+			var flat := Vector2(actor.global_position.x - at.x, actor.global_position.z - at.z)
+			if flat.length() <= reach and absf(actor.global_position.y - at.y) < 2.0:
+				(pile as LootContainer).grab(actor)
+				break
 
 
 ## A player died: their insured item, if it is on the body, is recalled home

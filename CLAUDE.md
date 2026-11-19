@@ -191,7 +191,18 @@ without Caleb, and update the gap list when a PR closes a row.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
-  with basic loot tables; rare gear stays in the full-loot PvP world.
+  with basic loot tables; rare gear stays in the PvP world. With
+  `WorldDef.death_drops_scrip` (Ashfront, DESIGN.md "Scrip piles", Caleb's
+  call) a death drops no gear: the authority's `Raid._drop_pile` leaves a
+  scrip pile (a `LootContainer` with `pile`) worth what a trader pays for
+  everything lost (`Economy.sell_price`; a bot's by `bot_pile_share`,
+  growing with `war.intensity` by `pile_war_bonus`), plus the carried scrip
+  and any bounty, beside one bonus item from the pack (`Raid.pile_bonus`,
+  never worn gear) and any artifact, which drops as itself. Any player
+  grabs it by running over it (`Raid._tick_piles`); `NetSession` sends a
+  pile's scrip and bounty with the container. Visors mark piles near you
+  (`VisorHud.nearby_piles`). The insured item is recalled before the pile
+  is counted.
 - Renown (`core/progression/renown_ledger.gd`) is decided by the `Raid`'s
   ledger and nowhere else. It is kept per owner key (`add_player`'s
   `p_owner`: the account id online), never per name, so it carries across a
@@ -337,7 +348,9 @@ without Caleb, and update the gap list when a PR closes a row.
   own lists), taken through the same `NetSession.contract_ask`.
 - A player's bounty pays its killer in scrip (`Economy.bounty_scrip`, one
   for one, Caleb's call) into the life's carried scrip, so it is at stake
-  until banked or carried out, like the kill's own pay.
+  until banked or carried out, like the kill's own pay. Where deaths drop
+  scrip piles it goes into the dead player's pile instead (a bounty pile,
+  `LootContainer.bounty`), for whoever grabs it.
 - Shelling (DESIGN.md "Shelling", Caleb's call): a world with
   `WorldDef.shelling` over 0 has the war's artillery, `Raid.shelling`
   (`core/war/shelling.gd`), run by the authority only and where
@@ -886,7 +899,8 @@ without Caleb, and update the gap list when a PR closes a row.
   into the hand, by any path (`Actor._swap_primary_and_heavy`); the sidearm
   and blade stay instant. A spent one is thrown
   away. A dead player's is left on a rack beside the bag (never in the pack),
-  and that death counts it as lost. `StashRules.storable` accepts them: a
+  and that death counts it as lost; where deaths drop scrip piles it is
+  sold into the pile instead. `StashRules.storable` accepts them: a
   depot upload or a sign-out puts the chambered one in the stash, and it
   hangs on the home base's heavy weapon wall (`BaseLayout` kind `heavy_wall`,
   the `heavy_wall` upgrade) where copies stack. One may be equipped in the
@@ -1918,7 +1932,12 @@ without Caleb, and update the gap list when a PR closes a row.
   for other server systems. A client never sends a price or an amount.
   Shops are tag-driven: an item is stocked if it has the `vendor` tag and one
   of the shop's tags (`shop_db.gd`), and `Economy.is_shop_item` refuses
-  anything above Uncommon, so rare gear stays loot-only. Keep every sell
+  anything above Uncommon, so rare gear stays loot-only. The one exception
+  is the plaza's back room (`Economy.BLACK_MARKET`, a shop with "stall" in
+  `ShopDB`, built down an alley by the plaza map's `_build_stall`): two
+  Rare pieces a day by the date (`black_market_stock`) at
+  `BLACK_MARKET_MARKUP` times their value; every price a shop charges is
+  `Economy.price_in(shop_id, id)`. Keep every sell
   price below its buy price, and keep run payouts small next to loot: scrip
   must come from getting loot home, so full loot stays the stake.
 - Scrip is what a life pays, and it is at stake. The `Raid` pays it
