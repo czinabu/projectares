@@ -7372,6 +7372,16 @@ func _test_game_settings() -> void:
 	check(is_equal_approx(GameSettings.mouse_sensitivity, GameSettings.SENSITIVITY_RANGE.y)
 			and is_equal_approx(GameSettings.field_of_view, GameSettings.FOV_RANGE.x), "settings are clamped to sane values")
 	check(not GameSettings.to_dict().has("nonsense"), "unknown settings are ignored")
+	var bad_rows: Array[String] = []
+	var settings_script: Script = GameSettings
+	for row: Dictionary in GameSettings.SCHEMA:
+		var kind: String = row.get("kind", "")
+		var whole: bool = row.get("tab", "") in PhoneScript.SETTINGS_TABS and row.has("label") and row.has("default") \
+				and (kind == "toggle" or (kind == "slider" and row.has("range") and row.has("step"))
+				or (kind == "choice" and row.has("choices")))
+		if not whole or settings_script.get(row["key"]) == null:
+			bad_rows.append(row.get("key", "?"))
+	check(bad_rows.is_empty(), "every setting's row is whole, on a phone tab and has its var (%s)" % ", ".join(bad_rows))
 	var bus := AudioServer.get_bus_index("Master")
 	check(absf(AudioServer.get_bus_volume_db(bus) - linear_to_db(0.5)) < 0.01, "volume reaches the audio bus")
 	GameSettings.set_value("anti_aliasing", 99)

@@ -42,7 +42,7 @@ without Caleb, and update the gap list when a PR closes a row.
   until the phone stands `phone_zoom` of the view's height, whatever the
   field of view setting, with all of it kept in frame (`phone_fit_fov`,
   Caleb's pick so the screen reads; not with the mirror up). While a
-  view setting's slider is dragged on the phone (`Phone.PREVIEW_KEYS`)
+  view setting's slider is dragged on the phone (`GameSettings.SCHEMA`'s "preview")
   all of that lets go (`PlayerController.phone_preview`) so the change is
   seen live, and the slider follows the mouse's motion. The Mirror app
   lowers the phone (`Phone.mirror_lowered`, `held`, Caleb's call) so the
@@ -1679,6 +1679,10 @@ without Caleb, and update the gap list when a PR closes a row.
   switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+  Each one is a row in `GameSettings.SCHEMA` (its tab, section, kind,
+  label, default and range or choices) plus its typed var, and the phone
+  draws every tab's settings from that table (`Phone._draw_setting_rows`),
+  so a new setting never touches the phone.
 - Emotes (DESIGN.md "Emotes", `core/visual/emotes.gd`): picked on the
   watch's emote icon (Status tab, `Hud.emote_slot`), played by the
   controller as the held `ActorCommand.emote` (in the stance's byte,
