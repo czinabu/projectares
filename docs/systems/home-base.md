@@ -56,7 +56,10 @@ date in the same PR.
   `main.gd` brings the view in with the bench's view (`BenchView.target`
   "plan"), which mounts the customizer (`core/ui/plan_panel.gd`, a view)
   on the lectern's screen as a `WorldScreen` (`HomeBase.plan_screen`,
-  forwarded with `WorldScreen.forward_mouse`): tabs for the layout, the
+  forwarded with `WorldScreen.forward_mouse`; a change rebuilds the table,
+  so the view puts the screen back each frame, but never once it has left:
+  a screen left on the lectern shows the freed viewport, solid white,
+  checked in `tests/plan_screen_tests.gd`): tabs for the layout, the
   rooms, the styles and the finishes, with whatever it points at shown on the hologram
   over the table (`plan_preview`, `plan_mark`). Only a pick asks for a
   change (`plan_change`, `room_placed`; `BasePlan.change` with a socket,

@@ -4015,6 +4015,9 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 				_count(killer, "kills:" + actor.faction)
 			if _bosses.any(func(boss: Dictionary) -> bool: return boss.bot == actor):
 				_count(killer, "bosses")
+				# And by its kind, so a contract can name one boss of several.
+				if str(actor.get_meta("boss", "")) != "":
+					_count(killer, "boss:" + str(actor.get_meta("boss")))
 			if warlords.has(actor):
 				pay += Economy.WARLORD_SCRIP
 				_count(killer, "warlords")
