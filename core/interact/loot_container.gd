@@ -34,6 +34,9 @@ var scrip := 0
 ## cache anyone may loot. A share goes once it is emptied.
 var reserved := ""
 var reserved_name := ""
+## Server only: why nobody may loot it yet (a hive while its keeper stands,
+## `Raid._seal_hives`), or empty.
+var sealed := ""
 ## A scrip pile (see above). `bounty` is the share of `scrip` that was the
 ## dead player's bounty: a pile with one burns brighter.
 var pile := false
@@ -84,6 +87,8 @@ func is_rack() -> bool:
 
 
 func get_prompt() -> String:
+	if sealed != "":
+		return "%s: %s" % [label, sealed]
 	if is_rack():
 		# Prompts are only shown to the local player.
 		var raid := Raid.of(self)
@@ -104,6 +109,9 @@ func get_prompt() -> String:
 
 
 func interact(actor: Actor) -> void:
+	if sealed != "":
+		actor.notice.emit(sealed)
+		return
 	if reserved != "":
 		var raid := Raid.of(self)
 		var state := raid.state_for(actor) if raid != null else null

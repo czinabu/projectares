@@ -82,6 +82,8 @@ var _pools := FastNoiseLite.new()
 var _stalks: Array[Dictionary] = []
 var _stations: Array[Vector3] = []
 var _stalk_bodies: Array[StaticBody3D] = []
+## Where each hive stands (its foot), for the dressing.
+var _hives: Array[Vector3] = []
 ## Bot spawn spots, placed last in order of `rank`: the Raid fills the first
 ## `bot_count` markers at the start, so every kind comes early.
 var _bot_spots: Array[Dictionary] = []
@@ -109,6 +111,8 @@ func _ready() -> void:
 	_build_stations()
 	_build_den()
 	_build_open()
+	_build_hives()
+	_build_lurkers()
 	_place_bot_spots()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
@@ -175,12 +179,31 @@ func _process(_delta: float) -> void:
 	if camera != null and is_instance_valid(_weather):
 		_weather.global_position = Vector3(camera.global_position.x, camera.global_position.y - 6.0,
 				camera.global_position.z)
+	# Under the caps the mist shuts in (the planet's close air).
+	if camera != null:
+		set_meta("close_here", close_at(camera.global_position.x, camera.global_position.z))
+
+
+## How far a point is under a forest's caps, 0 out in the open to 1 well
+## inside: the close air the view blends in ("close_here") and the sight a
+## bot has there (the world's `sight_at`). From the layout alone.
+const CLOSE_INSIDE := 6.0
+const CLOSE_OUTSIDE := 14.0
+static func close_at(x: float, z: float) -> float:
+	var most := 0.0
+	for forest: Dictionary in FORESTS:
+		var radius := float(forest["radius"])
+		var dist := Vector2(x, z).distance_to(forest["at"])
+		most = maxf(most, 1.0 - smoothstep(radius - CLOSE_INSIDE, radius + CLOSE_OUTSIDE, dist))
+	return most
 
 
 func _build_environment() -> void:
 	# A drowned basin at dusk: the planet's green sky and pale moons, the
 	# mist lying low over the water (the planet's "smoke") and the spores
 	# drifting in it. The forests' gills are the warm lights.
+	# The mist banks lie on the water, never under it.
+	set_meta("mist_floor", WATER_Y)
 	Planet.atmosphere(self, planet)
 	Planet.weather(self, str(planet.weather.get("air", "spores")), 36.0, 18.0)
 	_weather = get_node_or_null("Weather")
@@ -415,6 +438,108 @@ func _build_open() -> void:
 		placed += 1
 
 
+## A brood hive in each forest but the Matriarch's: a mound of chitin and
+## egg sacs a little off the forest's heart, sealed while its brood keeper
+## stands ("spawn_guard" with the same "hive"), spilling broodlings at
+## anyone near it. No dice: it takes the first clear spot round the heart.
+const HIVE_FROM_HEART := 15.0
+const HIVE_CLEAR := 4.5
+const BROOD := {"brood": "broodling", "brood_every": 7.0, "brood_max": 4, "brood_range": 24.0}
+
+
+func _build_hives() -> void:
+	for f in FORESTS.size() - 1:
+		var forest: Dictionary = FORESTS[f]
+		var centre: Vector2 = forest["at"]
+		# The first dry spot round the heart, else the driest one there is
+		# (the Deepwood stands in its pools).
+		var spot := Vector2.INF
+		var driest := INF
+		for out in [HIVE_FROM_HEART, HIVE_FROM_HEART - 4.0, HIVE_FROM_HEART + 4.0, HIVE_FROM_HEART + 8.0, HIVE_FROM_HEART + 14.0]:
+			for k in 24:
+				var at := centre + Vector2.from_angle(f * 1.9 + k * TAU / 24.0) * float(out)
+				if not _clear_of_stalks(at, HIVE_CLEAR):
+					continue
+				var wet := _wet(at.x, at.y)
+				if wet < driest:
+					driest = wet
+					spot = at
+			if driest < 0.0:
+				break
+		if not spot.is_finite():
+			continue
+		var foot := _ground(spot)
+		_hives.append(foot)
+		var key := "hive%d" % f
+		var body := StaticBody3D.new()
+		body.name = "Hive"
+		body.collision_layer = Actor.LAYER_WORLD
+		body.collision_mask = 0
+		body.position = foot
+		nav_region.add_child(body)
+		var shape := CylinderShape3D.new()
+		shape.radius = 1.7
+		shape.height = 2.6
+		var col := CollisionShape3D.new()
+		col.shape = shape
+		col.position = Vector3(0, 1.1, 0)
+		body.add_child(col)
+		var mound := SphereMesh.new()
+		mound.radius = 1.9
+		mound.height = 3.0
+		mound.material = CAP
+		var mesh := MeshInstance3D.new()
+		mesh.name = "Mound"
+		mesh.mesh = mound
+		mesh.position = Vector3(0, 0.9, 0)
+		body.add_child(mesh)
+		var cache := _add_marker("spawn_cache", foot + Vector3(0, 0.1, -2.6))
+		cache.set_meta("loot_source", "hive")
+		cache.set_meta("hive", key)
+		var guard := _add_marker("spawn_guard", _ground(spot + (centre - spot).normalized() * 5.0))
+		guard.set_meta("faction", "keeper")
+		guard.set_meta("hive", key)
+		guard.set_meta("radius", 9.0)
+		for meta: String in BROOD:
+			guard.set_meta(meta, BROOD[meta])
+
+
+func _clear_of_stalks(at: Vector2, margin: float) -> bool:
+	for stalk: Dictionary in _stalks:
+		if Vector2(stalk.at.x, stalk.at.z).distance_to(at) < float(stalk.radius) + margin:
+			return false
+	return true
+
+
+## Lurkers lie at the deepest spots of the pools, well apart, out of the
+## forests and off the shore: each a "spawn_guard" that never leaves its
+## pool. Found by a fixed sweep of the basin, no dice.
+const LURKERS := 7
+const LURKER_GAP := 45.0
+const LURKER_DEEP := 0.6
+
+
+func _build_lurkers() -> void:
+	var spots: Array[Vector2] = []
+	var step := 6.0
+	var z := -170.0
+	while z < SHORE_Z - 30.0 and spots.size() < LURKERS:
+		var x := -170.0 + fmod(absf(z) * 0.37, step)
+		while x < 170.0 and spots.size() < LURKERS:
+			var at := Vector2(x, z)
+			x += step
+			if _wet(at.x, at.y) < LURKER_DEEP or _near_forest(at, 6.0):
+				continue
+			if spots.any(func(other: Vector2) -> bool: return other.distance_to(at) < LURKER_GAP):
+				continue
+			spots.append(at)
+		z += step * 1.7
+	for at in spots:
+		var guard := _add_marker("spawn_guard", _ground(at))
+		guard.set_meta("faction", "lurker")
+		guard.set_meta("radius", 4.0)
+
+
 func _near_forest(at: Vector2, margin: float) -> bool:
 	for forest: Dictionary in FORESTS:
 		if at.distance_to(forest["at"]) < float(forest["radius"]) + margin:
@@ -547,6 +672,7 @@ func _dress_stalks(art: Node3D) -> void:
 	_dress_glowcaps(art)
 	_dress_moss(art)
 	_dress_reeds(art)
+	_dress_hives(art)
 
 
 const FUNGUS_SIDES := 14
@@ -777,6 +903,50 @@ func _dress_moss(art: Node3D) -> void:
 	node.name = "Moss"
 	node.multimesh = moss
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(node)
+
+
+## Each hive's egg sacs: lit, swollen globes heaped on the mound and
+## spilling round its foot, and a low light under them.
+func _dress_hives(art: Node3D) -> void:
+	if _hives.is_empty():
+		return
+	var egg := SphereMesh.new()
+	egg.radius = 0.5
+	egg.height = 1.0
+	egg.radial_segments = 12
+	egg.rings = 6
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.55, 0.62, 0.4)
+	mat.emission_enabled = true
+	mat.emission = Color(0.6, 0.95, 0.45)
+	mat.emission_energy_multiplier = 0.8
+	mat.roughness = 0.3
+	egg.material = mat
+	var eggs := MultiMesh.new()
+	eggs.transform_format = MultiMesh.TRANSFORM_3D
+	eggs.mesh = egg
+	var spots: Array[Transform3D] = []
+	for foot in _hives:
+		for i in 26:
+			var a := _art_rng.randf() * TAU
+			var r := _art_rng.randf_range(0.6, 2.6)
+			var up := maxf(0.0, 2.0 - r * 0.75) + _art_rng.randf() * 0.3
+			var size := _art_rng.randf_range(0.25, 0.6)
+			spots.append(Transform3D(Basis.from_scale(Vector3(size, size * 1.25, size)),
+					foot + Vector3(cos(a) * r, up, sin(a) * r)))
+		var light := OmniLight3D.new()
+		light.light_color = Color(0.6, 1.0, 0.5)
+		light.light_energy = 0.9
+		light.omni_range = 9.0
+		light.position = foot + Vector3(0, 1.5, 0)
+		art.add_child(light)
+	eggs.instance_count = spots.size()
+	for i in spots.size():
+		eggs.set_instance_transform(i, spots[i])
+	var node := MultiMeshInstance3D.new()
+	node.name = "HiveEggs"
+	node.multimesh = eggs
 	art.add_child(node)
 
 

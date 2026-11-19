@@ -203,8 +203,20 @@ without Caleb, and update the gap list when a PR closes a row.
   it from `Raid.cloud_burst`. A beast's body is built in code like the
   walker's (`Look.SKINS` "creature", `ActorSkin._build_creature`), and a
   skin marked "bare" shows nothing in the hand. A world makes a kind
-  feint more than its ring with the bot's "feint_chance" meta. Check by
-  eye with `visual_check.tscn -- <dir> --marsh-only`.
+  feint more than its ring with the bot's "feint_chance" meta. Kinds that
+  are one family (a brood keeper and its broodlings) share a kind through
+  the world's `KIN`, which `can_damage` compares. A bot with the meta
+  "lies_low" (the lurkers) sits crouched at its post until it sees
+  someone, and a skin's "lurks" share sinks a crouched body (view only;
+  the crouch is what replicates). A "spawn_guard" marker's "brood" metas
+  make its guard spill extra bots near a player (`Raid._tick_brood`,
+  authority only, counted in `is_guard`), and a cache marker's "hive"
+  meta keeps that cache sealed while the guard with the same "hive" stands
+  (`Raid._seal_hives`, `LootContainer.sealed`). The forests' close air is
+  a planet's `close` mood the map blends in by its "close_here" meta
+  (`Look.close_cover` brings the depth fog's floor down like a storm's),
+  view only; what a bot sees there is `WorldDef.sight_at`, never the
+  view. Check by eye with `visual_check.tscn -- <dir> --marsh-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -1334,7 +1346,10 @@ without Caleb, and update the gap list when a PR closes a row.
   round, the Ember a broad ceramic shell over its heat sinks, the scrap
   visor a patched pot with cracked goggles), framed glass that is dark
   and reflective, never a glowing panel; a Mk2 (`Visor.tier`) wears a lit
-  seam over the crown. Every helmet and armor piece is built from
+  seam over the crown. Worn with an armor frame, every helmet but the
+  scrap visor takes the frame's plate, trim and fabric colours in its
+  paint (`ActorSkin.helmet_colors`), so helmet and plates read as one kit.
+  Every helmet and armor piece is built from
   `GearShapes` (`core/visual/gear_shapes.gd`), merged into one mesh per
   material (`GearShapes.merge`: "Gear", and "Glass" with no shadow; the
   parts it was made of in its "parts" meta, `has_part`) and built once
@@ -2040,6 +2055,12 @@ without Caleb, and update the gap list when a PR closes a row.
   Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it,
   and the helmet, taken off or put on),
   Status (map, standing) and Mission (portal, contract, ping, sign-out).
+  The contract icon is the mission log (Caleb's ask): opened, the wheel
+  turns through the tour's step and each contract held
+  (`Hud.mission_entries`, `mission_slot`) and a click turns the picked one
+  from on the visor's objective block to the main one (first and lit) to
+  off it and back (`GameSettings.cycle_mission`, `untracked`,
+  `main_mission`: view only, read by `VisorHud.objective_lines`).
   The map icon, while read, draws a small holographic map beside it
   (`Hud.map_marks`, `Card._draw_map`): only what the player is told, never
   other people. The Status icons open with a click like a carousel (Caleb's

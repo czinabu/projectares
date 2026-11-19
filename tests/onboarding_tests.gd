@@ -36,6 +36,14 @@ static func _rules(t: Node) -> void:
 	t.check(not Onboarding.notify(tour, "equipped"), "a done tour takes no more actions")
 	Onboarding.restart(tour)
 	t.check(Onboarding.current(tour).id == "gear", "it can be played again from the start")
+	Onboarding.notify(tour, "equipped")
+	Onboarding.notify(tour, "watch")
+	t.check(Onboarding.current(tour).id == "lane" and Onboarding.catch_up(tour, "plaza")
+				and Onboarding.current(tour).id == "contract",
+			"standing in the plaza passes the test lane step left behind in the base")
+	t.check(not Onboarding.catch_up(tour, "equipped") and Onboarding.current(tour).id == "contract",
+			"a fact for a step already passed moves nothing")
+	Onboarding.restart(tour)
 	Onboarding.skip(tour)
 	t.check(tour.state == Onboarding.SKIPPED and not Onboarding.is_active(tour), "and skipped")
 	t.check(Onboarding.clean(null) == Onboarding.finished() and Onboarding.clean({"state": "active", "step": "nope"})
