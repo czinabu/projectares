@@ -2478,8 +2478,86 @@ func _world_status(p_status: Dictionary) -> void:
 				"bounty": maxi(0, int(entry.get("bounty", 0))),
 				"event": str(entry.get("event", "")).left(40),
 				"storm": str(entry.get("storm", "")).left(24),
-				"wanted": _clean_wanted(entry.get("wanted", []))}
+				"wanted": _clean_wanted(entry.get("wanted", [])),
+				"front": clean_front(entry.get("front", [])),
+				"moments": clean_moments(entry.get("moments", [])),
+				"hunted": clean_hunted(entry.get("hunted", [])),
+				"race": clean_race(entry.get("race", {}))}
 	world_status_changed.emit(world_status)
+
+
+## A world's landmarks as the server sent them (`Raid.front`), checked: at
+## most 16 of {name, x, z, holder, contested}.
+static func clean_front(raw: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry: Variant in raw:
+		if out.size() >= 16:
+			break
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		out.append({"name": str(entry.get("name", "")).left(24),
+				"x": clampi(int(entry.get("x", 0)), -5000, 5000), "z": clampi(int(entry.get("z", 0)), -5000, 5000),
+				"holder": str(entry.get("holder", "")).left(16),
+				"contested": typeof(entry.get("contested")) == TYPE_BOOL and entry.contested})
+	return out
+
+
+## A world's big moments (`Raid.live_moments`), checked: at most
+## `Raid.MOMENTS_KEPT` of {kind, text, at}.
+static func clean_moments(raw: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry: Variant in raw:
+		if out.size() >= Raid.MOMENTS_KEPT:
+			break
+		if typeof(entry) != TYPE_DICTIONARY or str(entry.get("text", "")).strip_edges() == "":
+			continue
+		out.append({"kind": str(entry.get("kind", "")).left(16), "text": str(entry.text).strip_edges().left(80),
+				"at": maxi(0, int(entry.get("at", 0)))})
+	return out
+
+
+## Who a world's armies hunt (`Raid.hunted`), checked: at most
+## `Raid.HUNTED_SHOWN` of {name, clan, by}.
+static func clean_hunted(raw: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry: Variant in raw:
+		if out.size() >= Raid.HUNTED_SHOWN:
+			break
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var name := str(entry.get("name", "")).strip_edges().left(24)
+		if name != "":
+			out.append({"name": name, "clan": str(entry.get("clan", "")).left(6), "by": str(entry.get("by", "")).left(16)})
+	return out
+
+
+## A race world's feed (`Race.race_feed`), checked.
+static func clean_race(raw: Variant) -> Dictionary:
+	if typeof(raw) != TYPE_DICTIONARY or str(raw.get("track", "")) == "":
+		return {}
+	var out := {"track": str(raw.track).left(24), "name": str(raw.get("name", "")).left(24)}
+	if raw.has("phase"):
+		out["phase"] = str(raw.phase).left(12)
+		out["people"] = clampi(int(raw.get("people", 0)), 0, 64)
+		return out
+	out["laps"] = clampi(int(raw.get("laps", 1)), 1, 20)
+	var racers: Array[Dictionary] = []
+	var rows: Variant = raw.get("racers", [])
+	if typeof(rows) == TYPE_ARRAY:
+		for entry: Variant in rows:
+			if racers.size() >= 12:
+				break
+			if typeof(entry) == TYPE_DICTIONARY:
+				racers.append({"name": str(entry.get("name", "")).left(20), "lap": clampi(int(entry.get("lap", 1)), 1, 20),
+						"at": clampf(float(entry.get("at", 0.0)), 0.0, 1.0), "place": clampi(int(entry.get("place", 0)), 0, 64)})
+	out["racers"] = racers
+	return out
 
 
 ## A world's most wanted as the server sent them (`Raid.wanted`), checked:

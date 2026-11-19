@@ -116,14 +116,21 @@ func _ready() -> void:
 
 func race_track() -> RaceTrack:
 	if _track == null:
-		var control: Array[Vector3] = []
-		control.assign(CONTROL)
-		var spots: Array[Vector3] = []
-		spots.assign(CHECKPOINTS)
-		_track = RaceTrack.build(TRACK_ID, TRACK_NAME, control, TRACK_W, spots, LINE, LAPS)
-		# Pit row, between the wall and the bays.
-		_track.pit = Vector3(-104, 0, PIT_Z + 10.0)
+		_track = build_coilrun()
 	return _track
+
+
+## Coilrun from its control points, without the map (the War Room's
+## track cam builds it this way, `WorldDef.feed_tracks`).
+static func build_coilrun() -> RaceTrack:
+	var control: Array[Vector3] = []
+	control.assign(CONTROL)
+	var spots: Array[Vector3] = []
+	spots.assign(CHECKPOINTS)
+	var built := RaceTrack.build(TRACK_ID, TRACK_NAME, control, TRACK_W, spots, LINE, LAPS)
+	# Pit row, between the wall and the bays.
+	built.pit = Vector3(-104, 0, PIT_Z + 10.0)
+	return built
 
 
 ## Coilrun first, then Skyhook.

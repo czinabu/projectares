@@ -316,6 +316,26 @@ without Caleb, and update the gap list when a PR closes a row.
   world doorway (`heat_signs`) and the wanted on the most-wanted board
   (`wanted_text`, the map's "wanted_board" label). Anything else that
   advertises a world reads `world_status`, not a second channel.
+- The War Room (DESIGN.md section 2, "Spectating screens"): the plaza's
+  big screen is `WarRoom` (`core/social/war_room.gd`, view only, made by
+  `PlazaView` only where `Look` is on, drawn into a `SubViewport` on the
+  map's "screen_wall"). It reads only `world_status`: each world's
+  landmarks and who holds them (`Raid.front`: an army's faction,
+  "players" or "", never a side key), its big moments (`Raid.note_moment`,
+  authority only, a warlord or boss brought down and a landmark changing
+  hands; `live_moments`; a world's wall-clock set pieces are
+  `WorldDef.clock_moments`, Ashfront's Colossus), who its armies hunt
+  (`Raid.hunted`, from the grudges where a world keeps them: who and by
+  which army, never where) and a race world's AI-only race (`Race.race_feed`,
+  shot by the screen's `TrackCam` from `WorldDef.feed_tracks`; with no race
+  on it shows exhibition laps and says so). A client checks all of it
+  (`NetSession.clean_front`, `clean_moments`, `clean_hunted`,
+  `clean_race`). Segments turn on the wall clock (`SEGMENT_TIME`) so every
+  watcher sees the same one; a side's colour is `WorldDef.faction_color`.
+  The console before it (the "war_room" portal, `WarRoomPanel`,
+  `main.gd open_war_room`) puts a picked world on the screen for that
+  viewer only (`WarRoom.focus`) and deploys through `use_portal`, the way
+  its gate does. Check by eye with `visual_check.tscn -- <dir> --war-room-only`.
 - The Concourse's people (DESIGN.md section 2, "Locals"):
   `core/social/plaza_locals.gd`, made by `PlazaView` only where `Look` is
   on, so a server runs none and sends nothing for them. Every client makes
