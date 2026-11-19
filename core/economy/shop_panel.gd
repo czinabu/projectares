@@ -90,10 +90,11 @@ func stash_items() -> Array:
 
 
 ## The tabs on show: the shops (or just the filtered one), then selling.
+## A stall (the back room) is only dealt with at its own counter.
 func tabs() -> Array[String]:
 	var out: Array[String] = []
 	for shop_id in ShopDB.ids():
-		if shop_filter == "" or shop_filter == shop_id:
+		if shop_filter == shop_id or (shop_filter == "" and not ShopDB.shop(shop_id).get("stall", false)):
 			out.append(shop_id)
 	out.append(SELL_TAB)
 	return out
@@ -177,7 +178,7 @@ func notes_for(id: String) -> Array:
 			out.append(["Gear sells back for %d%% of what it is worth." % int(Economy.SELL_BACK_RATE * 100),
 					ItemCard.MUTED])
 		return out
-	var price := Economy.buy_price(id)
+	var price := Economy.price_in(current, id)
 	out.append(["Price: %d scrip" % price, ItemCard.GOOD if scrip() >= price else ItemCard.WARN])
 	if scrip() < price:
 		out.append(["You need %d more scrip." % (price - scrip()), ItemCard.WARN])
@@ -188,8 +189,10 @@ func notes_for(id: String) -> Array:
 
 func _fill_shop(shop_id: String) -> void:
 	_blurb.text = ShopDB.shop(shop_id).get("blurb", "")
+	if shop_id == Economy.BLACK_MARKET and Economy.stock(shop_id).is_empty():
+		_blurb.text += "\nNothing today."
 	for id in Economy.stock(shop_id):
-		var price := Economy.buy_price(id)
+		var price := Economy.price_in(shop_id, id)
 		var owned := stash_items().count(id)
 		var button := _row(id, "%s%s" % [ItemCard.short_kind(id), "   You own %d" % owned if owned > 0 else ""],
 				"Buy  %d" % price)

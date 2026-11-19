@@ -33,6 +33,7 @@ const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
 const CraftingTests := preload("res://tests/crafting_tests.gd")
 const SafetyNetTests := preload("res://tests/safety_net_tests.gd")
+const ScripPileTests := preload("res://tests/scrip_pile_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const UpdaterTests := preload("res://tests/updater_tests.gd")
@@ -71,12 +72,16 @@ const WeatherTests := preload("res://tests/weather_tests.gd")
 const IceTests := preload("res://tests/ice_tests.gd")
 const PlanetKitTests := preload("res://tests/planet_kit_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
+const ShellingTests := preload("res://tests/shelling_tests.gd")
 const WhiteoutTests := preload("res://tests/whiteout_tests.gd")
 const EngineTests := preload("res://tests/engine_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
 const HeavyUnitTests := preload("res://tests/heavy_unit_tests.gd")
 const PlaytestFixTests := preload("res://tests/playtest_fix_tests.gd")
 const ExtractionTests := preload("res://tests/extraction_tests.gd")
+const CoreLoopTests := preload("res://tests/core_loop_tests.gd")
+const ScreenSweepTests := preload("res://tests/screen_sweep_tests.gd")
+const BugReportTests := preload("res://tests/bug_report_tests.gd")
 const LifeLogTests := preload("res://tests/life_log_tests.gd")
 const InspectTests := preload("res://tests/inspect_tests.gd")
 const RaceTests := preload("res://tests/race_tests.gd")
@@ -310,6 +315,9 @@ func _run() -> void:
 	await _test_lag_compensation()
 	await _test_extraction()
 	await ExtractionTests.run(self)
+	await CoreLoopTests.run(self)
+	await ScreenSweepTests.run(self)
+	await BugReportTests.run(self)
 	await _test_life_log()
 	await _test_army_pushes()
 	await _test_fresh_drops()
@@ -354,6 +362,7 @@ func _run() -> void:
 	await MarketTests.run(self)
 	await CraftingTests.run(self)
 	await SafetyNetTests.run(self)
+	await ScripPileTests.run(self)
 	await _test_arena()
 	await _test_arena_floor()
 	await _test_online_arena()
@@ -383,6 +392,7 @@ func _run() -> void:
 	await _test_ice()
 	await _test_planet_kit()
 	await _test_grid()
+	await _test_shelling()
 	await _test_whiteout()
 	await _test_engine()
 	await _test_raiders()
@@ -689,6 +699,10 @@ func _test_planet_kit() -> void:
 
 func _test_grid() -> void:
 	await GridTests.run(self)
+
+
+func _test_shelling() -> void:
+	await ShellingTests.run(self)
 
 
 func _test_whiteout() -> void:
@@ -1273,11 +1287,16 @@ func _test_death() -> void:
 	check(results.size() == 1 and results[0].outcome == "died" and results[0].killed_by == bot.display_name,
 			"the life ends as died and names the killer")
 	check(Profile.stash.is_empty(), "nothing reaches the stash on death")
+	# Ashfront drops a scrip pile, not the gear (DESIGN.md "Scrip piles"):
+	# the shard is either the pile's bonus item or sold into its scrip.
 	var bags := raid.get_children().filter(func(n: Node) -> bool:
 		return n is LootContainer and (n as LootContainer).is_bag)
-	check(bags.size() == 1 and "lattice_shard" in (bags[0] as LootContainer).items
-			and "rifle_scrap" in (bags[0] as LootContainer).items,
-			"the player's gear and loot drop in a bag")
+	var pile: LootContainer = bags[0] if bags.size() == 1 else null
+	check(pile != null and pile.pile and "rifle_scrap" not in pile.items
+			and (pile.items == ["lattice_shard"] and pile.scrip == 0
+				or pile.items.is_empty() and pile.scrip == StashService.Economy.sell_price("lattice_shard")),
+			"the player's gear is gone and a scrip pile lies where they fell (%s, %d scrip)"
+			% [pile.items if pile else [], pile.scrip if pile else -1])
 	check(Hud.death_text(results[0], 0.0).contains(bot.display_name) and Hud.death_text(results[0], 0.0).contains("Enter")
 			and not Hud.death_text(results[0], 2.0).contains("Enter"),
 			"the death screen names the killer and offers to drop back in once the wait is over")
@@ -1288,8 +1307,8 @@ func _test_death() -> void:
 	check(raid.player == again and not again.is_dead and raid.players.size() == 1,
 			"dropping back in starts a new life in the same world")
 	check(not is_instance_valid(p) or p.is_queued_for_deletion(), "the old body is cleared away")
-	check(is_instance_valid(bags[0]) and "lattice_shard" in (bags[0] as LootContainer).items,
-			"the bag is still where you fell")
+	check(is_instance_valid(bags[0]) and (bags[0] as LootContainer).pile,
+			"the pile is still where you fell")
 	check(again.protected_left > 0.0 and not Combat.deal(again, DamageInfo.make(10.0, bot, "bullet"))
 			and is_equal_approx(again.health.health, again.health.max_health),
 			"a player who just dropped in cannot be hurt")
@@ -4867,7 +4886,43 @@ func _test_online() -> void:
 				looted_weapon = id
 				if differs:
 					break
-		check(looted_weapon != "", "the bag held a weapon to summon (%s)" % looted_weapon)
+		if looted_weapon == "" and back.call():
+			# Ashfront drops a scrip pile, not the dead player's guns (DESIGN.md
+			# "Scrip piles"), so nothing in the pack is a gun of theirs: store
+			# the gun in hand, then summon it back out of the pack.
+			var held_at := Loadout.worn_index(me, "primary")
+			var held: String = me.weapons[held_at].item_id if held_at >= 0 else ""
+			check(held != "", "the client holds a primary to store")
+			if held != "":
+				await _wait_until(func() -> bool: return me.materialize_left <= 0.0, 180)
+				var put := [0, 0]
+				me.weapon_stored.connect(func(_id: String, _m: int, _r: int) -> void: put[0] += 1)
+				me.weapon_swapped.connect(func(_id: String, _m: int, _r: int) -> void: put[1] += 1)
+				var pack_now := me.inventory.items.size()
+				alpha.store(held)
+				var stowed := func() -> bool:
+					return put[0] > 0 and Loadout.worn_index(me, "primary") < 0 and me.inventory.items.size() == pack_now + 1
+				await _wait_until(stowed, 240)
+				check(stowed.call() and held not in me.gear_items and me.inventory.has_item(held),
+						"the server stores the weapon in hand: it fades out and is in the pack")
+				var seen_put := func() -> bool:
+					var there := bravo.actor_for(alpha.my_actor_id)
+					return there != null and Loadout.worn_index(there, "primary") < 0
+				await _wait_until(seen_put, 180)
+				check(seen_put.call(), "the other client sees it put away")
+				await _wait_until(func() -> bool: return me.dematerialize_left <= 0.0 and alpha.raid.summon_wait(me) <= 0.0, 240)
+				alpha.summon(held)
+				var out := func() -> bool:
+					var at := Loadout.worn_index(me, "primary")
+					return put[1] > 0 and at >= 0 and me.weapons[at].item_id == held and not me.inventory.has_item(held)
+				await _wait_until(out, 180)
+				check(out.call() and held in me.gear_items, "the server summons it back out of the pack, into the hand")
+				check(me.materialize_time > 0.0, "it materializes on the summoner's screen (%.1f s)" % me.materialize_time)
+				var seen_out := func() -> bool:
+					var there := bravo.actor_for(alpha.my_actor_id)
+					return there != null and Loadout.worn_index(there, "primary") >= 0
+				await _wait_until(seen_out, 180)
+				check(seen_out.call(), "the other client sees the summoned weapon on them")
 		if looted_weapon != "" and back.call():
 			var slot := Loadout.weapon_slot(looted_weapon)
 			var worn_before: String = me.weapons[Loadout.worn_index(me, slot)].item_id
@@ -4914,6 +4969,7 @@ func _test_online() -> void:
 				return there != null and Loadout.worn_index(there, slot) < 0
 			await _wait_until(seen_store, 180)
 			check(seen_store.call(), "the other client sees it put away")
+		if back.call():
 			# A ping reaches the pinger; a stranger on another side hears nothing.
 			var ping_heard := [0, 0]
 			alpha.raid.pinged.connect(func(_a: Actor, _at: Vector3) -> void: ping_heard[0] += 1)
@@ -5163,12 +5219,27 @@ func _move_toward(actor: Actor, point: Vector3) -> Vector2:
 	return Vector2(dir.x, -dir.z)
 
 
+## How high off the ground `_run_is_clear` sweeps the body from: a step
+## or a kerb under it is climbed, not a wall.
+const RUN_KNEE := 0.35
+
+
 ## Whether `actor` could run `reach` metres along `dir` (flat, unit length)
 ## from `from` without meeting a wall, a wreck, a bike or another actor. It
 ## follows the ground, so a slope does not count as a wall.
 func _run_is_clear(actor: Actor, from: Vector3, dir: Vector3, reach: float) -> bool:
+	return _clear_metres(actor, from, dir, reach) >= reach
+
+
+## How many metres (up to `reach`) `actor` could run along `dir` from `from`
+## before something stops it. The body is swept from step to step from knee
+## height up, not just a ray at the chest: a ray ran over a bike's seat or a
+## low wreck, and the run then stopped against it after a metre or two (the
+## flaky "a lagging player still runs at full speed" check on CI).
+func _clear_metres(actor: Actor, from: Vector3, dir: Vector3, reach: float) -> float:
 	var space := actor.get_world_3d().direct_space_state
 	var skip: Array[RID] = []
+	var stop := reach
 	for other in get_tree().get_nodes_in_group("actors"):
 		if other is Actor and Raid.together(other, actor):
 			skip.append((other as Actor).get_rid())
@@ -5176,36 +5247,60 @@ func _run_is_clear(actor: Actor, from: Vector3, dir: Vector3, reach: float) -> b
 			to.y = 0.0
 			var along := to.dot(dir)
 			if other != actor and along > 0.0 and along < reach + 1.0 and (to - dir * along).length() < 1.6:
-				return false
+				stop = minf(stop, maxf(along - 1.6, 0.0))
+	var body := CapsuleShape3D.new()
+	body.radius = Actor.BODY_RADIUS + 0.05
+	body.height = Actor.BODY_HEIGHT - RUN_KNEE
+	var sweep := PhysicsShapeQueryParameters3D.new()
+	sweep.shape = body
+	sweep.exclude = skip
+	sweep.collision_mask = actor.collision_mask
 	var last := Vector3.ZERO
-	for i in int(reach) + 1:
+	var last_floor := Vector3.ZERO
+	for i in int(stop) + 1:
 		var above := from + dir * float(i) + Vector3(0, 4.0, 0)
 		var down := PhysicsRayQueryParameters3D.create(above, above + Vector3(0, -12.0, 0))
 		down.exclude = skip
 		var floor_hit := space.intersect_ray(down)
 		if floor_hit.is_empty():
-			return false
-		var chest: Vector3 = floor_hit.position + Vector3(0, 0.9, 0)
+			return maxf(i - 1, 0)
+		var ground: Vector3 = floor_hit.position
+		var chest: Vector3 = ground + Vector3(0, 0.9, 0)
 		if i > 0:
 			if absf(chest.y - last.y) > 0.7:
-				return false
+				return i - 1
 			var ray := PhysicsRayQueryParameters3D.create(last, chest)
 			ray.exclude = skip
 			if not space.intersect_ray(ray).is_empty():
-				return false
+				return i - 1
+			# From over the higher of the two floors, so a slope is not
+			# taken for a wall.
+			var lift := maxf(last_floor.y, ground.y) + RUN_KNEE + body.height * 0.5
+			sweep.transform = Transform3D(Basis.IDENTITY, Vector3(last_floor.x, lift, last_floor.z))
+			sweep.motion = Vector3(ground.x - last_floor.x, 0.0, ground.z - last_floor.z)
+			if space.cast_motion(sweep)[0] < 1.0:
+				return i - 1
 		last = chest
-	return true
+		last_floor = ground
+	return stop
 
 
 ## A flat direction `actor` can run `reach` metres in from `from`: `prefer`
-## if that is clear, otherwise the nearest clear one to it.
+## if that is clear, otherwise the nearest clear one to it, and where none
+## is the one with the longest clear run.
 func _clear_run(actor: Actor, from: Vector3, prefer: Vector3, reach: float) -> Vector3:
+	var best := prefer
+	var best_metres := -1.0
 	for i in 16:
 		var turn := TAU / 16.0 * float((i + 1) / 2) * (1.0 if i % 2 == 1 else -1.0)
 		var dir := prefer.rotated(Vector3.UP, turn)
-		if _run_is_clear(actor, from, dir, reach):
+		var metres := _clear_metres(actor, from, dir, reach)
+		if metres >= reach:
 			return dir
-	return prefer
+		if metres > best_metres:
+			best_metres = metres
+			best = dir
+	return best
 
 
 func _test_online_lag_compensation() -> void:

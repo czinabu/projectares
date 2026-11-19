@@ -5,6 +5,10 @@ extends Node
 ## Linux only).
 ##
 ##   godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32 --seconds 30
+##
+## It ends with a pass line and exits 1 when a tick takes more processor
+## time on average than the tick's budget (16.7 ms at 60 ticks a second;
+## `--budget <ms>` to hold it to another).
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -33,12 +37,14 @@ func _ready() -> void:
 			print("  %3d s: %5.2f ms a tick, %d bots, war %.2f" % [ticks / rate,
 					(cpu - window_cpu) * 1000.0 / (5 * rate), raid.bots.size(), raid.war.intensity])
 			window_cpu = cpu
-	var budget := 1000.0 / rate
+	var budget := float(_arg(args, "--budget", str(1000.0 / rate)))
 	var each := (_cpu_seconds() - cpu_began) * 1000.0 / ticks
 	print("Processor time: %.2f ms a tick, %.0f%% of the %.1f ms budget" % [each, each / budget * 100.0, budget])
 	print("Real time: %.1f s for %.0f s of game" % [(Time.get_ticks_msec() - began) / 1000.0, seconds])
 	world.bot_count = usual
-	get_tree().quit()
+	var passed := each <= budget
+	print("%s: %.2f ms a tick against the %.1f ms budget" % ["PASS" if passed else "FAIL", each, budget])
+	get_tree().quit(0 if passed else 1)
 
 
 func _arg(args: PackedStringArray, key: String, fallback: String) -> String:

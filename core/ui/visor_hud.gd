@@ -93,6 +93,11 @@ const PING_INK := Color(0.35, 0.95, 1.0)
 const HOT_INK := Color(1.0, 0.55, 0.15)
 ## A storm crossing the map (DESIGN.md "Weather: ash storms").
 const STORM_INK := Color(0.95, 0.72, 0.55)
+## Scrip piles near you (`Raid.piles`), and a pile holding a bounty.
+const PILE_INK := Color(1.0, 0.78, 0.3)
+const BOUNTY_INK := Color(1.0, 0.42, 0.25)
+## The most piles marked at once, nearest first.
+const PILES_SHOWN := 4
 const TAG_INK := Color(1.0, 0.3, 0.2)
 ## The waypoint set on the watch map.
 const WAYPOINT_INK := Color(1.0, 0.9, 0.4)
@@ -526,8 +531,10 @@ static func tracker_text(held: Array[Dictionary], tally: Dictionary) -> String:
 ## What the heading strip marks, nearest the middle last so it draws on top:
 ## {"kind", "at" (Vector3), "label"}. Kinds: "squad", "ping" and "depot" on
 ## every working visor, with the watch map's "waypoint" and "storm" (the
-## middle of a storm crossing the map); "tag" (Spotter), "contact" (Seeker's
-## snapshots) and "hot" (the war's centre, Warden). A scrap visor marks nothing.
+## middle of a storm crossing the map) and "pile" or "bounty" (a scrip pile
+## within `WorldDef.pile_seen_range`, which everyone near can see glowing
+## anyway); "tag" (Spotter), "contact" (Seeker's snapshots) and "hot" (the
+## war's centre, Warden). A scrap visor marks nothing.
 func compass_marks(p: Actor) -> Array[Dictionary]:
 	var marks: Array[Dictionary] = []
 	var v := p.visor
@@ -544,6 +551,9 @@ func compass_marks(p: Actor) -> Array[Dictionary]:
 	if raid != null and raid.weather.active():
 		marks.append({"kind": "storm", "at": raid.weather.centre + Vector3(0.0, p.global_position.y, 0.0),
 				"label": raid.world.weather_name.to_upper().left(10)})
+	for pile in nearby_piles(p):
+		marks.append({"kind": "bounty" if pile.bounty > 0 else "pile", "at": pile.global_position,
+				"label": "BOUNTY" if pile.bounty > 0 else "SCRIP"})
 	if v.mode == "threat" and raid != null and raid.war.intensity >= hot_from:
 		marks.append({"kind": "hot", "at": raid.war.centre, "label": "HOT"})
 	for ghost in v.ghosts if v.mode == "scan" else []:
@@ -561,6 +571,23 @@ func compass_marks(p: Actor) -> Array[Dictionary]:
 		if is_instance_valid(mate):
 			marks.append({"kind": "squad", "at": mate.global_position, "label": mate.display_name.left(8).to_upper()})
 	return marks
+
+
+## The scrip piles within the world's `pile_seen_range` of `p`, nearest
+## first, at most `PILES_SHOWN`.
+func nearby_piles(p: Actor) -> Array[LootContainer]:
+	var out: Array[LootContainer] = []
+	if raid == null or not raid.world.death_drops_scrip:
+		return out
+	var reach := raid.world.pile_seen_range
+	for pile: Variant in raid.piles:
+		if is_instance_valid(pile) and (pile as LootContainer).scrip > 0 \
+				and (pile as Node3D).global_position.distance_to(p.global_position) <= reach:
+			out.append(pile)
+	out.sort_custom(func(a: LootContainer, b: LootContainer) -> bool:
+		return a.global_position.distance_squared_to(p.global_position) \
+				< b.global_position.distance_squared_to(p.global_position))
+	return out.slice(0, PILES_SHOWN)
 
 
 func _on_threatened(origin: Vector3) -> void:
@@ -1061,7 +1088,7 @@ func _draw_strip_mark(p: Actor, ink: Color, mark: Dictionary, off: float, waitin
 	var at := _strip_point(clampf(off, -strip_reach, strip_reach)) + Vector2(0.0, 34.0)
 	at.x -= signf(off) * waiting * 70.0
 	var away := roundi((mark.at as Vector3).distance_to(p.global_position))
-	var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK, "waypoint": WAYPOINT_INK, "storm": STORM_INK}.get(mark.kind, ink)
+	var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK, "waypoint": WAYPOINT_INK, "storm": STORM_INK, "pile": PILE_INK, "bounty": BOUNTY_INK}.get(mark.kind, ink)
 	var urgent: bool = mark.kind in ["tag", "contact", "ping"]
 	var color := _lit(tint, 0.95 if not off_strip else 0.7, not urgent)
 	match mark.kind:
@@ -1081,6 +1108,11 @@ func _draw_strip_mark(p: Actor, ink: Color, mark: Dictionary, off: float, waitin
 			draw_arc(at, 3.0, -turn, -turn + 2.6, 8, color, 1.5, true)
 		"contact":
 			draw_arc(at, 5.0, 0.0, TAU, 12, color, 1.5, true)
+		"pile", "bounty":
+			# A coin: a ring round a lit middle, a bounty's bigger.
+			var big := 7.0 if mark.kind == "bounty" else 5.0
+			draw_arc(at, big, 0.0, TAU, 14, color, 1.5, true)
+			draw_circle(at, big * 0.45, color)
 		_:
 			# Pings and tags are diamonds.
 			draw_colored_polygon(PackedVector2Array([at + Vector2(0, -6), at + Vector2(6, 0), at + Vector2(0, 6),
@@ -1766,7 +1798,7 @@ func _draw_scope(p: Actor, ink: Color) -> void:
 			centre + Vector2(-4.5, 5)]), _lit(ink, 0.95))
 	for point in scope_points(p):
 		var mark: Dictionary = point.mark
-		var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK, "waypoint": WAYPOINT_INK, "storm": STORM_INK}.get(mark.kind, ink)
+		var tint: Color = {"squad": SQUAD_INK, "ping": PING_INK, "hot": HOT_INK, "tag": TAG_INK, "waypoint": WAYPOINT_INK, "storm": STORM_INK, "pile": PILE_INK, "bounty": BOUNTY_INK}.get(mark.kind, ink)
 		var color := _lit(tint, 0.95 if point.inside else 0.55, mark.kind not in ["tag", "contact", "ping"])
 		var at: Vector2 = point.at
 		if not point.inside:
@@ -1781,6 +1813,9 @@ func _draw_scope(p: Actor, ink: Color) -> void:
 				draw_rect(Rect2(at - Vector2(4, 4), Vector2(8, 8)), color, false, 1.5)
 			"contact":
 				draw_arc(at, 4.0, 0.0, TAU, 10, color, 1.5, true)
+			"pile", "bounty":
+				draw_arc(at, 4.0, 0.0, TAU, 10, color, 1.5, true)
+				draw_circle(at, 1.8, color)
 			_:
 				draw_colored_polygon(PackedVector2Array([at + Vector2(0, -5), at + Vector2(5, 0), at + Vector2(0, 5),
 						at + Vector2(-5, 0)]), color)

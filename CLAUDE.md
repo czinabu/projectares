@@ -191,7 +191,18 @@ without Caleb, and update the gap list when a PR closes a row.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
-  with basic loot tables; rare gear stays in the full-loot PvP world.
+  with basic loot tables; rare gear stays in the PvP world. With
+  `WorldDef.death_drops_scrip` (Ashfront, DESIGN.md "Scrip piles", Caleb's
+  call) a death drops no gear: the authority's `Raid._drop_pile` leaves a
+  scrip pile (a `LootContainer` with `pile`) worth what a trader pays for
+  everything lost (`Economy.sell_price`; a bot's by `bot_pile_share`,
+  growing with `war.intensity` by `pile_war_bonus`), plus the carried scrip
+  and any bounty, beside one bonus item from the pack (`Raid.pile_bonus`,
+  never worn gear) and any artifact, which drops as itself. Any player
+  grabs it by running over it (`Raid._tick_piles`); `NetSession` sends a
+  pile's scrip and bounty with the container. Visors mark piles near you
+  (`VisorHud.nearby_piles`). The insured item is recalled before the pile
+  is counted.
 - Renown (`core/progression/renown_ledger.gd`) is decided by the `Raid`'s
   ledger and nowhere else. It is kept per owner key (`add_player`'s
   `p_owner`: the account id online), never per name, so it carries across a
@@ -337,7 +348,22 @@ without Caleb, and update the gap list when a PR closes a row.
   own lists), taken through the same `NetSession.contract_ask`.
 - A player's bounty pays its killer in scrip (`Economy.bounty_scrip`, one
   for one, Caleb's call) into the life's carried scrip, so it is at stake
-  until banked or carried out, like the kill's own pay.
+  until banked or carried out, like the kill's own pay. Where deaths drop
+  scrip piles it goes into the dead player's pile instead (a bounty pile,
+  `LootContainer.bounty`), for whoever grabs it.
+- Shelling (DESIGN.md "Shelling", Caleb's call): a world with
+  `WorldDef.shelling` over 0 has the war's artillery, `Raid.shelling`
+  (`core/war/shelling.gd`), run by the authority only and where
+  `Raid.zone_rules` hold. A salvo is a line of shells near an army soldier
+  near `war.centre`, sooner the hotter the war; each spot is marked first
+  (`Raid.shells_called`, sent to every client by `NetSession._shells`), a
+  `Shelling.Marker` in `Gun.live_rounds` so bots run from it, then lands
+  through `Gun.splash` with no source (kind "shell", only that raid's
+  actors). Never near a gate outpost, a player spawn or a protected
+  arrival (`Shelling.clear`). What it looks and sounds like is `ShellView`
+  (view only, added by the `Raid` only where `Look` is on), timed from what
+  it was told; the jolt is `PlayerController.feel_blast`. Check by eye with
+  `visual_check.tscn -- <dir> --shells-only` (with `--fixed-fps 60`).
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
@@ -869,7 +895,8 @@ without Caleb, and update the gap list when a PR closes a row.
   into the hand, by any path (`Actor._swap_primary_and_heavy`); the sidearm
   and blade stay instant. A spent one is thrown
   away. A dead player's is left on a rack beside the bag (never in the pack),
-  and that death counts it as lost. `StashRules.storable` accepts them: a
+  and that death counts it as lost; where deaths drop scrip piles it is
+  sold into the pile instead. `StashRules.storable` accepts them: a
   depot upload or a sign-out puts the chambered one in the stash, and it
   hangs on the home base's heavy weapon wall (`BaseLayout` kind `heavy_wall`,
   the `heavy_wall` upgrade) where copies stack. One may be equipped in the
@@ -1423,6 +1450,19 @@ without Caleb, and update the gap list when a PR closes a row.
   switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+- Bug reports (the must-work checklist's "Bug reporting with logs"): the
+  phone's Report app (`Phone.report_requested`) hands `Main` a line of
+  text, and `core/report/bug_report.gd` (`Main.bug_report`, view and
+  client only) bundles it with the build, the machine, where the player is
+  (`Main.report_context`, plain values, never a secret) and the game's
+  log from this run and the run before (a crashed run's log is found on
+  the next launch). It posts that to a Discord webhook as a message with
+  the logs attached, at most one every `report_every`, and always keeps a
+  copy under `BugReport.SAVE_DIR`. The webhook is never in the code: the
+  Windows build of main stamps it into `ares/report/webhook` from the
+  repository secret `BUG_REPORT_WEBHOOK` (`windows-client.yml`), and any
+  other build only keeps the copy. A new fact worth having in a report is
+  a key in `report_context`.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
   only in a debug or editor run (`DevMode.available`), never in an exported
@@ -1874,7 +1914,12 @@ without Caleb, and update the gap list when a PR closes a row.
   for other server systems. A client never sends a price or an amount.
   Shops are tag-driven: an item is stocked if it has the `vendor` tag and one
   of the shop's tags (`shop_db.gd`), and `Economy.is_shop_item` refuses
-  anything above Uncommon, so rare gear stays loot-only. Keep every sell
+  anything above Uncommon, so rare gear stays loot-only. The one exception
+  is the plaza's back room (`Economy.BLACK_MARKET`, a shop with "stall" in
+  `ShopDB`, built down an alley by the plaza map's `_build_stall`): two
+  Rare pieces a day by the date (`black_market_stock`) at
+  `BLACK_MARKET_MARKUP` times their value; every price a shop charges is
+  `Economy.price_in(shop_id, id)`. Keep every sell
   price below its buy price, and keep run payouts small next to loot: scrip
   must come from getting loot home, so full loot stays the stake.
 - Scrip is what a life pays, and it is at stake. The `Raid` pays it
@@ -2027,8 +2072,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - Every gameplay feature gets checks in `tests/test_runner.gd`.
 - A running game logs no errors: one a frame is enough to sink the frame
   rate. `tests/error_spam_tests.gd` watches an Ashfront session with an
-  `OS.add_logger` counter; fix the cause of anything it catches, never
-  silence it. A spring stepped by `delta` is stepped in short slices (a
+  `OS.add_logger` counter, and `tests/screen_sweep_tests.gd` does the same
+  in the base and every world while opening every phone app, settings tab,
+  watch icon, station, the bench and the plan table; fix the cause of
+  anything they catch, never silence it. A spring stepped by `delta` is stepped in short slices (a
   long frame throws it off), and a deferred call or timer that outlives
   the node it acts on is bound to that node (`node.queue_free`, an
   instance id), never a lambda capturing it A loop over a
@@ -2048,7 +2095,8 @@ godot --headless --path . res://tests/test_runner.tscn   # must exit 0
 godot --headless --path . res://tests/test_runner.tscn -- --only online   # one group
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
-godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle; exits 1 over the 16.7 ms budget
+godot --headless --fixed-fps 60 --path . res://tests/frame_bench.tscn -- --look --seed 7 --save main.json   # then the same with --against main.json on a change (fails past --tolerance, 0.15), --max-hitches for frames over 50 ms
 godot --headless --path . res://tests/server_bench.tscn -- --plaza 10 --per-world 7 --arena 4   # the whole server at once: tick time per session, travel against 3 s
 godot --headless --path . res://tests/server_bench.tscn -- --cluster --plaza 10 --per-world 7 --arena 4   # the same with one program per world; times a trip made on a connection opened ahead
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
