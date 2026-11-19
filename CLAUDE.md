@@ -149,7 +149,7 @@ A new system gets a new file and a line here.
 - `docs/systems/ui-phone-watch.md`: The phone and its settings, emotes and shortcut keys, bug reports, the new player's tour, opening in the world, menus in the world and the watch.
 - `docs/systems/home-base.md`: The modular base, its rooms, the plan table, the bench, the range and course, and upgrades.
 - `docs/systems/arena-and-race.md`: The arena venue and its rules, and Meridian's races, league, ghosts and tuning.
-- `docs/systems/updates-and-dev-mode.md`: The self-updater, the installer and the temporary dev mode.
+- `docs/systems/updates-and-dev-mode.md`: The self-updater, the installer, the temporary dev mode and its tools (capture and snapshot keys, the phone's console).
 
 ## Conventions
 
@@ -202,6 +202,7 @@ godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn   # how eac
 godot --headless --path . res://tests/gun_bench.tscn   # every gun's time to kill by range and armor (DESIGN.md "Gun roles")
 godot --path . res://tests/equip_bench.tscn -- --walk   # what an equip costs in the base, and whether you keep moving
 godot --headless --fixed-fps 60 --path . res://tests/race_bench.tscn   # lap times per race machine, flags any 3% off its class
+godot --headless --path . res://tools/new_world/new_world.tscn -- --id <id> --name "<Name>" [--planet <type>]   # a new world's folder, map, roster, tests and rules file from the template
 ```
 
 CI (`.github/workflows/tests.yml`) runs the suite in two tiers. The offline

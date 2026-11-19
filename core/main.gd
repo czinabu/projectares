@@ -93,6 +93,8 @@ const CLAIMS_NAME := "Claims Office"
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 ## DEV MODE: temporary, see `core/dev/dev_mode.gd`.
 const DevMode := preload("res://core/dev/dev_mode.gd")
+const DevToolsScript := preload("res://core/dev/dev_tools.gd")  # DEV MODE
+const DevConsole := preload("res://core/dev/dev_console.gd")  # DEV MODE
 ## The new player's tour: the handler on the phone (see "new player's tour").
 const Onboarding := preload("res://core/progression/onboarding.gd")
 ## DEV MODE: where a dev server keeps its accounts, apart from real ones.
@@ -130,6 +132,7 @@ var plaza_view: CanvasLayer
 var shop_view: ShopView
 ## Sends what the phone's Report app writes (`BugReport`).
 var bug_report: Node
+var dev_tools: Node  # DEV MODE
 ## The storefront terminal's live screen showing `shop_view`, else null.
 var shop_screen: WorldScreen
 var _shop_viewport: SubViewport
@@ -1241,6 +1244,28 @@ func _setup_phone() -> void:
 	add_child(bug_report)
 	bug_report.finished.connect(func(ok: bool, note: String) -> void: phone.set_report_status(note, ok))
 	phone.report_requested.connect(func(text: String) -> void: bug_report.send(text, report_context()))
+	# DEV MODE: the dev tools' keys (performance capture, bug snapshot).
+	dev_tools = DevToolsScript.new()  # DEV MODE
+	dev_tools.name = "DevTools"  # DEV MODE
+	dev_tools.context_source = report_context  # DEV MODE
+	dev_tools.notice.connect(_dev_notice)  # DEV MODE
+	add_child(dev_tools)  # DEV MODE
+	phone.console_command.connect(_run_console)  # DEV MODE
+
+
+## DEV MODE: a command typed on the phone's Console app.
+func _run_console(line: String) -> void:
+	var body: Actor = controller.actor if controller != null and is_instance_valid(controller) else null
+	phone.add_console_lines(DevConsole.run(line, raid, body, net != null))
+
+
+## DEV MODE: a dev tool's line, on whichever HUD is up.
+func _dev_notice(text: String) -> void:
+	if raid != null and hud != null and is_instance_valid(hud):
+		hud.notify(text)
+	elif base_hud != null and is_instance_valid(base_hud):
+		base_hud.show_notice(text, 8.0)
+	print(text)
 
 
 ## What a bug report says about where the player is and what they were
@@ -1262,6 +1287,10 @@ func report_context() -> Dictionary:
 		context["view"] = "third person" if controller.is_third_person() else "first person"
 		context["health"] = "%d / %d" % [int(body.health.health), int(body.health.max_health)]
 	context["fps"] = "%d" % int(Engine.get_frames_per_second())
+	if raid != null and raid.war != null:
+		context["war"] = "%.2f" % raid.war.intensity
+	if raid != null and raid.weather != null and raid.weather.active() and body != null and is_instance_valid(body):
+		context["storm"] = "%s, %.2f here" % [raid.weather.kind, raid.weather.strength_at(body.global_position)]
 	var life := _last_life_line()
 	if life != "":
 		context["last_life"] = life

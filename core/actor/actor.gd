@@ -353,6 +353,12 @@ var _glide_launch := true
 var _first_spread := true
 ## Wings: seconds until a main gun can fire again after the wings fold.
 var _wing_stow := 0.0
+## Jetpack: the trigger pulled in a boost brings you upright into a hover,
+## and the jets hold you there while it stays held (`_wants_hover`).
+var _boost_flare := false
+## Jetpack: the heading a boost holds while free look is held (NAN: none,
+## the boost follows the view).
+var _boost_yaw := NAN
 var _slide_dir := Vector3.ZERO
 var _slide_from := 0.0
 var _was_on_floor := true
@@ -509,6 +515,14 @@ func helmet_on_head() -> bool:
 	return visor.working()
 
 
+## True while the lamp on the helmet's brow shines: switched on (the held
+## `ActorCommand.lamp`), the helmet on the head and its wearer alive. On the
+## hip it goes dark and comes back on with the helmet. The beam is drawn by
+## `ActorSkin` (view only).
+func lamp_lit() -> bool:
+	return cmd.lamp and helmet_on_head() and not is_dead
+
+
 ## Fallen out of the world: below its `WorldDef.void_y`. Asked only once
 ## below the highest any world sets, so the walk up the tree is rare.
 func _below_world() -> bool:
@@ -647,6 +661,8 @@ func _simulate_movement(delta: float) -> void:
 	flight.refill(delta, on_floor)
 	_measure_altitude(on_floor)
 	_measure_indoors(on_floor)
+	# A boost cut by the trigger flares upright into a hover while it is held.
+	_boost_flare = cmd.primary and not on_floor and (_boost_flare or flight.is_boosting)
 	# Gliding: holding jump while falling with wings carries you forward.
 	# Once gliding you stay gliding while you climb on your speed.
 	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and not staggered \
@@ -722,6 +738,8 @@ func _simulate_movement(delta: float) -> void:
 	flight.is_boosting = _wants_boost(on_floor, staggered)
 	flight.is_hovering = flight.is_boosting or _wants_hover(on_floor, staggered)
 	flight.is_coasting = false
+	if not flight.is_boosting or not cmd.free_look:
+		_boost_yaw = NAN
 	if flight.is_hovering:
 		_simulate_hover(delta)
 	elif flight.is_skimming:
@@ -791,7 +809,7 @@ func _take_gusts(on_floor: bool, delta: float) -> void:
 ## A jetpack hovers in the air only while aim (`ActorCommand.secondary`,
 ## the right mouse button) is held: let go and you fall, or climb on held jump.
 func _wants_hover(on_floor: bool, staggered: bool) -> bool:
-	return cmd.secondary and not on_floor and not staggered \
+	return (cmd.secondary or _boost_flare) and not on_floor and not staggered \
 			and flight.can_hover() and not flight.overheated
 
 
@@ -803,8 +821,13 @@ func _wants_hover(on_floor: bool, staggered: bool) -> bool:
 ## off the ground stays a jump) and holding sprint keeps it going; with the
 ## jets already lit (aim held, or a boost running) holding it is enough,
 ## which is also how a remote player's boost follows the replicated jets.
+## The boost is travel, not a fight (Caleb's call): aim or the trigger held
+## brings you upright into a hover (`_boost_flare`), and a gun fires only
+## `sprint_out_time` after the boost ends, as out of a sprint on the ground.
 func _wants_boost(on_floor: bool, staggered: bool) -> bool:
 	if on_floor or staggered or flight.boost_speed <= 0.0 or not flight.can_hover() or flight.overheated:
+		return false
+	if cmd.secondary or cmd.primary:
 		return false
 	if not cmd.sprint or not (cmd.move.y > 0.0 or cmd.move.length() < 0.1):
 		return false
@@ -819,12 +842,21 @@ func _simulate_hover(delta: float) -> void:
 	flight.is_coasting = climb < 0.0 and not flight.is_boosting
 	if flight.is_boosting:
 		# Along the view's heading, level: jump and descend climb and sink.
-		# The mouse's pitch only aims (Caleb's call: keys fly).
+		# The mouse's pitch only aims (Caleb's call: keys fly). Free look
+		# held, the boost holds the heading it had and the view looks round
+		# (like the wings); let go, it comes back round onto the view.
+		if cmd.free_look and is_nan(_boost_yaw):
+			var flat := Vector2(velocity.x, velocity.z)
+			_boost_yaw = atan2(-velocity.x, -velocity.z) if flat.length() > 1.0 else cmd.yaw
+		var heading := cmd.yaw if is_nan(_boost_yaw) else _boost_yaw
+		sprint_recover = sprint_out_time
 		var clumsy := flight.indoor_factor()
-		var want := Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed) * clumsy
+		var want := Basis(Vector3.UP, heading) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed) * clumsy
 		want.y += flight.max_rise_speed * flight.climb_room() * clumsy if climb > 0.0 else climb * flight.descend_speed
 		velocity = velocity.move_toward(want, flight.boost_accel * delta)
-		flight.tick(true, delta, flight.boost_heat_mult)
+		# Travel is cheap; a climb in a boost costs what any climb does.
+		flight.tick(true, delta, lerpf(flight.boost_heat_mult, maxf(flight.boost_heat_mult, flight.climb_heat_mult),
+				flight.climb_room()) if climb > 0.0 else flight.boost_heat_mult)
 		return
 	var rise := flight.max_rise_speed * flight.climb_room() * flight.indoor_factor() if climb > 0.0 \
 			else climb * flight.descend_speed

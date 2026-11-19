@@ -37,8 +37,13 @@ date in the same PR.
   (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
-  full bar, climbing 1.3x and boosting 2.5x the heat, a 40 m ceiling,
-  steady aim), but slow across the map, loud and clumsy under a roof;
+  full bar, climbing 1.3x the heat, a 40 m ceiling, steady aim), its prone
+  boost its travel (Caleb's call: 0.7x, about 10 s and 170 m a bar, a climb
+  in it costs the climb's heat) paid for in the fight, not in heat: aim or
+  the trigger held brings you upright into a hover (`Actor._wants_boost`,
+  `_boost_flare`, the jets held while the trigger is) and a gun waits out
+  `sprint_out_time` as out of a sprint, and free look (E) holds the boost's
+  heading (`_boost_yaw`) like the wings'; it is loud and clumsy under a roof;
   the boots are ground agility and stealth: no heat, `max_charges` pay for
   kicks and dashes, a short skim (`skim_time`), faster on foot
   (`ground_speed_mult`), no fall damage, a graze window on every dash
@@ -91,7 +96,9 @@ date in the same PR.
   added on top of the rig's own flight and taken back off, so a glide or a
   cruise carries on after it. Q and E fly nothing (Caleb's call); E holds free look.
   The body's attitude in the air (flat, banked, leaning, barrel rolled by a
-  sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
+  sideways air dash) is the skin's job (`ActorSkin._update_glide`; a boost's
+  prone pose eases in and out by `boost_ease`, so coming upright into a
+  hover never snaps, Caleb's feedback), read
   from velocity and the simulated actor only, so remote players match. Boots
   show their thrust (`ActorSkin._update_boot_thrust`): the body leans into
   the push (gravity, drag and speeding up), the legs and swivelling flames
@@ -192,6 +199,18 @@ date in the same PR.
   itself when a new helmet goes on and on stepping out where people fight
   (`PlayerController._keep_helmet`). Check by eye with
   `visual_check.tscn -- <dir> --helmet-off-only`.
+  Every worn helmet has a lamp on the right of its brow (Caleb's ask): its
+  own key (J, the "lamp" action) toggles the held `ActorCommand.lamp`
+  (`PlayerController.toggle_lamp`), so the server relays it and everyone
+  sees the beam. `Actor.lamp_lit` says when it shines: switched on, the
+  helmet on the head and its wearer alive. Clipped to the hip it goes dark
+  but stays switched on, and lights again when the helmet goes back on;
+  bare-headed there is nothing to switch. The barrel and lens are on the
+  one helmet model (`ActorSkin._build_lamp`); the beam is a spot light kept
+  off the skeleton, so first person never leaves it out, aimed along
+  `Actor.get_aim_dir` from just ahead of the lens (`_update_lamp`, view
+  only, tuned by `lamp_*`), fading out for far viewers. Check by eye with
+  `visual_check.tscn -- <dir> --helmet-lamp-only`.
   A helmet is worn gear, not a flag: `Loadout.wear_helmet` is the one way
   one goes on or comes off (it resets the visor, keeps `gear_items` right
   and emits `Actor.helmet_changed`). Mid-raid, helmets in the pack
