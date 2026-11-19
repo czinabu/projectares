@@ -39,13 +39,10 @@ signal pack_requested
 signal map_target_clicked(index: int)
 
 enum ViewMode { FIRST, THIRD }
-## How the melee side is picked: by flicking the mouse, or by the movement keys.
-enum StanceControl { MOUSE, MOVE }
 
 ## The meta a station's view camera carries (`screen_view_up`).
 const SCREEN_VIEW := "screen_view"
 const VIEW_NAMES := ["First-person", "Third-person"]
-const STANCE_CONTROL_NAMES := ["mouse flick", "movement keys"]
 const STANCE_CONTROL_HINTS := [
 	"flick the mouse left, right or up",
 	"hold A, D or W as you attack or guard",
@@ -158,8 +155,9 @@ var view_far := 400.0
 ## `speed_fov_at` m/s. Never while aiming or zoomed.
 var speed_fov := 9.0
 var speed_fov_at := 26.0
-## A landing dips the view by the speed you came down at (m per m/s, up to
-## `land_dip_max` m) and springs back.
+## A landing dips the third-person view by the speed you came down at (m per
+## m/s, up to `land_dip_max` m) and springs back. First person rides the
+## head down through the body's own landing squat instead.
 var land_dip := 0.016
 var land_dip_max := 0.25
 ## A shell landing jolts the view (`feel_blast`): this much (degrees) right
@@ -207,6 +205,13 @@ var _scope_lens: MeshInstance3D
 ## First person: how far the model's eyes are from the actor's eye point,
 ## eased so the view never jolts with a step.
 var _eye_offset := Vector3.ZERO
+## The most (metres) that easing may leave the first-person camera off the
+## model's eyes, so it never trails into the body.
+var eye_lag_reach := 0.04
+## How much the camera rides the model's eyes this frame (1 in first person,
+## off while sighted or out in third person), and whose head it rides.
+var _eyes_weight := 0.0
+var _eyes_skin: Node
 ## First person: how far the camera sits back from the model's eyes, level
 ## along the view, in meters (the phone's "Camera pulled back" setting). The
 ## head is left out of this camera, so it never gets in the way. It eases
@@ -219,12 +224,6 @@ var pullback_fade_pitch := 0.45
 ## as a head bowing forward does, so the chest is seen from the front and
 ## never from over the shoulders.
 var look_down_lean := 0.05
-## How far the mouse has to move, in pixels, to count as a stance flick.
-var flick_threshold := 45.0
-## How quickly old mouse movement stops counting toward a flick.
-var flick_decay := 9.0
-var stance := 0
-var stance_control := StanceControl.MOVE
 
 ## The toy vehicle in the hand (an item id off the watch), or "". While one
 ## is held the weapon is put away: fire throws it, aim puts it back.
@@ -284,7 +283,6 @@ var _cam_dist := 0.0
 var _pending_switch := -1
 ## The zoom level asked of a helmet with binoculars. The visor key steps it.
 var _visor_level := 0
-var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
 ## Fades hostile bodies the eyes cannot see out of the third-person view.
@@ -314,7 +312,6 @@ var _speed_fov_now := 0.0
 
 func setup(p_actor: Actor) -> void:
 	actor = p_actor
-	stance_control = StanceControl.MOVE if Profile.melee_control == "move" else StanceControl.MOUSE
 	yaw = actor.cmd.yaw
 
 
@@ -369,7 +366,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Pulling down against a spray: that much kick is yours, not the
 		# gun's, and will not be given back.
 		_kick_held = maxf(0.0, _kick_held - maxf(vertical * turn, 0.0))
-		_flick += event.relative
 	elif event is InputEventMouseButton and event.pressed and not captured:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
@@ -384,8 +380,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		wrist_raised = not wrist_raised
 		watch_focus_moved = false
 		watch_open = ""
-	elif event.is_action_pressed("melee_control"):
-		toggle_stance_control()
 	elif event.is_action_pressed("sign_out"):
 		sign_out_requested.emit()
 	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
@@ -809,36 +803,6 @@ func active_view() -> int:
 	return ride_view if is_riding() else view_mode
 
 
-## Turns recent mouse movement into a melee stance: a flick left or right
-## picks that side, a flick up picks overhead. Anything else keeps `current`.
-static func stance_from_flick(flick: Vector2, current: int, threshold: float) -> int:
-	if flick.length() < threshold:
-		return current
-	if absf(flick.x) >= absf(flick.y):
-		return MeleeWeapon.Dir.LEFT if flick.x < 0.0 else MeleeWeapon.Dir.RIGHT
-	if flick.y < 0.0:
-		return MeleeWeapon.Dir.OVERHEAD
-	return current
-
-
-## Turns the movement keys into a melee stance: strafing left or right picks
-## that side, moving forward picks overhead. Standing still or backing up
-## keeps `current`.
-static func stance_from_move(move: Vector2, current: int) -> int:
-	if absf(move.x) > 0.5 and absf(move.x) >= absf(move.y):
-		return MeleeWeapon.Dir.LEFT if move.x < 0.0 else MeleeWeapon.Dir.RIGHT
-	if move.y > 0.5:
-		return MeleeWeapon.Dir.OVERHEAD
-	return current
-
-
-func toggle_stance_control() -> void:
-	stance_control = StanceControl.MOVE if stance_control == StanceControl.MOUSE else StanceControl.MOUSE
-	Profile.melee_control = "move" if stance_control == StanceControl.MOVE else "mouse"
-	Profile.save()
-	actor.notice.emit("Melee side: %s" % STANCE_CONTROL_NAMES[stance_control])
-
-
 ## The crouch key (C), after the move, sprint and jump keys are in `cmd`:
 ## pressed while sprinting forward it is a slide (`ActorCommand.slide`);
 ## otherwise it toggles the crouch. In the air with a flight rig it only
@@ -887,17 +851,12 @@ func _physics_process(delta: float) -> void:
 	cmd.move = Vector2(
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_back", "move_forward"))
-	if stance_control == StanceControl.MOVE:
-		stance = stance_from_move(cmd.move, stance)
-	else:
-		stance = stance_from_flick(_flick, stance, flick_threshold)
-	_flick *= exp(-flick_decay * delta)
-	cmd.stance = stance
 	cmd.sprint = Input.is_action_pressed("sprint")
 	cmd.sprint_pressed = Input.is_action_just_pressed("sprint")
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
+	cmd.kick_pressed = Input.is_action_just_pressed("kick")
 	cmd.descend = Input.is_action_pressed("crouch")
 	crouch_key(Input.is_action_just_pressed("crouch"))
 	cmd.free_look = Input.is_action_pressed("free_look")
@@ -1094,15 +1053,30 @@ func _process(delta: float) -> void:
 	# which sit a little ahead of the actor's eye point; aim is still judged
 	# from the actor.
 	var eyes: Variant = skin.eye_point(look) if first_person and skin != null and skin.has_method("eye_point") else null
-	var offset: Vector3 = eyes - actor.get_eye_position() if eyes != null else Vector3.ZERO
+	# From the dipped pivot: first person looks out of the head, which takes
+	# a landing in the body's own squat, so the camera's landing dip on top
+	# of it would sink the eyes into the chest (third person keeps the dip).
+	var offset: Vector3 = eyes - pivot if eyes != null else Vector3.ZERO
 	if eyes != null:
 		var ahead := Basis(Vector3.UP, yaw) * Vector3.FORWARD
 		var down := clampf(-sin(view_pitch), 0.0, 1.0)
 		var pull := eye_pullback * (1.0 - smoothstep(0.0, sin(pullback_fade_pitch), down))
 		offset += ahead * (down * look_down_lean - pull)
 	_eye_offset = _eye_offset.lerp(offset, 1.0 - exp(-18.0 * delta)) if first_person else offset
+	# The easing may only trail the eyes so far: a quick move of the head (a
+	# hard landing, springing up from it, a dive pulled out of, the view
+	# swung) left the camera inside the neck or the armor's collar.
+	_eye_offset = offset + (_eye_offset - offset).limit_length(eye_lag_reach)
+	_eyes_weight = 0.0
 	if first_person:
-		camera.global_position += _eye_offset * (1.0 - minf(_cam_dist / 0.7, 1.0))
+		_eyes_weight = 1.0 - minf(_cam_dist / 0.7, 1.0)
+		camera.global_position += _eye_offset * _eyes_weight
+	if skin != _eyes_skin:
+		if _eyes_skin != null and is_instance_valid(_eyes_skin) and _eyes_skin.has_signal("head_posed"):
+			_eyes_skin.disconnect("head_posed", _on_head_posed)
+		_eyes_skin = skin
+		if skin != null and skin.has_signal("head_posed"):
+			skin.connect("head_posed", _on_head_posed)
 	# The field of view, from where the camera has ended up (the phone's zoom
 	# measures the phone from there).
 	var speeding := 0.0 if aiming or _zoom() > 1.0 else speed_fov_for(_view_speed())
@@ -1135,10 +1109,19 @@ func _process(delta: float) -> void:
 	var gun := weapon as Gun if first_person and not phone_out else null
 	var up := pose.ads if gun != null and gun.visual != null and gun.visual.visible else 0.0
 	sighted = up > 0.9
+	# Sighted, the eye sits on the gun's sight line, not on the head.
+	_eyes_weight *= 1.0 - up
 	if up > 0.0:
 		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, (pose.relief_now if pose.relief_now >= 0.0 else pose.relief_for(gun)) + eye_relief)
 		camera.global_transform = camera.global_transform.interpolate_with(Transform3D(look, at), up)
 	_update_scope(gun if up > 0.5 else null)
+
+
+## The head was posed after the camera was placed from it (`ActorSkin.head_posed`):
+## first person follows it by as much, this same frame.
+func _on_head_posed(by: Vector3) -> void:
+	if _eyes_weight > 0.0 and camera != null:
+		camera.global_position += by * _eyes_weight
 
 
 ## A scoped gun aimed in first person shows its magnified view on the glass

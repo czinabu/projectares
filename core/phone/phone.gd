@@ -151,10 +151,12 @@ const CONTROLS := [
 	["MELEE", [
 		["Light attack (combo)", "Tap {fire}"],
 		["Heavy attack (a dive slam in the air)", "Hold {fire}"],
-		["Block", "Hold {alt_fire}"],
 		["Parry", "{alt_fire} just before a hit"],
-		["Pick a side: left, right or overhead", "Flick the mouse, or hold {move_left} {move_right} {move_forward}"],
-		["Switch how the side is picked", "{melee_control}"],
+		["Block cheaply", "{alt_fire} a moment before a hit"],
+		["Hold the guard (drains stamina)", "Hold {alt_fire}"],
+		["Feint a heavy (cancel it into a guard)", "{alt_fire} early in its windup"],
+		["Kick: breaks a held guard, loses to a swing", "{kick}"],
+		["Dodge: a roll, or your rig's own dodge; swings pass through", "{dash}"],
 	]],
 	["WATCH", [
 		["Raise or lower the watch", "{check_wrist}"],
@@ -2113,16 +2115,6 @@ func _draw_settings() -> void:
 			_slider("Mouse sensitivity", "mouse_sensitivity", GameSettings.SENSITIVITY_RANGE, 0.0001,
 					GameSettings.mouse_sensitivity, func(v: float) -> String: return "%.1f" % (v * 1000.0))
 			_toggle("Invert mouse up and down", "invert_y", GameSettings.invert_y)
-			_body.add_child(_section("MELEE SIDE"))
-			var melee := OptionButton.new()
-			melee.add_item("Mouse flick")
-			melee.add_item("Movement keys")
-			melee.select(1 if Profile.melee_control == "move" else 0)
-			melee.item_selected.connect(func(index: int) -> void:
-				Profile.melee_control = "move" if index == 1 else "mouse"
-				Profile.save()
-				settings_changed.emit())
-			_body.add_child(melee)
 			_body.add_child(_button("See what every key does", open_app.bind("controls")))
 		"view":
 			_body.add_child(_section("DISPLAY"))

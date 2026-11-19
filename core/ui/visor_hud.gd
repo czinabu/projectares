@@ -124,7 +124,7 @@ var pitch_scale := 0.009
 ## fast it wakes and settles.
 var weapon_show_time := 2.5
 var weapon_low_share := 0.25
-var weapon_rest := 0.22
+var weapon_rest := 0.55
 var weapon_fade := 2.5
 ## The war must be at least this hot before a tactical visor marks its centre.
 var hot_from := 0.25
@@ -1991,8 +1991,8 @@ func _draw_weapon(p: Actor, ink: Color) -> void:
 	var gun := held as Gun
 	var low := gun != null and not gun.is_reloading() and gun.ammo_in_mag <= floori(gun.mag_size * weapon_low_share)
 	var tint := Color(1.0, 0.3, 0.2) if low else ink
-	_text(Vector2(right, base - radius * 2.2), held.display_name.to_upper(), _lit(ink, 0.8 * level, false),
-			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 13)
+	_text(Vector2(right, base - radius * 2.4), held.display_name.to_upper(), _lit(ink, 0.9 * level, false),
+			HORIZONTAL_ALIGNMENT_RIGHT, 300.0, 16)
 	draw_line(Vector2(right - 150.0 * _swept(), base - radius * 1.9), Vector2(right, base - radius * 1.9),
 			_lit(ink, 0.4 * level, false), 1.0, true)
 	draw_line(Vector2(right, base - radius * 1.9), Vector2(right, base - radius * 1.5),
@@ -2001,27 +2001,33 @@ func _draw_weapon(p: Actor, ink: Color) -> void:
 		return
 	if gun.is_reloading():
 		var done := 1.0 - gun.reload_left() / maxf(gun.reload_time, 0.01)
-		_text(Vector2(right, base - 4.0), "RELOADING", _lit(ink, 0.95 * level, false), HORIZONTAL_ALIGNMENT_RIGHT, 200.0, 18)
+		_text(Vector2(right, base - 4.0), "RELOADING", _lit(ink, 0.95 * level, false), HORIZONTAL_ALIGNMENT_RIGHT, 220.0, 22)
 		draw_line(Vector2(right - 150.0, base + 8.0), Vector2(right, base + 8.0), _lit(ink, 0.2 * level, false), 3.0)
 		draw_line(Vector2(right - 150.0, base + 8.0), Vector2(right - 150.0 + 150.0 * done, base + 8.0),
 				_lit(ink, 0.9 * level, false), 3.0)
 		return
 	# The mag count large, the pack's rounds small beside it.
 	var reserve := "/ %d" % gun.reserve_ammo
-	_text(Vector2(right, base - 4.0), reserve, _lit(ink, 0.6 * level, false), HORIZONTAL_ALIGNMENT_RIGHT, 90.0, 14)
+	_text(Vector2(right, base - 4.0), reserve, _lit(ink, 0.8 * level, false), HORIZONTAL_ALIGNMENT_RIGHT, 110.0, 20)
 	var font := ThemeDB.fallback_font
-	var reserve_w := font.get_string_size(reserve, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
-	_text(Vector2(right - reserve_w - 8.0, base - 4.0), str(gun.ammo_in_mag), _lit(tint, 0.95 * level, false),
-			HORIZONTAL_ALIGNMENT_RIGHT, 90.0, roundi(radius * 0.9))
+	var reserve_w := font.get_string_size(reserve, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+	_text(Vector2(right - reserve_w - 10.0, base - 4.0), str(gun.ammo_in_mag), _lit(tint, level, false),
+			HORIZONTAL_ALIGNMENT_RIGHT, 110.0, roundi(radius * 1.25))
+	# Empty: the readout itself asks for the reload (`Hud.reload_prompt`).
+	var ask := Hud.reload_prompt(p)
+	if ask != "":
+		var pulse := 0.65 + 0.35 * sin(Time.get_ticks_msec() * 0.008)
+		_text(Vector2(right, base - radius * 3.3), ask.to_upper(), _lit(Color(1.0, 0.3, 0.2), pulse * level, false),
+				HORIZONTAL_ALIGNMENT_RIGHT, 300.0, 18)
 	# A tick a round, up to a mag of 40; beyond that, one bar.
 	var row := Vector2(right, base + 8.0)
 	if gun.mag_size <= 40:
-		var step := minf(5.0, 150.0 / maxf(gun.mag_size, 1.0))
+		var step := minf(6.0, 180.0 / maxf(gun.mag_size, 1.0))
 		for i in gun.mag_size:
 			var x := row.x - i * step
 			var full := i < gun.ammo_in_mag
-			draw_line(Vector2(x, row.y), Vector2(x, row.y + 6.0), _lit(tint if full else ink, (0.85 if full else 0.15) * level,
-					false), 2.0)
+			draw_line(Vector2(x, row.y), Vector2(x, row.y + 9.0), _lit(tint if full else ink, (0.95 if full else 0.2) * level,
+					false), 2.5)
 	else:
 		var share := clampf(float(gun.ammo_in_mag) / maxf(gun.mag_size, 1.0), 0.0, 1.0)
 		draw_line(row, row + Vector2(-150.0, 0.0), _lit(ink, 0.2 * level, false), 3.0)

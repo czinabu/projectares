@@ -28,7 +28,7 @@ func _ready() -> void:
 	# equip (`StashRules.free_items`), and it can never be stashed, so it
 	# cannot be farmed.
 	register("rifle_scrap", "Scrap Rifle", Rarity.COMMON, 0, ["weapon", "firearm", "rifle", "starter"],
-			{"recoil_pattern": "sway", "headshot_mult": 1.5, "falloff_start": 40.0, "falloff_end": 90.0, "falloff_min": 0.75},
+			{"recoil_pattern": "sway", "shot_sound": "shot_scrap", "headshot_mult": 1.5, "falloff_start": 40.0, "falloff_end": 90.0, "falloff_min": 0.75},
 			"Worn automatic rifle.")
 	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "one_handed", "blade", "starter"], {},
 			"A sharpened strip of plating.")
@@ -47,7 +47,7 @@ func _ready() -> void:
 
 	# Firearms
 	register("rifle_carbine", "Ashfront Carbine", Rarity.UNCOMMON, 450, ["weapon", "firearm", "rifle", "vendor"],
-			{"recoil_pattern": "climb_right", "damage": 24.0, "headshot_mult": 1.5, "fire_interval": 0.1, "spread_deg": 0.9, "reserve_ammo": 150,
+			{"recoil_pattern": "climb_right", "shot_sound": "shot_carbine", "damage": 24.0, "headshot_mult": 1.5, "fire_interval": 0.1, "spread_deg": 0.9, "reserve_ammo": 150,
 			"falloff_start": 50.0, "falloff_end": 100.0, "falloff_min": 0.8},
 			"Reliable automatic. Harder hitting and tighter than the scrap rifle.")
 	register("smg_stinger", "Stinger SMG", Rarity.UNCOMMON, 420, ["weapon", "firearm", "smg", "vendor"],
@@ -69,7 +69,7 @@ func _ready() -> void:
 	# Sidearms: worn on the hip and drawn when the primary runs dry.
 	register("pistol_machine", "Hornet Machine Pistol", Rarity.UNCOMMON, 380,
 			["weapon", "firearm", "sidearm", "machine_pistol", "vendor"],
-			{"recoil_pattern": "climb_left", "shot_sound": "shot_smg", "damage": 10.0, "headshot_mult": 1.3, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
+			{"recoil_pattern": "climb_left", "shot_sound": "shot_mpistol", "damage": 10.0, "headshot_mult": 1.3, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
 			"reload_time": 1.4, "spread_deg": 2.6, "bloom_per_shot": 0.45, "max_bloom": 4.0,
 			"recoil_kick_deg": 0.35, "max_range": 45.0, "falloff_start": 10.0, "falloff_end": 28.0, "falloff_min": 0.5},
 			"Full-auto spray. Deadly up close, useless at range.")
@@ -450,6 +450,22 @@ func _ready() -> void:
 	_outfit("outfit_trooper", "Trooper Outfit", 400, ["m_Swat", "f_Soldier"], "Fatigues and webbing. Looks the part.",
 			Rarity.UNCOMMON)
 
+	# Armor paints (`ArmorPaint`): cosmetic like clothing, a colour scheme
+	# for armor frames picked at the base's armor stands. The Tailor sells
+	# the plain ones; the earned ones are Relic loot from the hardest fights.
+	_paint_item("paint_ashen", "Ashen Paint", 250, "ashen", "Weathered grey with a warm glow.")
+	_paint_item("paint_desert", "Desert Paint", 250, "desert", "Sand and coyote brown.")
+	_paint_item("paint_woodland", "Woodland Paint", 250, "woodland", "Olive drab with a green glow.")
+	_paint_item("paint_night", "Night Ops Paint", 350, "night", "Blue-black plates for the dark.")
+	_paint_item("paint_arctic", "Arctic Paint", 450, "arctic", "Snow white over a cold blue glow.", Rarity.UNCOMMON)
+	_paint_item("paint_cobalt", "Cobalt Paint", 450, "cobalt", "Deep blue plates, a pale glow.", Rarity.UNCOMMON)
+	_paint_item("paint_crimson", "Crimson Paint", 600, "crimson", "Blood red plates. Hard to miss.", Rarity.UNCOMMON)
+	_paint_item("paint_hazard", "Hazard Paint", 600, "hazard", "Warning yellow over black.", Rarity.UNCOMMON)
+	_paint_item("paint_warlord", "Warlord Paint", 1500, "warlord",
+			"Black and gold, stripped off a fallen warlord. Only Ashfront's warlords carry it.", Rarity.RELIC)
+	_paint_item("paint_warden", "Heart Warden Paint", 1500, "warden",
+			"Ice white and frozen blue, from the Heart Warden's vault deep in the Engine.", Rarity.RELIC)
+
 
 ## Registers a weapon attachment for `slot` (also its tag: see `Loadout.SLOTS`).
 func _attachment(id: String, display_name: String, rarity: Rarity, value: int, slot: String, vendor: bool,
@@ -486,6 +502,17 @@ func _blueprint(id: String, display_name: String, rarity: Rarity, value: int, de
 func _outfit(id: String, display_name: String, value: int, outfits: Array, description: String,
 		rarity: Rarity = Rarity.COMMON) -> void:
 	register(id, display_name, rarity, value, ["cosmetic", "vendor"], {"outfits": outfits}, description)
+
+
+## Registers an armor paint item that unlocks the paint `paint` (an
+## `ArmorPaint.PAINTS` id). Shop paints carry "vendor"; earned ones (Relic)
+## do not, so only their content hands them out.
+func _paint_item(id: String, display_name: String, value: int, paint: String, description: String,
+		rarity: Rarity = Rarity.COMMON) -> void:
+	var tags := ["cosmetic", "paint"]
+	if rarity <= Rarity.UNCOMMON:
+		tags.append("vendor")
+	register(id, display_name, rarity, value, tags, {"paint": paint}, description)
 
 
 ## Registers a home base piece. Small pieces are also tagged "decor".

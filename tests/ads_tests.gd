@@ -34,7 +34,7 @@ static func _check_without_skin(t: Node) -> void:
 	var p := raid.player
 	p.set_physics_process(false)
 	var pose := ActionPose.of(p)
-	p.active_weapon_index = 0
+	p._draw_weapon(0)
 	var rifle := p.get_active_weapon() as Gun
 	_aim(p, rifle, true)
 	for i in 30:
@@ -66,9 +66,13 @@ static func _check_without_skin(t: Node) -> void:
 	p.weapons_locked = true
 	await t.frames(2)
 	t.check(not rifle.is_aiming(), "with weapons locked an aim held over lets go")
+	t.check(p.get_active_weapon() == null, "and the weapon goes away (weapons only come out where they are free)")
 	p.weapons_locked = false
+	p.cmd.switch_weapon = 0
+	await t.frames(1)
+	p.cmd.switch_weapon = -1
 	await t.frames(2)
-	t.check(rifle.is_aiming(), "unlocked again, the held aim comes back")
+	t.check(rifle.is_aiming(), "unlocked and drawn again, the held aim comes back")
 	p.cmd.secondary = false
 	p.set_physics_process(false)
 	var pistol := p.weapons[1] as Gun
