@@ -678,6 +678,7 @@ func _update(delta: float) -> void:
 	_update_cloak()
 	_update_breath(delta)
 	_update_materialize()
+	_update_weapon_hum()
 	_update_toy(delta)
 	_update_bark(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
@@ -1145,6 +1146,10 @@ func _update_switch(delta: float) -> void:
 		_plan_t = 0.0
 		if _plan.is_empty():
 			_in_hand = active
+		# The draw is heard as the hand takes it (a summon has its own sound).
+		if active != null and actor.materialize_left <= 0.0:
+			Sfx.play("draw_gun" if active is Gun else "draw_blade", actor.global_position + Vector3.UP * 1.2,
+					-8.0 if actor.is_player else -12.0, 18.0)
 	if not _plan.is_empty():
 		_plan_t += delta
 		_play_plan()
@@ -2437,6 +2442,47 @@ void fragment() {
 ## `Actor.materialize_left` runs down, and one stored back fades out the same
 ## way as `Actor.dematerialize_left` runs down. It is the one weapon in the one hand,
 ## so both views and everyone around see the same thing.
+## A charging rail's whine and a rotary gun's barrels spinning, heard by
+## everyone near, from the gun's own state (simulated from the command, so a
+## remote player's charge is heard too). One player each, made on first use.
+var _hum: AudioStreamPlayer3D
+var _hum_sound := ""
+
+
+func _update_weapon_hum() -> void:
+	var gun := actor.get_active_weapon() as Gun
+	var want := ""
+	var level := 0.0
+	if gun != null and not actor.is_dead:
+		if gun.charge_time > 0.0 and gun.charge_fraction() > 0.0:
+			want = "rail_charge"
+			level = 1.0
+		elif gun.spin_fraction() > 0.0:
+			want = "storm_spin"
+			level = gun.spin_fraction()
+	if want != _hum_sound:
+		_hum_sound = want
+		if _hum != null:
+			_hum.stop()
+		var stream := Sfx.get_stream(want) if want != "" else null
+		if stream != null:
+			if _hum == null:
+				_hum = AudioStreamPlayer3D.new()
+				_hum.name = "WeaponHum"
+				_hum.position = Vector3(0.0, 1.3, 0.0)
+				_hum.max_distance = 60.0
+				add_child(_hum)
+			_hum.stream = stream
+			_hum.pitch_scale = 1.0
+			_hum.play()
+	if _hum != null and want == "storm_spin":
+		# The whirr climbs with the barrels.
+		_hum.pitch_scale = 0.5 + 0.6 * level
+		_hum.volume_db = linear_to_db(0.2 + 0.8 * level) - 4.0
+	elif _hum != null:
+		_hum.volume_db = -2.0
+
+
 func _update_materialize() -> void:
 	var weapon := actor.get_active_weapon()
 	# Stored back through the watch, it runs the other way: the solid model
