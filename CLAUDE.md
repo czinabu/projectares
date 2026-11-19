@@ -1565,6 +1565,27 @@ without Caleb, and update the gap list when a PR closes a row.
   switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+- Emotes (DESIGN.md "Emotes", `core/visual/emotes.gd`): picked on the
+  watch's emote icon (Status tab, `Hud.emote_slot`), played by the
+  controller as the held `ActorCommand.emote` (in the stance's byte,
+  `EMOTE_SHIFT`), so they predict and replicate with no message of their
+  own, and posed on the one body (`ActionPose.emote`, timed by each view;
+  `Locomotion._emote_body` and `emote_pose`), the same in both views. View
+  only: nothing in the simulation reads one. Moving, firing, drawing, the
+  phone or watch, a vehicle or the air ends one, and starting one puts the
+  weapon away (`PlayerController._tick_emote`). A new emote is an
+  `Emotes.IDS` entry and a pose; check by eye with `visual_check.tscn --
+  <dir> --emotes-only`.
+- Squads and friends (DESIGN.md "Squads and friends"): a squad is the
+  server's `SocialService` (made by a "squad" invite, kept in memory, left
+  with "squad" ["leave"] or by going offline, `MAX_SQUAD`), and it is the
+  key `Raid.set_squad` keeps for portals in place of the clan
+  (`NetSession._set_squad_key`, refreshed with every phone snapshot), never
+  a side. Squad chat is a message "to" `SocialService.SQUAD_CHAT`. Which
+  world someone is in (`world_of`) is shown only to friends (contacts who
+  saved each other) and squadmates, and the phone's Join goes there through
+  `Main.join_world` (the squad portal's way), never from a world where gear
+  is at stake.
 - Bug reports (the must-work checklist's "Bug reporting with logs"): the
   phone's Report app (`Phone.report_requested`) hands `Main` a line of
   text, and `core/report/bug_report.gd` (`Main.bug_report`, view and

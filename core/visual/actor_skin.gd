@@ -490,6 +490,8 @@ func _ready() -> void:
 	if skeleton:
 		# Last, so the phone has the right hand whatever the arm was doing.
 		locomotion.add_phone_hook()
+		# The emote's arms after it, so a wave takes the hand it needs.
+		locomotion.add_emote_hook()
 	if skeleton:
 		_setup_glide_pose(skeleton, def)
 		skeleton.skeleton_updated.connect(_note_head)

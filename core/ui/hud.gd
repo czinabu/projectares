@@ -232,7 +232,8 @@ func _process(delta: float) -> void:
 	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick, "portal": controller.portal_pick,
 			"map": controller.map_pick, "standing": controller.standing_pick, "pack": controller.pack_pick,
 			"race": controller.race_pick, "race_open": controller.watch_open == "contract",
-			"ghost": controller.ghost_pick, "life_time": life_time} if controller != null else {"life_time": life_time}
+			"ghost": controller.ghost_pick, "life_time": life_time,
+			"emote": controller.emote_pick, "emote_playing": controller.emote_playing} if controller != null else {"life_time": life_time}
 	race_line = Race.run_line((raid as Race).view_run()) if raid is Race else ""
 	if raid is Race:
 		_guide_to_pits((raid as Race).view_run())
@@ -443,6 +444,7 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 		where += " · " + held
 	slots.append(map_slot(where, picks.get("targets", []), int(picks.get("map", 0)), picks.get("waypoint", {}), p))
 	slots.append(standing_slot(p_raid, p, int(picks.get("standing", 0)), jobs, float(picks.get("life_time", 0.0))))
+	slots.append(emote_slot(int(picks.get("emote", 0)), str(picks.get("emote_playing", ""))))
 	# Mission: the squad portal, the contract, the squad ping, and sign-out
 	# and banking.
 	slots.append(portal_slot(Portal.choices_for(p_raid, p), int(picks.get("portal", 0))))
@@ -858,7 +860,7 @@ static func base_vehicle_slot(toys: Array[String], picked := 0, packing := false
 ## `portal_pick`) is the one icon used from here: it is how you leave for a
 ## world. The rest is the base's stations' job.
 static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array[Dictionary] = [],
-		portal_pick := 0) -> Array[Dictionary]:
+		portal_pick := 0, emote_pick := 0, emote_playing := "") -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
 	var worn: Array[String] = []
 	for slot: String in ["primary", "sidearm", "melee"]:
@@ -880,11 +882,22 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 	slots.append(_slot("pack", "", "Your pack fills out in a world", [], -1.0, true, false))
 	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
 	slots.append(_slot("standing", "", "At home", [], -1.0, true, false))
+	slots.append(emote_slot(emote_pick, emote_playing))
 	slots.append(portal_slot(Portal.from_base(), portal_pick))
 	slots.append(contract_slot(held, {}))
 	slots.append(_slot("ping", "", "No squad here", [], -1.0, true, false))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
 	return slots
+
+
+## The emote icon (`Emotes`): a carousel of every emote, the one `picked`
+## out on its line; a click plays it, or stops it if it is the one playing.
+## Works everywhere you stand: a world, the plaza, the arena, the base.
+static func emote_slot(picked := 0, playing := "") -> Dictionary:
+	var at := clampi(picked, 0, Emotes.IDS.size() - 1)
+	var id: String = Emotes.IDS[at]
+	var line := Emotes.name_of(id) + (" · playing" if id == playing else "")
+	return _slot("emote", "", line, ["wheel", "click"], -1.0, false, playing != "", Emotes.IDS.size(), at)
 
 
 ## The squad portal icon: a carousel of where a portal can lead from here
@@ -1717,12 +1730,12 @@ class Wrist:
 	const TABS := ["summon", "status", "mission"]
 	const TAB_SLOTS := {
 		"summon": ["weapon", "vehicle", "artifact", "pack"],
-		"status": ["map", "standing"],
+		"status": ["map", "standing", "emote"],
 		"mission": ["portal", "contract", "ping", "leave"],
 	}
 	## Every icon, left to right, tab after tab (see `Hud.watch_slots`). The
 	## wheel steps along this.
-	const SLOTS := ["weapon", "vehicle", "artifact", "pack", "map", "standing", "portal", "contract", "ping", "leave"]
+	const SLOTS := ["weapon", "vehicle", "artifact", "pack", "map", "standing", "emote", "portal", "contract", "ping", "leave"]
 	const HOLO_TINT := Color(0.75, 1.0, 1.0, 0.95)
 	const GLOW_COLOR := Color(0.35, 0.95, 1.0)
 	## The card as projected light: faint scanlines that crawl up it, a
@@ -2968,6 +2981,14 @@ void fragment() {
 								var cell := Rect2(c + Vector2(-0.75 + col * 0.4, -0.95 + row * 0.55) * r,
 										Vector2(0.4, 0.55) * r)
 								draw_rect(cell, Color(color, color.a * 0.7))
+				"emote":
+					# A figure with one arm raised in a wave.
+					draw_arc(c + Vector2(0, -0.62) * r, 0.26 * r, 0.0, TAU, 14, color, width, true)
+					_lines(PackedVector2Array([Vector2(0, -0.36), Vector2(0, 0.4)]), c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.45, 1.0), Vector2(0, 0.4), Vector2(0.45, 1.0)]),
+							c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.55, 0.2), Vector2(0, -0.15), Vector2(0.45, -0.3),
+							Vector2(0.7, -0.85)]), c, r, color, width)
 				"portal":
 					# An upright ring with a swirl inside it.
 					var ring := PackedVector2Array()

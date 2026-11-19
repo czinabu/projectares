@@ -52,6 +52,9 @@ signal tour_requested(action: String)
 signal host_requested
 signal join_requested(address: String)
 signal leave_server_requested
+## Contacts' Join (a friend's or squadmate's world, `SocialService.world_of`):
+## `Main.join_world` takes you there the way a squad portal would.
+signal join_world_requested(world_id: String)
 ## The Servers app asks `Main` to restart into a downloaded update. Online
 ## that means leaving the server first, which `Main` refuses out in a world.
 signal update_restart_requested
@@ -170,6 +173,7 @@ const CONTROLS := [
 		["Pack the bike you look at (watch up)", "{fire}"],
 		["Use your artifact (watch up, on the artifact icon)", "{fire}"],
 		["Ping where you look for your squad (watch up, on the ping icon)", "{fire}"],
+		["Emote: wave, salute, sit and more (watch up, Status tab, on the emote icon); move to stop", "{fire}"],
 	]],
 	["VEHICLES", [
 		["Get on or off", "{interact}"],
@@ -734,7 +738,11 @@ func clear_local_messages(from: String) -> void:
 func conversation_with(other: String) -> Array:
 	var out: Array = []
 	for message: Dictionary in all_messages():
-		if message.from == other or message.to == other:
+		var to_squad: bool = message.get("squad", false)
+		if other == SocialService.SQUAD_CHAT:
+			if to_squad:
+				out.append(message)
+		elif not to_squad and (message.from == other or message.to == other):
 			out.append(message)
 	return out
 
@@ -746,6 +754,8 @@ func conversations() -> Array[String]:
 	for i in range(messages.size() - 1, -1, -1):
 		var message: Dictionary = messages[i]
 		var other: String = message.to if message.from == my_id() else message.from
+		if message.get("squad", false):
+			other = SocialService.SQUAD_CHAT
 		if other not in out:
 			out.append(other)
 	return out
@@ -755,7 +765,8 @@ func unread_from(other: String) -> int:
 	var count := 0
 	var seen := int(read_upto.get(other, 0))
 	for message: Dictionary in conversation_with(other):
-		if message.from == other and int(message.get("id", 0)) > seen:
+		var theirs: bool = message.from != my_id() if other == SocialService.SQUAD_CHAT else message.from == other
+		if theirs and int(message.get("id", 0)) > seen:
 			count += 1
 	return count
 
@@ -889,6 +900,22 @@ func answer_invite(invite_id: int, accept: bool) -> void:
 func change_contact(action: String, other: String) -> void:
 	if online():
 		net.change_contact(action, other)
+
+
+## The squad you are in ({} for none): its "id" and "members", each with
+## "id", "name", "online", "where", "world" and "leader".
+func squad() -> Dictionary:
+	return social().get("squad", {})
+
+
+func leave_squad() -> void:
+	if online():
+		net.leave_squad()
+
+
+func join_world(world_id: String) -> void:
+	if world_id != "":
+		join_world_requested.emit(world_id)
 
 
 ## A short pop-up at the top of the screen, shown even while the phone is away.
@@ -1406,6 +1433,7 @@ func _draw_contacts() -> void:
 	if not online():
 		_offline_note()
 		return
+	_draw_squad()
 	var list := contacts()
 	if list.is_empty():
 		_body.add_child(_label("Nobody else is on this server yet. Players appear here as they sign in.",
@@ -1418,7 +1446,9 @@ func _draw_contacts() -> void:
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		head.add_child(name_label)
 		var place: String = "Blocked" if entry.blocked else (
-				SocialService.PLACE_NAMES.get(entry.where, "Online") if entry.online else "Offline")
+				_place_text(entry) if entry.online else "Offline")
+		if entry.get("friend", false) and not entry.blocked:
+			place = "Friend · " + place
 		var place_label := _label(place, 13, Color(0.5, 0.9, 0.55) if entry.online and not entry.blocked else Color(0.6, 0.6, 0.6))
 		place_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		head.add_child(place_label)
@@ -1432,6 +1462,16 @@ func _draw_contacts() -> void:
 				row.add_child(_button("Invite to raid", send_invite.bind(entry.id, "world")))
 				row.add_child(_button("Invite to base", send_invite.bind(entry.id, "base")))
 		box.add_child(row)
+		if not entry.blocked and entry.online:
+			# Playing together: a squad, and a friend's world to go to.
+			var row3 := HBoxContainer.new()
+			row3.add_theme_constant_override("separation", 4)
+			if not entry.get("squad", false):
+				row3.add_child(_button("Invite to squad", send_invite.bind(entry.id, "squad")))
+			if str(entry.get("world", "")) != "":
+				row3.add_child(_button("Join", join_world.bind(str(entry.world))))
+			if row3.get_child_count() > 0:
+				box.add_child(row3)
 		var row2 := HBoxContainer.new()
 		row2.add_theme_constant_override("separation", 4)
 		if not entry.blocked:
@@ -1443,12 +1483,54 @@ func _draw_contacts() -> void:
 		_body.add_child(card)
 
 
+## Where a contact is, with the world's name for a friend or squadmate.
+func _place_text(entry: Dictionary) -> String:
+	var place: String = SocialService.PLACE_NAMES.get(entry.get("where", ""), "Online")
+	var world := Worlds.get_world(str(entry.get("world", "")))
+	if world != null and str(entry.get("where", "")) in ["raid", "hub"]:
+		place = "In " + world.display_name
+	return place
+
+
+## Your squad at the top of Contacts: who is in it and where, with the squad
+## chat, a Join for a squadmate's world and a way out.
+func _draw_squad() -> void:
+	var mine := squad()
+	if mine.is_empty():
+		return
+	var card := _card()
+	var box: VBoxContainer = card.get_child(0)
+	box.add_child(_label("Your squad", 19, UiTheme.INK))
+	for member: Dictionary in mine.get("members", []):
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 4)
+		var you: bool = member.id == my_id()
+		var shown := _label("%s%s" % [member.name, " (you)" if you else ""], 15,
+				UiTheme.INK if member.online else Color(0.6, 0.6, 0.6))
+		shown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(shown)
+		var where := _label(_place_text(member) if member.online else "Offline", 12, Color(0.5, 0.9, 0.55))
+		where.autowrap_mode = TextServer.AUTOWRAP_OFF
+		row.add_child(where)
+		if not you and str(member.get("world", "")) != "":
+			row.add_child(_button("Join", join_world.bind(str(member.world))))
+		box.add_child(row)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 4)
+	actions.add_child(_button("Squad chat", open_chat.bind(SocialService.SQUAD_CHAT)))
+	actions.add_child(_button("Leave squad", leave_squad))
+	box.add_child(actions)
+	_body.add_child(card)
+
+
 func _draw_messages(draft: String) -> void:
 	if not online() and local_messages.is_empty():
 		_offline_note()
 		return
 	if chat_with == "":
 		var others := conversations()
+		if not squad().is_empty() and SocialService.SQUAD_CHAT not in others:
+			_body.add_child(_button("Squad chat\nTalk to everyone in your squad", open_chat.bind(SocialService.SQUAD_CHAT)))
 		if others.is_empty():
 			_body.add_child(_label("No messages yet. Open Contacts and tap Message.", 15, Color(0.75, 0.75, 0.75)))
 		if not online():
@@ -1459,6 +1541,8 @@ func _draw_messages(draft: String) -> void:
 			var last: Dictionary = thread[thread.size() - 1]
 			var unread := unread_from(other)
 			var shown: String = last.from_name if last.from == other else last.to_name
+			if other == SocialService.SQUAD_CHAT:
+				shown = "Squad"
 			var button := _button("%s%s\n%s" % [shown, "  (%d new)" % unread if unread > 0 else "",
 					_preview(last.text)], open_chat.bind(other))
 			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -1468,7 +1552,8 @@ func _draw_messages(draft: String) -> void:
 	var info := contact(chat_with)
 	var head := HBoxContainer.new()
 	head.add_child(_button("< Back", open_app.bind("messages")))
-	var who := _label(info.get("name", local_names.get(chat_with, chat_with)), 19, UiTheme.INK)
+	var squad_chat := chat_with == SocialService.SQUAD_CHAT
+	var who := _label("Squad" if squad_chat else info.get("name", local_names.get(chat_with, chat_with)), 19, UiTheme.INK)
 	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(who)
 	_body.add_child(head)
@@ -1476,7 +1561,7 @@ func _draw_messages(draft: String) -> void:
 		var mine: bool = message.from == my_id()
 		var bubble := _label(message.text, 16, Color(1.0, 0.85, 0.65) if mine else UiTheme.INK)
 		bubble.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if mine else HORIZONTAL_ALIGNMENT_LEFT
-		var stamp := _label("%s  %s" % ["You" if mine else message.from_name,
+		var stamp := _label("%s  %s" % ["You" if mine else str(message.from_name),
 				_local_time(float(message.get("time", 0)))], 11, Color(0.55, 0.55, 0.55))
 		stamp.horizontal_alignment = bubble.horizontal_alignment
 		_body.add_child(stamp)
@@ -1501,7 +1586,9 @@ func _draw_messages(draft: String) -> void:
 	row.add_child(_compose)
 	row.add_child(_button("Send", send))
 	_body.add_child(row)
-	if not info.get("online", false):
+	if squad_chat and squad().is_empty():
+		_body.add_child(_label("You are not in a squad now. Invite someone from Contacts.", 12, Color(0.6, 0.6, 0.6)))
+	elif not squad_chat and not info.get("online", false):
 		_body.add_child(_label("They are offline. They will see it when they next sign in here.", 12, Color(0.6, 0.6, 0.6)))
 	_scroll.set_deferred("scroll_vertical", 1 << 20)
 
@@ -1512,14 +1599,16 @@ func _draw_invites() -> void:
 		return
 	var list := invites()
 	if list.is_empty():
-		_body.add_child(_label("No invites right now. When someone invites you to their raid or base, it shows up here.",
+		_body.add_child(_label("No invites right now. When someone invites you to their raid, base or squad, it shows up here.",
 				15, Color(0.75, 0.75, 0.75)))
 	var now := Time.get_unix_time_from_system()
 	for invite: Dictionary in list:
 		var card := _card()
 		var box: VBoxContainer = card.get_child(0)
 		var where := "their home base"
-		if invite.kind == "world":
+		if invite.kind == "squad":
+			where = "their squad"
+		elif invite.kind == "world":
 			var world := Worlds.get_world(invite.get("world_id", ""))
 			where = "the raid in %s" % world.display_name if world else "their raid"
 		box.add_child(_label("%s invites you to %s." % [invite.from_name, where], 17, UiTheme.INK))
