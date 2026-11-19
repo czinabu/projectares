@@ -1553,6 +1553,43 @@ func _show_head(on: bool) -> void:
 			(node as MeshInstance3D).visible = on
 
 
+## Heads in the packs that are headgear, not a face (a helmet and visor, a
+## void suit's hood): with the worn helmet taken off, a face shows instead.
+const HEADGEAR_HEADS := {"m": ["Swat", "Spacesuit"], "f": []}
+
+
+## With the helmet off the head (`_place_helmet`), a person whose head part is
+## itself headgear (`HEADGEAR_HEADS`) shows their build's plain face in its
+## place, so a helmet never comes off another helmet; it goes back once the
+## helmet is on. View only: the appearance is untouched.
+func _bare_face(on: bool) -> void:
+	var build: String = _appearance.get("build", "")
+	if _skeleton == null or build == "":
+		return
+	for node in _skeleton.get_children():
+		var part := node as MeshInstance3D
+		if part == null or part.get_meta("slot", "") != "head":
+			continue
+		if on and not _street.has("head") and _appearance.get("head", "") in HEADGEAR_HEADS.get(build, []):
+			_suit_part(part, "head", Human.STARTER[build][0])
+		elif not on and _street.has("head"):
+			_give_back(part, "head")
+
+
+## Puts back the part `_suit_part` took off `slot`.
+func _give_back(part: MeshInstance3D, slot: String) -> void:
+	var kept: Dictionary = _street[slot]
+	_street.erase(slot)
+	_drop_materials(part)
+	part.mesh = kept["mesh"]
+	part.skin = kept["skin"]
+	var mats: Array = kept["mats"]
+	for i in mats.size():
+		part.set_surface_override_material(i, mats[i])
+		if mats[i] is ShaderMaterial:
+			_materials.append(mats[i])
+
+
 ## The node a `_hang` holder keeps its part in (moved and turned with it).
 func _held_part(hung: Node3D) -> Node3D:
 	return hung.get_child(0) as Node3D if hung is BoneAttachment3D else hung
@@ -1577,6 +1614,7 @@ func _place_helmet(may_stow: bool) -> void:
 			# Off the head it is no longer left out of first person with it.
 			_unhide(_helmet_model)
 		_show_head(at != "head")
+		_bare_face(at != "head")
 		_helmet_at = at
 	if at == "hand":
 		_helmet_carry.global_transform = helmet_carried(ActionPose.helmet_carry(stow))
@@ -2460,16 +2498,7 @@ func _wear_undersuit(style: Dictionary) -> void:
 			if on and not _street.has(slot) and _appearance.get(slot, "") != outfit:
 				_suit_part(part, slot, outfit)
 			elif not on and _street.has(slot):
-				var kept: Dictionary = _street[slot]
-				_street.erase(slot)
-				_drop_materials(part)
-				part.mesh = kept["mesh"]
-				part.skin = kept["skin"]
-				var mats: Array = kept["mats"]
-				for i in mats.size():
-					part.set_surface_override_material(i, mats[i])
-					if mats[i] is ShaderMaterial:
-						_materials.append(mats[i])
+				_give_back(part, slot)
 	for mat in _materials:
 		mat.set_shader_parameter("suit", 1.0 if on else 0.0)
 		if on:
