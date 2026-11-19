@@ -54,6 +54,20 @@ static func run(t: Node) -> void:
 	t.check(handed != null and handed.id == "saltflat", "and hands its map the planet")
 	meridian_map.free()
 
+	# Frostline stands on the Glacier and keeps its own cold, carry and grip.
+	var frost: WorldDef = load("res://worlds/frostline/world.gd").new()
+	var frost_type := PlanetTypes.get_type("glacier")
+	t.check(frost.planet == "glacier", "Frostline stands on the Glacier")
+	t.check(not is_equal_approx(frost.cold, float(frost_type.rules["cold"]))
+			and is_equal_approx(frost.shot_carry, 2.0),
+			"and keeps its own cold and still-air carry over the planet's defaults")
+	t.check(frost.surface_grip(Vector3(0.0, 40.0, 0.0)) != frost.planet_grip,
+			"and its own snow and ice grip")
+	var frost_map: Node3D = frost.create_map()
+	var frost_handed: PlanetType = frost_map.get("planet")
+	t.check(frost_handed != null and frost_handed.id == "glacier", "and hands its map the planet")
+	frost_map.free()
+
 	# The same ground for the same point, whichever copy asks and on any thread.
 	var recipe: Dictionary = PlanetTypes.get_type("glacier").terrain
 	var a := PlanetTerrain.new(recipe, 7)
