@@ -195,7 +195,8 @@ func _build_overlay() -> void:
 	_overlay.top_level = true
 	_overlay.z_index = 20
 	add_child(_overlay)
-	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Top level, so it is placed on the canvas and sized here, not anchored.
+	_overlay.position = Vector2.ZERO
 	_overlay.size = get_viewport_rect().size
 	get_viewport().size_changed.connect(func() -> void: _overlay.size = get_viewport_rect().size)
 	var shade := ColorRect.new()

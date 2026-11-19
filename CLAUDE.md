@@ -1423,6 +1423,19 @@ without Caleb, and update the gap list when a PR closes a row.
   switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+- Bug reports (the must-work checklist's "Bug reporting with logs"): the
+  phone's Report app (`Phone.report_requested`) hands `Main` a line of
+  text, and `core/report/bug_report.gd` (`Main.bug_report`, view and
+  client only) bundles it with the build, the machine, where the player is
+  (`Main.report_context`, plain values, never a secret) and the game's
+  log from this run and the run before (a crashed run's log is found on
+  the next launch). It posts that to a Discord webhook as a message with
+  the logs attached, at most one every `report_every`, and always keeps a
+  copy under `BugReport.SAVE_DIR`. The webhook is never in the code: the
+  Windows build of main stamps it into `ares/report/webhook` from the
+  repository secret `BUG_REPORT_WEBHOOK` (`windows-client.yml`), and any
+  other build only keeps the copy. A new fact worth having in a report is
+  a key in `report_context`.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
   only in a debug or editor run (`DevMode.available`), never in an exported
@@ -2027,8 +2040,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - Every gameplay feature gets checks in `tests/test_runner.gd`.
 - A running game logs no errors: one a frame is enough to sink the frame
   rate. `tests/error_spam_tests.gd` watches an Ashfront session with an
-  `OS.add_logger` counter; fix the cause of anything it catches, never
-  silence it. A spring stepped by `delta` is stepped in short slices (a
+  `OS.add_logger` counter, and `tests/screen_sweep_tests.gd` does the same
+  in the base and every world while opening every phone app, settings tab,
+  watch icon, station, the bench and the plan table; fix the cause of
+  anything they catch, never silence it. A spring stepped by `delta` is stepped in short slices (a
   long frame throws it off), and a deferred call or timer that outlives
   the node it acts on is bound to that node (`node.queue_free`, an
   instance id), never a lambda capturing it A loop over a
@@ -2048,7 +2063,8 @@ godot --headless --path . res://tests/test_runner.tscn   # must exit 0
 godot --headless --path . res://tests/test_runner.tscn -- --only online   # one group
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
-godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle; exits 1 over the 16.7 ms budget
+godot --headless --fixed-fps 60 --path . res://tests/frame_bench.tscn -- --look --seed 7 --save main.json   # then the same with --against main.json on a change (fails past --tolerance, 0.15), --max-hitches for frames over 50 ms
 godot --headless --path . res://tests/server_bench.tscn -- --plaza 10 --per-world 7 --arena 4   # the whole server at once: tick time per session, travel against 3 s
 godot --headless --path . res://tests/server_bench.tscn -- --cluster --plaza 10 --per-world 7 --arena 4   # the same with one program per world; times a trip made on a connection opened ahead
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
