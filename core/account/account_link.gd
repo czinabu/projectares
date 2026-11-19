@@ -23,7 +23,7 @@ extends Node
 ## "unanswered": true} so nothing ever waits on the service for long.
 ##
 ## Sure. `bank`, `settle`, `cancel_deploy`, `change_scrip`, `record_arena`,
-## `record_race`
+## `record_race`, `keep_ghost`
 ## and `cancel_all_deploys` carry a result the server alone knows (a life
 ## that ended, loot handed in), so they are never dropped: each stays
 ## queued, in order, and is sent again after every reconnect until the
@@ -391,6 +391,22 @@ func record_arena(account_id: String, won: bool) -> void:
 
 func record_race(account_id: String, result: Dictionary) -> void:
 	_ask("record_race", [account_id, result], true)
+
+
+func keep_ghost(account_id: String, track_id: String, machine: String, lap: float, packed: String) -> void:
+	_ask("keep_ghost", [account_id, track_id, machine, float(lap), packed], true)
+
+
+## The fastest kept ghost among `ids` on a track (`StashService.race_ghost`).
+func race_ghost(ids: Array, track_id: String, machine := "") -> Dictionary:
+	var answer: Dictionary = await _ask("race_ghost", [ids, track_id, machine])
+	return answer if answer.get("ok", false) else {"ok": false}
+
+
+## `ids`' best laps (`StashService.race_bests`), or [] unanswered.
+func race_bests(ids: Array) -> Array:
+	var answer: Dictionary = await _ask("race_bests", [ids])
+	return answer.get("rows", []) if typeof(answer.get("rows")) == TYPE_ARRAY else []
 
 
 # --- What a server still keeps itself ----------------------------------------

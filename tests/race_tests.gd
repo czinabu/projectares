@@ -22,6 +22,23 @@ class MemoryBank:
 		recorded.append([key, result])
 		states[key] = RaceLeague.apply(state(key), result, 100).state
 
+	## "key|track|machine" -> RaceGhost.
+	var kept := {}
+
+	func keep_ghost(key: String, track_id: String, machine: String, ghost: RaceGhost) -> void:
+		var s := state(key)
+		if RaceLeague.note_best(s, track_id, machine, ghost.lap_time):
+			states[key] = s
+			kept["%s|%s|%s" % [key, track_id, machine]] = ghost
+
+	func ghost_of(keys: Array, track_id: String, machine: String) -> Dictionary:
+		for key: Variant in keys:
+			var ghost: RaceGhost = kept.get("%s|%s|%s" % [key, track_id, machine])
+			if ghost != null:
+				return {"ok": true, "name": str(key), "machine": machine, "lap": ghost.lap_time,
+						"ghost": ghost.to_packed()}
+		return {"ok": false}
+
 
 static func run(t: Node) -> void:
 	print("Race world: Meridian time trials, live races and the league")
@@ -30,6 +47,8 @@ static func run(t: Node) -> void:
 	_test_formatting(t)
 	_test_league_rules(t)
 	_test_league_on_account(t)
+	_test_bests(t)
+	_test_ghosts_on_account(t)
 	await _test_time_trial(t)
 	await _test_skyhook(t)
 	await _test_live_race(t)
@@ -136,6 +155,8 @@ static func _test_time_trial(t: Node) -> void:
 	var race: Race = world.new_raid()
 	t.add_child(race)
 	race.start(world, 5, ["rifle_ar", "bike_raider", "medkit"] as Array[String])
+	var bank := MemoryBank.new()
+	race.league_bank = bank
 	await t.frames(5)
 	var me := race.player
 	t.check(me != null and me.weapons_locked, "a racer has weapons locked")
@@ -187,6 +208,7 @@ static func _test_time_trial(t: Node) -> void:
 	await _drive(t, race, bike, from, to_line + full + 3, 40.0, 200, 230)
 	t.check(laps.size() == 1 and not laps[0][1], "a lap that cut off the track is not counted")
 	t.check(race.board.is_empty(), "and goes nowhere near the board")
+	t.check(bank.kept.is_empty(), "nor is it kept as a ghost")
 	t.check(int(race.view_run().get("lap", 0)) == 2, "it still moves the run on a lap")
 	# A clean lap counts and goes on the board, and its splits set the pace.
 	from = track.locate(bike.global_position)
@@ -197,6 +219,23 @@ static func _test_time_trial(t: Node) -> void:
 			and is_equal_approx(float(race.board[0].time), float(laps[1][0])), "and goes on the board")
 	view = race.view_run()
 	t.check(is_equal_approx(float(view.best_lap), float(laps[1][0])), "it is the run's best lap")
+	# The authority recorded the lap as it was driven and kept it as a ghost.
+	var key := "%s|%s|bike_scrapper" % [race.state_for(me).owner, track.id]
+	var kept: RaceGhost = bank.kept.get(key)
+	t.check(kept != null and kept.samples() >= 10 and is_equal_approx(kept.lap_time, float(laps[1][0]))
+			and is_equal_approx(RaceLeague.best_lap(bank.state(race.state_for(me).owner), track.id, "bike_scrapper"),
+			float(laps[1][0])), "a clean lap is kept as the racer's best ghost, its time as their best")
+	if kept != null:
+		t.check(kept.sample(0.0).origin.distance_to(line.at) < 30.0, "the ghost starts at the line")
+	var mine := race.ghost_shown("mine", track.id, "bike_scrapper")
+	t.check(not mine.is_empty() and is_equal_approx(float(mine.lap), float(laps[1][0])),
+			"and comes straight back as the ghost to chase")
+	race.want_ghost("leader", track.id, "bike_scrapper")
+	var leader := race.ghost_shown("leader", track.id, "bike_scrapper")
+	t.check(not leader.is_empty() and leader.ghost.samples() == kept.samples() if kept != null else false,
+			"the board leader's ghost is the leader's kept lap")
+	race.want_ghost("friend", track.id, "bike_scrapper")
+	t.check(race.ghost_shown("friend", track.id, "bike_scrapper").is_empty(), "solo, no friend's ghost turns up")
 	await _drive(t, race, bike, track.locate(bike.global_position), 200)
 	view = race.view_run()
 	t.check(int(view.last_gate) == 1 and not is_nan(float(view.last_delta)),
@@ -484,6 +523,63 @@ static func _test_league_on_account(t: Node) -> void:
 	t.check(int(bank.state(id).rating) == 21, "a race reads the league from the accounts")
 
 
+## Best laps in the league state: kept per track and machine, only ever
+## faster, read for a track on any machine, and cleaned.
+static func _test_bests(t: Node) -> void:
+	var state := RaceLeague.fresh()
+	t.check(RaceLeague.note_best(state, "coilrun", "bike_raider", 70.0)
+			and RaceLeague.note_best(state, "coilrun", "bike_scrapper", 68.0)
+			and not RaceLeague.note_best(state, "coilrun", "bike_raider", 71.0)
+			and RaceLeague.note_best(state, "coilrun", "bike_raider", 69.5), "only a faster lap is a new best")
+	t.check(is_equal_approx(RaceLeague.best_lap(state, "coilrun", "bike_raider"), 69.5)
+			and is_equal_approx(RaceLeague.best_lap(state, "coilrun"), 68.0)
+			and RaceLeague.best_machine(state, "coilrun") == "bike_scrapper"
+			and RaceLeague.best_lap(state, "skyhook") < 0.0, "a best is read per machine, or the track's on any")
+	var raw := state.duplicate(true)
+	raw.bests["junk"] = 5.0
+	raw.bests["coilrun|x"] = -2.0
+	var cleaned := RaceLeague.clean(raw)
+	t.check(cleaned.bests.size() == 2 and is_equal_approx(float(cleaned.bests["coilrun|bike_raider"]), 69.5),
+			"a saved best list is cleaned")
+	t.check(not RaceLeague.note_best(state, "coilrun", "", 50.0) and not RaceLeague.note_best(state, "coilrun",
+			"bike_raider", 0.0), "nonsense laps are refused")
+
+
+## Ghosts on the server's accounts: kept beside the account when faster,
+## found among a list of accounts (a friend's, the board leader's), and
+## friends' best laps for the pit boards.
+static func _test_ghosts_on_account(t: Node) -> void:
+	var service := StashService.new()
+	service.persist = false
+	var a: String = service.sign_in("Ghost One", StashService.new_secret()).account_id
+	var b: String = service.sign_in("Ghost Two", StashService.new_secret()).account_id
+	var lap := RaceGhost.new()
+	for k in 400:
+		lap.record(k * 0.1, Vector3(k, 1, -k), 0.01 * k)
+	var packed := lap.to_packed()
+	t.check(packed.length() < 12000, "a 40 s ghost packs to a few KB (%d)" % packed.length())
+	var kept := service.keep_ghost(a, "coilrun", "bike_raider", 40.0, packed)
+	t.check(bool(kept.ok) and bool(kept.kept), "the server keeps a racer's best lap ghost")
+	t.check(not bool(service.keep_ghost(a, "coilrun", "bike_raider", 41.0, packed).get("kept", true)),
+			"but not a slower one")
+	t.check(not bool(service.keep_ghost(a, "coilrun", "bike_raider", 30.0, "junk").ok), "nor junk")
+	service.keep_ghost(b, "coilrun", "bike_raider", 38.5, packed)
+	t.check(is_equal_approx(RaceLeague.best_lap(service.snapshot(a).racing, "coilrun", "bike_raider"), 40.0),
+			"the best time is in the account's snapshot")
+	t.check(not JSON.stringify(service.load_account(a).to_dict()).contains(packed.substr(4, 40)),
+			"the ghost itself is kept apart from the account's own save")
+	var found := service.race_ghost([a, b], "coilrun", "bike_raider")
+	var ghost := RaceGhost.from_packed(found.get("ghost"), "bike_raider", 38.5)
+	t.check(bool(found.ok) and found.name == "Ghost Two" and is_equal_approx(float(found.lap), 38.5) and ghost != null
+			and ghost.samples() == 400, "the fastest ghost among friends is found")
+	t.check(not bool(service.race_ghost([a], "skyhook", "").ok), "no ghost where nobody has raced")
+	t.check(bool(service.race_ghost([a], "coilrun", "").ok), "with no machine named, their best there on any")
+	var rows := service.race_bests([a, b])
+	t.check(rows.size() == 2 and rows[0].name == "Ghost Two" and rows[0].track == "coilrun", "friends' bests, fastest first")
+	var bank := Race.StashLeagueBank.new(service)
+	t.check(is_equal_approx(bank.best(a, "coilrun", "bike_raider"), 40.0), "a race reads a racer's best from the accounts")
+
+
 ## Skyhook, the second track: its own bays, a run on it judged on its own
 ## gates, the road over the road told apart by height, and its own board.
 static func _test_skyhook(t: Node) -> void:
@@ -571,3 +667,8 @@ static func _test_ghost_data(t: Node) -> void:
 	var mid := back.sample(1.05)
 	t.check(absf(mid.origin.x - 10.5) < 0.01, "and plays back between them")
 	t.check(RaceGhost.from_data({"t": [1], "p": "junk"}) == null, "a broken ghost file is refused")
+	var unpacked := RaceGhost.from_packed(back.to_packed(), "bike_raider", 3.0)
+	t.check(unpacked != null and unpacked.samples() == 30 and absf(unpacked.sample(1.05).origin.x - 10.5) < 0.02
+			and absf(unpacked.sample(1.05).basis.get_euler().y - 0.5) < 0.01, "a packed ghost plays back the same")
+	t.check(RaceGhost.from_packed("40:") == null and RaceGhost.from_packed("41:AAAA") == null and RaceGhost.from_packed("x") == null
+			and RaceGhost.from_packed(12) == null, "packed junk is refused")

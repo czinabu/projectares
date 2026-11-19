@@ -231,7 +231,7 @@ func _process(delta: float) -> void:
 	var picks := {"weapon": controller.weapon_pick, "artifact": controller.artifact_pick, "portal": controller.portal_pick,
 			"map": controller.map_pick, "standing": controller.standing_pick, "pack": controller.pack_pick,
 			"race": controller.race_pick, "race_open": controller.watch_open == "contract",
-			"ghost": controller.ghost_on, "life_time": life_time} if controller != null else {"life_time": life_time}
+			"ghost": controller.ghost_pick, "life_time": life_time} if controller != null else {"life_time": life_time}
 	race_line = Race.run_line((raid as Race).view_run()) if raid is Race else ""
 	var targets := map_targets(raid, p, ping_spots()) if wrist.raised and not p.is_dead else ([] as Array[Dictionary])
 	if controller != null:
@@ -431,8 +431,10 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	# On a race track the contract's place is the time trial's (no job
 	# counts there): the run's line, and restart, ghost and stop to pick.
 	if p_raid is Race:
-		slots.append(race_slot((p_raid as Race).view_run(), int(picks.get("race", 0)), bool(picks.get("race_open", false)),
-				bool(picks.get("ghost", true))))
+		var view := (p_raid as Race).view_run()
+		var pick := str(picks.get("ghost", "mine"))
+		slots.append(race_slot(view, int(picks.get("race", 0)), bool(picks.get("race_open", false)), pick,
+				(p_raid as Race).ghost_shown(pick, str(view.get("track", "")), str(view.get("machine", "")))))
 	else:
 		slots.append(contract_slot(jobs, p.tally))
 	slots.append(_slot("ping", "", "Ping where you look", ["click"], -1.0, false, false))
@@ -893,15 +895,16 @@ static func contract_slot(held: Array[Dictionary], tally: Dictionary) -> Diction
 
 
 ## What the race icon offers, in order: a live race (join the next start),
-## back to the grid for a time trial, the ghost on or off, and stopping the
-## run. `PlayerController.race_actions` turns a pick into one of these.
+## back to the grid for a time trial, which ghost to chase (each click
+## turns to the next of `Race.GHOST_PICKS`), and stopping the run. `PlayerController.race_actions` turns a pick into one of these.
 const RACE_ACTIONS := ["race", "restart", "ghost", "retire"]
 
 
 ## The race icon, in the contract's place on a race track (drawn as a flag,
 ## its "glyph"): the run's line and how far round it is, or what each pick
 ## does once opened.
-static func race_slot(view: Dictionary, picked: int, opened: bool, ghost_on: bool) -> Dictionary:
+static func race_slot(view: Dictionary, picked: int, opened: bool, ghost_pick: String,
+		ghost := {}) -> Dictionary:
 	var at := clampi(picked, 0, RACE_ACTIONS.size() - 1)
 	var line := Race.run_line(view)
 	if opened:
@@ -917,7 +920,7 @@ static func race_slot(view: Dictionary, picked: int, opened: bool, ghost_on: boo
 			"restart":
 				line = "Time trial · back to the grid" if not view.is_empty() else "Time trial on this machine"
 			"ghost":
-				line = "Ghost on · best lap" if ghost_on else "Ghost off"
+				line = ghost_line(ghost_pick, ghost, view.is_empty())
 			"retire":
 				line = "Stop the run and get off"
 	elif line == "":
@@ -933,6 +936,20 @@ static func race_slot(view: Dictionary, picked: int, opened: bool, ghost_on: boo
 			false, str(view.get("phase", "")) in ["grid", "waiting"], RACE_ACTIONS.size(), at)
 	slot["glyph"] = "race"
 	return slot
+
+
+## The race icon's ghost pick in one line: whose lap runs beside you, and
+## its time once it is here.
+static func ghost_line(pick: String, ghost: Dictionary, no_run: bool) -> String:
+	var whose := {"mine": "your best", "friend": "a friend's best", "leader": "the board leader's"}
+	if pick == "off" or not whose.has(pick):
+		return "Ghost off"
+	var line := "Ghost · " + str(whose[pick])
+	if not ghost.is_empty():
+		line = "Ghost · %s %s" % ["your best" if pick == "mine" else str(ghost.name), Race.format_time(float(ghost.lap))]
+	elif not no_run:
+		line += " · none yet"
+	return line
 
 
 ## The artifact icon: uses left (or a countdown), a ring while it runs or

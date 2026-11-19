@@ -39,6 +39,17 @@ extends Raid
 ## a race closes each person's finish goes to the bank, which moves their
 ## rating and pays its scrip (`RaceLeague.apply`).
 ##
+## Ghosts: the authority records every person's lap as it is driven
+## (`Run.recording`, a `RaceGhost`), and a counted lap faster than the
+## racer's best on that track and machine goes to the bank
+## (`LeagueBank.keep_ghost`: the account online, a file solo) and back to
+## the racer (`ghost_kept`). Which ghost a racer chases is theirs to pick on
+## the race icon (`GHOST_PICKS`: their own best, a friend's, the board
+## leader's, or none); `want_ghost` asks for it (solo the bank, online the
+## server, who knows each racer's friends) and `take_ghost` keeps the
+## answer for `RaceView` to play. Friends' best laps come the same way
+## (`friend_bests`) for the pit boards.
+##
 ## A world may lay out several tracks (Meridian has Coilrun and Skyhook),
 ## each with its own pit bays, grid, gantry, gates and board. A run is on
 ## the track whose road the machine was nearest when it was got on
@@ -83,6 +94,12 @@ const RADIO_GAP := 5.0
 const RIVAL_GAP := 20.0
 const RADIO_QUIET := 4.0
 ## The callsigns of AI racers who are not named rivals.
+## What the race icon's ghost pick turns through, in order.
+const GHOST_PICKS: Array[String] = ["mine", "friend", "leader", "off"]
+## Solo: where the profile's ghosts are kept (the same file older builds
+## kept the view's ghosts in, read in either form).
+const GHOST_PATH := "user://race_ghosts.json"
+
 const AI_NAMES: Array[String] = ["Vex Morrow", "Juno Kade", "Rook Halloran", "Sable Ito", "Dax Ferro",
 		"Mika Strand", "Tavi Okonkwo", "Wren Castell", "Bodhi Lark", "Ines Varga", "Cass Rennick", "Oto Brandt"]
 
@@ -97,6 +114,12 @@ signal heat_changed
 signal radio(actor: Actor, from: String, text: String)
 ## A race moved `actor`'s league standing (sent to their bank).
 signal league_changed(actor: Actor)
+## A person's lap was kept as their best ghost (authority).
+signal ghost_kept(actor: Actor, track_id: String, machine: String, ghost: RaceGhost)
+## A ghost asked for with `want_ghost` came (or came back empty).
+signal ghost_changed
+## Online server: a racer's friends' best laps should be sent again.
+signal bests_changed
 
 ## The first track, and every track the map lays out (`circuits`; `tracks`
 ## is the `Raid`'s footprints).
@@ -125,6 +148,16 @@ var drivers := {}
 var _ai_made := 0
 ## Online client: sends a request (`request`'s action) to the server.
 var send_request: Callable
+## Online client: asks the server for a ghost (pick, track id, machine).
+var send_ghost_ask: Callable
+## "pick|track|machine" -> the ghost asked for: {"name", "machine", "lap",
+## "ghost": RaceGhost}, {} when there is none, {"waiting": true} until it
+## comes (`want_ghost`, `take_ghost`). The local racer's only.
+var ghosts := {}
+## The local racer's friends' best laps: [{"name", "track", "machine",
+## "time"}], fastest first (online only; solo has no friends).
+var friend_bests: Array = []
+var _leaders := {}
 
 
 class Run:
@@ -172,6 +205,8 @@ class Run:
 	## The race radio: when this racer last heard a line, and from whom.
 	var radio_at := -INF
 	var heard := {}
+	## The lap being driven, as a ghost (people only, authority).
+	var recording := RaceGhost.new()
 
 
 ## One track's live race.
@@ -196,8 +231,8 @@ class Heat:
 		return runs.filter(func(r: Run) -> bool: return not r.ai).size()
 
 
-## Where racers' league standings are kept: nothing here (every racer a
-## fresh rookie, nothing recorded). Keys are owner keys.
+## Where racers' league standings and best-lap ghosts are kept: nothing
+## here (every racer a fresh rookie, nothing recorded). Keys are owner keys.
 class LeagueBank:
 	extends RefCounted
 
@@ -208,16 +243,87 @@ class LeagueBank:
 	func record(_key: String, _result: Dictionary) -> void:
 		pass
 
+	## The racer's best lap on a track and machine, or -1.
+	func best(key: String, track_id: String, machine: String) -> float:
+		return RaceLeague.best_lap(state(key), track_id, machine)
 
-## Solo: the local profile.
+	## Keeps `ghost` as the racer's best there (its `lap_time` is the lap's).
+	func keep_ghost(_key: String, _track_id: String, _machine: String, _ghost: RaceGhost) -> void:
+		pass
+
+	## The fastest ghost kept among `keys` on a track (on `machine`, any
+	## with none), as `StashService.race_ghost` answers. Solo only: the
+	## server asks its accounts, awaited.
+	func ghost_of(_keys: Array, _track_id: String, _machine: String) -> Dictionary:
+		return {"ok": false}
+
+
+## Solo: the local profile, and its ghosts in `GHOST_PATH`.
 class ProfileLeagueBank:
 	extends LeagueBank
+
+	## Track id -> machine -> {"lap", "ghost": packed}.
+	var _kept := {}
+	var _loaded := false
 
 	func state(_key: String) -> Dictionary:
 		return RaceLeague.clean(Profile.racing)
 
 	func record(_key: String, result: Dictionary) -> void:
 		Profile.record_race(result)
+
+	func best(_key: String, track_id: String, machine: String) -> float:
+		load_kept()
+		return RaceLeague.best_lap(Profile.racing, track_id, machine)
+
+	func keep_ghost(_key: String, track_id: String, machine: String, ghost: RaceGhost) -> void:
+		load_kept()
+		if not Profile.keep_race_best(track_id, machine, ghost.lap_time):
+			return
+		if not _kept.has(track_id):
+			_kept[track_id] = {}
+		_kept[track_id][machine] = {"lap": ghost.lap_time, "ghost": ghost.to_packed()}
+		if Profile.persist:
+			var file := FileAccess.open(GHOST_PATH, FileAccess.WRITE)
+			if file != null:
+				file.store_string(JSON.stringify(_kept))
+
+	func ghost_of(_keys: Array, track_id: String, machine: String) -> Dictionary:
+		load_kept()
+		var on := machine if machine != "" else RaceLeague.best_machine(Profile.racing, track_id)
+		var kept: Dictionary = _kept.get(track_id, {}).get(on, {})
+		if kept.is_empty():
+			return {"ok": false}
+		return {"ok": true, "name": Profile.player_name, "machine": on, "lap": float(kept.lap),
+				"ghost": str(kept.ghost)}
+
+	## The ghosts on disk, older builds' too, with their laps noted as the
+	## profile's bests.
+	func load_kept() -> void:
+		if _loaded:
+			return
+		_loaded = true
+		if not FileAccess.file_exists(GHOST_PATH):
+			return
+		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(GHOST_PATH))
+		if not data is Dictionary:
+			return
+		for track_id: Variant in data:
+			if not data[track_id] is Dictionary:
+				continue
+			for machine: Variant in data[track_id]:
+				var entry: Variant = data[track_id][machine]
+				var ghost: RaceGhost = null
+				if entry is Dictionary and entry.has("ghost"):
+					ghost = RaceGhost.from_packed(entry.ghost, str(machine), float(entry.get("lap", -1.0)))
+				else:
+					ghost = RaceGhost.from_data(entry)
+				if ghost == null or ghost.lap_time <= 0.0:
+					continue
+				if not _kept.has(str(track_id)):
+					_kept[str(track_id)] = {}
+				_kept[str(track_id)][str(machine)] = {"lap": ghost.lap_time, "ghost": ghost.to_packed()}
+				RaceLeague.note_best(Profile.racing, str(track_id), str(machine), ghost.lap_time)
 
 
 ## Server: the accounts a `StashService` (or an `AccountLink`) keeps.
@@ -235,6 +341,9 @@ class StashLeagueBank:
 
 	func record(key: String, result: Dictionary) -> void:
 		service.record_race(key, result)
+
+	func keep_ghost(key: String, track_id: String, machine: String, ghost: RaceGhost) -> void:
+		service.keep_ghost(key, track_id, machine, ghost.lap_time, ghost.to_packed())
 
 
 # --- Setting up ---------------------------------------------------------------
@@ -374,6 +483,7 @@ func _to_grid(run: Run) -> void:
 	run.last_delta = NAN
 	run.last_lap = -1.0
 	run.total = -1.0
+	run.recording.clear()
 	run.last_pos = vehicle.global_position
 	run.hint = rt.locate(run.last_pos)
 	run_changed.emit(run.actor)
@@ -402,6 +512,8 @@ func _tick_run(run: Run, _delta: float) -> void:
 	run.hint = rt.locate(pos, run.hint)
 	if run.phase != "racing":
 		return
+	if not run.ai:
+		run.recording.record(clock - run.lap_start, pos, vehicle.global_rotation.y)
 	if run.clean and rt.is_off_track(pos, run.hint):
 		run.clean = false
 		run.actor.notice.emit("Off the track: this lap will not count" if run.heat == null
@@ -442,6 +554,9 @@ func _finish_lap(run: Run, at: float) -> void:
 		# An AI racer's laps are not people's times.
 		if not run.ai:
 			add_record(run.actor.display_name, run.machine, lap_time, state.owner if state != null else "", run.track.id)
+	if counted and not run.ai:
+		_keep_ghost(run, lap_time)
+	run.recording = RaceGhost.new()
 	lap_finished.emit(run.actor, lap_time, counted)
 	run.splits.clear()
 	run.clean = true
@@ -457,6 +572,24 @@ func _finish_lap(run: Run, at: float) -> void:
 	else:
 		run.lap += 1
 	run_changed.emit(run.actor)
+
+
+## A person's counted lap: kept as their ghost if it beats their best there.
+func _keep_ghost(run: Run, lap_time: float) -> void:
+	var ghost := run.recording
+	if league_bank == null or ghost.samples() < 10:
+		return
+	var best := league_bank.best(run.key, run.track.id, run.machine)
+	if best > 0.0 and best <= lap_time:
+		return
+	ghost.machine = run.machine
+	ghost.lap_time = lap_time
+	league_bank.keep_ghost(run.key, run.track.id, run.machine, ghost)
+	ghost_kept.emit(run.actor, run.track.id, run.machine, ghost)
+	bests_changed.emit()
+	if run.actor == player:
+		take_ghost("mine", run.track.id, run.machine, {"ok": true, "name": run.actor.display_name,
+				"machine": run.machine, "lap": lap_time, "ghost": ghost})
 
 
 ## Ends `actor`'s run: they keep their machine until they get off it, and
@@ -540,6 +673,7 @@ func add_record(racer: String, machine: String, time: float, key := "", track_id
 		if counts[entry.track] <= BOARD_SIZE:
 			kept.append(entry)
 	board = kept
+	_forget_leader_ghosts()
 	board_changed.emit()
 
 
@@ -1159,6 +1293,108 @@ func set_remote_heats(rows: Array) -> void:
 	heat_changed.emit()
 
 
+# --- Ghosts -------------------------------------------------------------------
+
+static func _ghost_slot(pick: String, track_id: String, machine: String) -> String:
+	return "%s|%s|%s" % [pick, track_id, machine]
+
+
+## Asks for the ghost the local racer picked (`GHOST_PICKS`) on a track
+## and machine, once: solo from the bank, online from the server. The
+## answer lands in `ghosts` (`ghost_shown`) and `ghost_changed` says so.
+func want_ghost(pick: String, track_id: String, machine: String) -> void:
+	if pick not in GHOST_PICKS or pick == "off" or track_id == "" or machine == "":
+		return
+	var slot := _ghost_slot(pick, track_id, machine)
+	if ghosts.has(slot):
+		return
+	ghosts[slot] = {"waiting": true}
+	if mode == Mode.CLIENT:
+		if send_ghost_ask.is_valid():
+			send_ghost_ask.call(pick, track_id, machine)
+		return
+	var owners := ghost_owners(pick, player, track_id, machine)
+	var answer: Dictionary = {"ok": false}
+	if league_bank != null and not (owners.keys as Array).is_empty():
+		answer = league_bank.ghost_of(owners.keys, track_id, owners.machine)
+	take_ghost(pick, track_id, machine, answer)
+
+
+## Whose ghosts a pick looks among, for `actor`: {"keys", "machine"} (an
+## empty machine for any). A friend's needs the friends, which only the
+## server knows, so here it is nobody's.
+func ghost_owners(pick: String, actor: Actor, track_id: String, machine: String) -> Dictionary:
+	var state := state_for(actor) if actor != null and is_instance_valid(actor) else null
+	match pick:
+		"mine":
+			return {"keys": [state.owner if state != null else ""], "machine": machine}
+		"leader":
+			var rows := board_for(track_id)
+			if not rows.is_empty():
+				return {"keys": [str(rows[0].get("key", ""))], "machine": str(rows[0].machine)}
+	return {"keys": [], "machine": machine}
+
+
+## Keeps a ghost answer (`StashService.race_ghost`'s, its "ghost" packed
+## text or a `RaceGhost`) for the pick it was asked for.
+func take_ghost(pick: String, track_id: String, machine: String, answer: Dictionary) -> void:
+	var slot := _ghost_slot(pick, track_id, machine)
+	var shown := {}
+	if answer.get("ok", false):
+		var ghost: Variant = answer.get("ghost")
+		var kept_machine := str(answer.get("machine", machine))
+		var lap := float(answer.get("lap", -1.0))
+		if not ghost is RaceGhost:
+			ghost = RaceGhost.from_packed(ghost, kept_machine, lap)
+		if ghost != null and lap > 0.0:
+			ghost.machine = kept_machine
+			ghost.lap_time = lap
+			shown = {"name": str(answer.get("name", "?")).left(24), "machine": kept_machine, "lap": lap,
+					"ghost": ghost}
+	ghosts[slot] = shown
+	ghost_changed.emit()
+
+
+## The ghost for a pick on a track and machine: {"name", "machine", "lap",
+## "ghost"}, or {} (none, or not here yet).
+func ghost_shown(pick: String, track_id: String, machine: String) -> Dictionary:
+	var shown: Dictionary = ghosts.get(_ghost_slot(pick, track_id, machine), {})
+	return shown if shown.has("ghost") else {}
+
+
+## Forgets the board leader's ghosts where a track's leader changed, so
+## they are asked for again.
+func _forget_leader_ghosts() -> void:
+	var now := {}
+	for row: Dictionary in board:
+		if not now.has(row.track):
+			now[row.track] = "%s|%s|%s" % [row.get("key", row.name), row.machine, row.time]
+	for slot: String in ghosts.keys():
+		var track_id := slot.get_slice("|", 1)
+		if slot.begins_with("leader|") and _leaders.get(track_id, "") != now.get(track_id, ""):
+			ghosts.erase(slot)
+	_leaders = now
+
+
+## Online client: the local racer's friends' best laps.
+func set_friend_bests(rows: Array) -> void:
+	friend_bests.clear()
+	for row: Variant in rows.slice(0, 64):
+		if row is Dictionary and float(row.get("time", -1.0)) > 0.0:
+			friend_bests.append({"name": str(row.get("name", "?")).left(24), "track": str(row.get("track", "")),
+					"machine": str(row.get("machine", "")), "time": float(row.time)})
+	board_changed.emit()
+
+
+## A track's friends' best laps, fastest first.
+func friends_on(track_id: String) -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	for row: Dictionary in friend_bests:
+		if row.track == track_id:
+			rows.append(row)
+	return rows
+
+
 # --- Views --------------------------------------------------------------------
 
 ## A run as plain data, for the watch, the visor and `RaceView`, and to send
@@ -1332,4 +1568,5 @@ func set_remote_board(rows: Array) -> void:
 			board.append({"name": str(row.get("name", "?")), "machine": str(row.get("machine", "")),
 					"time": float(row.time), "key": str(row.get("name", "?")),
 					"track": str(row.get("track", track.id if track != null else ""))})
+	_forget_leader_ghosts()
 	board_changed.emit()

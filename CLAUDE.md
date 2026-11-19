@@ -1973,14 +1973,23 @@ without Caleb, and update the gap list when a PR closes a row.
   moves the rating and pays the capped scrip. A grid's AI are the named
   rivals of its best rider's league; their radio lines go only to the
   racer they are said to (`Race.radio`, `NetSession._race_radio`) and are
-  drawn on the visor (`Hud.comms`, `VisorHud._draw_comms`). Where a road runs over
+  drawn on the visor (`Hud.comms`, `VisorHud._draw_comms`). Ghosts are the
+  authority's too: `Race` records each person's lap (`Run.recording`) and
+  a counted lap faster than their best there goes to the same bank
+  (`keep_ghost`: online `StashService.keep_ghost`, a sure call, kept in a
+  file beside the account with only the time in `RaceLeague`'s "bests";
+  solo `Race.GHOST_PATH`). Which ghost a racer chases is the race icon's
+  pick (`Race.GHOST_PICKS`), asked with `Race.want_ghost` (online
+  `NetSession._race_ghost_ask`, where the server finds a friend's among
+  the phone's saved contacts, `_friend_ids`) and played by `RaceView`;
+  friends' best times reach the pit boards the same way
+  (`Race.friend_bests`, `NetSession._send_friend_bests`). Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
   (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration
   (`worlds/meridian/stands.gd`, `skyline.gd`), merged into one mesh per
   material. The lights, splits, board
-  text and ghosts are `RaceView`, a view (ghosts on disk in
-  `RaceView.GHOST_PATH` only while `Profile.persist`). In a race world the
+  text and the ghost being chased are `RaceView`, a view. In a race world the
   watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).
   Every machine in a class stays within 3% of the class average round
   every track: check with

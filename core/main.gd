@@ -433,7 +433,7 @@ func _attach_base_view() -> void:
 	controller.portal_requested.connect(_on_portal_requested)
 	controller.race_requested.connect(_on_race_requested)
 	if race_view != null and is_instance_valid(race_view):
-		controller.ghost_on = race_view.ghost_on
+		controller.ghost_pick = race_view.ghost_pick
 	if phone != null:
 		# The phone is held by this body's own hand, in every view.
 		phone.set_holder(controller.actor)
@@ -894,9 +894,11 @@ func _on_race_requested(action: String) -> void:
 	if not raid is Race:
 		return
 	if action == "ghost":
-		controller.ghost_on = not controller.ghost_on
+		# Turns through your best, a friend's, the board leader's and none.
+		var at := Race.GHOST_PICKS.find(controller.ghost_pick)
+		controller.ghost_pick = Race.GHOST_PICKS[(at + 1) % Race.GHOST_PICKS.size()]
 		if race_view != null and is_instance_valid(race_view):
-			race_view.ghost_on = controller.ghost_on
+			race_view.ghost_pick = controller.ghost_pick
 		return
 	(raid as Race).ask(action)
 

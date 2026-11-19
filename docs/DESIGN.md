@@ -2073,7 +2073,7 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   channel is put back at the last checkpoint. Your split is written on each
   arch, the best laps on the pit board, and your best lap on each machine
   runs beside you as a ghost of hard light. The watch's contract icon is the
-  race icon here (restart, ghost on or off, stop), and the visor's
+  race icon here (race, restart, which ghost, stop), and the visor's
   objective line carries the lap.
 - **Live races (Caleb's go-ahead).** The race icon's first pick is Race:
   it puts you on the grid of the track's next race, and anyone who gets on
@@ -2116,8 +2116,17 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   and 5 for any other finish, at most 120 a day, so racing never out-earns
   the warzone. The phone's Racing app shows your league, rating and what
   stands between you and the next, your record against each rival, the
-  day's pay and your last five races. Friends' ghosts and tuning parts
-  come next (the "Racing depth" plan).
+  day's pay and your last five races. Tuning parts come next (the
+  "Racing depth" plan).
+- **Ghosts on the server, and friends'.** The server records every
+  person's lap as it is driven, and a clean lap faster than your best on
+  that track and machine is kept with your account (a few KB, beside the
+  account rather than in it), whether it was a time trial's or a race's.
+  The race icon's ghost pick turns through your own best, the fastest of
+  your friends' (the phone's saved contacts) on that machine, the board
+  leader's best lap, and none. The pit board lists your friends' best
+  times on that track under its own. Solo, the ghosts stay on this
+  computer.
 
 The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the
