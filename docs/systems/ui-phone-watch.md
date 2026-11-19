@@ -36,13 +36,22 @@ date in the same PR.
   (`behind`), so the body passes in front of it, right of the crosshair,
   `tall` of the view's height and square to the camera so its text reads,
   on dark glass the world shows through a little (`backing`, `TINT`,
-  Caleb's feedback). Its lower edge stands just over the device as the
-  camera sees it (`over_device`, shrinking to `least_tall` where the top
-  of the view is near), so the light opens upward from the hand into the
-  card, never slanting down to it (Caleb's feedback); clicks are cast onto it (`HoloScreen.card_point`)
-  instead of the device. The Mirror app's mirror stands square in front of
-  the body, never along the camera, and the eyes drop less to see it
-  (`phone_mirror_pitch`). The Mirror app's wheel works like a watch icon:
+  Caleb's feedback). Where it stands follows Caleb's sketch: just right of
+  the crosshair, its middle a little over the view's (`across`, `lift`), and
+  the light runs from the device into its near edge like a projector's cone
+  (`beam_reach`); clicks are cast onto it (`HoloScreen.card_point`)
+  instead of the device. The Mirror app (Caleb's pick): in first person a
+  mirror stands square in front of the body, never along the camera, close
+  enough that you stand large in it (`Mirror.distance`), and the eyes drop
+  less to see it (`phone_mirror_pitch`); in third person there is no mirror
+  but a dressing room: the camera swings round in front of the character
+  (`PlayerController.dressing_room`, `_dress_view`) with the body framed
+  left of the middle, the phone stays up with its hologram on the right,
+  and a drag beside the hologram turns the view round you
+  (`Phone.dressing`, `dressing_dragged`, `dressing_turn`). Switching view
+  with the app up swaps one for the other (`Main._keep_mirror_view`), and
+  either way a soft light stands in front of you so the outfit shows
+  whatever the sun does (`Main._make_dressing_light`, view only). The Mirror app's wheel works like a watch icon:
   it moves between rows, a click opens one for the wheel to turn, a right
   click closes it (`Phone._mirror_mouse`), and the page scrolls to keep
   the chosen row in view (`Phone._keep_in_view`, once the redrawn rows are

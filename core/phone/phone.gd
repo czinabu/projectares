@@ -35,6 +35,9 @@ signal quit_requested
 ## The Mirror app was opened (true) or left (false). `Main` stands a mirror
 ## in front of the player while it is up (`core/visual/mirror.gd`).
 signal mirror_changed(up: bool)
+## In the dressing room (`dressing`), the mouse dragged this many pixels
+## across off the hologram: `Main` turns the camera round the body.
+signal dressing_dragged(pixels: float)
 ## The phone came up into the hand (true) or went down (false) while it
 ## stays open: the Mirror app lowers it so the mirror shows the whole kit
 ## (`mirror_lowered`). `Main` passes it on as `PlayerController.phone_out`.
@@ -241,6 +244,12 @@ var news_seen := {}
 var wardrobe: CharacterPanel
 ## True while a mirror stands in the world for the Mirror app.
 var mirror_up := false
+## True while the Mirror app is a dressing room instead (third person,
+## Caleb's pick): the camera stands in front of you, the phone stays up with
+## its hologram beside you, and a drag off the hologram turns the view round
+## you (`dressing_dragged`) instead of putting the phone away. Set by `Main`.
+var dressing := false
+var _dragging := false
 ## The choice the Mirror app's keys move (an index of `wardrobe.pick_keys()`).
 var mirror_row := 0
 ## Messages kept on this phone only, offline too: the new player's handler
@@ -438,6 +447,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		if mirror_open() and _mirror_mouse(mouse as InputEventMouseButton):
 			return
+		if dressing and mirror_open() and _dress_drag(mouse, at.x >= 0.0):
+			return
 		if at.x < 0.0:
 			var button := mouse as InputEventMouseButton
 			if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
@@ -455,6 +466,25 @@ func _input(event: InputEvent) -> void:
 		_screen.push_input(event.duplicate(), true)
 		if _screen.is_input_handled():
 			get_viewport().set_input_as_handled()
+
+
+## The dressing room: a left press off the hologram starts turning the view
+## round you, the motion turns it, and letting go ends it. Returns true when
+## the event was the drag's.
+func _dress_drag(mouse: InputEventMouse, on_card: bool) -> bool:
+	var button := mouse as InputEventMouseButton
+	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
+		if button.pressed and not on_card:
+			_dragging = true
+			return true
+		if not button.pressed and _dragging:
+			_dragging = false
+			return true
+	var motion := mouse as InputEventMouseMotion
+	if motion != null and _dragging:
+		dressing_dragged.emit(motion.relative.x)
+		return true
+	return false
 
 
 ## While a view setting's slider previews, the mouse's motion moves it and
@@ -879,6 +909,7 @@ func _set_open(open_now: bool) -> void:
 	var changed := open_now != is_open
 	if not open_now:
 		_end_preview()
+		_dragging = false
 	is_open = open_now
 	_screen.render_target_update_mode = SubViewport.UPDATE_ALWAYS if open_now else SubViewport.UPDATE_WHEN_VISIBLE
 	if open_now:
@@ -2123,9 +2154,12 @@ func _draw_mirror() -> void:
 	if wardrobe == null:
 		_body.add_child(_label("Your wardrobe is not here.", 15, UiTheme.INK))
 		return
-	_body.add_child(_label("Look ahead: the mirror shows you. Scroll through what you own. Changes save as you go."
-			if mirror_up else "Out in the world a mirror stands in front of you. Changes still save as you go.",
-			14, Color(0.7, 0.7, 0.7)))
+	var line := "Out in the world a mirror stands in front of you. Changes still save as you go."
+	if dressing:
+		line = "The camera faces you. Drag beside the phone to turn round. Changes save as you go."
+	elif mirror_up:
+		line = "Look ahead: the mirror shows you. Scroll through what you own. Changes save as you go."
+	_body.add_child(_label(line, 14, Color(0.7, 0.7, 0.7)))
 	if mirror_up:
 		var lower := _button("Lower the phone to look", set_mirror_lowered.bind(true))
 		lower.focus_mode = Control.FOCUS_NONE
@@ -2545,19 +2579,19 @@ class HoloScreen extends Node3D:
 	const THIRD_PERSON_AT := 0.7
 	const TINT := Color(0.92, 1.0, 1.0, 0.88)
 	## How tall the card stands, as a share of the view's height.
-	var tall := 0.6
+	var tall := 0.5
 	## How far (m) past the head, from the camera, it stands.
 	var behind := 0.25
 	## Where its left edge sits, as a share of the view's half width right of
-	## the crosshair, and how high its middle is, as a share of the half height.
-	var across := 0.08
-	var lift := 0.05
-	## Its lower edge stands this share of the view's height over the device
-	## as the camera sees it, so the light rises from the hand up into the
-	## card, never slants down to it (Caleb's feedback). Where the top of the
-	## view is too near for that it shrinks, down to `least_tall`.
-	var over_device := 0.08
-	var least_tall := 0.4
+	## the crosshair, and how high its middle is, as a share of the half
+	## height (Caleb's sketch: close beside the character, its lower edge
+	## about level with the hand).
+	var across := 0.01
+	var lift := 0.2
+	## The light runs from the device to the card's near (left) edge, a
+	## projector's cone opening sideways into it (Caleb's sketch): from its
+	## lower corner up this share of its height.
+	var beam_reach := 0.25
 	var backing := 0.6
 	var open_time := 0.15
 	## 0 down, 1 fully up.
@@ -2626,13 +2660,6 @@ class HoloScreen extends Node3D:
 		var high := 2.0 * half_tall * tall
 		var middle := half_tall * lift
 		var from := device.global_position
-		var seen := view.affine_inverse() * from
-		if seen.z < -0.01:
-			var bottom := seen.y * depth / -seen.z + 2.0 * half_tall * over_device
-			var top := half_tall * 0.97
-			high = clampf(top - bottom, 2.0 * half_tall * least_tall, high)
-			middle = maxf(middle, bottom + high * 0.5)
-			middle = minf(middle, top - high * 0.5)
 		var size := Vector2(high * _aspect, high)
 		var x := minf(half_wide * across + size.x * 0.5, half_wide * 0.97 - size.x * 0.5)
 		var spot := view * Vector3(x, middle, -depth)
@@ -2653,7 +2680,7 @@ class HoloScreen extends Node3D:
 		_beam.global_transform = Transform3D.IDENTITY
 		(_beam.material_override as ShaderMaterial).set_shader_parameter("open", open)
 		var left := _card.global_transform * Vector3(-0.5, -0.5, 0.0)
-		var right := _card.global_transform * Vector3(0.5, -0.5, 0.0)
+		var right := _card.global_transform * Vector3(-0.5, -0.5 + beam_reach, 0.0)
 		mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 		mesh.surface_set_uv(Vector2(0.5, 0.0))
 		mesh.surface_add_vertex(from)

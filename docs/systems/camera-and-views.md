@@ -11,6 +11,9 @@ date in the same PR.
   third-person camera (Caleb's call, replacing the old reading view and
   zoom): its screen rises beside the character as a hologram
   (`Phone.HoloScreen`, see `ui-phone-watch.md`), so the world stays in view.
+  The one time it moves for the phone is the Mirror app's dressing room
+  (`PlayerController.dressing_room`): it swings round in front of the
+  character, turned by a drag, and back when the app goes.
   In first person the eyes drop to the phone while it is out
   (`phone_view_pitch`, less with the mirror up), the view only: `pitch`
   and the aim stay put, and the view zooms in on it like aiming down sights

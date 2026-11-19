@@ -108,6 +108,20 @@ var _phone_look := 0.0
 ## The mirror standing in front of you for the phone's Mirror app (`Main`),
 ## or null; the eyes drop less to see yourself in it.
 var phone_mirror: Node3D
+## The Mirror app in third person is a dressing room (Caleb's pick): the
+## camera swings round in front of the character, `dressing_distance` out,
+## looking at `dressing_look` metres over the feet, with the body framed left
+## of the middle (`dressing_side`, metres) so the phone's hologram on the
+## right never covers it. Dragging turns it round the body
+## (`dressing_turn`, radians, 0 square in front). View only, set by `Main`.
+var dressing_room := false
+var dressing_turn := 0.0
+var dressing_distance := 2.3
+var dressing_look := 1.05
+var dressing_side := 0.45
+var dressing_rate := 4.0
+## How far into the dressing-room view the camera is now (0..1).
+var dressing := 0.0
 ## How far behind the eyes the third-person camera sits, in meters: a view
 ## over the right shoulder (the phone's "Camera distance" setting). Aiming
 ## moves in to `aim_distance_ratio` of it.
@@ -1360,6 +1374,7 @@ func _process(delta: float) -> void:
 	_shoulder_aim = move_toward(_shoulder_aim, 1.0 if aiming else 0.0, shoulder_rate * delta)
 	var desired := pivot + _third_person_offset(look, pivot, delta)
 	camera.global_transform = Transform3D(look, desired)
+	_dress_view(delta)
 	peek_fade.update(actor, camera, peek_rule_applies() and is_third_person(), delta)
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
@@ -1757,6 +1772,28 @@ func wanted_base_fov() -> float:
 
 func is_third_person() -> bool:
 	return _cam_dist > 0.5
+
+
+## Swings the third-person camera round in front of the character while the
+## Mirror app is up (`dressing_room`), and back after.
+func _dress_view(delta: float) -> void:
+	var wanted := dressing_room and _wants_third_person() and not actor.is_dead and actor.is_inside_tree()
+	dressing = move_toward(dressing, 1.0 if wanted else 0.0, dressing_rate * delta)
+	if dressing <= 0.0:
+		return
+	var centre := actor.global_position + Vector3.UP * dressing_look
+	var out := Basis(Vector3.UP, yaw + dressing_turn) * Vector3.FORWARD
+	var reach := dressing_distance
+	var space := actor.get_world_3d().direct_space_state
+	var ray := PhysicsRayQueryParameters3D.create(centre, centre + out * (dressing_distance + camera_radius), Actor.LAYER_WORLD)
+	var hit := space.intersect_ray(ray)
+	if not hit.is_empty():
+		reach = clampf(centre.distance_to(hit.position) - camera_radius, 0.6, dressing_distance)
+	var spot := centre + out * reach
+	var facing := Basis.looking_at(centre - spot, Vector3.UP)
+	var aim_at := centre + facing.x * dressing_side * reach / dressing_distance
+	var front := Transform3D(Basis.looking_at(aim_at - spot, Vector3.UP), spot)
+	camera.global_transform = camera.global_transform.interpolate_with(front, smoothstep(0.0, 1.0, dressing))
 
 
 ## Whether the view is zoomed in on the phone in the hand (`phone_zoom`):
