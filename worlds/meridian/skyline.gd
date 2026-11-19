@@ -25,17 +25,27 @@ func _init(p_stands: RefCounted, p_seed: int) -> void:
 	rng.seed = p_seed
 
 
+## Where the searchlights stand and the phase each sweeps from. The map
+## makes their lamps solid (`LAMP_RADIUS`, `LAMP_HEIGHT`) in its gameplay pass.
+const SEARCHLIGHTS := [[Vector3(-150, 0, 75), 0.0], [Vector3(-40, 0, 75), 1.7], [Vector3(60, 0, 75), 3.1],
+		[Vector3(-60, 56, -62), 4.4], [Vector3(-230, 0, -175), 2.2]]
+const LAMP_RADIUS := 1.4
+const LAMP_HEIGHT := 1.6
+## Where the fallen booster lies (`booster_parts`).
+const BOOSTER_AT := Vector3(-300, 0, 640)
+const BOOSTER_YAW := -0.6
+
+
 func build(tracks: Array) -> void:
 	_launch_tower(Vector3(430, 0, 300), 175.0, Vector2(0.12, -0.05), "COILRUN  ·  3 LAPS", AMBER)
 	_launch_tower(Vector3(-560, 0, 230), 150.0, Vector2(-0.08, 0.1), "MERIDIAN CIRCUIT", CYAN)
 	_launch_tower(Vector3(160, 0, -470), 190.0, Vector2(0.05, 0.09), "RIDE THE SKYHOOK", MAGENTA)
 	_gantry_crane(Vector3(360, 0, -200), 0.6)
 	_gantry_crane(Vector3(-520, 0, -300), -0.4)
-	_booster(Vector3(-300, 0, 640), -0.6)
+	_booster(BOOSTER_AT, BOOSTER_YAW)
 	_pylons(Vector3(620, 0, 520), Vector3(1, 0, 0.55).normalized(), 3)
 	_pylons(Vector3(-420, 0, -620), Vector3(-0.8, 0, -1).normalized(), 3)
-	for spec: Array in [[Vector3(-150, 0, 75), 0.0], [Vector3(-40, 0, 75), 1.7], [Vector3(60, 0, 75), 3.1],
-			[Vector3(-60, 56, -62), 4.4], [Vector3(-230, 0, -175), 2.2]]:
+	for spec: Array in SEARCHLIGHTS:
 		var light := SearchLight.new()
 		light.position = spec[0]
 		light.phase = spec[1]
@@ -112,30 +122,16 @@ func _gantry_crane(at: Vector3, yaw: float) -> void:
 ## A spent booster stage lying where it came down, half sunk in the salt:
 ## the tank, its engine bells and two bent fins.
 func _booster(at: Vector3, yaw: float) -> void:
-	var xf := Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.BACK, 0.08), at + Vector3(0, 6, 0))
 	var hull := Look.surface("metal", {"metal": 0.5, "tint": Color(0.7, 0.68, 0.66), "grime": 0.7, "scale": 0.05})
-	var tank := MeshInstance3D.new()
-	tank.mesh = CylinderMesh.new()
-	tank.mesh.top_radius = 9.0
-	tank.mesh.bottom_radius = 9.0
-	tank.mesh.height = 96.0
-	tank.mesh.radial_segments = 24
-	tank.mesh.material = hull
-	tank.transform = xf * Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3.ZERO)
-	root.add_child(tank)
-	for k in 4:
-		var bell := MeshInstance3D.new()
-		bell.mesh = CylinderMesh.new()
-		bell.mesh.top_radius = 1.6
-		bell.mesh.bottom_radius = 3.6
-		bell.mesh.height = 8.0
-		bell.mesh.material = stands.get("dark")
-		var off := Vector3(0, cos(k * PI * 0.5) * 4.0, sin(k * PI * 0.5) * 4.0)
-		bell.transform = xf * Transform3D(Basis(Vector3.BACK, -PI * 0.5), Vector3(-52, 0, 0) + off)
-		root.add_child(bell)
-	for s: float in [-1.0, 1.0]:
-		stands.call("box", Vector3(16, 0.6, 12), xf * Transform3D(Basis(Vector3.RIGHT, s * 0.5), Vector3(-38, 0, s * 12)),
-				stands.get("steel"))
+	for part: Array in booster_parts(at, yaw):
+		if part[0] is BoxMesh:
+			stands.call("box", (part[0] as BoxMesh).size, part[1], stands.get("steel"))
+			continue
+		var piece := MeshInstance3D.new()
+		piece.mesh = part[0]
+		piece.mesh.material = hull if (part[0] as CylinderMesh).height > 50.0 else stands.get("dark")
+		piece.transform = part[1]
+		root.add_child(piece)
 	# A band of the old livery, still lit.
 	var band := MeshInstance3D.new()
 	band.mesh = CylinderMesh.new()
@@ -143,8 +139,38 @@ func _booster(at: Vector3, yaw: float) -> void:
 	band.mesh.bottom_radius = 9.1
 	band.mesh.height = 1.2
 	band.mesh.material = stands.call("glow", AMBER, 2.0)
-	band.transform = xf * Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(20, 0, 0))
+	band.transform = _booster_frame(at, yaw) * Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(20, 0, 0))
 	root.add_child(band)
+
+
+static func _booster_frame(at: Vector3, yaw: float) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.BACK, 0.08), at + Vector3(0, 6, 0))
+
+
+## The fallen booster's solid parts, `[mesh, transform]` each: the tank, its
+## four bells and the two fins. The map builds their collision from the same
+## list in its gameplay pass, so what you see is what you bump into.
+static func booster_parts(at := BOOSTER_AT, yaw := BOOSTER_YAW) -> Array:
+	var xf := _booster_frame(at, yaw)
+	var out := []
+	var tank := CylinderMesh.new()
+	tank.top_radius = 9.0
+	tank.bottom_radius = 9.0
+	tank.height = 96.0
+	tank.radial_segments = 24
+	out.append([tank, xf * Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3.ZERO)])
+	for k in 4:
+		var bell := CylinderMesh.new()
+		bell.top_radius = 1.6
+		bell.bottom_radius = 3.6
+		bell.height = 8.0
+		var off := Vector3(0, cos(k * PI * 0.5) * 4.0, sin(k * PI * 0.5) * 4.0)
+		out.append([bell, xf * Transform3D(Basis(Vector3.BACK, -PI * 0.5), Vector3(-52, 0, 0) + off)])
+	for s: float in [-1.0, 1.0]:
+		var fin := BoxMesh.new()
+		fin.size = Vector3(16, 0.6, 12)
+		out.append([fin, xf * Transform3D(Basis(Vector3.RIGHT, s * 0.5), Vector3(-38, 0, s * 12))])
+	return out
 
 
 ## Power pylons marching off from `from` along `dir`, cables between them.

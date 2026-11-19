@@ -62,6 +62,7 @@ var _paint: StandardMaterial3D
 func _init(p_parent: Node3D, p_seed: int, p_keep_out: Array) -> void:
 	root = Node3D.new()
 	root.name = "Works"
+	root.set_meta("walk_through", "the works are decoration only (docs/systems/arena-and-race.md)")
 	p_parent.add_child(root)
 	rng.seed = p_seed
 	keep_out = p_keep_out

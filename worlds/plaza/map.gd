@@ -364,6 +364,9 @@ func _build_spire() -> void:
 			_part(self, Vector3(0.18, tall, 0.18), corner + Vector3(0, base + tall * 0.5, 0), CYAN, true)
 	_part(self, Vector3(1.2, 2.0, 1.2), Vector3(0, SPIRE_TOP + 1.0, 0), Color(0.75, 1.0, 1.0), true)
 	_part(self, Vector3(0.3, 26.0, 0.3), Vector3(0, SPIRE_TOP + 15.0, 0), Color(0.75, 1.0, 1.0), true)
+	# The beacon and mast on top are solid to anyone flying up to them.
+	SolidProp.box(nav_region, Vector3(1.2, 2.0, 1.2), Transform3D(Basis.IDENTITY, Vector3(0, SPIRE_TOP + 1.0, 0)))
+	SolidProp.box(nav_region, Vector3(0.3, 26.0, 0.3), Transform3D(Basis.IDENTITY, Vector3(0, SPIRE_TOP + 15.0, 0)))
 	# Podiums: step up, strike a pose, be inspected.
 	for i in PODIUMS:
 		var bearing := 360.0 * i / PODIUMS + 180.0 / PODIUMS
@@ -385,6 +388,7 @@ func _build_spire() -> void:
 		var at := _at(25.0, bearing)
 		_part(self, Vector3(0.18, 4.6, 0.18), at + Vector3(0, 2.3, 0), Color(0.25, 0.28, 0.34))
 		_part(self, Vector3(0.9, 0.12, 0.9), at + Vector3(0, 4.66, 0), Color(0.85, 0.95, 1.0), true)
+		SolidProp.box(nav_region, Vector3(0.25, 4.6, 0.25), Transform3D(Basis.IDENTITY, at + Vector3(0, 2.3, 0)))
 		_lamps.append(at + Vector3(0, 4.3, 0))
 
 
@@ -600,6 +604,7 @@ func _build_market_row() -> void:
 	var z := ROW_FROM + 2.0
 	while z <= ROW_TO - 1.0:
 		_part(self, Vector3(STREET_HALF * 2.0 + 1.4, 0.3, 0.3), Vector3(0, 9.45, z), Color(0.3, 0.33, 0.4))
+		SolidProp.box(nav_region, Vector3(STREET_HALF * 2.0 + 1.4, 0.3, 0.3), Transform3D(Basis.IDENTITY, Vector3(0, 9.45, z)))
 		z += 6.0
 	for post_z: float in [92.0, 116.0, ROW_TO - 1.0]:
 		for side: float in [-1.0, 1.0]:
@@ -823,6 +828,7 @@ func _fit_out(id: String, f: Transform3D, color: Color) -> void:
 				_solid(Vector3(2.4, 0.5, 0.25), f * Vector3(s * 4.9, 0.7, -1.55), STEEL, yaw)
 				_part(self, Vector3(0.1, 1.6, 0.1), f * Vector3(s * 6.6, 0.8, -1.2), Color(0.3, 0.3, 0.33), false, yaw)
 				_part(self, Vector3(0.5, 0.3, 0.5), f * Vector3(s * 6.6, 1.7, -1.2), WARM, true, yaw)
+				SolidProp.box(nav_region, Vector3(0.3, 1.85, 0.3), Transform3D(Basis(Vector3.UP, yaw), f * Vector3(s * 6.6, 0.93, -1.2)))
 			_solid(Vector3(1.6, 0.5, 1.0), f * Vector3(-4.0, 0.25, -8.6), DARK, yaw)
 			_solid(Vector3(1.0, 0.8, 1.0), f * Vector3(4.0, 0.4, -8.6), STEEL, yaw)
 			_part(self, Vector3(3.0, 1.8, 0.05), f * Vector3(4.0, 2.4, -d + 0.3), color.darkened(0.6), true, yaw)
@@ -849,10 +855,11 @@ func _fit_out(id: String, f: Transform3D, color: Color) -> void:
 				_part(self, Vector3(0.9, 0.55, 0.04), f * Vector3(s * 4.9, 1.25, -1.6), color.darkened(0.5), true, yaw)
 
 
-## A dressmaker's dummy on a stand: a plain figure in `color`. No collision
-## beyond its base.
+## A dressmaker's dummy on a stand: a plain figure in `color`, as solid as
+## a person.
 func _mannequin(at: Vector3, yaw: float, color: Color) -> void:
 	_solid(Vector3(0.8, 0.2, 0.8), at + Vector3(0, 0.1, 0), DARK, yaw)
+	SolidProp.box(nav_region, Vector3(0.46, 1.9, 0.3), Transform3D(Basis(Vector3.UP, yaw), at + Vector3(0, 1.15, 0)))
 	_part(self, Vector3(0.06, 0.9, 0.06), at + Vector3(0, 0.65, 0), Color(0.3, 0.3, 0.33), false, yaw)
 	_part(self, Vector3(0.46, 0.66, 0.26), at + Vector3(0, 1.43, 0), color, false, yaw)
 	_part(self, Vector3(0.36, 0.5, 0.22), at + Vector3(0, 0.88, 0), color.darkened(0.35), false, yaw)
@@ -879,10 +886,16 @@ func _display(id: String, at: Vector3, yaw: float, turn := Basis.IDENTITY, size 
 ## A vehicle on show: its own greybox body, painted by `Look`. Only where
 ## the game is drawn.
 func _display_vehicle(id: String, at: Vector3, yaw: float) -> void:
-	if not Look.enabled or not ItemDB.has_item(id):
+	if not ItemDB.has_item(id):
 		return
 	var vehicle: Node3D = VehicleScript.new()
 	vehicle.setup(id)
+	# Solid on the server too: the same box the machine rides on.
+	var size: Vector3 = vehicle.get("body_size")
+	SolidProp.box(nav_region, size, Transform3D(Basis(Vector3.UP, yaw), at + Vector3(0, size.y * 0.5, 0)))
+	if not Look.enabled:
+		vehicle.free()
+		return
 	var visual: Node3D = vehicle.build_visual()
 	vehicle.free()
 	var display := Node3D.new()
@@ -989,6 +1002,7 @@ func _build_screen() -> void:
 	var portal := _add_portal("war_room", "Use the War Room console", desk + Vector3(0, 0, 2.2), 1.8)
 	var console := Node3D.new()
 	console.name = "Screen"
+	console.set_meta("walk_through", "stands on its desk, out of reach")
 	console.position = Vector3(0, 1.62, -2.0)
 	console.basis = Basis(Vector3.RIGHT, -0.35)
 	portal.add_child(console)
@@ -1074,6 +1088,7 @@ func _build_contract_board_terminal(at: Vector3, facing: Basis, yaw: float, ambe
 	var portal := _add_portal("contracts", "Use the contract board", at + facing * Vector3(0, 0, 3.4), 2.2)
 	var screen := Node3D.new()
 	screen.name = "Screen"
+	screen.set_meta("walk_through", "hangs over its terminal, out of reach")
 	screen.position = facing * Vector3(0, 1.85, -1.95)
 	screen.basis = facing * Basis(Vector3.RIGHT, -0.12)
 	portal.add_child(screen)
@@ -1288,8 +1303,10 @@ func _build_fountain() -> void:
 	_solid(Vector3(1.8, 0.7, 1.8), at + Vector3(0, 0.35, 0), DARK, PI / 4.0)
 	_solid(Vector3(1.0, 1.4, 1.0), at + Vector3(0, 0.7, 0), DARK)
 	_part(self, Vector3(2.6, 0.08, 2.6), at + Vector3(0, 1.45, 0), blue, true, PI / 4.0)
+	SolidProp.box(nav_region, Vector3(2.6, 0.1, 2.6), Transform3D(Basis(Vector3.UP, PI / 4.0), at + Vector3(0, 1.45, 0)))
 	# The jet: a lit column with rings of spray stepping out as they fall.
 	_part(self, Vector3(0.24, 3.6, 0.24), at + Vector3(0, 3.2, 0), blue, true)
+	SolidProp.box(nav_region, Vector3(0.3, 3.6, 0.3), Transform3D(Basis.IDENTITY, at + Vector3(0, 3.2, 0)))
 	for k in 3:
 		var ring := 0.7 + 0.55 * k
 		for turn: float in [0.0, PI / 4.0]:
@@ -1355,10 +1372,13 @@ func _cart(at: Vector3, yaw: float, color: Color, kind: String, tables: Array, e
 	var turn := Basis(Vector3.UP, yaw)
 	_solid(Vector3(2.8, 1.0, 1.3), at + Vector3(0, 0.5, 0), DARK, yaw)
 	_solid(Vector3(3.0, 0.06, 1.5), at + Vector3(0, 1.03, 0), STEEL, yaw)
+	# What stands on the counter (urns, pots, a grill) stops a hand too.
+	SolidProp.box(nav_region, Vector3(2.8, 0.7, 1.0), Transform3D(turn, at + turn * Vector3(0, 1.41, -0.15)))
 	_part(self, Vector3(2.8, 0.08, 0.04), at + turn * Vector3(0, 0.82, 0.67), color, true, yaw)
 	for x: float in [-1.45, 1.45]:
 		_part(self, Vector3(0.14, 0.56, 0.56), at + turn * Vector3(x, 0.3, -0.1), Color(0.12, 0.12, 0.14), false, yaw)
 		_part(self, Vector3(0.08, 2.3, 0.08), at + turn * Vector3(x * 0.95, 2.18, -0.6), Color(0.3, 0.32, 0.36), false, yaw)
+		SolidProp.box(nav_region, Vector3(0.15, 2.3, 0.15), Transform3D(turn, at + turn * Vector3(x * 0.95, 2.18, -0.6)))
 	# The canopy: a dark sheet with a lit front edge, pitched over the counter.
 	_part(self, Vector3(3.5, 0.07, 2.3), at + turn * Vector3(0, 3.32, 0.2), Color(0.16, 0.18, 0.24), false, yaw)
 	_part(self, Vector3(3.5, 0.08, 0.08), at + turn * Vector3(0, 3.3, 1.35), color, true, yaw)
@@ -1460,6 +1480,11 @@ func _light_sculpture(at: Vector3, color: Color) -> void:
 		var w := 1.5 - absf(k - 5.0) * 0.13
 		_part(self, Vector3(w, 0.06, 0.22), at + Vector3(0, y, 0), color if k % 2 == 0 else color.darkened(0.35), true,
 				deg_to_rad(17.0 * k))
+	# The slats turn round the spine: you walk round them, not through.
+	var slats := CylinderShape3D.new()
+	slats.radius = 0.7
+	slats.height = 4.9
+	_solid_shape(slats, at + Vector3(0, 3.35, 0))
 
 
 ## The fountain's water: lit from below, a little see-through.
@@ -1842,6 +1867,18 @@ func _slab_ring(radius: float, width: float, segments: int, color: Color, height
 		at.y = height
 		plates.append(Transform3D(Basis(Vector3.UP, -deg_to_rad(bearing)), at))
 	_batch(Vector3(TAU * radius / segments + 0.05, 0.04, width), plates, material if material else _glow(color), false)
+
+
+## A static body holding `shape` at `at`, under the navigation region.
+func _solid_shape(shape: Shape3D, at: Vector3) -> void:
+	var body := StaticBody3D.new()
+	body.collision_layer = Actor.LAYER_WORLD
+	body.collision_mask = 0
+	body.position = at
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	body.add_child(col)
+	nav_region.add_child(body)
 
 
 ## Many boxes of one size and material as a single mesh, so a ring of them is

@@ -380,6 +380,11 @@ class Station:
 	## `HomeBase.SCREEN_SIZE` across. Whoever shows the screen mounts it here.
 	var screen: Node3D
 
+	func _init() -> void:
+		super()
+		# A console you walk up to, not through.
+		collision_layer |= Actor.LAYER_WORLD
+
 	func get_prompt() -> String:
 		var title: String = base.station_title(id) if base else str(HomeBase.STATIONS[id]["title"])
 		if base and base.read_only:
@@ -2877,6 +2882,8 @@ func _add_bulkhead(id: String, where: Transform3D, style: String, size := Vector
 				for side: float in [-1.0, 1.0]:
 					gate.add_child(_part(Vector3(1.6, 0.055, 0.08), Vector3(0, 0.03, 1.3 + side * 0.76), accent, true))
 					gate.add_child(_part(Vector3(0.08, 0.055, 1.6), Vector3(side * 0.76, 0.03, 1.3), accent, true))
+			# A post you walk round, not through.
+			gate.collision_layer = Actor.LAYER_WORLD | Actor.LAYER_INTERACT
 			gate.add_child(_part(Vector3(0.24, 1.0, 0.24), Vector3(0, 0.5, 0), dark))
 			gate.add_child(_part(Vector3(0.06, 1.0, 0.02), Vector3(0, 0.5, 0.125), accent, true))
 			s = 0.5

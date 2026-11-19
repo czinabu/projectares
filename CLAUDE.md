@@ -135,7 +135,7 @@ A new system gets a new file and a line here.
 
 - `docs/systems/camera-and-views.md`: The camera, first and third person, the head and eyes, what is drawn between ticks, picture quality settings.
 - `docs/systems/bodies-and-animation.md`: Legs, gait, crouch, slide, carries, holsters, and people built from parts.
-- `docs/systems/worlds-and-war.md`: Death rules per world, renown, the war director, weather, the planet kit, terrain, strongpoints, drops, world heat, shelling, world events, the life log and risk zones.
+- `docs/systems/worlds-and-war.md`: Death rules per world, renown, the war director, weather, the planet kit, terrain, collision (what is solid, `SolidProp`, the walk-through check), strongpoints, drops, world heat, shelling, world events, the life log and risk zones.
 - `docs/systems/frostline.md`: The cold, warm beacons, tracks, thin ice, the defence grid and the Engine's inside.
 - `docs/systems/marsh-and-ashfront.md`: The Spore Marsh's wildlife, fouling and spores, and Ashfront's scenery army and low sky.
 - `docs/systems/bots.md`: Armies, commanders, kinds, doctrine, group fights, senses, grudges, cover and melee bots.
