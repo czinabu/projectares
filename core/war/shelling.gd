@@ -31,6 +31,11 @@ var miss := Vector2(8.0, 22.0)
 ## How far a shell hurts and how much at its heart (a third at the edge).
 var radius := 9.0
 var damage := 95.0
+## The column of smoke a shell leaves (`ShellView` draws it): how wide, how
+## tall and how long it hides people from bots (`Raid.smoke`).
+var smoke_radius := 6.0
+var smoke_height := 14.0
+var smoke_life := 13.0
 ## How close to a gate outpost or a player spawn no shell may land, and to a
 ## player still under drop-in protection.
 var keep_clear := 35.0
@@ -112,6 +117,7 @@ func call_at(raid: Raid, aim: Vector3, heading: float) -> PackedVector3Array:
 ## A shell lands: everyone near it with nothing between is hurt.
 func land(raid: Raid, at: Vector3) -> void:
 	Gun.splash(null, at + Vector3(0.0, 0.6, 0.0), radius, damage, "shell", raid)
+	raid.smoke.add(at, smoke_radius, smoke_height, smoke_life)
 	raid.shell_landed.emit(at)
 
 

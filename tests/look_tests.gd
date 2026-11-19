@@ -46,6 +46,7 @@ static func run(t: Node) -> void:
 	t.check(absf(maxf(crate_size.x, maxf(crate_size.y, crate_size.z)) - 1.2) < 0.05, "a prop is scaled to the size asked for")
 	t.check(crate.find_children("*", "CollisionObject3D", true, false).is_empty(), "props have no collision")
 	crate.free()
+	_check_merged_pieces(t)
 
 	for world in Worlds.raid_worlds():
 		var raid := Raid.new()
@@ -135,6 +136,7 @@ static func run(t: Node) -> void:
 		await _check_carry(t, tag, raid.player, skin)
 		_check_holster(t, tag, raid.player, skin)
 		_check_detail(t, tag, raid.player, skin)
+		_check_shadow_body(t, tag, skin)
 		var dressed := 0
 		var skins := {}
 		for bot in raid.bots:
@@ -373,6 +375,89 @@ static func run(t: Node) -> void:
 ## A body is posed less often far off and out of frame (`ActorSkin.detail_step`),
 ## and posed at once when it comes into frame. Its arm is placed only with
 ## its poses, never on frames the skeleton is not posed in.
+## Worn models built from many still pieces are drawn merged, one mesh per
+## material (`Look.merge_pieces`), and look the same: the same bounds, the
+## same materials, and a part that moves on its own (a node of pieces under
+## the model) left as it is.
+static func _check_merged_pieces(t: Node) -> void:
+	var SkinScript: GDScript = load("res://core/visual/actor_skin.gd")
+	var models: Array[Node3D] = [SkinScript.build_helmet("scan", Color.CYAN, Vector3(0.14, 0.16, 0.15), Color.GRAY, 2),
+			SkinScript.build_frame("heavy"), SkinScript.build_cooler(Color.GRAY, Color.RED)]
+	for model in models:
+		var turning := Node3D.new()
+		turning.name = "Turns"
+		turning.add_child(Weapon.make_part(Vector3(0.1, 0.1, 0.1), Vector3.ZERO, Color.WHITE))
+		model.add_child(turning)
+		var meshes_before := model.find_children("*", "MeshInstance3D", true, false)
+		var mats_before := {}
+		for node in meshes_before:
+			var piece := node as MeshInstance3D
+			mats_before[piece.material_override if piece.material_override else piece.mesh.surface_get_material(0)] = true
+		var bounds_before := Look.model_bounds(model)
+		Look.merge_pieces(model)
+		var meshes_after := model.find_children("*", "MeshInstance3D", true, false)
+		var mats_after := {}
+		var unit_normals := true
+		for node in meshes_after:
+			var piece := node as MeshInstance3D
+			mats_after[piece.material_override if piece.material_override else piece.mesh.surface_get_material(0)] = true
+			if piece.name.begins_with("Merged"):
+				for n: Vector3 in piece.mesh.surface_get_arrays(0)[Mesh.ARRAY_NORMAL]:
+					unit_normals = unit_normals and absf(n.length() - 1.0) < 0.01
+		var bounds_after := Look.model_bounds(model)
+		var tag := "[%s] " % model.name
+		t.check(meshes_after.size() <= mats_before.size() + 3,
+				tag + "a worn model is drawn merged (%d meshes, was %d)" % [meshes_after.size(), meshes_before.size()])
+		# (A round shape's own bounds are a hair looser than its vertices.)
+		t.check(bounds_after.position.distance_to(bounds_before.position) < 0.003
+				and bounds_after.size.distance_to(bounds_before.size) < 0.003, tag + "merged, it covers the same space")
+		t.check(mats_after.size() == mats_before.size() and mats_after.keys().all(func(m): return mats_before.has(m)),
+				tag + "merged, it wears the same materials")
+		t.check(unit_normals, tag + "merged pieces keep their lighting")
+		t.check(turning.get_parent() == model and turning.get_child_count() == 1,
+				tag + "a part that moves on its own is left as it is")
+		model.free()
+
+
+## A body's sun shadow is one shadow-only copy of its showing parts, on
+## the same skeleton (`ActorSkin._update_shadow_body`): the same vertices,
+## so the same shape, and the parts cast none of their own. It follows a
+## part hidden or shown.
+static func _check_shadow_body(t: Node, tag: String, skin: Node) -> void:
+	skin._update_shadow_body()
+	var body: MeshInstance3D = skin.shadow_body()
+	var skeleton: Skeleton3D = skin._skeleton
+	var parts: Array[MeshInstance3D] = []
+	var count := func(list: Array[MeshInstance3D]) -> int:
+		var total := 0
+		for part in list:
+			for i in part.mesh.get_surface_count():
+				total += (part.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+		return total
+	for node in skeleton.get_children():
+		if node is MeshInstance3D and node != body and node.skin != null and node.visible:
+			parts.append(node)
+	t.check(body != null and body.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+			and body.mesh.get_surface_count() == 1 and body.get_node(body.skeleton) == skeleton,
+			tag + "a body's shadow is drawn in one piece, on its own skeleton")
+	if body == null:
+		return
+	var verts: int = (body.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	t.check(verts == count.call(parts) and parts.all(func(p: MeshInstance3D) -> bool:
+			return p.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF),
+			tag + "with every showing part's shape (%d vertices), and the parts cast none" % verts)
+	var hidden := parts[0]
+	hidden.visible = false
+	skin._update_shadow_body()
+	var fewer: MeshInstance3D = skin.shadow_body()
+	var fewer_verts: int = (fewer.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() if fewer else 0
+	hidden.visible = true
+	skin._update_shadow_body()
+	t.check(fewer != null and fewer_verts == verts - count.call([hidden] as Array[MeshInstance3D])
+			and (skin.shadow_body().mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() == verts,
+			tag + "a part hidden leaves the shadow, and comes back with it")
+
+
 static func _check_detail(t: Node, tag: String, player: Actor, skin: Node) -> void:
 	var camera := Camera3D.new()
 	camera.fov = skin.detail_fov
@@ -403,8 +488,21 @@ static func _check_detail(t: Node, tag: String, player: Actor, skin: Node) -> vo
 	t.check(skin._detail_wait == int(skin.get_instance_id() % skin._detail_every),
 			tag + "and its next poses spread out from others brought in on the same turn")
 	t.check(not skin.arm.is_processing(), tag + "the arm is placed only with the body's poses")
+	var worn: Array[Node] = []
+	if skin._helmet != null:
+		worn.append(skin._helmet)
+	worn.append_array(skin._frame_parts)
+	var worn_shadows := func() -> int:
+		var count := 0
+		for holder: Node in worn:
+			for node in holder.find_children("*", "GeometryInstance3D", true, false):
+				if (node as GeometryInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+					count += 1
+		return count
+	t.check(worn_shadows.call() == 0, tag + "far off, its helmet and plates cast no shadow")
 	camera.free()
 	skin._set_detail(1)
+	t.check(worn.is_empty() or worn_shadows.call() > 0, tag + "close by, they cast them again")
 
 
 static func _check_holster(t: Node, tag: String, player: Actor, skin: Node) -> void:

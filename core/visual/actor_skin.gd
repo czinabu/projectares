@@ -313,6 +313,10 @@ var _rig_holders: Array[Node3D] = []
 var _rig_back: Node3D
 var _vitals: Node3D
 var _helmet: Node3D
+## The body's sun shadow, drawn in one piece (`_update_shadow_body`), and
+## what it was made from.
+var _shadow_body: MeshInstance3D
+var _shadow_parts := 0
 var _frame_parts: Array[Node3D] = []
 ## The frame `_frame_parts` were built for; "" for none.
 var _frame_id := ""
@@ -461,6 +465,8 @@ func _ready() -> void:
 	_skeleton = skeleton
 	if def.get("chassis", "") == "walker":
 		_build_walker()
+	if def.get("creature", "") != "":
+		_build_creature(str(def["creature"]))
 	if def.get("suit", false):
 		_build_exo_suit()
 	# Before the arm, so the arm's hooks run after the legs have turned.
@@ -501,6 +507,59 @@ func _ready() -> void:
 	actor.flight.burst_fired.connect(_on_burst)
 	actor.landed.connect(_on_landed)
 	_mark_storm()
+
+
+## A body is several skinned parts (head, body, legs, feet), each of a few
+## materials, and every part's every surface used to cost a draw in every
+## sun shadow split. The shadow is drawn instead by one shadow-only copy
+## of the parts showing, merged into a single surface on the same skeleton
+## and bones, so it has exactly the body's shape and pose; the parts
+## themselves cast none. Rebuilt whenever a part comes or goes (a helmet
+## hides the head). A part that is not skinned, or is drawn on another
+## layer, keeps its own shadow. View only.
+func _update_shadow_body() -> void:
+	if _skeleton == null:
+		return
+	var parts: Array[MeshInstance3D] = []
+	var key := 17
+	for node in _skeleton.get_children():
+		var part := node as MeshInstance3D
+		if part == null or part == _shadow_body or part.skin == null or part.mesh == null:
+			continue
+		if part.has_meta("shadow_merged") or (part.visible and part.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON):
+			key = hash([key, part.get_instance_id(), part.visible, part.mesh.get_rid().get_id()])
+			if part.visible:
+				parts.append(part)
+	if key == _shadow_parts and (_shadow_body == null or is_instance_valid(_shadow_body)):
+		return
+	_shadow_parts = key
+	if _shadow_body != null and is_instance_valid(_shadow_body):
+		_shadow_body.queue_free()
+	_shadow_body = null
+	var shaped: Array = look.shadow_body(parts) if not parts.is_empty() else []
+	for part in parts:
+		if part.has_meta("shadow_merged") and (shaped.is_empty() or not (shaped[2] as Array).has(part)):
+			part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			part.remove_meta("shadow_merged")
+	if shaped.is_empty():
+		return
+	var body := MeshInstance3D.new()
+	body.name = "ShadowBody"
+	body.mesh = shaped[0]
+	body.skin = shaped[1]
+	body.transform = (shaped[2][0] as MeshInstance3D).transform
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	_skeleton.add_child(body)
+	body.skeleton = body.get_path_to(_skeleton)
+	_shadow_body = body
+	for part: MeshInstance3D in shaped[2]:
+		part.set_meta("shadow_merged", true)
+		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## The body's one-piece shadow (for checks), or null.
+func shadow_body() -> MeshInstance3D:
+	return _shadow_body if _shadow_body != null and is_instance_valid(_shadow_body) else null
 
 
 ## Faction rim and a lighter fog on this body, its gear and its weapons.
@@ -642,9 +701,10 @@ func _set_detail(every: int) -> void:
 	_gear_shadows(every == 1)
 
 
-## Weapons cast shadows only on a body posed every frame (close by): further
-## out a gun's shadow is a few pixels, but it costs a draw in every shadow
-## split. Only what cast a shadow before is switched back on.
+## Weapons, a helmet and armor plates cast shadows only on a body posed
+## every frame (close by): further out their shadow is a few pixels inside
+## the body's own, but each costs a draw in every shadow split. Only what
+## cast a shadow before is switched back on.
 func _gear_shadows(on: bool) -> void:
 	if on:
 		for node in _unshadowed:
@@ -659,6 +719,11 @@ func _gear_shadows(on: bool) -> void:
 	for worn: Variant in _stowed.values():
 		if worn != null and is_instance_valid(worn):
 			holders.append(worn)
+	if _helmet != null and is_instance_valid(_helmet):
+		holders.append(_helmet)
+	for part: Variant in _frame_parts:
+		if part != null and is_instance_valid(part):
+			holders.append(part)
 	for holder in holders:
 		for node in holder.find_children("*", "GeometryInstance3D", true, false):
 			var geometry := node as GeometryInstance3D
@@ -684,6 +749,7 @@ func _update(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_helmet()
+	_update_shadow_body()
 	_update_frame()
 	_update_vitals()
 	_update_phone()
@@ -1145,6 +1211,12 @@ func _dress_weapons() -> void:
 		if weapon.visual.has_meta("dressed"):
 			continue
 		weapon.visual.set_meta("dressed", true)
+		# A beast's weapon is its own body: nothing is shown in its "hand".
+		if _def.get("bare", false):
+			for child in weapon.visual.get_children():
+				if child is Node3D:
+					child.visible = false
+			continue
 		var model: Node3D = look.weapon_model(weapon)
 		if model:
 			for child in weapon.visual.get_children():
@@ -1411,7 +1483,9 @@ func _update_helmet() -> void:
 	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
 	var tier := actor.visor.tier if own == "" else 1
 	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier),
-			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset)
+			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset, true)
+	if _detail_every > 1:
+		_gear_shadows(false)
 
 
 ## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
@@ -1452,7 +1526,7 @@ func _hang_at(part: Node3D, holder_name: String, bone_name: String, at: Vector3)
 	var offset := at
 	if bone >= 0:
 		offset = at - _rest_at(bone_name)
-	return _hang(part, holder_name, bone_name if bone >= 0 else "", offset, at)
+	return _hang(part, holder_name, bone_name if bone >= 0 else "", offset, at, true)
 
 
 ## Where a bone sits at rest, as the actor sees it.
@@ -1636,8 +1710,174 @@ func _build_walker() -> void:
 		_hang_at(foot, "Foot" + side, "FootBack." + side, Vector3(ankle.x, 0.0, ankle.z))
 
 
+## The lit parts of a marsh beast: the planet's fungal glow.
+const CREATURE_GLOW := Color(0.5, 1.0, 0.65)
+## A shellback's soft rear: pale, fleshy hide lit faintly from inside.
+const SOFT_REAR := Color(0.95, 0.66, 0.55)
+
+
 ## The walker's cannon, raised and lowered with the aim (view only).
 var _cannon: Node3D
+
+
+## A marsh beast's own body (DESIGN.md "Spore Marsh"), built round the
+## walking skeleton of the skin's scene, whose own mesh is hidden: "stalker",
+## "shellback" or "bloater". Rounded shapes, unlike the machines' blocks,
+## each hung on the bone it moves with so the walk clip drives it. Lit parts
+## are the planet's own glow: eyes, gills, the shellback's soft rear and the
+## bloater's pustules. View only.
+func _build_creature(kind: String) -> void:
+	if _skeleton == null:
+		return
+	var hide := _solid(actor.body_color, 0.0)
+	hide.metallic = 0.0
+	hide.roughness = 0.8
+	var dark := _solid(actor.body_color.darkened(0.45), 0.0)
+	dark.metallic = 0.0
+	dark.roughness = 0.9
+	var bone := _solid(Color(0.78, 0.74, 0.62), 0.0)
+	bone.metallic = 0.0
+	var glow := _solid(CREATURE_GLOW, 2.6)
+	var body := _rest_at("Body")
+	var chest := _rest_at("Chest")
+	var ball := SphereMesh.new()
+	ball.radial_segments = 16
+	ball.rings = 8
+	ball.radius = 0.5
+	ball.height = 1.0
+	var tube := CylinderMesh.new()
+	tube.top_radius = 0.5
+	tube.bottom_radius = 0.5
+	tube.height = 1.0
+	tube.radial_segments = 8
+	var horn := CylinderMesh.new()
+	horn.top_radius = 0.0
+	horn.bottom_radius = 0.5
+	horn.height = 1.0
+	horn.radial_segments = 6
+	var h := actor.stand_height
+	match kind:
+		"stalker":
+			var low := body.y * 0.95
+			var trunk := Node3D.new()
+			_piece(trunk, "Torso", ball, hide, Vector3(0, low, 0.0), Vector3(0.46, 0.42, 1.15) * h / 1.6)
+			_piece(trunk, "Belly", ball, dark, Vector3(0, low - 0.08 * h, -0.05), Vector3(0.38, 0.3, 0.9) * h / 1.6)
+			for i in 6:
+				var spine := _piece(trunk, "Spine", horn, bone, Vector3(0, low + 0.2 * h / 1.6, -0.35 + i * 0.14) * Vector3(1, 1, h / 1.6),
+						Vector3(0.05, 0.16, 0.05) * h / 1.6)
+				spine.rotation.x = 0.5
+			# The tail, tapering out behind.
+			for i in 4:
+				_piece(trunk, "Tail", ball, hide, Vector3(0, low + 0.02 * i, (0.6 + i * 0.26) * h / 1.6),
+						Vector3(0.22 - i * 0.04, 0.2 - i * 0.035, 0.42) * h / 1.6)
+			_hang_at(trunk, "CreatureTrunk", "Torso", trunk.position)
+			# The head and long jaw, carried forward and low.
+			var skull := Node3D.new()
+			var at := Vector3(0, low + 0.12 * h, -0.72 * h / 1.6)
+			_piece(skull, "Skull", ball, hide, at, Vector3(0.28, 0.26, 0.42) * h / 1.6)
+			_piece(skull, "Jaw", ball, dark, at + Vector3(0, -0.08, -0.22) * h / 1.6, Vector3(0.2, 0.12, 0.42) * h / 1.6)
+			for side: float in [-1.0, 1.0]:
+				_piece(skull, "Eye", ball, glow, at + Vector3(side * 0.1, 0.06, -0.12) * h / 1.6,
+						Vector3(0.05, 0.04, 0.05) * h / 1.6)
+				for t in 3:
+					var tooth := _piece(skull, "Tooth", horn, bone, at + Vector3(side * 0.07, -0.13, -0.28 - t * 0.07) * h / 1.6,
+							Vector3(0.025, 0.07, 0.025) * h / 1.6)
+					tooth.rotation.x = PI
+			_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
+			# Hooked foreclaws, held up in front of the chest.
+			for side: float in [-1.0, 1.0]:
+				var arm := Node3D.new()
+				var shoulder := Vector3(side * 0.18 * h / 1.6, low - 0.02, -0.38 * h / 1.6)
+				var reach := _piece(arm, "Foreleg", tube, hide, shoulder + Vector3(0, -0.12, -0.08) * h / 1.6,
+						Vector3(0.07, 0.3, 0.07) * h / 1.6)
+				reach.rotation.x = 0.6
+				for c in 3:
+					var claw := _piece(arm, "Claw", horn, bone,
+							shoulder + Vector3((c - 1) * 0.03, -0.28, -0.24) * h / 1.6, Vector3(0.025, 0.16, 0.025) * h / 1.6)
+					claw.rotation.x = -2.2
+				_hang_at(arm, "Foreclaw" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
+			_creature_legs(hide, Vector2(0.11, 0.13), bone)
+		"shellback":
+			var dome := Node3D.new()
+			var mid := body.y * 0.82
+			_piece(dome, "Shell", ball, hide, Vector3(0, mid + 0.1 * h, 0), Vector3(1.5, 0.95, 1.9) * h / 1.6)
+			_piece(dome, "Skirt", ball, dark, Vector3(0, mid - 0.05 * h, 0), Vector3(1.6, 0.4, 2.0) * h / 1.6)
+			# Plates in rows down the dome.
+			for row in 3:
+				for i in 3:
+					# On the dome's curve: an ellipsoid's surface over the
+					# plate's spot across and along it.
+					var px := (i - 1) * 0.42
+					var pz := -0.5 + row * 0.5
+					var up := 0.475 * sqrt(maxf(0.0, 1.0 - pow(px / 0.75, 2.0) - pow(pz / 0.95, 2.0)))
+					var plate := _piece(dome, "Plate", ball, dark,
+							Vector3(px * h / 1.6, mid + 0.1 * h + up * h / 1.6, pz * h / 1.6), Vector3(0.38, 0.09, 0.42) * h / 1.6)
+					plate.rotation = Vector3(-pz * 0.9, 0, -px * 1.2)
+			# The soft rear: pale hide between the back plates, lit from inside.
+			var soft := _solid(SOFT_REAR, 0.9)
+			soft.metallic = 0.0
+			_piece(dome, "SoftRear", ball, soft, Vector3(0, mid + 0.05 * h, 0.86 * h / 1.6), Vector3(0.7, 0.5, 0.3) * h / 1.6)
+			_hang_at(dome, "CreatureShell", "Torso", Vector3.ZERO)
+			var face := Node3D.new()
+			var at := Vector3(0, mid - 0.02 * h, -1.0 * h / 1.6)
+			_piece(face, "Head", ball, dark, at, Vector3(0.6, 0.42, 0.5) * h / 1.6)
+			_piece(face, "Brow", ball, hide, at + Vector3(0, 0.13, -0.04) * h / 1.6, Vector3(0.64, 0.16, 0.42) * h / 1.6)
+			for side: float in [-1.0, 1.0]:
+				_piece(face, "Eye", ball, glow, at + Vector3(side * 0.18, 0.06, -0.22) * h / 1.6,
+						Vector3(0.06, 0.05, 0.05) * h / 1.6)
+				var tusk := _piece(face, "Tusk", horn, bone, at + Vector3(side * 0.2, -0.08, -0.3) * h / 1.6,
+						Vector3(0.06, 0.26, 0.06) * h / 1.6)
+				tusk.rotation.x = -1.9
+			_hang_at(face, "CreatureHead", "Head", Vector3.ZERO)
+			_creature_legs(dark, Vector2(0.24, 0.26), bone)
+		"bloater":
+			var sac := Node3D.new()
+			var at := Vector3(0, (chest.y + body.y) * 0.5, 0)
+			_piece(sac, "Sac", ball, hide, at, Vector3(1.3, 1.4, 1.3) * h / 2.1)
+			_piece(sac, "Belly", ball, dark, at + Vector3(0, -0.42, 0) * h / 2.1, Vector3(1.0, 0.6, 1.0) * h / 2.1)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 11
+			for i in 12:
+				var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.6, 1), rng.randf_range(-1, 1)).normalized()
+				_piece(sac, "Pustule", ball, glow, at + dir * 0.66 * h / 2.1, Vector3.ONE * rng.randf_range(0.1, 0.18) * h / 2.1)
+			for i in 5:
+				var tendril := _piece(sac, "Tendril", tube, dark,
+						at + Vector3(cos(i * 1.3) * 0.35, -0.75, sin(i * 1.3) * 0.35) * h / 2.1, Vector3(0.04, 0.5, 0.04) * h / 2.1)
+				tendril.rotation.z = cos(i * 2.1) * 0.25
+			_hang_at(sac, "CreatureSac", "Chest", Vector3.ZERO)
+			var face := Node3D.new()
+			var mouth := at + Vector3(0, -0.25, -0.62) * h / 2.1
+			_piece(face, "Mouth", ball, dark, mouth, Vector3(0.36, 0.22, 0.2) * h / 2.1)
+			for side: float in [-1.0, 1.0]:
+				_piece(face, "Eye", ball, glow, mouth + Vector3(side * 0.12, 0.16, -0.06) * h / 2.1,
+						Vector3(0.06, 0.06, 0.05) * h / 2.1)
+			_hang_at(face, "CreatureHead", "Head", Vector3.ZERO)
+			_creature_legs(dark, Vector2(0.14, 0.16), bone)
+
+
+## A beast's two legs down the skeleton's own (thigh, shank and foot), with
+## claws on the foot.
+func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
+	var horn := CylinderMesh.new()
+	horn.top_radius = 0.0
+	horn.bottom_radius = 0.5
+	horn.height = 1.0
+	horn.radial_segments = 6
+	for side: String in ["L", "R"]:
+		_limb("UpperLeg." + side, "MidLeg." + side, Vector3.ZERO, size, mat, 0.0, 1.0, true)
+		_limb("MidLeg." + side, "LowerLeg." + side, Vector3.ZERO, size * 0.8, mat, 0.0, 1.0, true)
+		_limb("LowerLeg." + side, "FootBack." + side, Vector3.ZERO, size * 0.6, mat, 0.0, 1.0, true)
+		var ankle := _rest_at("FootBack." + side)
+		var foot := Node3D.new()
+		var pad := SphereMesh.new()
+		pad.radial_segments = 10
+		pad.rings = 5
+		_piece(foot, "Pad", pad, mat, Vector3(0, size.x * 0.3, -size.x * 0.4), Vector3(size.x * 1.6, size.x * 0.7, size.x * 2.4))
+		for toe: float in [-1.0, 0.0, 1.0]:
+			var nail := _piece(foot, "Claw", horn, claw, Vector3(toe * size.x * 0.6, size.x * 0.2, -size.x * 1.5),
+					Vector3(size.x * 0.35, size.x * 1.3, size.x * 0.35))
+			nail.rotation = Vector3(-1.5, -toe * 0.3, 0)
+		_hang_at(foot, "Foot" + side, "FootBack." + side, Vector3(ankle.x, 0.0, ankle.z))
 
 
 ## Pitches the walker's cannon in its mantlet toward where it aims.
@@ -2017,10 +2257,10 @@ func _update_frame() -> void:
 		return
 	var height: float = _def.get("height", 1.8)
 	_frame_parts.append(_hang(build_frame(id, paint), "Frame", _def.get("back_bone", ""), frame_offset,
-			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
+			Vector3(0.0, height * 0.72, 0.0) + frame_offset, true))
 	var hips: String = _def.get("hip_bone", "")
 	if hips != "" and _skeleton.find_bone(hips) >= 0:
-		_frame_parts.append(_hang(build_belt(id, paint), "Belt", hips, Vector3.ZERO, Vector3.ZERO))
+		_frame_parts.append(_hang(build_belt(id, paint), "Belt", hips, Vector3.ZERO, Vector3.ZERO, true))
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
 		for limb: Array in [["UpperArm", "LowerArm", build_pad(id, out, paint), Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z)],
@@ -2033,6 +2273,8 @@ func _update_frame() -> void:
 				piece.free()
 			else:
 				_frame_parts.append(held)
+	if _detail_every > 1:
+		_gear_shadows(false)
 
 
 ## Hangs a limb piece, built standing up its limb (Y from the far joint
@@ -2046,7 +2288,7 @@ func _hang_limb(part: Node3D, bone: String, child: String, offset: Vector3) -> N
 	var up := (at - _rest_at(child)).normalized()
 	var front := Vector3.FORWARD - up * up.dot(Vector3.FORWARD)
 	front = front.normalized() if front.length() > 0.1 else Vector3.FORWARD
-	var held := _hang(part, part.name, bone, offset, at)
+	var held := _hang(part, part.name, bone, offset, at, true)
 	part.basis = Basis(up.cross(-front).normalized(), up, -front)
 	return held
 
@@ -3212,7 +3454,12 @@ func _wear_part(part: Node3D, bone_name: String, offset: Vector3, fallback: Vect
 ## actor's way; this undoes the model's scale and turn so they come out that
 ## way. `offset` is from the bone, in the actor's frame. Skins without the
 ## bone get the part at `fallback` (actor frame), fixed to the body.
-func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3, fallback: Vector3) -> Node3D:
+func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3, fallback: Vector3,
+		merge := false) -> Node3D:
+	if merge:
+		# Plates, a helmet and armor parts are built from many still pieces:
+		# drawn as one mesh per material they cost a few draws, not dozens.
+		look.merge_pieces(part)
 	var bone := _skeleton.find_bone(bone_name) if _skeleton and bone_name != "" else -1
 	var holder := Node3D.new()
 	holder.name = holder_name

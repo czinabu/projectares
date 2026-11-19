@@ -60,13 +60,33 @@ const LAYOUT_SEED := 7071
 ## The planet's rocks stand no nearer than `FAR_CLEAR` to `FAR_CENTRE`, the
 ## middle of both circuits, so none lands on a road or a stand.
 const FAR_CENTRE := Vector3(-40, 0, 100)
-const FAR_CLEAR := 720.0
+const FAR_CLEAR := 800.0
 
 const CYAN := Color(0.3, 0.85, 1.0)
 const AMBER := Color(1.0, 0.6, 0.2)
 const SkyhookScript := preload("res://worlds/meridian/skyhook.gd")
 const StandsScript := preload("res://worlds/meridian/stands.gd")
 const SkylineScript := preload("res://worlds/meridian/skyline.gd")
+const WorksScript := preload("res://worlds/meridian/works.gd")
+## Half the salt pan's width: past it the dunes rise (`_build_far_land`),
+## near enough that the works run up into them.
+const GROUND_HALF := 900.0
+## How far the player's view draws here (the map's "view_far" meta, read
+## by `PlayerController._view_far`): the landmarks, the works and the
+## dunes past them from anywhere on either circuit. The camera's own 400 m
+## cut the far side of the salt off (Caleb: "my view distance is not very
+## long"); the fog fades the rest.
+const VIEW_FAR := 1800.0
+## What the works keep clear of (`works.gd`): [centre, radius, and how far
+## off trackside fences stay]: the pits and race control, the stands, the
+## skyline's towers, cranes and booster.
+const WORKS_KEEP_OUT := [
+	[Vector3(-110, 0, -60), 100.0, 80.0], [Vector3(-45, 0, 40), 75.0, 80.0], [Vector3(150, 0, 38), 80.0, 62.0],
+	[Vector3(-60, 0, 330), 80.0, 78.0], [Vector3(66, 0, 282), 45.0, 34.0], [Vector3(-186, 0, 275), 30.0, 30.0],
+	[Vector3(-228, 0, -138), 50.0, 46.0], [Vector3(-145, 0, -100), 60.0, 40.0], [Vector3(430, 0, 300), 40.0],
+	[Vector3(-560, 0, 230), 40.0], [Vector3(160, 0, -470), 40.0], [Vector3(360, 0, -200), 35.0],
+	[Vector3(-520, 0, -300), 35.0], [Vector3(-300, 0, 640), 60.0],
+]
 
 var nav_region: Node3D
 ## The planet the map stands on (`WorldDef.planet_type`), set before it
@@ -77,6 +97,10 @@ var _skyhook_track: RaceTrack
 var _skyhook: RefCounted
 var _rng := RandomNumberGenerator.new()
 var _art_rng := RandomNumberGenerator.new()
+
+
+func _init() -> void:
+	set_meta("view_far", VIEW_FAR)
 
 
 func _ready() -> void:
@@ -189,7 +213,7 @@ func _yaw_at(i: int) -> float:
 
 func _build_ground() -> void:
 	var salt := Planet.ground_material(planet)
-	var big := 2400.0
+	var big := GROUND_HALF * 2.0
 	var north := CHANNEL_Z - CHANNEL_W * 0.5
 	var south := CHANNEL_Z + CHANNEL_W * 0.5
 	_box(Vector3(big, 8, north + big * 0.5), Vector3(0, -4, (north - big * 0.5) * 0.5), salt)
@@ -806,7 +830,8 @@ func _dress_pylons(art: Node3D) -> void:
 ## footbridge over the run to the chicane, viewing barges over the infield,
 ## race control's tower and big screen, Skyhook's stand and stilts, and the
 ## world round them: mesas, the dead launch works, searchlights and camera
-## drones (`skyline.gd`).
+## drones (`skyline.gd`), and the works' districts, roads, car parks, the
+## infield festival and the trackside fences (`works.gd`).
 func _dress_spectacle(art: Node3D) -> void:
 	var st: RefCounted = StandsScript.new(art, LAYOUT_SEED + 1)
 	_dress_grandstand(st)
@@ -828,6 +853,7 @@ func _dress_spectacle(art: Node3D) -> void:
 	_skyhook.call("dress", st)
 	SkylineScript.new(st, LAYOUT_SEED + 2).call("build", race_tracks())
 	st.call("finish")
+	WorksScript.new(art, LAYOUT_SEED + 4, WORKS_KEEP_OUT.duplicate(true)).call("build", race_tracks())
 
 
 ## The Meridian Grandstand: two tiers along the Rail opposite the pits,

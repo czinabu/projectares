@@ -149,6 +149,21 @@ func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 
 
 ## A bot gladiator, the same from the same seed on every machine.
+## The share of gladiators who fight with a blade.
+const BLADE_SHARE := 0.65
+
+
+## True if the gladiator `equip_bot` makes from seed `equip_seed` carries a
+## blade: its rolls replayed in the same order. A blades bout picks such a
+## seed (`Arena._next_bot_seed`), so every machine builds the same fighter.
+static func gladiator_has_blade(equip_seed: int) -> bool:
+	var probe := RandomNumberGenerator.new()
+	probe.seed = equip_seed
+	probe.randi()
+	probe.randi()
+	return probe.randf() < BLADE_SHARE
+
+
 func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.faction = "gladiator_%d" % rng.randi()
 	bot.display_name = GLADIATOR_NAMES[rng.randi() % GLADIATOR_NAMES.size()]
@@ -156,7 +171,7 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.body_color = Color(0.75, 0.6, 0.3)
 	var kit: Array[String] = ["plate_light"]
 	# Most gladiators fight with a blade, the rest with a rifle.
-	if rng.randf() < 0.65:
+	if rng.randf() < BLADE_SHARE:
 		kit.append("blade_scrap")
 	else:
 		kit.append("rifle_scrap")

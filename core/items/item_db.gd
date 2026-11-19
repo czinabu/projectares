@@ -187,6 +187,18 @@ func _ready() -> void:
 			"light_recover": 0.3, "heavy_windup": 0.42, "heavy_lunge": 6.0, "heavy_stagger": 0.6,
 			"slam_damage": 40.0, "slam_radius": 3.5, "swing_style": "thrust"},
 			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, half damage up close, and a heavy thrust staggers.")
+	# The Spore Marsh's melee options (DESIGN.md "Spore Marsh"), crafted from
+	# its blueprints: sidegrades, never a higher Mk.
+	register("blade_hook", "Marsh Hookblade", Rarity.UNCOMMON, 600, ["weapon", "melee", "one_handed", "blade"],
+			{"light_damage": 25.0, "heavy_damage": 56.0, "reach": 2.5, "light_windup": 0.12, "light_recover": 0.2,
+			"backstab_mult": 1.6, "backstab_arc_deg": 140.0, "swing_style": "slash"},
+			"A hooked marsh blade. Quick cuts that bite harder from behind, but a lighter heavy.")
+	register("spear_reed", "Reed Spear", Rarity.UNCOMMON, 650, ["weapon", "melee", "two_handed", "spear"],
+			{"light_damage": 22.0, "heavy_damage": 50.0, "reach": 3.8, "arc_deg": 45.0,
+			"vertical_reach": 3.4, "close_range": 1.4, "close_mult": 0.6, "light_windup": 0.12,
+			"light_recover": 0.25, "heavy_windup": 0.38, "heavy_lunge": 8.0, "heavy_stagger": 0.4,
+			"slam_damage": 32.0, "slam_radius": 3.0, "move_mult": 1.05, "swing_style": "thrust"},
+			"A light spear of marsh reed and chitin. Long reach and quick to move with, but it hits softer.")
 
 	# Armor frames
 	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light", "vendor"],
@@ -380,6 +392,11 @@ func _ready() -> void:
 			"Plans for a heated armor frame that keeps out the cold.", ["expedition"])
 	_blueprint("bp_grip_glacier", "Glacier Grip Blueprint", Rarity.RARE, 250,
 			"Plans for a grip that holds steady on the move.", ["expedition"])
+	# The Spore Marsh's: melee options from its hollows (DESIGN.md "Spore Marsh").
+	_blueprint("bp_blade_hook", "Hookblade Blueprint", Rarity.RARE, 250,
+			"Plans for a hooked marsh blade that bites from behind.", ["expedition"])
+	_blueprint("bp_spear_reed", "Reed Spear Blueprint", Rarity.RARE, 250,
+			"Plans for a light, long marsh spear.", ["expedition"])
 	# What a Mk2 or Mk3 craft spends. Worth nothing to a shop, so it is never
 	# sold by accident; it is only kept if you get it home.
 	register("upgrade_data", "Upgrade Data", Rarity.RARE, 0, ["upgrade_data"], {},
@@ -403,7 +420,21 @@ func _ready() -> void:
 			"Metal tempered in the deep cold. Every Mk3 is built on it.")
 	register("engine_coil", "Engine Coil", Rarity.RARE, 450, ["material"], {},
 			"A winding from the Stilled Engine, still faintly warm. Every Mk3 needs one.")
+	# The Spore Marsh's goods (DESIGN.md "Spore Marsh"): what its wildlife
+	# and forests pay, and what its melee blueprints are made from.
+	register("stalker_fang", "Stalker Fang", Rarity.COMMON, 40, ["material"], {},
+			"A hooked fang from a marsh stalker. Traders take them by the jar.")
+	register("chitin_plate", "Shellback Chitin", Rarity.UNCOMMON, 120, ["material"], {},
+			"A plate of shell, light and harder than steel.")
+	register("spore_sac", "Spore Sac", Rarity.UNCOMMON, 150, ["material"], {},
+			"A bloater's sac, sealed. Do not squeeze.")
+	register("glowcap", "Glowcap", Rarity.RARE, 400, ["material"], {},
+			"A cap from the heart of a fungus forest. It glows for weeks after it is cut.")
 	register("lattice_shard", "Lattice Shard", Rarity.RELIC, 2500, ["relic"])
+	# The Pit's Blade Tournament (DESIGN.md "Gladiator arena"): its champion's
+	# weekly prize, for the trophy shelf. Earned, never sold or traded.
+	register("trophy_blade_champion", "Blade Champion Trophy", Rarity.EPIC, 0, ["trophy"], {},
+			"A blade crossed over the Pit's ring, cast for a week's Blade Tournament champion.")
 
 	# Furniture and decorations for a home base. Bought from the Furnisher,
 	# kept in the stash, never taken on a raid. "footprint" is the size in
@@ -465,6 +496,8 @@ func _ready() -> void:
 			"Black and gold, stripped off a fallen warlord. Only Ashfront's warlords carry it.", Rarity.RELIC)
 	_paint_item("paint_warden", "Heart Warden Paint", 1500, "warden",
 			"Ice white and frozen blue, from the Heart Warden's vault deep in the Engine.", Rarity.RELIC)
+	_paint_item("paint_spore", "Spore Paint", 1500, "spore",
+			"Moss green and glowing gills, taken off the Grey Matriarch in the Spore Marsh.", Rarity.RELIC)
 
 
 ## Registers a weapon attachment for `slot` (also its tag: see `Loadout.SLOTS`).

@@ -50,7 +50,7 @@ new planet is a new folder under `worlds/`.
 | Home base | `core/base` | Your private staging ground. The armory wall, the garage, the trophy shelf and the consoles. Loadouts are prepared here. |
 | PvE world | Frostline (partly) | The co-op expedition world: cold, whiteouts and tracking instead of a war. Learn the game, test builds, earn basic gear and the crafting parts every Mk2 and Mk3 needs (planned). No PvP, gentle death. |
 | PvP world | Ashfront | The high-stakes warzone. The fallen drop scrip piles, not their gear (see "Scrip piles"), so the best gear comes from its caches; the only source of heavy weapons, bank spots, sign-out tension. |
-| Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments. Loadouts are locked once a fight begins. Nobody loses gear. |
+| Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments, open or blades only. Loadouts are locked once a fight begins. Nobody loses gear. |
 
 ### Main hub
 
@@ -1061,6 +1061,63 @@ now react together after a callout, kill about a second faster at 25 m,
 which is still "three or more need cover or a plan". The battle bench is
 7% cheaper (12.1 ms a tick against 13.0), since fewer bots run about.
 
+### The enemy AI pass: each world fights its own way (Caleb's call)
+
+Audit (19 Nov): the AI is smart but every world ran the same bot with
+different numbers. Every kind saw 38 m whatever it was, the Legion and the
+Tide were mirror images, Frostline's enemies ignored the snow, smoke hid
+nobody from bots, and armies never remembered a player. Caleb approved a
+plan in five steps (the plan doc, "Enemy AI pass: a plan per world"):
+
+1. **Foundations (built).** A world gives a kind its own senses through
+   metas `equip_bot` sets and `BotBrain` reads: "sight" (metres), "fov"
+   (degrees), "reach" (how far it fights from) and "far_notice" (how much
+   slower it notices someone at the edge of its sight), so a long eye still
+   gives a scope the first shot. Smoke hides people from bots as it hides
+   them from eyes: `Smoke` (`Raid.smoke`, authority only) keeps every cloud
+   a player cannot see through as a column of air, and a line of sight
+   through one sees nothing past it unless the two are within
+   `see_through` (5 m). A shell leaves one (`Shelling.smoke_*`, timed to
+   `ShellView`'s column); new smoke is one more `Smoke.add`. The battle
+   bench counts stuck bots (pressing to move for five seconds and getting
+   nowhere) and prints where; the duel bench measures Frostline's Wardens
+   and Ferals (`WORLD_TARGETS`, bands proposed, `--world frostline`).
+2. **Frostline's enemies.** Wardens are the machine you sneak past: long
+   sight with a slow, visible sweep and a short lock before the first shot,
+   lone sentries at the mouth rising to grid posts of three at the glacier
+   head. Ferals hunt in packs of 3 to 5 that follow tracks, grow bolder
+   against someone shivering or alone, and never enter a heater's or a
+   beacon's ring. About 18 to 24 bots, packs a little bigger against a group.
+3. **Ashfront's armies fight differently.** The Legion holds ground
+   (rifles from cover at 30 to 60 m, a marksman per fireteam, more exos);
+   the Tide swarms (blades and runners, closes to 10 to 25 m, pincers,
+   breaks off when it loses a third). Two new kinds: the Legion marksman
+   and the Tide runner. Both stay inside the existing bands.
+4. **Ashfront's battles follow the ground.** Quiet patrols at the rim,
+   fireteams meeting in the open field, standing skirmish lines along the
+   front lines, sieges at the landmarks, close quarters in the Works, and
+   both armies' elites at the Foundry only when the war runs hot.
+5. **Players and the armies.** Each army keeps a grudge against each
+   player for one life: damage to it raises it, time lets it fade, death
+   clears it. A high grudge sends that army's hunters (inside the existing
+   hunter, slot and leash limits) and names you in its callouts; the other
+   army does not change. A small visor tag says when an army is after you.
+
+**Baseline before the pass (19 Nov, 30 duels a row).** 16 of 20 Ashfront
+rows in their bands, the other four on the edge (outer soldier 100% at
+12 m and 83% at 25 m, outer exo 90% at 12 m, core walker 10% at 25 m). The
+battle bench: 12.7 ms a tick of 16.7 with 150 bots and 32 players (12.8 with
+step 1's smoke and senses). The first stuck count: 38 bot-windows in 30 s,
+all in the middle ring, most at the Breach (9).
+
+**Frostline before step 2 (40 duels, 30 for groups).** One Warden or Feral
+alone is no fight: the reference won every duel, at the mouth and the
+glacier head alike, with 80-98% health left. Groups are where it bites, and
+unevenly: a glacier-head pack of three wins 43-60%, of five 23-33%; two or
+three Wardens still lose to one player, five win 73-87% of the time after
+25 s or more. So step 2 makes the single enemy matter and the grid less of
+a wall of health.
+
 ### Army commanders
 
 Each army in a world where `bots_contest_sites` is on has a commander
@@ -1119,6 +1176,21 @@ vehicle has a job:
   the stands and a ring of stadium floodlight towers (Caleb's call) whose
   white beams spread out over the floor to its edges, never meeting at one
   point, so the fighters stand out.
+- **Rules per bout** (`Arena.RULES`): every bout and tournament is
+  **open** (anything the loadout carries), **blades** (melee only: guns stay
+  locked and every flight rig is off) or **blades and boots** (melee, and
+  thruster boots may fly, for air lunges and dash duels). Pure footwork is
+  the default blade rule (Caleb's call). Whoever asks for the bout picks:
+  the challenger, the player asking for practice, the first entrant of a
+  tournament. A blades bout needs a melee weapon on both fighters, and a
+  gladiator brought to one carries a blade. Every other exhibition the
+  house puts on is fought with blades.
+- **The Blade Tournament** is a tournament under blade rules. Its champion
+  takes the pot like any other and, once a week per account, the weekly
+  prize: the Blade Champion trophy for the base's trophy shelf (never sold
+  or traded) and a 35% chance at an artifact, the design's arena source of
+  both. The week is the contract board's (Monday to Sunday, UTC). Bots
+  fill an empty bracket as usual, so a solo player can win it too.
 
 ### Planet kit (proposed, Caleb to confirm)
 
@@ -1162,6 +1234,112 @@ lives in the sky's glow, the fires, the cracks and the tracers, and stands
 out. Low battle smoke lies over its ground (`PlanetType.smoke`, drawn by
 `Planet.GroundSmoke`), thicker as the war heats up and in a storm, and
 switched off with the "Battle smoke" graphics setting.
+
+### More worlds (planned, Caleb's picks)
+
+Four kinds of play have no home yet: melee as the natural choice, fighting
+things that are not soldiers, vehicles at the centre, and flight at the
+centre. Three new worlds and a Pit ruleset fill them, each on a planet type
+from the kit below, and each pays something no other place does. They are
+built in this order, cheapest and most connected first:
+
+1. **Blades in the Pit** (built, above): blade bouts and the weekly Blade
+   Tournament, the first arena source of trophies and artifacts.
+2. **Spore Marsh, the hunt.** A co-op PvE world (no PvP; player melee lives
+   in the Pit, Caleb's call) where blades are the natural choice and the
+   enemy is wildlife: stalker packs that circle and feint, shellbacks with
+   a soft rear, bloaters that burst into spore clouds, lurkers under the
+   black water and brood keepers guarding the hives. Mist and fungus
+   forests keep fights short, gunshots wake the marsh while melee kills stay
+   silent, and guns foul gently under sustained fire (Caleb's call): spread
+   grows and a long burst can jam until a reload, a world rule that leaves
+   Ashfront's guns alone. The Rootways are its dungeons, part of the one
+   running world like the Engine, each worked down to a keeper. Gentle
+   death (keep what you wear, drop the pack). It is the main source of
+   artifacts (Caleb's call), plus trophies, melee blueprints (new options,
+   never a higher Mk) and marsh cosmetics.
+   Part one is built (below, "The Spore Marsh"): the world, its map, three
+   of the five kinds of wildlife, fouling, spore clouds and its loot. The
+   lurkers, the brood keepers and their hives, and the Rootways come next.
+3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
+   map several times Ashfront's width, salvage crates too big for a pack
+   that ride in a vehicle's cargo space, sandstorms that bury and uncover
+   wreck fields, armed AI convoys as a world event, and mounted guns.
+   You keep what you wear on death; the pack and every crate in your
+   vehicle drop (Caleb's call). It pays vehicle blueprints and parts,
+   mounted weapons and the most scrip a trip.
+4. **Basalt Rift, the sky fight.** Last, and only once there are players
+   enough for three PvP worlds: a small vertical world over lava where
+   flight rigs decide every fight, with updrafts, the Sky Leviathan and
+   Ashfront's death rule. It pays rig upgrade data and rig cosmetics.
+
+The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
+Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
+goes in, artifacts mostly come from it; a carried artifact still drops as
+itself under Ashfront's scrip-pile rule, so they keep changing hands in
+the war.
+
+### The Spore Marsh (part one, built)
+
+`worlds/marsh/`, on the marsh planet type. A drowned basin about 400 m
+across inside low hills: players come in on the dry southern shore (the
+outer zone), the drowned middle is hummocks between pools of black water
+(the pools are dug under one dark sheet of water at the waterline, view
+only), and the core in the north is the Grey Matriarch's forest. Five
+fungus forests stand in it, each twenty to thirty giant stalks a few
+metres apart under caps big enough to stand on, so sight lines close in
+and a fight is short. The planet's mist lies low over everything (its
+"smoke", thicker in a storm) and spores drift round the viewer.
+
+- **The wildlife.** Three kinds, each a faction of its own, so they hunt
+  each other as well as you and nobody hurts its own kind. Stalkers are
+  quick, fragile pack hunters with hooked claws; a pack dens round each
+  forest's heart, and they circle out of reach and feint more than an
+  army's blades do (the bot's "feint_chance"). Shellbacks are slow grazers
+  under a plated dome, 80 armor, with a heavy bash from the front and a
+  soft rear: hits from behind do three times as much. Bloaters are slow
+  sacs of spores with a weak slap. Each wears a beast's own body built in
+  code on the walker's skeleton (`ActorSkin._build_creature`), with nothing
+  in its hand: the claws and the bash are its own.
+- **Spore clouds.** A bloater bursts where it dies (`WorldDef.death_burst`)
+  into a cloud 4.5 m across that hangs eight seconds and hurts everyone in
+  it but other bloaters, players and beasts alike, 9 a second past armor
+  (`Raid.burst_cloud`, `_tick_clouds`, through `Combat.deal`, authority
+  only; clients are told with `NetSession._cloud` and draw it). So a blade
+  kill is a step back after the cut, and a shot from range is a noise.
+- **Gunshots wake the marsh.** Shots carry 1.6 times as far as still air
+  (`WorldDef.shot_carry`, which every bot's hearing scales by); melee kills
+  stay silent, as everywhere.
+- **Fouling** (Caleb's call). With `WorldDef.gun_fouling` over 0 every shot
+  fouls the gun a little (`Gun.fouling`, 4% a shot here): the spread grows
+  with it, up to 1.8 times, it clears on its own once the trigger rests,
+  and at full the gun jams (`Gun.jammed`): it only clicks until a reload,
+  which a pull on the trigger starts and which clears it all. About 25
+  shots without a pause jam a gun, so bursts are fine and a full mag held
+  down is not. Heavy weapons never foul (there are none here anyway), and
+  every other world's guns are untouched. Bots clear their own jams.
+- **The Grey Matriarch.** The core's boss, at her den in the north forest:
+  a stalker 2.9 m tall, 900 health, quick for her size and feinting most of
+  the time, made for one player and tougher for each other player near her
+  (`boss_party_scale`). She carries what a warlord carries, an artifact
+  more often than not, sometimes her trophy (the Matriarch's Fang, a
+  keepsake never traded or sold) and now and then the Spore paint, a Relic
+  armor paint earned nowhere else.
+- **What it pays.** It is the main source of artifacts: the Matriarch
+  (0.6), world events' pods (0.15), the den's cache, and now and then a
+  forest's hollow (the cache among the roots at its heart) or a cap (the
+  cache on its two tallest caps, reached by flight). Its own goods are
+  Stalker Fangs, Shellback Chitin, Spore Sacs and Glowcaps, and its own
+  blueprints, the Hookblade and the Reed Spear: melee options made from
+  them, never a higher Mk. Gear in its caches stays the basic tier, as in
+  every gentle world. The survey stations (a hut and a depot each) hold
+  what the expeditions left behind.
+- **Contracts.** Its own, tagged "marsh": hollows, caps, stalkers,
+  shellbacks and Spore Sacs as dailies; the Matriarch twice and three
+  Glowcaps as weeklies, which pay a blueprint like every weekly.
+- **Still to come.** Lurkers under the black water, brood keepers and the
+  hives they guard, the Rootways and their keepers, the rain storms the
+  planet already has a look for, and wading.
 
 ## 3. The watch
 
@@ -2042,12 +2220,14 @@ How they work for now:
   spent. There is no hotkey yet.
 - **One per outing.** Only the artifact you deploy with can be used. One
   found in the world rides in your pack as loot until you get it home.
-- **Finding them.** Until PvE dungeons, bosses and arena tournaments exist,
-  world events stand in: a warlord carries one half the time and a supply
-  pod holds one now and then (`WorldDef` sets the chances per world). They
-  are off in Frostline for now, under the rule that rare gear stays in the
-  full-loot war worlds; the PvE source in this section is Caleb's call to
-  turn on when it exists.
+- **Finding them.** The Blade Tournament's weekly prize carries a chance
+  at one (section 2, "Gladiator arena"), and the Heart Warden's vault a
+  small one. The Spore Marsh is their main source (Caleb's call): the Grey
+  Matriarch carries one more often than not, its pods sometimes, and its
+  forests' hollows, caps and the den now and then (section 2, "The Spore
+  Marsh"). World events stand in elsewhere: a warlord carries one half the
+  time and a supply pod holds one now and then (`WorldDef` sets the chances
+  per world). They are off in Frostline.
 - **Losing and keeping them.** The equipped one is gear: it drops in your bag
   on death in the PvP world and goes home on sign-out. One in the pack banks
   at a depot like any loot. Never sold in shops.
@@ -2376,6 +2556,20 @@ sticks and jump as a racer goes past. Round it all, eroded mesas, the dead
 launch works on the skyline (leaning launch towers with holo-ads, gantry
 cranes, a crashed booster stage, power pylons), searchlights sweeping the
 haze and camera drones pacing the racers.
+
+**No bare salt (Caleb's call: too much open space).** The works fill the
+pan between the tracks and the dunes, which close in to about 900 m out
+(`works.gd`). A belt of districts runs all round, each a slice of the
+ring: tank farm, hangar row, container port, cooling plant and launch
+field. Each district has one landmark to steer by (fuel spheres, the
+vehicle assembly hall, a portal crane, twin cooling towers, a rocket still
+on its pad). Buildings stand low near the road and grow taller toward the
+dunes, so every view from the track ends on a skyline. Lit service roads
+run out into the works. Fans' car parks and tent camps sit just outside
+the tracks, and the infield holds a festival with a stage, a big wheel and
+a street of food stalls. Catch fences, hoardings and tyre walls line both
+roads. It is all decoration, merged into a block of meshes per material,
+and nothing stands on a road (`race_tests.gd`, `_test_works`).
 
 ## 10. Economy and progression
 
@@ -2860,7 +3054,8 @@ players far less than to bots.
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
    mech, jet), and the racing mode (section 9).
-   Artifacts arrive with arena tournaments and PvE dungeons, and the Sky
+   Artifacts arrive with arena tournaments (the Blade Tournament, built)
+   and PvE dungeons, and the Sky
    Leviathan with the jet and the PvE world. The hub's toy RC arena comes
    last. Squad visits to a base follow online base visits together;
    trophies follow PvE bosses and arena brackets; blueprints and tech cores

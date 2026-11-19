@@ -108,6 +108,9 @@ func _ready() -> void:
 	# in, and its blast, a deep crack with a long roll after it.
 	_streams["shell_whistle"] = _sweep(2300.0, 700.0, 1.1, 0.3)
 	_streams["shell_blast"] = _noise_burst(1.6, 3.2, 0.95, 38.0)
+	# A bloater bursting (`Raid.cloud_burst`): a wet, soft pop with a hiss of
+	# spores after it.
+	_streams["spore_burst"] = _noise_burst(0.9, 5.0, 0.85, 70.0)
 	# The race radio: a short burst of static as a rival keys up.
 	_streams["radio"] = _noise_burst(0.14, 26.0, 0.7, 1300.0)
 	for sound: String in RECORDED:

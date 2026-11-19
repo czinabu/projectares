@@ -331,6 +331,19 @@ func _ready() -> void:
 	if actor.has_meta("air_error"):
 		air_error_deg = float(actor.get_meta("air_error"))
 	lock_time = float(actor.get_meta("lock_time", 0.0))
+	# A world may give a kind its own senses (the enemy AI pass): how far it
+	# sees ("sight", metres), how wide ("fov", degrees), how far it fights
+	# from ("reach", metres) and how much slower it notices someone at the
+	# edge of its sight ("far_notice"). A long eye still notices slowly out
+	# there, so a scope keeps the first shot.
+	if actor.has_meta("sight"):
+		sight_range = float(actor.get_meta("sight"))
+	if actor.has_meta("fov"):
+		fov_deg = float(actor.get_meta("fov"))
+	if actor.has_meta("reach"):
+		attack_range = float(actor.get_meta("reach"))
+	if actor.has_meta("far_notice"):
+		far_notice_mult = float(actor.get_meta("far_notice"))
 	var ring := int(actor.get_meta("zone", 1))
 	attack_slots = RING_SLOTS[clampi(ring, 0, RING_SLOTS.size() - 1)]
 	max_hunters = RING_HUNTERS[clampi(ring, 0, RING_HUNTERS.size() - 1)]
@@ -341,6 +354,10 @@ func _ready() -> void:
 	heavy_feint_chance = RING_HEAVY_FEINT[clampi(ring, 0, RING_HEAVY_FEINT.size() - 1)]
 	melee_dodge_chance = RING_DODGE[clampi(ring, 0, RING_DODGE.size() - 1)]
 	flanks = ring > 0
+	# A world may make a kind feint more than its ring would ("feint_chance":
+	# the marsh's stalkers circle and feint before they strike).
+	if actor.has_meta("feint_chance"):
+		feint_chance = float(actor.get_meta("feint_chance"))
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 
@@ -447,7 +464,7 @@ func _physics_process(delta: float) -> void:
 		_patrol(cmd, delta)
 	# A gun never reloads itself: a bot presses the key like a player.
 	var dry := actor.get_active_weapon() as Gun
-	if dry != null and dry.ammo_in_mag <= 0 and dry.reserve_ammo > 0 and not dry.is_reloading():
+	if dry != null and not dry.is_reloading() and (dry.jammed or (dry.ammo_in_mag <= 0 and dry.reserve_ammo > 0)):
 		cmd.reload_pressed = true
 	if uses_kit:
 		_tend_kit(cmd)
@@ -1244,6 +1261,9 @@ func _find_target() -> Actor:
 		if dist >= sight_range or score >= best_score:
 			continue
 		if weather != null and dist >= sight_range * weather.sight_between(eye, chest):
+			continue
+		# Smoke hides a body from a bot as it does from a player's eyes.
+		if raid != null and raid.smoke.blocks(eye, chest):
 			continue
 		# A Phase Cloak hides all but someone right beside the bot.
 		if other.is_cloaked() and dist > other.artifact.cloak_sense_range:

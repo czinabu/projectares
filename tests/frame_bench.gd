@@ -337,23 +337,64 @@ func _probe() -> void:
 	for node in raid.find_children("*", "DirectionalLight3D", true, false):
 		sun = node
 	await _probe_line("everything")
+	# Where the bodies' draws come from: shapes showing, by what holds them.
+	var per_holder := {}
+	var shapes := 0
 	for skin in skins:
-		skin.visible = false
+		for node in skin.find_children("*", "GeometryInstance3D", true, false):
+			var shape := node as GeometryInstance3D
+			if not shape.is_visible_in_tree():
+				continue
+			shapes += 1
+			var key := "%s under %s" % [shape.get_class(), shape.get_parent().name.rstrip("0123456789@")]
+			per_holder[key] = per_holder.get(key, 0) + 1
+	print("  bodies: %d shapes showing, %.1f a body" % [shapes, float(shapes) / maxf(1.0, skins.size())])
+	var holders := per_holder.keys()
+	holders.sort_custom(func(a: String, b: String) -> bool: return per_holder[a] > per_holder[b])
+	for key: String in holders.slice(0, 8):
+		print("    %5d  %s" % [per_holder[key], key])
+	var shadowed := {}
+	for skin in skins:
+		for node in skin.find_children("*", "GeometryInstance3D", true, false):
+			var shape := node as GeometryInstance3D
+			if shape.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+				shadowed[shape] = shape.cast_shadow
+				shape.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	await _probe_line("bodies cast no shadow")
+	for shape: Variant in shadowed:
+		if is_instance_valid(shape):
+			(shape as GeometryInstance3D).cast_shadow = shadowed[shape]
+	for skin in skins:
+		if is_instance_valid(skin):
+			skin.visible = false
 	await _probe_line("bot bodies hidden")
 	for skin in skins:
-		skin.visible = true
+		if is_instance_valid(skin):
+			skin.visible = true
 	if sun:
 		sun.shadow_enabled = false
 		await _probe_line("no sun shadows")
 		sun.shadow_enabled = true
 	raid.map.visible = false
 	await _probe_line("map hidden")
-	for skin in skins:
-		skin.visible = false
-	await _probe_line("map and bots hidden")
 	raid.map.visible = true
-	for skin in skins:
-		skin.visible = true
+	# What each big part of the map costs, hidden one at a time (the battle
+	# moves on meanwhile, so read these against each other roughly).
+	var parts: Array[Node] = []
+	for child in raid.map.get_children():
+		if child is Node3D and not child is DirectionalLight3D and not child is WorldEnvironment:
+			parts.append(child)
+			if child.name == "Dressing":
+				for sub in child.get_children():
+					if sub is Node3D and sub.find_children("*", "GeometryInstance3D", true, false).size() >= 20:
+						parts.append(sub)
+	for part: Node3D in parts:
+		var geometry := part.find_children("*", "GeometryInstance3D", true, false).size() + (1 if part is GeometryInstance3D else 0)
+		if geometry < 10 or not part.visible:
+			continue
+		part.visible = false
+		await _probe_line("  without %s (%d)" % [part.name, geometry])
+		part.visible = true
 
 
 func _probe_line(what: String) -> void:
