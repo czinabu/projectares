@@ -21,6 +21,12 @@ var heights := PackedFloat32Array()
 ## tiles in view (and near enough to cast a shadow there) are drawn.
 var tile_cells := 80
 var tiles: Array[MeshInstance3D] = []
+## Rectangles (x, z in the terrain's own space) left open: no ground is drawn
+## and none stood on there, so a map can cut a way down into something it
+## builds below. Set before `collision_data` and `build`; each edge should
+## lie on a sample line (a whole number of `cell`s from the corner).
+## `height_at` still answers for them, as if the ground were whole.
+var holes: Array[Rect2] = []
 
 
 ## The width of the ground in metres.
@@ -52,6 +58,14 @@ func height_at(x: float, z: float) -> float:
 	var c := heights[(iz + 1) * side + ix]
 	var d := heights[(iz + 1) * side + ix + 1]
 	return lerpf(lerpf(a, b, tx), lerpf(c, d, tx), tz)
+
+
+## Whether (x, z) is in one of the `holes`, edges excluded.
+func in_hole(x: float, z: float) -> bool:
+	for hole in holes:
+		if x > hole.position.x and x < hole.end.x and z > hole.position.y and z < hole.end.y:
+			return true
+	return false
 
 
 ## The point on the ground under (x, z).
@@ -100,6 +114,12 @@ func collision_data() -> PackedFloat32Array:
 	for iz in width:
 		for ix in width:
 			data[iz * width + ix] = height_at(ix - half, iz - half)
+	# A NaN height is a hole in a heightmap shape: every triangle touching
+	# a sample inside one is left out, so the hole's edges match the drawn ones.
+	for iz in width:
+		for ix in width:
+			if not holes.is_empty() and in_hole(ix - half, iz - half):
+				data[iz * width + ix] = NAN
 	return data
 
 
@@ -132,6 +152,8 @@ func _mesh(material: Material, x0: int, z0: int, count_x: int, count_z: int) -> 
 	for tz in count_z:
 		for tx in count_x:
 			var i := tz * row + tx
+			if not holes.is_empty() and in_hole((x0 + tx + 0.5) * cell - half, (z0 + tz + 0.5) * cell - half):
+				continue
 			indices[n] = i
 			indices[n + 1] = i + 1
 			indices[n + 2] = i + row
@@ -139,6 +161,7 @@ func _mesh(material: Material, x0: int, z0: int, count_x: int, count_z: int) -> 
 			indices[n + 4] = i + row + 1
 			indices[n + 5] = i + row
 			n += 6
+	indices.resize(n)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts

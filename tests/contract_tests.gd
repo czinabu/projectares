@@ -277,7 +277,8 @@ static func _expedition(t: Node) -> void:
 	if boss != null:
 		Combat.deal(boss, DamageInfo.make(99999.0, p, "bullet"))
 	await t.frames(2)
-	t.check(int(p.tally.get("kills:warden", 0)) == 1 + (1 if boss != null else 0) and int(p.tally.get("bosses", 0)) == (1 if boss != null else 0),
+	t.check(int(p.tally.get("kills:warden", 0)) == 1 + (1 if boss != null else 0) and int(p.tally.get("bosses", 0)) == (1 if boss != null else 0)
+			and int(p.tally.get("boss:" + str(boss.get_meta("boss")) if boss != null else "none", 0)) == (1 if boss != null else 0),
 			"Wardens killed and the Sentinel brought down count (%s)" % [p.tally])
 	var relay: Dictionary = {}
 	for cache: Dictionary in raid._caches:

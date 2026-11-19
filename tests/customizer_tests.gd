@@ -431,6 +431,53 @@ static func _run_mirror(t: Node) -> void:
 			and main.hud.crosshair.visible and controller.phone_mirror == null,
 			"putting the phone away takes the mirror away and brings the crosshair back")
 
+	# Third person is a dressing room (Caleb's pick): no mirror, the camera
+	# swings round in front of you, the phone stays up beside you, a drag
+	# beside it turns the view, and a light stands in front.
+	t.check(main.find_children("DressingLight", "", true, false).is_empty(), "the Mirror app's light goes with it")
+	controller.view_mode = PlayerController.ViewMode.THIRD
+	main.phone.open("mirror")
+	for i in 40:
+		await t.frames(1)
+	t.check(main.mirror == null and main.phone.dressing and controller.dressing_room and main.phone.held()
+			and controller.phone_out, "in third person the Mirror app is a dressing room, the phone kept up")
+	t.check(not main.find_children("DressingLight", "", true, false).is_empty(), "with a light in front of you")
+	var cam_at := controller.camera.global_position - me.global_position
+	cam_at.y = 0.0
+	var front := Basis(Vector3.UP, controller.yaw) * Vector3.FORWARD
+	t.check(controller.dressing > 0.99 and cam_at.normalized().dot(front) > 0.9,
+			"the camera stands in front of the character")
+	var seen := controller.camera.unproject_position(me.global_position + Vector3.UP)
+	var wide: float = controller.camera.get_viewport().get_visible_rect().size.x
+	t.check(not controller.camera.is_position_behind(me.global_position + Vector3.UP) and seen.x < wide * 0.5
+			and seen.x > 0.0, "looking at them, framed left of the middle clear of the hologram")
+	var turn_before := controller.dressing_turn
+	var grab := InputEventMouseButton.new()
+	grab.button_index = MOUSE_BUTTON_LEFT
+	grab.pressed = true
+	grab.position = Vector2(4.0, 4.0)
+	main.phone._input(grab)
+	var drag := InputEventMouseMotion.new()
+	drag.position = Vector2(64.0, 4.0)
+	drag.relative = Vector2(60.0, 0.0)
+	main.phone._input(drag)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.position = drag.position
+	main.phone._input(release)
+	t.check(main.phone.is_open and absf(controller.dressing_turn - turn_before) > 0.2,
+			"a drag beside the phone turns the view round you, without putting the phone away")
+	controller.view_mode = PlayerController.ViewMode.FIRST
+	await t.frames(3)
+	t.check(main.mirror != null and not main.phone.dressing and not controller.dressing_room,
+			"switching to first person swaps the dressing room for the mirror")
+	main.phone.close()
+	await t.frames(3)
+	for i in 2:
+		await t.get_tree().process_frame
+	t.check(main.find_children("DressingLight", "", true, false).is_empty() and not controller.dressing_room
+			and main.mirror == null, "putting the phone away ends it all")
+
 	# Rendered: a reflection camera through the glass, and the body on its layer.
 	var was_enabled: bool = Look.enabled
 	Look.enabled = true

@@ -148,31 +148,41 @@ static func run(t: Node) -> void:
 		t.check(controller.yaw > yaw_before and not controller.watch_focus_moved,
 				"with the watch up the mouse turns the view and leaves the card alone")
 	controller.yaw = yaw_before
+	# Three levels (Caleb's call): raised with X the watch is on the tab row.
+	t.check(controller.watch_tabs, "X raises the watch onto its tab row")
+	for i in 5:
+		controller.scroll(-1)
+	await t.frames(2)
+	t.check(wrist.card.focused_tab() == "summon" and wrist.card.tabs,
+			"on the tab row the wheel turns the tabs and stops at Summon")
+	controller.scroll(1)
+	await t.frames(2)
+	t.check(wrist.card.focused_tab() == "status" and wrist.focused_id() == "map"
+			and wrist.text().begins_with(main.raid.world.display_name),
+			"one notch on is Status: the map and your standing")
+	for i in 5:
+		controller.scroll(1)
+	await t.frames(2)
+	t.check(wrist.card.focused_tab() == "mission", "and it stops at Mission")
+	controller.scroll(-1)
+	controller.scroll(-1)
+	controller.click_watch()
+	t.check(not controller.watch_tabs, "a click goes into Summon")
 	for i in 20:
 		controller.scroll(-1)
 	await t.frames(2)
 	t.check(controller.watch_focus == 0 and wrist.focused_id() == "weapon" and controller.weapon_pick == 0
 			and wrist.card.focused_tab() == "summon",
-			"scrolling up steps the card left to the weapons, on the Summon tab")
-	controller.scroll(-1)
-	t.check(controller.watch_focus == 0, "and it stops at the card's left end")
+			"in it the wheel steps left to the weapons")
 	controller.scroll(1)
 	await t.frames(2)
 	t.check(wrist.focused_id() == "vehicle" and controller.weapon_pick == 0,
 			"scrolling down steps right an icon a notch, past the weapons without turning through them")
-	for i in 10:
-		if wrist.card.focused_tab() == "status":
-			break
-		controller.scroll(1)
-		await t.frames(2)
-	t.check(wrist.card.focused_tab() == "status" and wrist.focused_id() == "map"
-			and wrist.text().begins_with(main.raid.world.display_name),
-			"past the Summon tab the wheel steps on to Status: the map and your standing")
 	for i in 20:
 		controller.scroll(1)
 	await t.frames(2)
-	t.check(wrist.focused_id() == "leave" and wrist.card.focused_tab() == "mission",
-			"and stops at the right end on sign-out, on the Mission tab")
+	t.check(wrist.focused_id() == "pack" and wrist.card.focused_tab() == "summon",
+			"and stops at the tab's end, the pack")
 	t.check(controller._pending_switch < 0 and p.active_weapon_index == weapon_before and is_equal_approx(controller.yaw, yaw_before),
 			"with the watch up the wheel never switches weapons or turns the view")
 	controller.toggle_view()

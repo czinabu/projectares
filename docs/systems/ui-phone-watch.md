@@ -23,22 +23,42 @@ date in the same PR.
   phone puts its screen, a `SubViewport` drawn with the device's frame and
   chin keys, on that handheld's face (`Phone.set_holder`,
   `ActorSkin.set_phone_screen`) and clicks are cast onto it; other players'
-  show lit glass. Nothing floats off the device (Caleb's call, replacing the
-  old holo panel): it is held at the chest, a forearm out and right of the
+  show lit glass. It is held at the chest, a forearm out and right of the
   middle, below the face (`Locomotion.phone_wrist`), so others and a mirror
-  see a person reading a phone, and every view reads and clicks that same
-  face: first person from the eyes, third person from beside the head,
-  framed off the crosshair (`PlayerController.phone_read_offset`), and over
-  the shoulder, widened, to keep the Mirror app's mirror in frame
-  (`phone_mirror`). That mirror
-  stands square in front of the body, never along the camera. The Mirror
-  app's wheel works like a watch icon: it moves between rows, a click opens
-  one for the wheel to turn, a right click closes it (`Phone._mirror_mouse`),
-  and the page scrolls to keep the chosen row in view (`Phone._keep_in_view`,
-  once the redrawn rows are laid out). The device and its text are sized to
-  be read at that hold (`Handheld.HEIGHT`, `Phone.text_scale`, and the
-  view's `PlayerController.phone_zoom`, Caleb's feedback); make it readable
-  by size and zoom, never by bringing it to the face.
+  see a person reading a phone, the same hold in both views. First person
+  reads and clicks the handheld's own face: the eyes drop to it and the view
+  zooms in until it stands `PlayerController.phone_zoom` of the view's
+  height (`phone_zoomed`, `phone_fit_fov`). Third person never moves the
+  camera for the phone (Caleb's call, replacing the old reading view and
+  zoom): the screen is thrown up off the handheld as a hologram, like the
+  watch's card off the wrist (`Phone.HoloScreen`, view only, your own
+  phone only). It stands just past the character from the camera
+  (`behind`), so the body passes in front of it, right of the crosshair,
+  `tall` of the view's height and square to the camera so its text reads,
+  on dark glass the world shows through a little (`backing`, `TINT`,
+  Caleb's feedback). Where it stands follows Caleb's sketch: just right of
+  the crosshair, its middle a little over the view's (`across`, `lift`), and
+  the light runs from the device into its near edge like a projector's cone
+  (`beam_reach`); clicks are cast onto it (`HoloScreen.card_point`)
+  instead of the device. The Mirror app (Caleb's pick): in first person a
+  mirror stands square in front of the body, never along the camera, close
+  enough that you stand large in it (`Mirror.distance`), and the eyes drop
+  less to see it (`phone_mirror_pitch`); in third person there is no mirror
+  but a dressing room: the camera swings round in front of the character
+  (`PlayerController.dressing_room`, `_dress_view`) with the body framed
+  left of the middle, the phone stays up with its hologram on the right,
+  and a drag beside the hologram turns the view round you
+  (`Phone.dressing`, `dressing_dragged`, `dressing_turn`). Switching view
+  with the app up swaps one for the other (`Main._keep_mirror_view`), and
+  either way a soft light stands in front of you so the outfit shows
+  whatever the sun does (`Main._make_dressing_light`, view only). The Mirror app's wheel works like a watch icon:
+  it moves between rows, a click opens one for the wheel to turn, a right
+  click closes it (`Phone._mirror_mouse`), and the page scrolls to keep
+  the chosen row in view (`Phone._keep_in_view`, once the redrawn rows are
+  laid out). The device and its text are sized to be read at that hold
+  (`Handheld.HEIGHT`, `Phone.text_scale`, the first-person zoom and the
+  hologram's size, Caleb's feedback); make it readable by size and zoom,
+  never by bringing it to the face.
   The other hand hangs at the side while the phone is out
   (`Locomotion.phone_rest`). A new app is an entry in `Phone.APPS` with a line glyph in
   `Phone.AppIcon`. Going online is the Servers app (Caleb's call: no Uplink
@@ -53,7 +73,7 @@ date in the same PR.
   draws every tab's settings from that table (`Phone._draw_setting_rows`),
   so a new setting never touches the phone.
 - Emotes (DESIGN.md "Emotes", `core/visual/emotes.gd`): picked on the
-  watch's emote icon (Status tab, `Hud.emote_slot`), played by the
+  emote key's quick wheel (below; they left the watch, Caleb's call), played by the
   controller as the held `ActorCommand.emote` (in the stance's byte,
   `EMOTE_SHIFT`), so they predict and replicate with no message of their
   own, and posed on the one body (`ActionPose.emote`, timed by each view;
@@ -158,9 +178,11 @@ date in the same PR.
   feed). A new in-raid action goes on the watch; a new social or info
   feature is a phone app. The watch is a card-sized hologram of icons in
   three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
-  Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it,
-  and the helmet, taken off or put on),
-  Status (map, standing) and Mission (portal, contract, ping, sign-out).
+  Summon (weapons, vehicles, artifacts, the pack, with the pack's line
+  under it; the helmet left the watch once it had its own key, K),
+  Status (map, standing) and Mission (portal, contract, sign-out). Emotes
+  (the emote key's wheel) and the squad ping (its own key) left the watch
+  (Caleb's call): a watch icon must do something no key already does.
   The contract icon is the mission log (Caleb's ask): opened, the wheel
   turns through the tour's step and each contract held
   (`Hud.mission_entries`, `mission_slot`) and a click turns the picked one
@@ -192,20 +214,29 @@ date in the same PR.
   Down, the death report's landing choices are picked with the wheel and a
   click (`drop_pick`, `click_landing`); the number keys and Enter still work. The open
   icon shows one short line, and controls are glyphs (wheel, click, key
-  cap), never words. The mouse wheel moves across the card tab after tab
-  (`PlayerController.watch_focus`, `step_watch`; Caleb's call) over the
-  main icons only. Two levels (Caleb's call): a click on an icon that holds
-  several things (weapons, toys, artifacts, portal places: `watch_entries`)
-  opens it (`PlayerController.watch_open`), the wheel then turns through
-  them and stops at the list's ends, a click acts and a right click backs
-  out (`close_watch_icon`); a closed icon shows the click glyph instead of
+  cap), never words. Three levels (Caleb's call): raised with X the watch
+  is on its tab row (`PlayerController.watch_tabs`), where the wheel turns
+  the tabs, the open one's name framed with arrows and the line under the
+  row saying what it holds (`Wrist.TAB_LINES`, `Card.tabs`), and a click
+  goes into the tab. In a tab the wheel moves across that tab's icons only
+  and stops at its ends (`watch_focus`, `step_watch`); turning back to a
+  tab lands on the icon last looked at there (`_tab_focus`). A click on an
+  icon that holds several things (weapons, toys, artifacts, portal places:
+  `watch_entries`) opens it (`PlayerController.watch_open`), the wheel then
+  turns through them and stops at the list's ends, and a click acts. A
+  right click backs out one level (`back_watch`): a list to its tab
+  (`close_watch_icon`), a tab to the tab row, the tab row lowers the
+  watch; it never aims. A shortcut key (the map) raises the watch straight
+  into its tab. A closed icon shows the click glyph instead of
   the wheel (`Hud.mark_open`). The mouse only looks. While the watch is up the
   wheel never switches weapons. A new watch feature is a new slot on a
   tab, not a new line of text; something that only matters now and then is
   a pop-up line (`Wrist.show_card`'s `popup`), not a slot. The summon
   carousel (Caleb's call) shows only what is carried, never the stash:
-  `Hud.weapon_entries` is the weapons worn then in the pack, and picking
-  one in the pack asks the authority's `Raid.summon` (`NetSession.summon`
+  `Hud.weapon_entries` is only the weapons worn (Caleb's call), and gear in
+  the pack comes out through the pack's list (`Hud.pack_slot`, which shows
+  the watch's rest as a ring): picking a weapon there asks the authority's
+  `Raid.summon` (`NetSession.summon`
   online), which swaps it with the one worn in its slot through
   `Loadout.swap_weapon` (the old one goes in the pack with its rounds,
   `Actor.stowed_rounds`; clients copy it from `Actor.weapon_swapped`). It

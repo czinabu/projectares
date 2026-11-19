@@ -182,6 +182,12 @@ const SKINS := {
 		"scenes": ["Leela.glb"], "height": 2.4, "hide": ["Leela"], "creature": "keeper", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# A brood mother: a brood keeper grown old and huge, dragging a swollen
+	# abdomen of lit eggs, roots grown out of her back.
+	"brood_mother": {
+		"scenes": ["Leela.glb"], "height": 3.4, "hide": ["Leela"], "creature": "brood_mother", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 	"broodling": {
 		"scenes": ["Leela.glb"], "height": 0.9, "hide": ["Leela"], "creature": "broodling", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
