@@ -80,7 +80,11 @@ date in the same PR.
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
   (`Raid._stand`). A heightfield is a surface, not a solid: anything that
   moves an actor by setting its position (a blink, a teleport) must put the
-  feet back on the ground, or the actor falls through. Ashfront's map
+  feet back on the ground, or the actor falls through. A map can leave
+  rectangles of it open (`Terrain.holes`, on the sample lines, set before
+  `collision_data` and `build`): no ground is drawn or stood on there,
+  while `height_at` still answers as if it were whole (the marsh's
+  Rootways go down through them). Ashfront's map
   (`worlds/ashfront/map.gd`) works its ground and navigation mesh out once
   per run and shares them between copies (`_shared`), so a new copy is cheap.
 - Strongpoints (`core/war/strongpoint.gd`, `Raid.strongpoints`): a map only

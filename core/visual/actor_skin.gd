@@ -2253,7 +2253,7 @@ func _build_creature(kind: String) -> void:
 				_strand(skull, "Barbel", tube, dark, root_at, root_at + Vector3((b - 1.5) * 0.05, -0.13, -0.08) * k, 0.016 * k)
 			_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
 			_creature_legs(dark, Vector2(0.15, 0.17), bone)
-		"keeper":
+		"keeper", "brood_mother":
 			# The brood's keeper: a hunched giant of the stalkers' kind,
 			# its back heaped with lit egg sacs, long arms ending in hooks.
 			var k := h / 2.4
@@ -2297,6 +2297,8 @@ func _build_creature(kind: String) -> void:
 							shoulder + Vector3(side * 0.08 + (c - 1) * 0.05, -0.72, -0.3) * k, Vector3(0.04, 0.26, 0.04) * k)
 					hook.rotation.x = -2.0
 				_hang_at(arm, "Foreclaw" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
+			if kind == "brood_mother":
+				_brood_mother(trunk, skull, mid, k, ball, tube, horn, hide, fan, soft_glow, bone)
 			_creature_legs(hide, Vector2(0.2, 0.22), bone)
 		"bloater":
 			var sac := Node3D.new()
@@ -2336,6 +2338,56 @@ func _build_creature(kind: String) -> void:
 						Vector3(0.06, 0.06, 0.05) * h / 2.1)
 			_hang_at(face, "CreatureHead", "Head", Vector3.ZERO)
 			_creature_legs(dark, Vector2(0.14, 0.16), bone)
+
+
+## A brood mother (a keeper's body grown old and huge, `Look.SKINS`
+## "brood_mother"): a swollen abdomen dragging behind, studded with lit eggs
+## and veined with glow, woody roots grown out of her back and arching down
+## to the ground behind her, and a crown of root horns swept back from the
+## skull. Pieces hang on the keeper's own trunk and skull.
+func _brood_mother(trunk: Node3D, skull: Node3D, mid: float, k: float, ball: SphereMesh, tube: CylinderMesh,
+		horn: CylinderMesh, hide: Material, membrane: Material, soft_glow: Material, bone: Material) -> void:
+	var wood := _creature_hide(Color(0.24, 0.18, 0.15), 0.02, 0.25)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 41
+	var belly := Vector3(0, mid - 0.05 * k, 1.05 * k)
+	var size := Vector3(1.05, 0.95, 1.6) * k
+	_piece(trunk, "Abdomen", ball, membrane, belly, size)
+	_piece(trunk, "AbdomenUnder", ball, hide, belly + Vector3(0, -0.12, 0.05) * k, size * Vector3(0.9, 0.7, 0.95))
+	# Eggs bulging through the abdomen's skin, and veins of glow over it.
+	for i in 16:
+		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.2, 1), rng.randf_range(-0.6, 1)).normalized()
+		_piece(trunk, "Egg", ball, soft_glow, belly + dir * size * 0.47, Vector3.ONE * rng.randf_range(0.14, 0.24) * k)
+	for i in 6:
+		var a := -0.9 + i * 0.36
+		var points: Array[Vector3] = []
+		for seg in 5:
+			var t := -0.9 + seg * 0.45
+			points.append(belly + Vector3(sin(a) * cos(t), sin(t) * 0.8 + 0.25, cos(a) * cos(t) * 0.9).normalized() * size * 0.5)
+		for seg in 4:
+			_strand(trunk, "Vein", tube, soft_glow, points[seg], points[seg + 1], 0.02 * k)
+	# Roots grown out of her back, arching up and down to the ground.
+	for i in 6:
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var spread := 0.25 + float(i >> 1) * 0.3
+		var from := Vector3(side * 0.18 * k, mid + 0.4 * k, (0.1 + float(i >> 1) * 0.35) * k)
+		var peak := from + Vector3(side * spread * 0.6, 0.55 + rng.randf() * 0.25, 0.3) * k
+		var foot := Vector3(side * (0.7 + spread) * k, 0.05, (0.6 + float(i >> 1) * 0.55) * k)
+		var points: Array[Vector3] = []
+		for seg in 7:
+			var t := seg / 6.0
+			points.append(from.lerp(peak, t).lerp(peak.lerp(foot, t), t))
+		for seg in 6:
+			_strand(trunk, "Root", tube, wood, points[seg], points[seg + 1], lerpf(0.09, 0.04, seg / 6.0) * k)
+	# A crown of root horns swept back from the skull.
+	var at := Vector3(0, mid + 0.06 * k, -0.78 * k)
+	for i in 5:
+		var x := (i - 2) * 0.09
+		var base := at + Vector3(x, 0.2, 0.05) * k
+		var tip := base + Vector3(x * 1.5, 0.3 - absf(x) * 0.6, 0.45) * k
+		_strand(skull, "Crown", tube, wood, base, base.lerp(tip, 0.6), 0.045 * k)
+		var point := _piece(skull, "CrownTip", horn, bone, base.lerp(tip, 0.8), Vector3(0.05, 0.22, 0.05) * k)
+		point.rotation.x = 1.2
 
 
 ## A beast's two legs down the skeleton's own (thigh, shank and foot), with
@@ -2378,6 +2430,7 @@ func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
 ## How many of a beast's hide cells carry a lit freckle, by kind.
 const CREATURE_FRECKLES := {
 	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
+	"brood_mother": 0.12,
 }
 
 
