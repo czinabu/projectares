@@ -75,6 +75,7 @@ const IceTests := preload("res://tests/ice_tests.gd")
 const PlanetKitTests := preload("res://tests/planet_kit_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
 const ShellingTests := preload("res://tests/shelling_tests.gd")
+const EnemyAiTests := preload("res://tests/enemy_ai_tests.gd")
 const WhiteoutTests := preload("res://tests/whiteout_tests.gd")
 const EngineTests := preload("res://tests/engine_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
@@ -396,6 +397,7 @@ func _run() -> void:
 	await _test_planet_kit()
 	await _test_grid()
 	await _test_shelling()
+	await _test_enemy_ai()
 	await _test_whiteout()
 	await _test_engine()
 	await _test_raiders()
@@ -711,6 +713,10 @@ func _test_grid() -> void:
 
 func _test_shelling() -> void:
 	await ShellingTests.run(self)
+
+
+func _test_enemy_ai() -> void:
+	await EnemyAiTests.run(self)
 
 
 func _test_whiteout() -> void:

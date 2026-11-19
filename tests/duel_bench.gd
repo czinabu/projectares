@@ -32,6 +32,22 @@ const TARGETS := {
 	"walker_middle": {"kind": "walker", "zone": 1, "win": Vector2(0.15, 0.4), "role": "a fight for two players"},
 	"walker_core": {"kind": "walker", "zone": 2, "win": Vector2(0.1, 0.3), "role": "a fight for two players"},
 }
+## Other worlds' enemies, by world id (the enemy AI pass): a "faction" row is
+## built from that faction's marker, as the map would. Frostline's bands are
+## proposed in the pass's plan, not yet confirmed by Caleb.
+const WORLD_TARGETS := {
+	"frostline": {
+		"warden_mouth": {"kind": "warden", "faction": "warden", "zone": 0, "win": Vector2(0.85, 0.95), "role": "a sentry you learn to slip past"},
+		"warden_head": {"kind": "warden", "faction": "warden", "zone": 2, "win": Vector2(0.7, 0.9), "role": "the grid at the glacier head"},
+		"feral_mouth": {"kind": "feral", "faction": "feral", "zone": 0, "win": Vector2(0.85, 0.97), "role": "a stray from a small pack"},
+		"feral_head": {"kind": "feral", "faction": "feral", "zone": 2, "win": Vector2(0.75, 0.92), "role": "one of the big packs"},
+	},
+}
+## The rows a group fight (`--group`) runs, by world.
+const GROUP_TYPES := {
+	"ashfront": ["soldier_outer", "soldier_core"],
+	"frostline": ["feral_mouth", "feral_head", "warden_head"],
+}
 ## Seconds before an unfinished duel counts as a draw.
 const TIME_LIMIT := 45.0
 ## Metres between duels, so no stray round reaches the next pair.
@@ -43,6 +59,8 @@ var _raid: Raid
 ## the melee bench.
 var _ref_kit: Array[String] = REF_KIT.duplicate()
 var _melee := false
+## The rows for this world: `TARGETS` for Ashfront, else `WORLD_TARGETS`.
+var _targets: Dictionary = TARGETS
 
 
 func _ready() -> void:
@@ -54,6 +72,7 @@ func _ready() -> void:
 	var only := _arg(args, "--only", "")
 	var seed_base := int(_arg(args, "--seed", "1"))
 	_world = Worlds.get_world(_arg(args, "--world", "ashfront"))
+	_targets = WORLD_TARGETS.get(_world.id, TARGETS)
 	var blade := _arg(args, "--melee", "")
 	if blade != "":
 		_melee = true
@@ -78,7 +97,7 @@ func _ready() -> void:
 		print("Group fights: the reference against several at once (attack slots %s)" % (
 				"on" if BotBrain.ration_attacks else "off"))
 		var g_off := 0
-		for type: String in ["soldier_outer", "soldier_core"]:
+		for type: String in GROUP_TYPES.get(_world.id, GROUP_TYPES["ashfront"]):
 			if only != "" and type != only:
 				continue
 			for size in groups.split(","):
@@ -89,7 +108,7 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 	var off := 0
-	for type: String in TARGETS:
+	for type: String in _targets:
 		if only != "" and type != only:
 			continue
 		for distance in ranges:
@@ -168,14 +187,14 @@ func _report(type: String, distance: float, r: Dictionary, kind := "") -> void:
 		print("%-14s %4.0fm  %5.0f%% %5.0f%% %5.0f%%  %7.1fs %7.1fs  %6.0f%%  melee (%s)" % [type, distance,
 				share * 100.0, r.loss / total * 100.0, r.draw / total * 100.0,
 				r.ttk_win / maxf(r.win, 1), r.ttk_loss / maxf(r.loss, 1), r.hp / maxf(r.win, 1) * 100.0,
-				TARGETS[type].role])
+				_targets[type].role])
 		return
-	var band: Vector2 = TARGETS[type].win
+	var band: Vector2 = _targets[type].win
 	var verdict := "ok" if share >= band.x and share <= band.y else ("TOO HARD" if share < band.x else "TOO EASY")
 	print("%-14s %4.0fm  %5.0f%% %5.0f%% %5.0f%%  %7.1fs %7.1fs  %6.0f%%  %.0f-%.0f%% %s (%s)" % [type, distance,
 			share * 100.0, r.loss / total * 100.0, r.draw / total * 100.0,
 			r.ttk_win / maxf(r.win, 1), r.ttk_loss / maxf(r.loss, 1), r.hp / maxf(r.win, 1) * 100.0,
-			band.x * 100.0, band.y * 100.0, verdict, TARGETS[type].role])
+			band.x * 100.0, band.y * 100.0, verdict, _targets[type].role])
 
 
 func _make_ref(at: Vector3, equip_seed: int) -> Actor:
@@ -187,8 +206,14 @@ func _make_ref(at: Vector3, equip_seed: int) -> Actor:
 
 
 func _make_enemy(type: String, at: Vector3, equip_seed: int) -> Actor:
-	var def: Dictionary = TARGETS[type]
+	var def: Dictionary = _targets[type]
 	var bot: Actor
+	if def.has("faction"):
+		# Built as the faction's own marker would build it.
+		bot = _raid.spawn_bot("Foe%d" % equip_seed, at, equip_seed, false, def.faction, def.zone)
+		_brain(bot, equip_seed, _world.bot_skill_range(bot, false), false)
+		_seed_guns(bot, equip_seed)
+		return bot
 	match def.kind:
 		"raider":
 			var rng := RandomNumberGenerator.new()
