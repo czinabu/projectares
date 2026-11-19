@@ -96,8 +96,11 @@ var glide_accel := 22.0
 ## sinking only on jump and descend (0: no boost). The keys fly every rig; the mouse only looks.
 ## Holding still costs `hover_heat_mult` of `heat_per_sec`, cruising
 ## `cruise_heat_mult`, climbing `climb_heat_mult` and boosting
-## `boost_heat_mult` (Caleb's call: 1x, 1x, 1.5x, 2.5x; the climb
-## trimmed to 1.3x so a cool Mk1 reaches its ceiling in one climb).
+## `boost_heat_mult` (Caleb's call: 1x, 1x, 1.5x; the climb trimmed to
+## 1.3x so a cool Mk1 reaches its ceiling in one climb). The boost is the
+## jetpack's travel (Caleb's call): 0.7x, so a Mk1 bar lasts about 10 s
+## prone, paid for by no shooting from it (`Actor._wants_boost`); a climb
+## in a boost costs the climb's heat.
 ## At cruise speed the heading turns at most `cruise_turn_rate` rad/s: a
 ## jetpack makes wide turns but stops dead. Landing or overheating puts the
 ## jets out.
@@ -111,7 +114,7 @@ var hover_accel := 30.0
 var hover_heat_mult := 1.0
 var cruise_heat_mult := 1.0
 var climb_heat_mult := 1.3
-var boost_heat_mult := 2.5
+var boost_heat_mult := 0.7
 var coast_cool := 25.0
 var cruise_turn_rate := 1.2
 ## A jetpack carries heavy armor: a frame's extra heat (`heat_mult` above 1)

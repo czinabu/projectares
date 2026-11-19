@@ -133,7 +133,7 @@ const CONTROLS := [
 		["Glide (while falling)", "Hold {jump}"],
 		["Pulse up while gliding", "{jump} again"],
 		["Steer: the wings fly where you look", "Mouse"],
-		["Free look (the wings fly straight on)", "Hold {free_look}"],
+		["Free look (wings and a jetpack boost fly straight on)", "Hold {free_look}"],
 		["Bank round harder", "{move_left} / {move_right}"],
 		["Dive for speed, pull up to climb on it", "{move_forward} / {move_back}"],
 		["Boost ahead the way you face", "{sprint}"],

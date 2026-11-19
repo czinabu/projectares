@@ -2548,8 +2548,10 @@ func _check_free_flight(p: Actor) -> void:
 	var boost_was := p.flight.boost_speed
 	p.flight.boost_speed = 22.0
 	# Head first along the view's heading. Looking up 45 degrees only aims:
-	# the boost stays level until jump climbs.
+	# the boost stays level until jump climbs. Aim let go: a boost is
+	# travel, and aim held brings you upright (Caleb's call).
 	p.cmd.pitch = PI / 4.0
+	p.cmd.secondary = false
 	p.cmd.sprint = true
 	p.cmd.move = Vector2(0, 1)
 	var boost_heat := p.flight.heat
@@ -2563,8 +2565,9 @@ func _check_free_flight(p: Actor) -> void:
 	await frames(30)
 	check(p.flight.is_boosting and p.velocity.y > 5.0, "holding jump climbs during a boost")
 	p.cmd.jump = false
-	check(boost_heat > hover_heat * 2.0, "boosting runs hotter than hovering")
+	check(boost_heat < hover_heat and boost_heat > hover_heat * 0.5, "boosting is the jetpack's travel: a little cooler than hovering")
 	p.cmd.sprint = false
+	p.cmd.secondary = true
 	p.cmd.move = Vector2.ZERO
 	p.cmd.pitch = 0.0
 	await frames(5)
@@ -2713,6 +2716,8 @@ func _check_jetpack_cruise(p: Actor) -> void:
 	check(Hud.rig_text(p).contains("coasting") and Hud.rig_text(p).contains("LOCKABLE"),
 			"the watch says the jets are coasting and still hot enough to lock onto")
 	p.cmd.descend = false
+	# Aim let go, so the jets boost (aim held would bring you upright).
+	p.cmd.secondary = false
 	p.cmd.sprint = true
 	p.cmd.move = Vector2(0, 1)
 	await frames(10)
@@ -2721,6 +2726,7 @@ func _check_jetpack_cruise(p: Actor) -> void:
 	if gun:
 		var wild := gun.current_spread_deg()
 		p.cmd.sprint = false
+		p.cmd.secondary = true
 		p.cmd.move = Vector2.ZERO
 		await frames(5)
 		check(gun._air_spread() < p.air_spread_deg * 0.11 and gun.current_spread_deg() < wild - 0.01,
