@@ -1068,7 +1068,12 @@ static func _test_ambient_races(t: Node) -> void:
 	var first: Race.Heat = race.heats.get(track.id)
 	t.check(first != null and first.ambient and first.phase == "racing" and first.runs.size() == Race.AMBIENT_FIELD
 			and first.people() == 0, "soon after you arrive, the track by you has an AI race of %d on it" % Race.AMBIENT_FIELD)
-	t.check(race.heats.size() == Race.AMBIENT_TRACKS, "one at a time, so the server pays little")
+	await t.frames(3)
+	var both := race.circuits.all(func(rt: RaceTrack) -> bool:
+		var h: Race.Heat = race.heats.get(rt.id)
+		return h != null and h.ambient and h.phase == "racing")
+	t.check(both and race.heats.size() == race.circuits.size(),
+			"both tracks have an AI race going when you get there, one each")
 	var view := race.heat_view(track.id)
 	t.check(bool(view.get("ambient", false)) and RaceView.heat_text(view).begins_with("AI RACE ON")
 			and RaceView.desk_prompt("bike_raider", view).begins_with(RaceView.key() + "  Race the AI"),
