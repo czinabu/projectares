@@ -9,6 +9,37 @@ const MapScript := preload("res://worlds/frostline/map.gd")
 
 ## Share of bots that are Feral stalkers; the rest are Wardens.
 const FERAL_CHANCE := 0.45
+## The enemies by zone, river mouth to glacier head (DESIGN.md "The enemy AI
+## pass", step 2). A Warden is the machine you sneak past: it sees far down
+## a narrow cone, notices slowly out there, and holds a beam on you before
+## its first shot, so a crouch out of its sweep or a whiteout gets you by;
+## seen, it shoots hard and true. A Feral is a pack hunter: weak alone, it
+## follows fresh tracks (`FERAL_TRACKS` metres), picks on someone shivering
+## and never steps into a heater's or a beacon's warmth.
+const WARDEN_HEALTH := [160.0, 180.0, 195.0]
+const WARDEN_ARMOR := [15.0, 20.0, 25.0]
+const WARDEN_DAMAGE := [24.0, 26.0, 30.0]
+const WARDEN_INTERVAL := 0.4
+const WARDEN_SPREAD := 0.6
+const WARDEN_SIGHT := 70.0
+const WARDEN_FOV := 100.0
+const WARDEN_REACH := 60.0
+const WARDEN_FAR_NOTICE := 2.4
+const WARDEN_LOCK := 0.5
+const WARDEN_TURN := 140.0
+## How many Wardens shoot at one person at once (`BotBrain.attack_slots`):
+## the rest hold their beams on you and wait, so a post is a fight you can
+## win alone from cover, never a firing squad.
+const WARDEN_SLOTS := [1, 1, 1]
+## Trigger time and rest: steady aimed shots, not a rifleman's bursts.
+const WARDEN_BURST := Vector2(2.4, 0.5)
+const FERAL_HEALTH := [70.0, 70.0, 75.0]
+const FERAL_DAMAGE := [18.0, 18.0, 19.0]
+const FERAL_WINDUP := [0.4, 0.36, 0.32]
+const FERAL_TRACKS := 26.0
+## Aim skill by zone (`BotBrain.skill`), quiet at the mouth and sharp at the
+## glacier head; Frostline's bosses keep the usual boss range.
+const BOT_SKILL := [Vector2(0.3, 0.5), Vector2(0.4, 0.6), Vector2(0.5, 0.7)]
 ## The cold (DESIGN.md "Frostline"): body heat lost a second in the open in
 ## each zone, from the river mouth to the glacier head, and how much faster
 ## it goes high up in the wind (on a rim or in the air, `EXPOSED_OVER`
@@ -235,7 +266,9 @@ func _init() -> void:
 	# Artifacts too: rare gear stays in the full-loot war worlds for now.
 	warlord_artifact_chance = 0.0
 	pod_artifact_chance = 0.0
-	bot_count = 9
+	# Packs of Ferals on the floor and Wardens on the posts (DESIGN.md "The
+	# enemy AI pass", step 2): the map lists the spots in the order they fill.
+	bot_count = 22
 	# The Engine's levels go down under the valley floor: the world ends
 	# below the Descent's foot.
 	void_y = MapScript.engine_bed() + MapScript.ENGINE_AXIS + MapScript.DESCENT_FLOOR - 15.0
@@ -321,6 +354,12 @@ func prepare_map() -> void:
 
 ## The zones run along the valley: the river mouth is the outer ring, the
 ## Narrows and the lake the middle, the glacier head and the Engine the core.
+func bot_skill_range(bot: Actor, warlord: bool) -> Vector2:
+	if warlord:
+		return super(bot, warlord)
+	return BOT_SKILL[clampi(int(bot.get_meta("zone", 1)), 0, 2)]
+
+
 func zone_at(pos: Vector3) -> int:
 	if pos.z <= MapScript.CORE_FROM_Z:
 		return 2
@@ -432,24 +471,34 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		_make_warden(bot, rng)
 
 
-## Station automata: slow and tough, with accurate long-range rifles.
+## Station automata: slow on their feet, long-sighted down a narrow cone,
+## and slow to fire (a beam holds first), then accurate.
 func _make_warden(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.faction = "warden"
 	bot.display_name = "Warden"
 	bot.set_meta("look", "sentinel")
 	_paint(bot, Color(0.55, 0.8, 0.95))
+	var tier := clampi(int(bot.get_meta("zone", 1)), 0, 2)
 	bot.walk_speed = 3.6
 	bot.sprint_speed = 5.2
-	bot.health.max_health = 110.0
-	bot.health.health = 110.0
-	bot.health.set_armor(20.0)
+	bot.health.max_health = WARDEN_HEALTH[tier]
+	bot.health.health = WARDEN_HEALTH[tier]
+	bot.health.set_armor(WARDEN_ARMOR[tier])
+	bot.set_meta("sight", WARDEN_SIGHT)
+	bot.set_meta("fov", WARDEN_FOV)
+	bot.set_meta("reach", WARDEN_REACH)
+	bot.set_meta("far_notice", WARDEN_FAR_NOTICE)
+	bot.set_meta("lock_time", WARDEN_LOCK)
+	bot.set_meta("aim_turn", WARDEN_TURN)
+	bot.set_meta("burst", WARDEN_BURST)
+	bot.set_meta("slots", WARDEN_SLOTS[tier])
 	for item in roll_loot("warden", rng):
 		bot.inventory.add_item(item)
 	var gun := Gun.new()
 	gun.display_name = "Warden Repeater"
-	gun.damage = 11.0
-	gun.spread_deg = 1.2
-	gun.fire_interval = 0.45
+	gun.damage = WARDEN_DAMAGE[tier]
+	gun.spread_deg = WARDEN_SPREAD
+	gun.fire_interval = WARDEN_INTERVAL
 	gun.max_range = 160.0
 	gun.reserve_ammo = 400
 	gun.headshot_mult = 1.0
@@ -561,16 +610,22 @@ func _make_feral(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.display_name = "Feral Stalker"
 	bot.set_meta("look", "stalker")
 	_paint(bot, Color(0.18, 0.2, 0.26))
+	var tier := clampi(int(bot.get_meta("zone", 1)), 0, 2)
 	bot.walk_speed = 6.0
 	bot.sprint_speed = 9.0
-	bot.health.max_health = 65.0
-	bot.health.health = 65.0
+	bot.health.max_health = FERAL_HEALTH[tier]
+	bot.health.health = FERAL_HEALTH[tier]
+	# A pack hunter (`BotBrain`): it follows fresh tracks, goes for the
+	# shivering, and keeps out of the warm.
+	bot.set_meta("tracker", FERAL_TRACKS)
+	bot.set_meta("preys_on_cold", true)
+	bot.set_meta("shuns_warmth", true)
 	for item in roll_loot("feral", rng):
 		bot.inventory.add_item(item)
 	var blade := MeleeWeapon.new()
 	blade.display_name = "Hooked Blade"
-	blade.light_damage = 14.0
-	blade.light_windup = 0.35
+	blade.light_damage = FERAL_DAMAGE[tier]
+	blade.light_windup = FERAL_WINDUP[tier]
 	blade.light_stamina = 0.0
 	blade.reach = 2.4
 	bot.equip_weapon(blade)

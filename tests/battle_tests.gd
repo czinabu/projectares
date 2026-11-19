@@ -76,8 +76,68 @@ static func run(t: Node) -> void:
 	t.check(not any_near, "and nothing of it shows beside them")
 	_run(battle, raid, 1.0, 10.0)
 	t.check(not battle.fight_list().has(fight), "it is gone once its soldiers have faded")
+	_low_sky(t, raid, battle)
 	raid.queue_free()
 	await t.frames(2)
+
+
+## The busy low sky (`worlds/ashfront/lowsky.gd`): gunships rake only the
+## scenery army, never near a player, and leave; the fight shoots back up;
+## fighters go over; a dropship comes down past the rim.
+static func _low_sky(t: Node, raid: Raid, battle: Node3D) -> void:
+	raid.player.global_position = raid._stand(Vector3(-190, 0, 30))
+	_run(battle, raid, 1.0, 6.0)
+	var sky: Node3D = raid.map.call("make_low_sky", battle)
+	raid.map.add_child(sky)
+	sky.set_process(false)
+	t.check(sky.gap_at(sky.GUNSHIP_GAP, 1.0) < sky.gap_at(sky.GUNSHIP_GAP, 0.0)
+			and sky.gap_at(sky.WRECK_GAP, 1.0) < sky.gap_at(sky.WRECK_GAP, 0.0)
+			and sky.gunships_at(1.0) > sky.gunships_at(0.0), "the hotter the war, the busier the sky")
+	var run: Dictionary = sky.send_gunship()
+	var on_fight := false
+	for fight: Dictionary in battle.fight_list():
+		on_fight = on_fight or (fight.centre as Vector3).distance_to(Vector3(run.target.x, fight.centre.y, run.target.z)) < 1.0
+	t.check(on_fight, "a gunship runs in over a scenery fight")
+	var landed := 0
+	var up := 0
+	var near := false
+	var me: Vector3 = raid.player.global_position
+	var seen := {}
+	for i in 500:
+		raid.map.set_meta("war_intensity", 1.0)
+		if i % 4 == 0:
+			battle._gather_watchers()
+		sky._tick_gunships(0.1, 1.0)
+		for tracer: Dictionary in sky._tracers:
+			if seen.has(tracer):
+				continue
+			seen[tracer] = true
+			if tracer.lands:
+				landed += 1
+				near = near or Vector2(tracer.to.x - me.x, tracer.to.z - me.z).length() < battle.keep_off
+			elif (tracer.dir as Vector3).y > 0.0:
+				up += 1
+		sky._tick_tracers(0.1)
+	t.check(landed > 20 and not near, "it strafes the fight, never near the player")
+	t.check(up > 5, "and the fight shoots back up at it")
+	t.check(sky._gunships.is_empty(), "and it flies on and away")
+	var pair: Dictionary = sky.send_fighters()
+	var closest := INF
+	for i in 200:
+		sky._tick_pairs(0.1)
+		if not sky._pairs.is_empty():
+			var lead: Vector3 = sky.lead_at(pair)
+			closest = minf(closest, Vector2(lead.x, lead.z).length())
+	t.check(closest < sky.FIGHTER_PASS + 60.0 and sky._pairs.is_empty(), "fighters go over in pairs and away")
+	var wreck: Dictionary = sky.drop_wreck()
+	t.check(Vector2(wreck.to.x, wreck.to.z).length() > sky.field, "a hit dropship comes down past the rim, where nobody stands")
+	for i in int((float(wreck.time) + 1.0) * 10.0):
+		sky._tick_wrecks(0.1)
+	t.check(wreck.down, "it falls burning and crashes")
+	for i in int(sky.WRECK_BURNS * 10.0) + 5:
+		sky._tick_wrecks(0.1)
+	t.check(sky._wrecks.is_empty(), "and its wreck burns out")
+	sky.queue_free()
 
 
 static func _run(battle: Node3D, raid: Raid, heat: float, seconds: float) -> void:

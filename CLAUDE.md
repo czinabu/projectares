@@ -188,6 +188,23 @@ without Caleb, and update the gap list when a PR closes a row.
   the phase (`Raid.keepers`, `NetSession._keeper`, the map's "keepers"
   meta) and the lanes (`Raid.purge_changed`, `NetSession._purge`, drawn
   by the map's `show_purge`). Check by eye with `visual_check.tscn -- <dir> --engine-only`.
+- The Spore Marsh (DESIGN.md "The Spore Marsh", `worlds/marsh/`): a co-op
+  PvE world whose enemy is wildlife, each kind a faction of its own
+  (stalker, shellback, bloater) that hunts the others and never its own.
+  Guns foul there (Caleb's call): with `WorldDef.gun_fouling` over 0 each
+  shot adds to `Gun.fouling`, which widens the spread, clears once the
+  trigger rests and at full jams the gun (`Gun.jammed`) until a reload; it
+  is simulated in `Gun` from the command like the bloom, never touches a
+  heavy weapon, and every other world leaves it at 0. A world's
+  `death_burst(bot)` leaves a cloud where a bot dies (the bloaters'
+  spores): only the authority keeps it (`Raid.burst_cloud`,
+  `_tick_clouds`) and hurts everyone in it but its own faction through
+  `Combat.deal`; clients hear of it through `NetSession._cloud` and draw
+  it from `Raid.cloud_burst`. A beast's body is built in code like the
+  walker's (`Look.SKINS` "creature", `ActorSkin._build_creature`), and a
+  skin marked "bare" shows nothing in the hand. A world makes a kind
+  feint more than its ring with the bot's "feint_chance" meta. Check by
+  eye with `visual_check.tscn -- <dir> --marsh-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -377,7 +394,11 @@ without Caleb, and update the gap list when a PR closes a row.
   and drawn one MultiMesh per pose (`extras.gdshader`, dithered fade). A
   round from the local player's gun or a shell drops one on that screen
   only. Check by eye with `visual_check.tscn -- <dir> --battle-only` (with
-  `--fixed-fps 60`).
+  `--fixed-fps 60`). The busy low sky over it is view only too
+  (`worlds/ashfront/lowsky.gd`, the map's `make_low_sky`): gunships rake
+  only scenery fights (`may_rake`: as far from everyone as a fight is
+  placed) and wrecks come down only past the rim; check with
+  `--sky-only`.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
@@ -400,7 +421,14 @@ without Caleb, and update the gap list when a PR closes a row.
   A world caps rare kinds with `WorldDef.bot_allowed` (authority only: the
   `Raid` rolls a turned-away bot again from a new seed, so clients only hear
   of the kept seed). Ashfront's kinds (meta "kind": soldier, heavy, exo,
-  walker; DESIGN.md "Heavy units") come from the seed in `equip_bot`; a big
+  walker, and each army's own, the Legion marksman and the Tide runner;
+  DESIGN.md "Heavy units", "The enemy AI pass") come from the seed in
+  `equip_bot`, and each army fights its own way (`DOCTRINE`, as metas:
+  "range" the distance it keeps, "fall_back", "hunters" added to the
+  ring's, "flankers" 2 for a pincer from both sides, `SquadBoard.flank`'s
+  cap, and "breaks_at", the share of its fireteam lost before the rest
+  break off, counted by `BotBrain.set_team` and `ally_down`, which the
+  `Raid` calls on a death, `_tell_team`); a big
   body is `Actor.set_stand_height` (capsule, hit tests and eyes follow
   `body_height()`), a weak spot `Actor.rear_damage_mult`, and a gun that
   must hold a lock first `BotBrain.lock_time` (meta "lock_time"), whose
@@ -434,11 +462,35 @@ without Caleb, and update the gap list when a PR closes a row.
   snapshot when the spotter raises its gun). What they learn is a place,
   never live tracking: a lost contact is searched for (`_lost`) and let go.
   A world gives a kind its own senses with metas set in `equip_bot`
-  ("sight", "fov", "reach", "far_notice"; DESIGN.md "The enemy AI pass"),
-  never a second brain. Smoke hides people from bots as it hides them from
+  ("sight", "fov", "reach", "far_notice"; how it fires, "burst" and
+  "slots"; and how it hunts, "tracker", "preys_on_cold", "shuns_warmth";
+  DESIGN.md "The enemy AI pass"), never a second brain. A tracker follows
+  the freshest mark in `Raid.tracks` near it to where the mark was laid,
+  never to the person (`BotBrain._sniff`, through `_sensed`), and a bot
+  that shuns warmth neither targets anyone in a "warmth" ring nor walks
+  into one (`BotBrain.in_warmth`, `_outside_warmth`). Any gun with a
+  "lock_time" meta draws its tracking beam. Smoke hides people from bots as it hides them from
   eyes: anything a player cannot see through is a cloud in `Raid.smoke`
   (`Smoke.add`, authority only; a shell leaves one), and bot sight asks
-  `Smoke.blocks`, never a view.
+  `Smoke.blocks`, never a view. An army remembers a player for one life
+  (`WorldDef.grudge_factions`, `Raid.grudges`, authority only): hurting
+  its bots raises its grudge, time fades it, death clears it, and over
+  `grudge_hunt` the `Raid` sends its nearest few after where that player
+  roughly is (`BotBrain.hunt_grudge`, through `_sensed`, so the hunter and
+  leash limits hold). The player is told only which army
+  (`Actor.hunted_by`, `NetSession._hunted`, the visor's tag
+  `VisorHud.hunted_text`).
+  Battles follow the ground (DESIGN.md "The enemy AI pass", step 4): with
+  its orders the `Raid` sets each soldier's style from
+  `WorldDef.ground_at` and `ground_styles` (`BotBrain.set_ground`, always
+  laid over the bot's own numbers), keeps `line_share` of an army on its
+  "line_post" markers (`_man_lines`, "line"), has a team ring a manned
+  enemy site for `siege_time` before storming it (`_besieging`,
+  `_siege_spot`, "siege"), and a strongpoint marker's "hot_at"
+  (`Strongpoint.hot_at`) keeps every team off it until the war is that
+  hot, then sends only `WorldDef.elite_kinds` (`WarCommander.plan`). A
+  bot on foot that gets nowhere jumps and steps aside
+  (`BotBrain._climb_out`).
   Only a few act on it, through `SquadBoard` claims (static, with an
   expiry, like the slots): `noise_lookers` go to look at one person's
   noise, `RING_HUNTERS` army bots may leave their ground to hunt one person
@@ -1007,8 +1059,9 @@ without Caleb, and update the gap list when a PR closes a row.
   (`heat_free`, `lock_up`) are rig states, not new rig types. Artifacts
   drop from world events (`WorldDef.roll_artifact`, `warlord_artifact_chance`,
   `pod_artifact_chance`), the Heart Warden's vault and the Blade
-  Tournament's weekly prize (`Arena.blade_prize_artifact`) until the Spore
-  Marsh's dungeons become their main source.
+  Tournament's weekly prize (`Arena.blade_prize_artifact`) and, most of all,
+  the Spore Marsh (Caleb's call: its Grey Matriarch, pods, hollows, caps
+  and den).
 - Flight is simulated in `Actor` from the command, like a dash, so it
   predicts and replicates: jets lit only while aim is held in the air
   (`Actor._wants_hover`, Caleb's call: never a hover that stays on by
@@ -2199,7 +2252,9 @@ without Caleb, and update the gap list when a PR closes a row.
   merged into one mesh per material (the works per material per block,
   every lit and painted shape in one vertex-coloured material each). The
   works fill the salt out to the dunes (`GROUND_HALF`) and keep off the
-  roads and what `WORKS_KEEP_OUT` lists; a new stand or set piece goes
+  roads (`track_dist`; `race_tests.gd` checks every road point at any
+  height) and what `WORKS_KEEP_OUT` lists, and the view draws out to the
+  map's `VIEW_FAR` (its "view_far" meta); a new stand or set piece goes
   in that list. The lights, splits, board
   text and the ghost being chased are `RaceView`, a view. In a race world the
   watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).

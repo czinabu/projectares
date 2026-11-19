@@ -75,6 +75,7 @@ const WeatherTests := preload("res://tests/weather_tests.gd")
 const IceTests := preload("res://tests/ice_tests.gd")
 const PlanetKitTests := preload("res://tests/planet_kit_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
+const MarshTests := preload("res://tests/marsh_tests.gd")
 const ShellingTests := preload("res://tests/shelling_tests.gd")
 const EnemyAiTests := preload("res://tests/enemy_ai_tests.gd")
 const BattleTests := preload("res://tests/battle_tests.gd")
@@ -399,6 +400,7 @@ func _run() -> void:
 	await _test_ice()
 	await _test_planet_kit()
 	await _test_grid()
+	await MarshTests.run(self)
 	await _test_shelling()
 	await _test_enemy_ai()
 	await _test_battle()
@@ -1842,6 +1844,8 @@ func _test_melee_defense() -> void:
 	var victim: Actor = duel[0]
 	var brute: Actor = duel[1]
 	brute.global_position = victim.global_position + Vector3(0, 0, -7.0)
+	# Posted where it stands, so it is not off back to its own post.
+	(brute.get_node("Brain") as BotBrain).post_to(brute.global_position, 4.0)
 	var victim_before := victim.health.health + victim.health.armor
 	await frames(300)
 	check(victim.health.health + victim.health.armor < victim_before, "a melee bot closes in and hits")

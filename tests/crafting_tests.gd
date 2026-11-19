@@ -44,7 +44,7 @@ static func _recipes(t: Node) -> void:
 	var used := true
 	for print_id in Crafting.blueprints():
 		used = used and not Crafting.made_from(print_id).is_empty()
-	t.check(used and Crafting.blueprints().size() == 9, "every blueprint makes something (%d blueprints)"
+	t.check(used and Crafting.blueprints().size() == 11, "every blueprint makes something (%d blueprints)"
 			% Crafting.blueprints().size())
 	# The design's minimum: the higher rig tiers, two guns, the mech and the jet.
 	var rigs := true
@@ -69,7 +69,7 @@ static func _recipes(t: Node) -> void:
 			for id in Crafting.made_from(print_id):
 				options = options and int(ItemDB.item_stats(id).get("tier", 1)) == 1 \
 						and not Crafting.needs(id).has(Crafting.UPGRADE_DATA)
-	t.check(options and expedition == 2, "the expedition's blueprints make new options, never a higher Mk (%d)" % expedition)
+	t.check(options and expedition == 4, "the expedition's blueprints make new options, never a higher Mk (%d)" % expedition)
 	t.check(Crafting.needs("jetpack_mk3")[Crafting.UPGRADE_DATA] > Crafting.needs("jetpack_mk2")[Crafting.UPGRADE_DATA]
 			and Crafting.fee("jetpack_mk3") > Crafting.fee("jetpack_mk2"), "a Mk3 costs more data and scrip than a Mk2")
 	t.check(Crafting.has_recipe("mech_bulwark") and Crafting.has_recipe("jet_kestrel")

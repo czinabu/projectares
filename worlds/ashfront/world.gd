@@ -106,6 +106,7 @@ const ARMIES := {
 		"name": "the Legion",
 		"soldier": {"name": "Legionnaire", "look": "legionary", "color": Color(0.3, 0.45, 0.7), "weapon": "Service Rifle"},
 		"heavy": {"name": "Legion Vanguard", "look": "sentinel", "color": Color(0.2, 0.3, 0.55), "weapon": "Breaching Blade"},
+		"marksman": {"name": "Legion Marksman", "look": "legionary", "color": Color(0.22, 0.36, 0.6), "weapon": "Marksman Rifle"},
 		"exo": {"name": "Legion Exo Trooper", "look": "exo", "color": Color(0.3, 0.6, 1.0), "weapon": "Support Rifle"},
 		"walker": {"name": "Kiln Walker", "look": "walker", "color": Color(0.3, 0.6, 1.0), "weapon": "Kiln Cannon"},
 	},
@@ -113,10 +114,44 @@ const ARMIES := {
 		"name": "the Tide",
 		"soldier": {"name": "Tide Raider", "look": "tide", "color": Color(0.85, 0.3, 0.2), "weapon": "Worn Rifle"},
 		"heavy": {"name": "Tide Brute", "look": "heavy", "color": Color(0.5, 0.1, 0.12), "weapon": "Rusted Cleaver"},
+		"runner": {"name": "Tide Runner", "look": "tide", "color": Color(0.95, 0.42, 0.2), "weapon": "Hook Knife"},
 		"exo": {"name": "Tide Exo Trooper", "look": "exo", "color": Color(1.0, 0.35, 0.15), "weapon": "Support Rifle"},
 		"walker": {"name": "Kiln Walker", "look": "walker", "color": Color(1.0, 0.35, 0.15), "weapon": "Kiln Cannon"},
 	},
 }
+## How each army fights (DESIGN.md "The enemy AI pass", step 3), set on its
+## bots as metas `BotBrain` reads. The Legion holds ground: its riflemen
+## fight from 30 m and further, see further, and one in a few of them is a
+## marksman; more of it are exo troopers, fewer blades. The Tide swarms:
+## more blades and its runners, closing to 10 m, a pincer of two flankers,
+## one more hunter on a person, and a fireteam that loses a third of itself
+## breaks off. "exo" and "heavy" scale the zone's chances; "special" is the
+## army's own kind, rolled among its riflemen at "special_chance" by zone.
+const DOCTRINE := {
+	"legion": {"range": 30.0, "reach": 55.0, "sight": 48.0, "exo": 1.35, "heavy": 0.6,
+			"special": "marksman", "special_chance": [0.12, 0.16, 0.2]},
+	"tide": {"range": 10.0, "reach": 30.0, "sight": 38.0, "exo": 0.65, "heavy": 1.35,
+			"special": "runner", "special_chance": [0.15, 0.2, 0.25],
+			"flankers": 2, "hunters": 1, "breaks_at": 0.33},
+}
+## The Legion marksman: a rifleman with a long, slow, hard-hitting rifle who
+## keeps back, sees far and fires single aimed rounds. Plain soldier health:
+## close the distance and it is the easiest Legion kill.
+const MARKSMAN_DAMAGE := [50.0, 52.0, 54.0]
+const MARKSMAN_SPREAD := [0.35, 0.32, 0.3]
+const MARKSMAN_INTERVAL := 0.75
+const MARKSMAN_SIGHT := 70.0
+const MARKSMAN_REACH := 70.0
+const MARKSMAN_RANGE := 45.0
+const MARKSMAN_BURST := Vector2(0.12, 0.9)
+## The Tide runner: fast, lightly built, a quick hooked knife. It arrives
+## first and dies first; its swing is short but still telegraphed.
+const RUNNER_HEALTH := [150.0, 160.0, 175.0]
+const RUNNER_DAMAGE := [34.0, 36.0, 38.0]
+const RUNNER_WINDUP := 0.32
+const RUNNER_WALK := 5.6
+const RUNNER_SPRINT := 10.5
+const RUNNER_DASH := 0.7
 ## The spawn mix by the risk zone a bot arrived in (outer ring, middle,
 ## core): the share that are exo troopers and walkers. The rest are the
 ## armies' people, soldiers and blade heavies.
@@ -269,6 +304,13 @@ func _init() -> void:
 	war_reinforcements = 60
 	max_players = 32
 	bots_contest_sites = true
+	# Each army remembers who has been killing its soldiers, for one life.
+	grudge_factions.assign(["legion", "tide"])
+	# Battles follow the ground (DESIGN.md "The enemy AI pass", step 4).
+	ground_styles = GROUND_STYLES
+	line_share = 0.2
+	siege_time = 40.0
+	elite_kinds.assign(["exo", "walker"])
 	depot_hold_time = 4.0
 	# The PvP world is where blueprints and upgrade data come from.
 	warlord_blueprint_chance = 0.5
@@ -386,6 +428,47 @@ func bot_skill_range(bot: Actor, warlord: bool) -> Vector2:
 	return BOT_SKILL[clampi(int(bot.get_meta("zone", 1)), 0, 2)]
 
 
+## How each kind of ground fights (`ground_at`, DESIGN.md "The enemy AI
+## pass", step 4). The rim is quiet patrols that chase little; the open
+## field is where fireteams meet, as they are; a trench line ("line") and a
+## siege ring hold their ground and trade fire from further off; a
+## landmark's defenders keep to it; the Works is close quarters, nearer and
+## quicker to react; the Foundry, fought over by elites in a hot war,
+## hunts harder.
+const GROUND_STYLES := {
+	"rim": {"hunters": -1, "leash": 22.0},
+	"field": {},
+	"line": {"range": 1.4, "leash": 8.0, "hunters": -2},
+	"front": {"range": 1.2, "leash": 16.0},
+	"siege": {"range": 1.3, "leash": 12.0},
+	"landmark": {"leash": 24.0},
+	"works": {"range": 0.55, "leash": 26.0, "notice": 0.85},
+	"foundry": {"hunters": 1},
+}
+## How near a trench line counts as the front.
+const FRONT_REACH := 9.0
+
+
+## The kind of ground at a point: the Works, the Foundry, a landmark, the
+## front's trenches, the rim or the open field.
+func ground_at(pos: Vector3) -> String:
+	var at := Vector2(pos.x, pos.z)
+	if absf(at.x) < MapScript.WORKS_REACH + 2.0 and at.y > MapScript.WORKS_TO - 2.0 \
+			and at.y < MapScript.WORKS_FROM + 2.0:
+		return "works"
+	if at.length() <= MapScript.CORE_RADIUS:
+		return "foundry"
+	for site: Dictionary in MapScript.SITES:
+		if site["kind"] != "foundry" and at.distance_to(site["at"]) <= float(site["radius"]) * 1.4:
+			return "landmark"
+	for index: int in MapScript.FRONT_LINES:
+		var line: Array = MapScript.TRENCHES[index]
+		for i in line.size() - 1:
+			if at.distance_to(Geometry2D.get_closest_point_to_segment(at, line[i], line[i + 1])) < FRONT_REACH:
+				return "front"
+	return "rim" if zone_at(pos) == 0 else "field"
+
+
 ## Risk zones by distance from the middle of the field.
 func zone_at(pos: Vector3) -> int:
 	var out := Vector2(pos.x, pos.z).length()
@@ -428,15 +511,19 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		if bot.faction == "":
 			bot.faction = dress
 	var army: Dictionary = ARMIES[dress]
+	var doctrine: Dictionary = DOCTRINE[dress]
 	var tier := clampi(int(bot.get_meta("zone", 1)), 0, 2)
 	var mix := rng.randf()
 	var kind := "soldier"
 	if mix < WALKER_CHANCE[tier]:
 		kind = "walker"
-	elif mix < WALKER_CHANCE[tier] + EXO_CHANCE[tier]:
+	elif mix < WALKER_CHANCE[tier] + EXO_CHANCE[tier] * float(doctrine["exo"]):
 		kind = "exo"
-	elif rng.randf() < HEAVY_CHANCE[tier]:
+	elif rng.randf() < HEAVY_CHANCE[tier] * float(doctrine["heavy"]):
 		kind = "heavy"
+	elif rng.randf() < float(doctrine["special_chance"][tier]):
+		kind = str(doctrine["special"])
+	_take_doctrine(bot, doctrine, kind)
 	var def: Dictionary = army[kind]
 	bot.set_meta("kind", kind)
 	bot.display_name = def["name"]
@@ -465,6 +552,32 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 			blade.light_stamina = 0.0
 			blade.reach = 2.6
 			bot.equip_weapon(blade)
+		"marksman":
+			bot.walk_speed = 4.3
+			bot.sprint_speed = 6.8
+			_set_health(bot, SOLDIER_HEALTH[tier], 0.0)
+			bot.set_meta("sight", MARKSMAN_SIGHT)
+			bot.set_meta("reach", MARKSMAN_REACH)
+			bot.set_meta("range", MARKSMAN_RANGE)
+			bot.set_meta("burst", MARKSMAN_BURST)
+			# Its short burst is one aimed round a pull.
+			bot.equip_weapon(_army_gun(def["weapon"], MARKSMAN_DAMAGE[tier], MARKSMAN_SPREAD[tier], MARKSMAN_INTERVAL))
+		"runner":
+			# First in and first down: a quick knife, little health.
+			bot.walk_speed = RUNNER_WALK
+			bot.sprint_speed = RUNNER_SPRINT
+			_set_health(bot, RUNNER_HEALTH[tier], 0.0)
+			bot.set_meta("melee_tempo", 1.1)
+			# It closes the last few metres in a dash-strike, at the rim too.
+			bot.set_meta("dash", RUNNER_DASH)
+			var knife := MeleeWeapon.new()
+			knife.display_name = def["weapon"]
+			knife.light_damage = RUNNER_DAMAGE[tier]
+			knife.light_windup = RUNNER_WINDUP
+			knife.heavy_damage = RUNNER_DAMAGE[tier] * 1.6
+			knife.light_stamina = 0.0
+			knife.reach = 2.2
+			bot.equip_weapon(knife)
 		"exo":
 			# A soldier in a mechanical exoskeleton: armor that soaks a
 			# carbine, a heavier step, and a support rifle. The suit is drawn
@@ -503,6 +616,20 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 			# Harder-hitting than a carbine and looser, and they break when the
 			# soldier dies. A burst through a mid kit's plates can end the fight.
 			bot.equip_weapon(_army_gun(def["weapon"], GUN_DAMAGE[tier], GUN_SPREAD[tier], GUN_INTERVAL[tier]))
+
+
+## Sets the army's way of fighting on one of its bots. Riflemen keep the
+## army's distance; the Tide's people (not its exos or walkers) pincer, hunt
+## and break.
+func _take_doctrine(bot: Actor, doctrine: Dictionary, kind: String) -> void:
+	if kind == "soldier":
+		bot.set_meta("range", doctrine["range"])
+		bot.set_meta("reach", doctrine["reach"])
+		bot.set_meta("sight", doctrine["sight"])
+	if kind in ["soldier", "heavy", "runner"]:
+		for key in ["flankers", "hunters", "breaks_at"]:
+			if doctrine.has(key):
+				bot.set_meta(key, doctrine[key])
 
 
 ## Dresses `actor` as one of an army's riflemen, the way `equip_bot` does,
@@ -576,6 +703,13 @@ func _army_gun(gun_name: String, damage: float, spread: float, interval: float) 
 ## length, and which weapon they rolled still decides how it feels.
 func make_warlord(bot: Actor) -> void:
 	bot.display_name = "Warlord"
+	# A warlord fights for itself, not by its army's doctrine, and an army's
+	# own kind keeps only its weapon's sort (`DOCTRINE`, `_take_doctrine`).
+	for key in ["range", "reach", "sight", "burst", "flankers", "hunters", "breaks_at", "dash"]:
+		bot.remove_meta(key)
+	if str(bot.get_meta("kind", "")) in ["marksman", "runner"]:
+		bot.walk_speed = 4.5
+		bot.sprint_speed = 7.0
 	bot.health.max_health = 280.0
 	bot.health.health = 280.0
 	bot.health.set_armor(48.0)

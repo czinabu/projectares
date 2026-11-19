@@ -8,11 +8,12 @@ everything you carried stays behind, and you drop back in seconds later.
 You start in your home base, which is the menu: the stash is on show, and
 you gear up where you stand. Online, the door leads to the Concourse, a
 safe plaza shared by everyone on the server, with gates into the raid
-worlds, shops, a clan hall and the arena. Two worlds plug in today.
+worlds, shops, a clan hall and the arena. Three fighting worlds plug in today.
 Ashfront is the full-loot war, one open battlefield where two bot armies
 fight over the landmarks. Frostline is the gentler co-op world, a frozen
 valley: players cannot hurt each other there, and dying drops only your
-backpack. You fly a jetpack, thruster boots or glide wings, and you throw
+backpack. The Spore Marsh is co-op too, a drowned basin of fungus forests
+where the enemy is wildlife, guns foul and blades shine. You fly a jetpack, thruster boots or glide wings, and you throw
 vehicles off your watch: a motorbike, a two-seat hoverbike, a rover, a
 mech and a jet. Shops, mastery and crafting are in, and on a server the
 contract board pays you for work you sign out with. Online play is an
@@ -542,6 +543,7 @@ worlds/
   plaza/         The Concourse: the social safe zone
   ashfront/      The PvP warzone: rules, loot tables, and its map
   frostline/     A smaller PvE world that proves the plug-in contract
+  marsh/         The Spore Marsh: a co-op hunt against the wildlife
 assets/          Models, textures, sky, font and shaders, with LICENSES.md
 tests/           Headless test suite and a screenshot tool
 ```

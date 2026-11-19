@@ -26,6 +26,9 @@ var drain := 2.0
 var index := 0
 var title := "Strongpoint"
 var radius := 14.0
+## The war intensity it waits on (a marker's "hot_at"): below it no army
+## sends teams at it, above it only their elites (`WarCommander.plan`).
+var hot_at := 0.0
 ## The side holding the site, "" for nobody, and the name to show for it.
 var holder := ""
 var holder_name := ""

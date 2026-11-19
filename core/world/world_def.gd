@@ -183,6 +183,11 @@ var track_lifetime := 240.0
 ## How far a gunshot carries, as a share of the usual: bots hear it that much
 ## further off (`Combat.noise`) and so do people (`Gun.SHOT_REACH`).
 var shot_carry := 1.0
+## Fouling (DESIGN.md "Spore Marsh", Caleb's call): how fast sustained fire
+## fouls a gun here, as a rate on its `Gun.foul_per_shot`. A fouled gun
+## spreads wider and a long burst jams it until a reload. 0, the default,
+## leaves guns alone.
+var gun_fouling := 0.0
 ## Weather (DESIGN.md "Weather: ash storms"): with a `weather_kind` ("ash",
 ## "snow"; "" for none) storms cross the map one at a time (`Weather`,
 ## `Raid.weather`), named `weather_name` on the watch and the plaza's signs.
@@ -372,6 +377,47 @@ var keeper_purge_first := 2.0
 ## gunshot is heard (`Actor.heard`), so a drawn-out fight brings the rest.
 ## A kill in one blow calls nobody.
 var linked_factions := {}
+## Grudges (DESIGN.md "The enemy AI pass", step 5): the bot factions that
+## remember a player for one life. Hurting one of its bots raises that
+## army's grudge (`grudge_per_damage` a point of damage, `grudge_per_kill`
+## a kill), it fades by `grudge_fade` a second, and death clears it. Over
+## `grudge_hunt` the army sends a few of its bots after that player, to
+## where they roughly are, every `Raid.GRUDGE_EVERY` (still through the
+## brain's hunter and leash limits), and the player's visor says so.
+## Empty keeps no grudges.
+var grudge_factions: Array[String] = []
+var grudge_per_damage := 1.0
+var grudge_per_kill := 60.0
+var grudge_fade := 3.0
+var grudge_hunt := 300.0
+var grudge_cap := 700.0
+## Battles by ground (DESIGN.md "The enemy AI pass", step 4): how an army
+## fights where it stands. `ground_at` names a place's kind of ground and
+## `ground_styles` says how a soldier there fights, {kind: {key: value}}:
+## "range" scales the distance it keeps, "hunters" is added to how many may
+## leave their ground to hunt one person, "leash" (metres) is how far past
+## its ground it may chase, and "notice" scales how long it takes to spot
+## someone. The `Raid` sets them on each soldier with its orders
+## (`BotBrain.set_ground`), so they are authority only; empty changes
+## nothing. Kinds the `Raid` names itself: "line" for a soldier on a
+## "line_post" marker and "siege" for a team ringing a held site.
+var ground_styles := {}
+## The share of an army's soldiers the `Raid` keeps on its "line_post"
+## markers (meta "faction"), a standing skirmish line, before the
+## commander sends the rest out. 0 leaves the posts empty.
+var line_share := 0.0
+## Sieges: a team sent at a site the other side holds with at least
+## `siege_holders` near it first rings it from `siege_reach` metres past
+## its edge for `siege_time` seconds, trading fire, before it goes in.
+## 0 seconds goes straight in.
+var siege_time := 0.0
+var siege_reach := 22.0
+var siege_holders := 2
+## The bot kinds (meta "kind") that are an army's elite. A strongpoint
+## marker with the meta "hot_at" (war intensity, 0 to 1) is fought over
+## only once the war is that hot, and then only by elites, who go there
+## first (`WarCommander.plan`).
+var elite_kinds: Array[String] = []
 ## Contracts of its own (DESIGN.md section 10, "World-tagged contracts"):
 ## a world with a `contract_tag` ("expedition") puts `contract_jobs` on the
 ## board beside the jobs that count anywhere, and they count only in a world
@@ -550,6 +596,11 @@ func zone_at(_pos: Vector3) -> int:
 	return -1
 
 
+## The kind of ground at a point, for `ground_styles` ("" for none).
+func ground_at(_pos: Vector3) -> String:
+	return ""
+
+
 ## What a zone tier is called on the watch.
 func zone_name(tier: int) -> String:
 	return ["Outer ring", "Middle zone", "Core"][tier] if tier >= 0 and tier <= 2 else ""
@@ -652,6 +703,16 @@ func on_spawn(_actor: Actor) -> void:
 
 func on_death(_actor: Actor, _info: DamageInfo) -> void:
 	pass
+
+
+## Death bursts (DESIGN.md "Spore Marsh"): what a bot leaves where it falls,
+## as {"radius": metres, "damage": a second, "seconds": how long it hangs,
+## "kind": what it is ("spores")}, or {} for nothing. The cloud hurts
+## everyone of another faction inside it through `Combat.deal`
+## (`Raid._tick_clouds`, authority only) and is shown to everyone near.
+## Runs on the authority only.
+func death_burst(_bot: Actor) -> Dictionary:
+	return {}
 
 
 ## Where the next storm comes in and where it leaves, as [from, to] on the
