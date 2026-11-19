@@ -88,6 +88,15 @@ func _ready() -> void:
 	# held ready stance, every swing and every guard, from the front
 	# three-quarter and from the eyes side by side, in one raid (quick to
 	# run while tuning `ActionPose.techniques`).
+	# `-- <output_dir> --bind-only [item id]` films two fighters, one
+	# swinging into the other's guard from each side, a heavy and a parry,
+	# from the side, to check the blades meet at one point (`ActionPose.bind`).
+	if "--bind-only" in args:
+		var at := args.find("--bind-only")
+		await _bind_sheet(out_dir, args[at + 1] if at + 1 < args.size() and ItemDB.has_item(args[at + 1]) else "blade_scrap")
+		get_tree().quit()
+		return
+
 	if "--technique-only" in args:
 		var at := args.find("--technique-only")
 		await _technique_sheet(out_dir, args[at + 1] if at + 1 < args.size() else "blade_scrap")
@@ -438,9 +447,11 @@ func _ready() -> void:
 	await _shot(out_dir.path_join("first_person_guard.png"))
 	Input.action_release("alt_fire")
 	await _settle(10)
-	controller.stance = MeleeWeapon.Dir.LEFT
-	await _settle(2)
 	Input.action_press("alt_fire")
+	await _settle(2)
+	var own := raid.player.get_active_weapon() as MeleeWeapon
+	if own:
+		own.guard_dir = MeleeWeapon.Dir.LEFT
 	await _settle(20)
 	await _shot(out_dir.path_join("first_person_guard_left.png"))
 	Input.action_release("alt_fire")
@@ -483,9 +494,12 @@ func _ready() -> void:
 		cleaver.item_id = pose.get("item", "")
 		foe.equip_weapon(cleaver)
 		foe.active_weapon_index = 0
-		foe.cmd.stance = pose["dir"]
+		# The blade picks its sides by its combo: start at the step for this one.
+		cleaver.combo_step = [MeleeWeapon.Dir.LEFT, MeleeWeapon.Dir.RIGHT, MeleeWeapon.Dir.OVERHEAD].find(pose["dir"])
 		foe.cmd.secondary = pose.get("guard", false)
 		await _settle(5)
+		if pose.has("guard"):
+			cleaver.guard_dir = pose["dir"]
 		# Held until a physics tick has certainly seen it.
 		for i in 6:
 			foe.cmd.primary_pressed = not pose.has("guard") and not pose.has("idle") and not cleaver.is_winding_up()
@@ -3092,7 +3106,8 @@ func _film_swings(path: String, moves: Array, view: String) -> void:
 			skin.hide_head(true)
 		var stances := {"light_right": MeleeWeapon.Dir.RIGHT, "light_left": MeleeWeapon.Dir.LEFT,
 				"heavy_right": MeleeWeapon.Dir.RIGHT, "guard_left": MeleeWeapon.Dir.LEFT}
-		player.cmd.stance = stances.get(move, MeleeWeapon.Dir.OVERHEAD)
+		blade.combo_step = [MeleeWeapon.Dir.LEFT, MeleeWeapon.Dir.RIGHT, MeleeWeapon.Dir.OVERHEAD].find(
+				stances.get(move, MeleeWeapon.Dir.OVERHEAD))
 		await _settle(2)
 		match move:
 			"heavy", "heavy_right":
@@ -3109,7 +3124,6 @@ func _film_swings(path: String, moves: Array, view: String) -> void:
 		for col in SWING_FRAMES:
 			if move == "combo" and col in [4, 8]:
 				player.cmd.primary_pressed = true
-				player.cmd.stance = MeleeWeapon.Dir.LEFT if col == 4 else MeleeWeapon.Dir.RIGHT
 			if move == "deflect" and col == 2:
 				var shot := DamageInfo.make(10.0, player, "bullet", at)
 				player.get_active_weapon().modify_incoming(shot)
@@ -4371,9 +4385,140 @@ func _phone_shots(out_dir: String) -> void:
 ## ready stance, each light, the heavies, each guard), frames every
 ## `SWING_STEP` ticks, each frame from the front three-quarter (left) and
 ## from the eyes (right), rendered together by two sub-viewports.
+func _bind_sheet(out_dir: String, id: String) -> void:
+	var moves := ["light_right", "light_left", "light_overhead", "heavy", "parry"]
+	var frames := 10
+	var cell := 320
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", id, "plate_light"])
+	var player := raid.player
+	var foe: Actor = null
+	for bot in raid.bots:
+		if foe == null:
+			foe = bot
+			for child in bot.get_children():
+				if child is BotBrain:
+					child.set_physics_process(false)
+		else:
+			bot.global_position += Vector3(0, -300, 0)
+	await _settle(10)
+	for i in player.weapons.size():
+		if player.weapons[i] is MeleeWeapon:
+			player.cmd.switch_weapon = i
+	await _settle(5)
+	player.cmd.switch_weapon = -1
+	await _settle(40)
+	raid.zone_rules = false
+	player.weapons_locked = false
+	foe.weapons_locked = false
+	for w in foe.weapons:
+		if w.visual:
+			w.visual.queue_free()
+		w.queue_free()
+	foe.weapons.clear()
+	var guard := MeleeWeapon.new()
+	guard.item_id = id
+	foe.equip_weapon(guard)
+	foe.active_weapon_index = 0
+	var blade := player.get_active_weapon() as MeleeWeapon
+	blade.light_stamina = 0.0
+	blade.heavy_stamina = 0.0
+	blade.light_damage = 0.0
+	blade.heavy_damage = 0.0
+	blade.heavy_lunge = 0.0
+	blade.light_step = 0.0
+	var at := player.global_position
+	var ahead := -player.global_basis.z
+	ahead.y = 0.0
+	ahead = ahead.normalized()
+	var right := ahead.cross(Vector3.UP)
+	foe.global_position = at + ahead * 2.1
+	foe.cmd.yaw = player.cmd.yaw + PI
+	foe.cmd.aim_dir = -ahead
+	foe.cmd.move = Vector2.ZERO
+	foe.thin(1)
+	var views := []
+	for view in ["side", "behind"]:
+		var port := SubViewport.new()
+		port.size = Vector2i(cell, cell)
+		port.world_3d = get_viewport().world_3d
+		port.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(port)
+		var cam := Camera3D.new()
+		port.add_child(cam)
+		cam.current = true
+		cam.fov = 40.0
+		views.append(cam)
+	var mid := at + ahead * 1.05
+	views[0].global_position = mid + right * 3.6 + Vector3(0, 1.4, 0)
+	views[0].look_at(mid + Vector3(0, 1.3, 0))
+	views[1].global_position = at - ahead * 1.6 - right * 1.0 + Vector3(0, 1.9, 0)
+	views[1].look_at(mid + Vector3(0, 1.3, 0))
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 9.0
+	lamp.light_energy = 2.0
+	raid.add_child(lamp)
+	lamp.global_position = mid + right * 2.0 + Vector3(0, 2.4, 0)
+	var sheet := Image.create(frames * 2 * cell, moves.size() * cell, false, Image.FORMAT_RGBA8)
+	var start := player.global_transform
+	var foe_start := foe.global_transform
+	for row in moves.size():
+		var move: String = moves[row]
+		player.global_transform = start
+		foe.global_transform = foe_start
+		player.velocity = Vector3.ZERO
+		foe.stagger_left = 0.0
+		player.stagger_left = 0.0
+		foe.stamina = foe.max_stamina
+		blade.combo_step = ["light_right", "light_left", "light_overhead"].find(move) if move.begins_with("light") else 0
+		# A guard held well before the swing blocks it; one raised just
+		# before it lands parries it.
+		foe.cmd.secondary = move != "parry"
+		await _settle(30)
+		if move == "heavy":
+			player.cmd.tertiary_pressed = true
+		else:
+			player.cmd.primary_pressed = true
+		var wind := blade.heavy_windup if move == "heavy" else blade.light_windup + blade.light_tell
+		var contact_tick := int(wind * 60.0)
+		var tick := 0
+		for col in frames:
+			for k in 2:
+				if move == "parry" and tick == contact_tick - 6:
+					foe.cmd.secondary = true
+				await get_tree().physics_frame
+				tick += 1
+				# `physics_frame` comes before the tick runs: a press is
+				# let go only once a tick has seen it.
+				if tick >= 2:
+					player.cmd.primary_pressed = false
+					player.cmd.tertiary_pressed = false
+			# Film from a few ticks before the contact through the bind.
+			if col == 0:
+				while tick < contact_tick - 4:
+					await get_tree().physics_frame
+					tick += 1
+					if move == "parry" and tick == contact_tick - 6:
+						foe.cmd.secondary = true
+			for k in 2:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			for v in 2:
+				var img: Image = views[v].get_viewport().get_texture().get_image()
+				img.convert(Image.FORMAT_RGBA8)
+				sheet.blit_rect(img, Rect2i(Vector2i.ZERO, img.get_size()), Vector2i((col * 2 + v) * cell, row * cell))
+		foe.cmd.secondary = false
+		await _settle(60)
+		print("filmed bind %s %s" % [id, move])
+	var path := out_dir.path_join("bind_%s.png" % id)
+	sheet.save_png(path)
+	print("saved %s" % path)
+
+
 func _technique_sheet(out_dir: String, id: String) -> void:
-	var moves := ["ready", "light_right", "light_left", "light_overhead", "heavy_right", "heavy_left", "heavy",
-			"guard_right", "guard_left", "guard_overhead"]
+	var moves := ["ready", "light_right", "light_left", "light_overhead", "heavy",
+			"guard_right", "guard_left", "guard_overhead", "reel"]
 	var frames := 10
 	var cell := 200
 	var wide := 356
@@ -4438,7 +4583,10 @@ func _technique_sheet(out_dir: String, id: String) -> void:
 		var side: String = move.get_slice("_", 1) if "_" in move else "overhead"
 		# A swing goes toward its stance: the side it comes from is the mirror.
 		var dir: int = dirs[side]
-		player.cmd.stance = MeleeWeapon.swing_from(dir) if move.begins_with("light") or move.begins_with("heavy") else dir
+		# The blade picks its sides by the combo: start each light at the step
+		# that swings from `side`.
+		blade.combo_step = [MeleeWeapon.Dir.RIGHT, MeleeWeapon.Dir.LEFT, MeleeWeapon.Dir.OVERHEAD].find(dir)
+		player.stagger_left = 0.0
 		# A heavy lunges: every move starts from the same spot.
 		player.global_transform = start
 		player.velocity = Vector3.ZERO
@@ -4451,9 +4599,14 @@ func _technique_sheet(out_dir: String, id: String) -> void:
 				player.cmd.secondary = true
 			"light":
 				player.cmd.primary_pressed = true
+			"reel":
+				player.stagger(1.2)
 		for col in frames:
 			await get_tree().physics_frame
 			await get_tree().physics_frame
+			if move.begins_with("guard"):
+				# A guard turns to meet a swing; with none coming, show each side.
+				blade.guard_dir = dir as MeleeWeapon.Dir
 			player.cmd.primary_pressed = false
 			player.cmd.tertiary_pressed = false
 			if skin != null:

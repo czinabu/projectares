@@ -63,7 +63,8 @@ const SURFACES := {
 const HUMAN_ANIMS := {"idle": "Idle_Neutral", "idle_gun": "Idle_Gun", "aim_gun": "Idle_Gun_Pointing",
 	"stand_legs": "Idle_Neutral", "walk": "Walk", "run": "Run", "death": "Death",
 	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot",
-	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right"}
+	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right", "roll": "Roll",
+	"kick": "Kick_Right"}
 const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
 const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
 const HUMAN_FEET := ["Foot.L", "Foot.R"]

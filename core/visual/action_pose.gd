@@ -67,6 +67,46 @@ var arm_back := Vector3(0.12, -0.3, 0.38)
 var turn_back := Vector2(-0.7, 0.1)
 ## A dash-strike leans the body forward (radians) as it closes in.
 var dash_lean := 0.35
+## Thrown off balance (`Actor.stagger_left`: a parried swing, a broken
+## guard, an interrupt): the weapon hand is knocked out wide and back
+## (`reel_reach`, in the arm's offset frame) and the chest twists away and
+## rocks back (`reel_turn`), opening the body for the riposte. It comes in
+## at `reel_in` a second and eases out over the stagger's last `reel_ease`
+## seconds. View only, the same body in both views.
+var reel_reach := Vector3(0.38, 0.24, 0.42)
+var reel_turn := Vector2(0.45, 0.4)
+var reel_in := 14.0
+var reel_ease := 0.35
+## How far into the reel the body is shown (0 to 1).
+var reel := 0.0
+## Footwork (Caleb's ask: melee with good footwork): how far the feet move
+## the body along its facing, in metres, under the fighting stance
+## (`Locomotion._fight_pose`): the weight settles back through a windup
+## (`step_windup`), the lead foot drives in with the strike (`step_light`,
+## `step_heavy`, held into the recovery and eased back), a guard sits back
+## a little (`step_guard`) and a reel steps the trailing foot back
+## (`step_reel`). Followed on a spring (`step_rate`). View only.
+var step_windup := -0.06
+var step_light := 0.12
+var step_heavy := 0.24
+var step_guard := -0.04
+var step_reel := -0.22
+var step_rate := 16.0
+var footwork := 0.0
+## Blades meet at one point (Caleb's call, so a guarded strike reads
+## clean): a strike met by a guard sets `bind` on both fighters, and for
+## `BIND_TIME` each blade turns in the fist to point at `bind_at`
+## (`bind_turn`, `WeaponArm.hold_weapon`) and the arm is pulled so the point
+## `bind_share` up it lands there, then lets go. View only.
+const BIND_TIME := 0.16
+var bind_share := 0.7
+var bind_at := Vector3.ZERO
+var bind_left := 0.0
+## How far the blade is turned onto `bind_at`: in fast, out slower.
+var bind_turn := 0.0
+var bind_turn_in := 30.0
+var bind_turn_out := 7.0
+var _bind_fix := Vector3.ZERO
 ## Each weapon fights its own way (Caleb's call: every attack and guard
 ## matches how the weapon is really used). A technique (`technique`, picked
 ## from the swing style, the hold and whether it is two-handed) is a table
@@ -621,6 +661,8 @@ func advance(delta: float) -> void:
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
 	var holding := melee != null and melee.visual != null and not actor.is_dead
+	var reel_wanted := clampf(actor.stagger_left / maxf(reel_ease, 0.01), 0.0, 1.0) if not actor.is_dead else 0.0
+	reel = move_toward(reel, reel_wanted, delta * reel_in) if reel_wanted > reel else reel_wanted
 	if holding and melee._swing_left > 0.0 and not melee.is_winding_up():
 		_follow_left = follow_hold
 		_follow_dir = melee.attack_dir
@@ -629,10 +671,15 @@ func advance(delta: float) -> void:
 		if not holding or melee.is_winding_up() or melee.is_blocking():
 			_follow_left = 0.0
 
+	footwork = lerpf(footwork, footwork_wanted(melee) if holding else 0.0, 1.0 - exp(-step_rate * delta))
 	var wanted: Variant = arm_reach(melee) if holding else null
+	_update_bind(melee if holding else null, delta)
+	if wanted != null:
+		wanted += _bind_fix
 	reach_weight = move_toward(reach_weight, 0.0 if wanted == null else 1.0, delta * 9.0)
 	# A swing is over in a few frames, so it is followed much more tightly.
-	var follow := 1.0 - exp(-(70.0 if holding and melee.swing_arc() >= 0.0 else 26.0) * delta)
+	var tight := holding and (melee.swing_arc() >= 0.0 or bind_left > 0.0)
+	var follow := 1.0 - exp(-(70.0 if tight else 26.0) * delta)
 	if wanted != null:
 		reach = wanted if reach_weight < 0.15 else reach.lerp(wanted, follow)
 	turn = turn.lerp(body_turn(melee) if holding else Vector2.ZERO, follow)
@@ -661,6 +708,85 @@ func advance(delta: float) -> void:
 	carry = move_toward(carry, 1.0 if carried else 0.0, delta * (carry_in_rate if carried else carry_out_rate))
 	sprint = move_toward(sprint, clampf(sprint_wanted, 0.0, 1.0), delta * sprint_rate)
 	_update_sway(delta)
+
+
+## Where the feet want the body this frame (see `footwork`).
+func footwork_wanted(melee: MeleeWeapon) -> float:
+	if melee.is_kicking():
+		return 0.0
+	if reel > 0.0:
+		return step_reel * reel
+	if melee.is_blocking():
+		return step_guard
+	var strike := step_heavy if melee._shown_kind == "heavy" or melee._dashing else step_light
+	if melee.is_winding_up():
+		var heavy := melee._windup_kind == "heavy"
+		return step_windup * (1.6 if heavy else 1.0)
+	var arc := melee.swing_arc()
+	if arc >= 0.0:
+		return strike * smoothstep(0.0, 0.6, arc)
+	if _follow_left > 0.0:
+		return strike
+	var back := recover_left(melee)
+	if back > 0.0:
+		return strike * back
+	var charge := charge_amount(melee)
+	if charge > 0.0:
+		return step_windup * charge
+	return 0.0
+
+
+## True while the body rolls (`Actor.dodge_style` "roll"): the clip has the
+## arms, the weapon rides the hand.
+func rolling() -> bool:
+	return actor.dodge_left > 0.0 and actor.dodge_shown == "roll"
+
+
+## Starts a bind: this fighter's blade meets the other's at `at` (world).
+func bind(at: Vector3) -> void:
+	bind_at = at
+	bind_left = BIND_TIME
+
+
+## Pulls the hand so the blade's bind point closes on `bind_at` while a
+## bind lasts (an offset in the aim frame, like `arm_reach`), and eases it
+## off after.
+func _update_bind(melee: MeleeWeapon, delta: float) -> void:
+	var binding := melee != null and bind_left > 0.0
+	bind_turn = move_toward(bind_turn, 1.0 if binding else 0.0, delta * (bind_turn_in if binding else bind_turn_out))
+	if not binding:
+		bind_left = 0.0
+		_bind_fix = _bind_fix.lerp(Vector3.ZERO, 1.0 - exp(-10.0 * delta))
+		return
+	bind_left -= delta
+	var point: Variant = blade_point(melee, bind_share)
+	if point == null:
+		return
+	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
+	var miss: Vector3 = aim.inverse() * (bind_at - (point as Vector3))
+	_bind_fix = (_bind_fix + miss * clampf(delta * 30.0, 0.0, 1.0)).limit_length(0.45)
+
+
+## The point `share` of the way up `melee`'s model from the grip, as it is
+## drawn, or null before it is dressed.
+static func blade_point(melee: MeleeWeapon, share: float) -> Variant:
+	if melee == null or melee.visual == null or not melee.visual.is_inside_tree():
+		return null
+	if not melee.visual.has_meta("blade_top"):
+		var top := 0.0
+		for node in melee.visual.find_children("*", "MeshInstance3D", true, false):
+			var mesh_node := node as MeshInstance3D
+			if mesh_node.mesh == null:
+				continue
+			var to_visual := melee.visual.global_transform.affine_inverse() * mesh_node.global_transform
+			var box := to_visual * mesh_node.mesh.get_aabb()
+			top = maxf(top, box.end.y)
+		if top <= 0.0:
+			return null
+		melee.visual.set_meta("blade_top", top)
+	# As drawn, never where a physics tick parked the hand (`shown_global`).
+	var point := melee.visual.global_transform * Vector3(0.0, float(melee.visual.get_meta("blade_top")) * share, 0.0)
+	return shown_global(melee, Transform3D(Basis.IDENTITY, point)).origin
 
 
 ## The carried gun's lag behind the body: a damped spring pulled by how the
@@ -947,7 +1073,7 @@ static func sight_shown(gun: Gun) -> Vector3:
 ## Where something carried on `gun` (given by its global transform as the
 ## node stands) is drawn this frame, read the same way as the sight: from
 ## the hand as it was posed, never where a physics tick parked it.
-static func shown_global(gun: Gun, global: Transform3D) -> Transform3D:
+static func shown_global(gun: Weapon, global: Transform3D) -> Transform3D:
 	var hand := gun.visual.get_parent() as Node3D
 	if hand == null or not hand.has_meta("shown_local"):
 		return global
@@ -959,8 +1085,19 @@ static func shown_global(gun: Gun, global: Transform3D) -> Transform3D:
 ## The hand offset the current melee state asks for, or null when the
 ## animation should have the hand.
 func arm_reach(melee: MeleeWeapon) -> Variant:
-	if melee == null or actor.is_dead:
+	if melee == null or actor.is_dead or rolling():
 		return null
+	var normal: Variant = _arm_reach(melee)
+	if reel <= 0.0:
+		return normal
+	var from: Vector3 = normal if normal != null else Vector3.ZERO
+	return from.lerp(reel_reach, ease(reel, -1.8))
+
+
+func _arm_reach(melee: MeleeWeapon) -> Variant:
+	if melee.is_kicking():
+		# A kick keeps the weapon held ready while the leg works.
+		return ready_reach(melee)
 	if melee._slamming:
 		return windup_reach(melee, MeleeWeapon.Dir.OVERHEAD)
 	if melee.showing_back_strike():
@@ -1038,13 +1175,15 @@ func ready_amount(melee: MeleeWeapon) -> float:
 		return 0.0
 	if melee._slamming or melee.showing_back_strike() or melee.swing_arc() >= 0.0:
 		return 0.0
+	if melee.is_kicking():
+		return 1.0
 	if melee.is_winding_up() or _follow_left > 0.0 or melee.is_blocking():
 		return 0.0
 	var charge := charge_amount(melee)
 	if charge > 0.0:
 		return 1.0 - charge
 	# Looked over, the weapon turns in the hand as the inspect says.
-	return (1.0 - recover_left(melee)) * (1.0 - inspect_for("melee"))
+	return (1.0 - recover_left(melee)) * (1.0 - inspect_for("melee")) * (1.0 - reel)
 
 
 ## The shoulder turn and lean that go with `arm_reach`: heavier for a
@@ -1055,12 +1194,16 @@ func body_turn(melee: MeleeWeapon) -> Vector2:
 	var turned := _body_turn(melee)
 	if melee.is_two_handed():
 		turned *= two_hand_turn
+	if reel > 0.0:
+		turned = turned.lerp(reel_turn, ease(reel, -1.8))
 	if melee._dashing and melee.is_lunging():
 		turned.y -= dash_lean
 	return turned
 
 
 func _body_turn(melee: MeleeWeapon) -> Vector2:
+	if melee.is_kicking():
+		return Vector2.ZERO
 	if melee._slamming:
 		return windup_turn(melee, MeleeWeapon.Dir.OVERHEAD)
 	if melee.showing_back_strike():
@@ -1220,7 +1363,7 @@ func keyed_reach(melee: MeleeWeapon, dir: int, done: float) -> Vector3:
 ## back strike its own). Both views turn the weapon hand by it
 ## (`WeaponArm._blade_turn`).
 func technique_blade(melee: MeleeWeapon) -> Variant:
-	if melee == null or actor.is_dead or melee.showing_back_strike():
+	if melee == null or actor.is_dead or melee.showing_back_strike() or melee.is_kicking() or rolling():
 		return null
 	if melee._slamming:
 		return _blade_at(melee, technique_key(melee, MeleeWeapon.Dir.OVERHEAD), 0.0)
@@ -1302,6 +1445,10 @@ static func recover_left(melee: MeleeWeapon) -> float:
 	var done := melee.recover_progress()
 	if done < 0.0:
 		return 0.0
+	# The next cut already asked for: the arm stays where this one ended and
+	# flows straight into its windup, rather than going back to the guard.
+	if melee._queued:
+		return 1.0
 	return 1.0 - smoothstep(0.0, 1.0, done)
 
 

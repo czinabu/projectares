@@ -1458,25 +1458,6 @@ func _test_main_flow() -> void:
 	check(p.get_active_weapon() is MeleeWeapon and not p.is_on_floor(),
 			"real input reaches the actor (blade out, airborne)")
 	check(not controller.is_third_person(), "camera stays put when using the blade or flying")
-	# Melee side from the movement keys by default (Caleb: Jedi Academy
-	# style controls as the baseline), the mouse flick after switching. A
-	# save from before the default changed may still say "mouse": start
-	# from the default either way.
-	if controller.stance_control != PlayerController.StanceControl.MOVE:
-		controller.toggle_stance_control()
-	Input.action_press("move_left")
-	await frames(5)
-	check(p.cmd.stance == MeleeWeapon.Dir.LEFT and Profile.melee_control == "move",
-			"by default strafing picks the melee side")
-	Input.action_release("move_left")
-	controller.toggle_stance_control()
-	Input.action_press("move_right")
-	await frames(5)
-	check(p.cmd.stance == MeleeWeapon.Dir.LEFT and Profile.melee_control == "mouse",
-			"after switching to the mouse flick, the movement keys leave the side alone, and the choice is remembered")
-	Input.action_release("move_right")
-	controller.toggle_stance_control()
-	check(Profile.melee_control == "move", "switching again goes back to the movement keys")
 	# Riding pulls the camera back without touching the on-foot choice.
 	var bike = main.raid.spawn_vehicle("bike_scrapper", p.global_position + Vector3(3, 0.3, 0), 0.0)
 	await frames(5)
@@ -1716,6 +1697,7 @@ func _duel(raid: Raid) -> Array:
 	foe.weapons.clear()
 	var blade := MeleeWeapon.new()
 	blade.light_windup = 0.5
+	blade.light_tell = 0.0
 	blade.light_stamina = 0.0
 	foe.equip_weapon(blade)
 	foe.active_weapon_index = 0
@@ -1773,7 +1755,7 @@ func _test_melee_defense() -> void:
 	p.cmd.primary_pressed = true
 	await frames(1)
 	p.cmd.primary_pressed = false
-	await frames(12)
+	await frames(25)
 	var blade := p.get_active_weapon() as MeleeWeapon
 	check(is_equal_approx(foe_before - foe.health.health, blade.light_damage * blade.riposte_mult),
 			"the riposte hits harder")
@@ -1989,31 +1971,14 @@ func _test_loadouts() -> void:
 
 
 func _test_directional_melee() -> void:
-	print("Directional melee")
+	print("Timing melee")
 	var over := MeleeWeapon.Dir.OVERHEAD
 	var left := MeleeWeapon.Dir.LEFT
 	var right := MeleeWeapon.Dir.RIGHT
 	check(MeleeWeapon.mirror(left) == right and MeleeWeapon.mirror(right) == left
 			and MeleeWeapon.mirror(over) == over, "left and right mirror, overhead does not")
-	check(MeleeWeapon.guard_covers(right, left) and not MeleeWeapon.guard_covers(left, left)
-			and MeleeWeapon.guard_covers(left, -1), "a guard covers the side the swing arrives on")
-
-	# Mouse flicks pick the stance.
-	check(PlayerController.stance_from_flick(Vector2(-80, 10), over, 45.0) == left
-			and PlayerController.stance_from_flick(Vector2(80, -10), over, 45.0) == right
-			and PlayerController.stance_from_flick(Vector2(5, -80), left, 45.0) == over,
-			"flicking the mouse left, right or up picks that side")
-	check(PlayerController.stance_from_flick(Vector2(10, 5), left, 45.0) == left
-			and PlayerController.stance_from_flick(Vector2(0, 90), right, 45.0) == right,
-			"small or downward mouse movement keeps the stance")
-
-	check(PlayerController.stance_from_move(Vector2(-1, 0), over) == left
-			and PlayerController.stance_from_move(Vector2(1, 0.3), over) == right
-			and PlayerController.stance_from_move(Vector2(0, 1), left) == over,
-			"strafing left or right or moving forward picks that side")
-	check(PlayerController.stance_from_move(Vector2.ZERO, left) == left
-			and PlayerController.stance_from_move(Vector2(0, -1), right) == right,
-			"standing still or backing up keeps the stance")
+	check(MeleeWeapon.swing_from(left) == right and MeleeWeapon.swing_from(right) == left
+			and MeleeWeapon.swing_from(over) == over, "a swing to one side starts on the other")
 
 	var raid := await _new_raid(51, false)
 	var setup: Array = await _duel(raid)
@@ -2023,89 +1988,223 @@ func _test_directional_melee() -> void:
 	var blade := p.get_active_weapon() as MeleeWeapon
 	var total := func() -> float: return p.health.health + p.health.armor
 
-	# The foe swings to its right, so it comes from its left and arrives on
-	# the player's right.
-	check(MeleeWeapon.swing_from(left) == right and MeleeWeapon.swing_from(right) == left
-			and MeleeWeapon.swing_from(over) == over, "a swing to one side starts on the other")
-	foe.cmd.stance = right
-	p.cmd.stance = left
+	# The blade picks its own sides: a combo runs left, right, overhead,
+	# whatever the command's stance says.
+	var sides: Array[int] = []
+	for i in 3:
+		foe.cmd.stance = right
+		await _foe_swing(foe)
+		await frames(2)
+		sides.append(foe_blade.attack_dir)
+		await frames(50)
+	check(sides == [right, left, over], "a combo runs through its sides by itself (%s)" % [sides])
+	await frames(90)
+
+	# Any guard meets a swing from the front, and turns to its side.
+	p.stamina = p.max_stamina
 	p.cmd.secondary = true
 	await frames(30)
 	var before: float = total.call()
 	await _foe_swing(foe)
-	await frames(10)
-	check(foe_blade.is_winding_up() and foe_blade.attack_dir == left,
-			"a swing keeps the side it started from (a right swing comes from the left)")
-	check(Hud.incoming_side(p) == right, "the HUD warns which side to guard")
-	await frames(30)
-	check(total.call() < before, "a guard on the wrong side stops nothing")
-	check(Hud.incoming_side(p) == -1, "the warning clears after the swing")
+	await frames(40)
+	check(is_equal_approx(total.call(), before), "a guard stops a swing from either side")
+	check(blade.guard_dir == MeleeWeapon.mirror(foe_blade.attack_dir), "the guard turns to meet the swing")
+	p.cmd.secondary = false
+	await frames(90)
 
-	# Changing stance while the guard is up does not move it.
-	p.cmd.stance = right
+	# Timing pays: a guard raised just before the hit costs far less than
+	# one held up through the whole swing.
+	p.stamina = p.max_stamina
+	await _foe_swing(foe)
+	await frames(10)
+	var stamina_before := p.stamina
+	p.cmd.secondary = true
 	await frames(30)
-	check(blade.guard_dir == left, "a guard keeps the side it was raised on")
+	var timed_cost := stamina_before - p.stamina
+	p.cmd.secondary = false
+	await frames(90)
+	p.stamina = p.max_stamina
+	stamina_before = p.stamina
+	p.cmd.secondary = true
+	await frames(40)
+	await _foe_swing(foe)
+	await frames(40)
+	var held_cost := stamina_before - p.stamina
+	p.cmd.secondary = false
+	check(timed_cost > 0.0 and timed_cost < held_cost * 0.5,
+			"a timed block costs a sliver (%.1f) next to a held one (%.1f)" % [timed_cost, held_cost])
+	await frames(90)
+
+	# Holding the guard drains stamina, faster the longer it is held.
+	p.stamina = p.max_stamina
+	p.cmd.secondary = true
+	await frames(60)
+	var early := p.stamina
+	await frames(60)
+	var mid := p.stamina
+	await frames(60)
+	check(p.max_stamina - early > 0.0 and (early - mid) < (mid - p.stamina),
+			"a held guard drains stamina, faster as it is held")
+	p.cmd.secondary = false
+	await frames(30)
+
+	# Mashing is not timing: a guard raised again right after one dropped
+	# with nothing to meet gets no timed block.
+	p.stamina = p.max_stamina
+	p.cmd.secondary = true
+	await frames(3)
+	p.cmd.secondary = false
+	await frames(2)
+	p.cmd.secondary = true
+	await frames(2)
+	check(not blade.in_timed_window() and not blade.in_parry_window("melee"), "a mashed guard is not timed")
 	p.cmd.secondary = false
 	await frames(60)
 
-	# Guard the correct side.
-	p.cmd.secondary = true
-	await frames(30)
-	check(blade.guard_dir == right, "raising the guard again takes the new stance")
-	before = total.call()
+	# A guard that met its hit in time is rearmed at once for the next.
 	await _foe_swing(foe)
-	await frames(40)
-	check(is_equal_approx(total.call(), before), "a guard on the correct side blocks the hit")
-	p.cmd.secondary = false
-
-	# A parry needs the correct side too.
-	await frames(90)
-	p.cmd.stance = over
-	before = total.call()
-	await _foe_swing(foe)
-	await frames(22)
+	await frames(20)
 	p.cmd.secondary = true
-	await frames(12)
+	await frames(15)
 	p.cmd.secondary = false
-	check(total.call() < before and foe.stagger_left <= 0.0, "a parry on the wrong side fails")
-	await frames(90)
-	p.cmd.stance = right
-	p.stagger_left = 0.0
-	before = total.call()
-	await _foe_swing(foe)
-	await frames(22)
+	await frames(2)
 	p.cmd.secondary = true
-	await frames(12)
+	await frames(2)
+	check(blade.in_timed_window(), "a guard that met its hit in time comes straight back up timed")
 	p.cmd.secondary = false
-	check(is_equal_approx(total.call(), before) and foe.stagger_left > 0.0, "a parry on the correct side lands")
-
-	# The player's attacks carry their direction, and the foe can guard them.
-	await frames(120)
 	foe.stagger_left = 0.0
+	await frames(90)
+
+	# Interrupts: a quicker blow that lands on a swing in its windup cuts it off.
+	foe.stagger_left = 0.0
+	p.stamina = p.max_stamina
 	p.riposte_left = 0.0
-	# A swing to the player's right comes from their left and arrives on the
-	# foe's right: guarding the same side as the swing's stance meets it.
-	p.cmd.stance = right
-	foe.cmd.stance = right
+	before = total.call()
+	await _foe_swing(foe)
+	await frames(1)
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(25)
+	check(foe.stagger_left > 0.0 and not foe_blade.is_winding_up(), "a blow that lands mid-windup interrupts it")
+	await frames(30)
+	check(is_equal_approx(total.call(), before), "the interrupted swing never lands")
+	foe.stagger_left = 0.0
+	await frames(60)
+
+	# A blow on someone standing ready never holds them.
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(25)
+	check(foe.stagger_left <= 0.0, "a light on a foe at rest does not stagger them")
+
+	# The evade: with no rig, Alt rolls; a swing landing mid-roll passes
+	# through, and the weapon waits out the roll and a moment after.
+	await frames(60)
+	var rig_on := p.flight.enabled
+	if rig_on:
+		check(p.dodge_style(true) in ["thrust", "jet_step", "flap"], "a rig dodges its own way")
+	p.flight.enabled = false
+	check(p.dodge_style(true) == "roll" and p.dodge_style(false) == "dash", "with no rig the dodge is a roll")
+	p.stamina = p.max_stamina
+	foe.stagger_left = 0.0
+	before = total.call()
+	var from := p.global_position
+	await _foe_swing(foe)
+	await frames(20)
+	p.cmd.move = Vector2(1, 0)
+	p.cmd.dash = true
+	await frames(1)
+	p.cmd.dash = false
+	await frames(3)
+	check(p.dodging() and p.evade_left > 0.0 and p.dodge_shown == "roll", "Alt starts a roll")
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	check(not blade.is_winding_up(), "no swing comes out of a roll")
+	await frames(20)
+	p.cmd.move = Vector2.ZERO
+	check(is_equal_approx(total.call(), before), "a swing that lands mid-roll passes through")
+	var rolled := Vector2(p.global_position.x - from.x, p.global_position.z - from.z).length()
+	check(rolled > 2.0 and rolled < 5.0, "a roll carries the body a few metres (%.1f m)" % rolled)
+	await frames(40)
+	check(not p.dodging(), "the weapon answers again once the roll is over")
+	p.flight.enabled = rig_on
+	p.global_position = from
+	p.velocity = Vector3.ZERO
+
+	# The kick breaks a held guard open and goes through it.
+	await frames(30)
+	p.stamina = p.max_stamina
+	foe.stagger_left = 0.0
 	foe.cmd.secondary = true
 	await frames(30)
-	var foe_before := foe.health.health + foe.health.armor
-	p.cmd.primary_pressed = true
+	p.cmd.kick_pressed = true
 	await frames(1)
-	p.cmd.primary_pressed = false
-	await frames(20)
-	check(is_equal_approx(foe.health.health + foe.health.armor, foe_before), "an enemy guarding the right side blocks you")
-	await frames(40)
-	p.cmd.stance = over
-	p.cmd.primary_pressed = true
-	await frames(1)
-	p.cmd.primary_pressed = false
-	await frames(20)
-	check(foe.health.health + foe.health.armor < foe_before, "attacking a side the enemy is not guarding gets through")
+	p.cmd.kick_pressed = false
+	check(blade.is_kicking() and blade.is_winding_up(), "V starts a kick with a windup")
+	await frames(int(blade.kick_windup * 60.0) + 4)
+	check(foe.stagger_left > 0.0, "a kick breaks a held guard open")
 	foe.cmd.secondary = false
+	await frames(90)
 
-	# Bullets ignore direction: any guard turns part of one aside.
-	p.cmd.stance = left
+	# A swing beats a kick: a light thrown into a kick's windup lands first.
+	foe.stagger_left = 0.0
+	p.stagger_left = 0.0
+	foe_blade.kick_stamina = 0.0
+	foe.cmd.kick_pressed = true
+	await frames(1)
+	foe.cmd.kick_pressed = false
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(int((blade.light_windup + blade.light_tell) * 60.0) + 2)
+	check(foe.stagger_left > 0.0 and not foe_blade.is_winding_up(), "a swing into a kick's windup cuts it off")
+	await frames(90)
+
+	# A feint: aim early in a heavy's windup lets it go and raises the guard.
+	foe.stagger_left = 0.0
+	p.stagger_left = 0.0
+	p.stamina = p.max_stamina
+	p.cmd.tertiary_pressed = true
+	await frames(1)
+	p.cmd.tertiary_pressed = false
+	await frames(3)
+	check(blade.is_winding_up(), "a heavy winds up")
+	var feint_from := p.stamina
+	p.cmd.secondary = true
+	await frames(3)
+	check(not blade.is_winding_up() and blade.is_blocking() and p.stamina < feint_from,
+			"aim early in a heavy feints it into a guard, for stamina")
+	p.cmd.secondary = false
+	await frames(60)
+
+	# A heavy straight off a light is quicker, and comes from the side.
+	p.stamina = p.max_stamina
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(int((blade.light_windup + blade.light_tell + blade.light_recover) * 60.0) + 2)
+	p.cmd.tertiary_pressed = true
+	await frames(1)
+	p.cmd.tertiary_pressed = false
+	await frames(1)
+	check(blade._windup_kind == "heavy" and blade._windup_total < blade.heavy_windup * 0.9
+			and blade.attack_dir != MeleeWeapon.Dir.OVERHEAD, "a heavy off a light carries the string on")
+	await frames(90)
+
+	# Two strikes about to land together clash.
+	foe_blade._windup_kind = "light"
+	foe_blade._windup_left = blade.clash_window * 0.5
+	check(blade.clashes_with(foe_blade) and blade.guess_outcome(foe) == "clash", "strikes landing together clash")
+	foe_blade._windup_left = 0.3
+	check(not blade.clashes_with(foe_blade), "a swing far from landing does not clash")
+	foe_blade._windup_left = 0.0
+	foe_blade._windup_kind = ""
+
+	# Bullets ignore sides: any guard turns part of one aside.
+	await frames(60)
 	p.cmd.secondary = true
 	await frames(30)
 	before = total.call()
@@ -2115,28 +2214,6 @@ func _test_directional_melee() -> void:
 	p.cmd.secondary = false
 	await _end_raid(raid)
 
-	# A guarding brute picks a side and holds it between swings.
-	var brute_raid := await _new_raid(52, true)
-	var duel: Array = await _duel(brute_raid)
-	var brute: Actor = duel[1]
-	var brute_blade: MeleeWeapon = duel[2]
-	var guarded := false
-	var sides := {}
-	for i in 600:
-		await frames(1)
-		if brute_blade.is_blocking():
-			guarded = true
-		if brute_blade.is_winding_up():
-			sides[brute_blade.attack_dir] = true
-	check(guarded, "a melee bot guards between swings")
-	check(sides.size() >= 2, "a melee bot varies the side it attacks from")
-	await _end_raid(brute_raid)
-
-
-## A raid whose player carries exactly `kit`, standing in the open.
-## The first of eight headings with nothing solid for `reach` metres ahead
-## of `actor`'s chest, so a check that moves it (or puts someone in front of
-## it) cannot run into whatever cover or building it happened to land by.
 func open_heading(actor: Actor, reach: float) -> float:
 	var chest := actor.global_position + Vector3(0, 1.0, 0)
 	for k in 8:
