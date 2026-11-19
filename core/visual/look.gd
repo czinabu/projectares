@@ -23,6 +23,7 @@ const CHARACTER_SHADER := preload("res://assets/shaders/character.gdshader")
 const EDGE_INK_SHADER := preload("res://assets/shaders/edge_ink.gdshader")
 const SKYLINE_SHADER := preload("res://assets/shaders/skyline.gdshader")
 const HORIZON_GLOW_SHADER := preload("res://assets/shaders/horizon_glow.gdshader")
+const HAZE_BEAM_SHADER := preload("res://assets/shaders/haze_beam.gdshader")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
@@ -1114,13 +1115,27 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
 ## "scorch" (charred ground), "track" (a packed gravel road), "rut" (a dark wheel rut), "hazard" (orange and black stripes),
 ## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
-## "beam" (a searchlight), "distant" (skyline silhouettes) and
+## "beam" (a searchlight), "lance" (an orbital strike's column), "distant" (skyline silhouettes) and
 ## "horizon_glow" (fires past the rim, on a ring). Cached, so every piece
 ## shares one material.
 func trim(kind: String) -> Material:
 	var key := "trim:" + kind
 	if _materials.has(key):
 		return _materials[key]
+	if kind == "sun_shaft" or kind == "beam":
+		# Light in the smoke with no hard sides or ends (`haze_beam.gdshader`):
+		# sunlight through a break, each shaft faded by its instance "fade",
+		# or a searchlight's pale beam, lit from its lamp at the top.
+		var shaft := ShaderMaterial.new()
+		shaft.shader = HAZE_BEAM_SHADER
+		if kind == "beam":
+			shaft.set_shader_parameter("tint", Color(0.9, 0.85, 0.72))
+			shaft.set_shader_parameter("strength", 0.09)
+			shaft.set_shader_parameter("top_fade", 0.04)
+			shaft.set_shader_parameter("foot", 0.0)
+			shaft.set_shader_parameter("near_fade", 40.0)
+		_materials[key] = shaft
+		return shaft
 	if kind == "distant" or kind == "horizon_glow":
 		# Shaded by hand, so they hold their own against the haze:
 		# `apply_mood` sets the silhouettes' haze from the mood.
@@ -1182,6 +1197,15 @@ func trim(kind: String) -> Material:
 			mat.vertex_color_use_as_albedo = true
 			mat.albedo_color = Color(1.0, 0.55, 0.22)
 			mat.disable_fog = true
+		"lance":
+			# An orbital lance: a white-hot column from the sky that the haze
+			# never hides. Fade it with the instance's transparency.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat.albedo_color = Color(0.82, 0.9, 1.0, 0.85)
+			mat.disable_fog = true
 		"flak_smoke":
 			# The puff a flak shell leaves hanging, lit by the fires below: haze softens it like
 			# any far smoke. Fade it with the instance's transparency.
@@ -1191,13 +1215,6 @@ func trim(kind: String) -> Material:
 			mat.albedo_texture = _soft_dot()
 			mat.albedo_color = Color(0.3, 0.22, 0.18, 0.7)
 			mat.billboard_keep_scale = true
-		"beam":
-			# A searchlight's beam: faint light in the smoke.
-			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-			mat.albedo_color = Color(0.9, 0.85, 0.72, 0.05)
 		"hazard":
 			var stripes := Image.create(32, 32, false, Image.FORMAT_RGB8)
 			for y in 32:

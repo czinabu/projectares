@@ -612,10 +612,20 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   the sky (`worlds/ashfront/skyfire.gd`, view only): guns past the rim
   hosing tracer up into the smoke, more of them firing the hotter the war,
   shells bursting high and leaving puffs hanging, and bursts chasing a
-  dropship wing but never hitting it; a storm hides it all. Planned,
-  in this order: god rays,
-  a shared moment (the orbital lance brings the Colossus down), and ash on
-  the visor glass.
+  dropship wing but never hitting it; a storm hides it all. Sunlight
+  breaking through the smoke (`worlds/ashfront/sunshafts.gd`, view only,
+  timed by the wall clock): a few great soft shafts slanting down along
+  the sun, each opening where the smoke parts, standing a minute or so and
+  closing again somewhere else, dimmer the hotter the war and hidden by a
+  storm. The war's shared moment comes round on the same clock, once every
+  25 minutes (`giants.gd`, `since_lance`): a red targeting line finds the
+  Colossus, an orbital lance comes down on it out of the sky with a blinding
+  flash, and it buckles and falls where it stood, its eye and searchlight
+  dying; it lies burning for about nine minutes, fades into the smoke, and
+  the next one walks out of it. Out in an ash storm, ash settles on the
+  visor glass (`VisorHud._draw_ash`, the glass only, like frost): grains in
+  clumps from the rim inward, darkest in the corners, the middle always
+  clear, more the deeper in the storm, and it blows off slowly after.
 - Full loot on death.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).

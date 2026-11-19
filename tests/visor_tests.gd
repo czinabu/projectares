@@ -542,6 +542,19 @@ static func _safe_zones(t: Node) -> void:
 
 static func _glass(t: Node) -> void:
 	print("Visors: the glass")
+	# Ash on the glass (DESIGN.md "Scale you can see"): only an ash storm
+	# settles it, more the deeper in, and never in the middle of the view.
+	t.check(VisorHud.ash_settling("ash", 0.0) == 0.0 and VisorHud.ash_settling("ash", 0.7) > VisorHud.ash_settling("ash", 0.2)
+			and VisorHud.ash_settling("snow", 1.0) == 0.0 and VisorHud.ash_settling("", 1.0) == 0.0,
+			"ash settles on the glass only in an ash storm, more the deeper in")
+	var clear := true
+	var same := true
+	for i in VisorHud.ASH_SPECKS:
+		var speck := VisorHud.ash_speck(i)
+		clear = clear and Vector2(speck.x, speck.y).length() >= VisorHud.ASH_CLEAR - 0.001
+		same = same and speck == VisorHud.ash_speck(i)
+	t.check(clear, "ash keeps off the middle of the glass")
+	t.check(same, "each grain of ash stays where it landed")
 	t.check(is_equal_approx(VisorHud.bearing(0.0), 0.0) and is_equal_approx(VisorHud.bearing(-PI * 0.5), 90.0)
 			and is_equal_approx(VisorHud.bearing(PI * 0.5), 270.0), "the compass reads north at -Z and east at +X")
 	t.check(VisorHud.compass_name(0.0) == "N" and VisorHud.compass_name(90.0) == "E"

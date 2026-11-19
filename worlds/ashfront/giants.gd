@@ -5,6 +5,10 @@ extends Node3D
 ## only and never in a server: the map adds one only where `Look` is on.
 ## Both are timed by the wall clock, so every player sees them in the same
 ## place, and a footfall is heard once its sound has had time to arrive.
+## Once in a while the war's shared moment comes round on the same clock:
+## a targeting line finds the Colossus, an orbital lance comes down on it
+## out of the sky and it falls, lies burning a while, and is gone into the
+## smoke before the next one walks out of it.
 
 ## How far out the Colossus walks, and how high its hips ride (before `SCALE`).
 const WALK_RADIUS := 750.0
@@ -41,6 +45,22 @@ const WING_FLIGHT := 50.0
 const WING_SIZE := Vector2i(2, 5)
 const WING_LOW := 110.0
 
+## The orbital lance: one strike every `LANCE_EVERY` seconds, `LANCE_AT`
+## into the round; the targeting line shows `LANCE_CHARGE` before it, the
+## column burns `LANCE_BURN`, the Colossus takes `FALL_TIME` to go down and
+## lies until `WRECK_GONE` after the strike, fading into the smoke over its
+## last `FADE_TIME`, and the next walks out of the smoke over as long.
+const LANCE_EVERY := 1500.0
+const LANCE_AT := 900.0
+const LANCE_CHARGE := 10.0
+const LANCE_BURN := 4.5
+const FALL_TIME := 12.0
+const WRECK_GONE := 560.0
+const FADE_TIME := 40.0
+## How high the lance starts (it comes down from orbit, past the far plane).
+const LANCE_HEIGHT := 1600.0
+const LANCE_WIDTH := 60.0
+
 ## Where the ground under the giants is (the skyline's floor).
 var floor_y := 38.0
 var soundscape: Node = null
@@ -61,6 +81,18 @@ var _lights: Array[GeometryInstance3D] = []
 var _wing: Array[Node3D] = []
 var _wing_cycle := -1
 var _wing_path: Array[Vector3] = []
+var _eye: Node3D
+var _guide: MeshInstance3D
+var _lance: MeshInstance3D
+var _lance_glow: MeshInstance3D
+var _impact: MeshInstance3D
+var _fires: Array[Node3D] = []
+## Every drawn part of the Colossus, faded together as it comes and goes.
+var _colossus_parts: Array[GeometryInstance3D] = []
+var _colossus_lights: Array[GeometryInstance3D] = []
+var _shown_fade := -1.0
+## Seconds since the last strike when last placed, to hear each blow once.
+var _last_since := -INF
 
 
 func _ready() -> void:
@@ -74,6 +106,12 @@ func _ready() -> void:
 	# would otherwise be cut off close by (`Look._limit_draw_distance`).
 	for part in find_children("*", "MeshInstance3D", true, false):
 		(part as MeshInstance3D).visibility_range_end = 2000.0
+	for part in _colossus.find_children("*", "GeometryInstance3D", true, false):
+		if part in _lights:
+			_colossus_lights.append(part as GeometryInstance3D)
+		else:
+			_colossus_parts.append(part as GeometryInstance3D)
+	_build_lance()
 	_place(clock())
 
 
@@ -95,6 +133,39 @@ static func walker_at(t: float) -> Transform3D:
 	return Transform3D(Basis.looking_at(-ahead), at)
 
 
+## Seconds since this round's lance struck at time `t`: negative while it
+## is still to come, from `-LANCE_AT` (the round starting) up to
+## `LANCE_EVERY - LANCE_AT`.
+static func since_lance(t: float) -> float:
+	return fposmod(t, LANCE_EVERY) - LANCE_AT
+
+
+## How far down the Colossus is, `since` seconds after the strike (0
+## standing, 1 lying): it holds a moment, then buckles faster and faster.
+static func downed(since: float) -> float:
+	if since <= 0.0:
+		return 0.0
+	var p := clampf((since - 1.0) / (FALL_TIME - 1.0), 0.0, 1.0)
+	return p * p * (3.0 - 2.0 * p) if p < 1.0 else 1.0
+
+
+## How much of the Colossus shows at `since`: all of it, except while the
+## wreck fades into the smoke and while the next one walks out of it.
+static func shown(since: float) -> float:
+	if since >= 0.0:
+		return clampf((WRECK_GONE - since) / FADE_TIME, 0.0, 1.0)
+	return clampf((since + LANCE_AT) / FADE_TIME, 0.0, 1.0)
+
+
+## Where the Colossus is at time `t`: walking its round, or, once struck,
+## where the lance caught it.
+static func colossus_at(t: float) -> Transform3D:
+	var since := since_lance(t)
+	if since >= 0.0 and since < WRECK_GONE:
+		return walker_at(t - since)
+	return walker_at(t)
+
+
 ## A leg's place in its stride at time `t`, from 0 to 1.
 static func stride(t: float, offset: float) -> float:
 	return fposmod(t / STRIDE_TIME + offset, 1.0)
@@ -107,27 +178,39 @@ static func lift(phase: float) -> float:
 
 
 func _place(t: float) -> void:
-	var walk := walker_at(t)
-	walk.origin.y = floor_y + 2.5 * sin(t / STRIDE_TIME * TAU * 2.0)
+	var since := since_lance(t)
+	var down := downed(since)
+	# Struck, it stops where it stands: its stride freezes at the blow.
+	var pace := t - since if since >= 0.0 and since < WRECK_GONE else t
+	var walk := colossus_at(t)
+	walk.origin.y = floor_y + 2.5 * sin(pace / STRIDE_TIME * TAU * 2.0) * (1.0 - down)
 	_colossus.transform = walk.scaled_local(Vector3.ONE * SCALE)
-	# The hull rolls a little onto each planted pair and nods with the step.
-	var step := t / STRIDE_TIME * TAU
-	_body.basis = Basis(Vector3.BACK, 0.03 * sin(step)) * Basis(Vector3.RIGHT, 0.02 * sin(step * 2.0))
-	# The searchlight sweeps the ground ahead of it.
+	# The hull rolls a little onto each planted pair and nods with the step;
+	# going down it sinks onto its belly, rolling over and dropping its head.
+	var step := pace / STRIDE_TIME * TAU
+	var shake := 0.04 * sin(since * 9.0) * (1.0 - down) if since > 0.0 and since < FALL_TIME else 0.0
+	_body.basis = Basis(Vector3.BACK, 0.03 * sin(step) + 0.32 * down + shake) * Basis(Vector3.RIGHT, 0.02 * sin(step * 2.0) + 0.2 * down)
+	_body.position.y = lerpf(HIP_HEIGHT, 26.0, down)
+	# The searchlight sweeps the ground ahead of it, and dies with it.
 	_lamp.basis = Basis(Vector3.UP, 0.45 * sin(t * 0.23)) * Basis(Vector3.RIGHT, -0.85 + 0.12 * sin(t * 0.37))
+	_lamp.visible = since < 0.0 or since >= WRECK_GONE
+	_eye.visible = _lamp.visible
 	for i in _hips.size():
-		var phase := stride(t, LEGS[i][1])
-		var up := lift(phase)
+		var phase := stride(pace, LEGS[i][1])
+		var up := lift(phase) * (1.0 - down)
 		var side := signf((LEGS[i][0] as Vector3).x)
-		# Swing forward while lifted, push back while planted.
-		var sweep := 0.2 * cos(phase * TAU) * -signf((LEGS[i][0] as Vector3).z)
-		_hips[i].basis = Basis(Vector3.UP, sweep) * Basis(Vector3.BACK, side * (THIGH_RAISE + 0.1 * up))
-		_knees[i].basis = Basis(Vector3.BACK, -side * (KNEE_FOLD - 0.3 * up))
+		# Swing forward while lifted, push back while planted; going down
+		# the legs splay out from under it and the shins fold flat.
+		var sweep := 0.2 * cos(phase * TAU) * -signf((LEGS[i][0] as Vector3).z) * (1.0 - down)
+		_hips[i].position.y = _body.position.y
+		_hips[i].basis = Basis(Vector3.UP, sweep) * Basis(Vector3.BACK, side * (lerpf(THIGH_RAISE, 2.0, down) + 0.1 * up))
+		_knees[i].basis = Basis(Vector3.BACK, -side * (lerpf(KNEE_FOLD, 0.55, down) - 0.3 * up))
 		var lifted := up > 0.02
 		# One of each pair is heard landing: a footfall every half stride.
 		if i % 2 == 0 and _was_lifted[i] and not lifted and soundscape != null:
 			soundscape.call("boom", _feet[i].global_position)
 		_was_lifted[i] = lifted
+	_strike(since)
 	for i in _blinkers.size():
 		_blinkers[i].visible = int(t * 1.4 + i * 0.5) % 2 == 0
 	if _ship != null:
@@ -137,6 +220,8 @@ func _place(t: float) -> void:
 	var seen := 1.0 - Look.weather_cover
 	for light in _lights:
 		light.transparency = 1.0 - seen
+	for light in _colossus_lights:
+		light.transparency = 1.0 - seen * maxf(_shown_fade, 0.0)
 
 
 ## How many ships fly in a wing at war intensity `heat` (0 to 1).
@@ -228,9 +313,11 @@ func _build_colossus(hull: Material) -> void:
 	_box(Vector3(34, 6, 22), Transform3D.IDENTITY.translated(Vector3(0, 10, -2)), hull, head)
 	_box(Vector3(10, 10, 16), Transform3D.IDENTITY.translated(Vector3(0, -12, 6)), hull, head)
 	# One long eye slit across its face, and a glow round it to carry far.
-	var slit := _box(Vector3(22, 2.2, 1.0), Transform3D.IDENTITY.translated(Vector3(0, 3, 15.2)), Look.trim("beacon"), head)
+	_eye = Node3D.new()
+	head.add_child(_eye)
+	var slit := _box(Vector3(22, 2.2, 1.0), Transform3D.IDENTITY.translated(Vector3(0, 3, 15.2)), Look.trim("beacon"), _eye)
 	_lights.append(slit)
-	_light("halo", 26.0, Vector3(0, 3, 17), head)
+	_light("halo", 26.0, Vector3(0, 3, 17), _eye)
 	# A gun along the spine and a mast, and vents on the hump trailing smoke.
 	_box(Vector3(5, 5, 90), Transform3D(Basis(Vector3.RIGHT, 0.05), Vector3(0, 46, 30)), hull, _body)
 	_box(Vector3(14, 10, 22), Transform3D.IDENTITY.translated(Vector3(0, 46, -6)), hull, _body)
@@ -242,6 +329,18 @@ func _build_colossus(hull: Material) -> void:
 			var plume: Node3D = plume_maker.call(Vector3.ZERO, 3.0)
 			plume.position = vent + Vector3(0, 8, 0)
 			_body.add_child(plume)
+	# Fires that take hold where the lance struck, once it is down.
+	for at: Vector3 in [Vector3(0, 40, -10), Vector3(-24, 26, 30), Vector3(20, 20, -44)]:
+		var fire := Node3D.new()
+		fire.position = at
+		fire.visible = false
+		_body.add_child(fire)
+		_light("flash", 40.0, Vector3.ZERO, fire)
+		if plume_maker.is_valid():
+			var smoke: Node3D = plume_maker.call(Vector3.ZERO, 5.0)
+			smoke.position = Vector3(0, 6, 0)
+			fire.add_child(smoke)
+		_fires.append(fire)
 	# Running lights down its flanks.
 	for i in 6:
 		_light("flash", 6.0, Vector3(-37 + (i % 2) * 74, 16, -40 + (i / 2) * 36), _body)
@@ -345,3 +444,86 @@ func _light(kind: String, size: float, at: Vector3, parent: Node3D) -> void:
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(node)
 	_lights.append(node)
+
+
+func _build_lance() -> void:
+	# The targeting line: a thin red thread down out of the sky.
+	_guide = _column(1.2, Look.trim("beacon"))
+	_lance = _column(LANCE_WIDTH * 0.5, Look.trim("lance"))
+	# A wider, fainter sheath round it, so it reads as light, not a rod.
+	_lance_glow = _column(LANCE_WIDTH * 1.4, Look.trim("lance"))
+	_impact = MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.material = Look.trim("flash")
+	_impact.mesh = quad
+	_impact.visible = false
+	_impact.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_impact.visibility_range_end = 3000.0
+	add_child(_impact)
+
+
+func _column(radius: float, material: Material) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = LANCE_HEIGHT
+	mesh.cap_top = false
+	mesh.cap_bottom = false
+	mesh.radial_segments = 16
+	mesh.material = material
+	node.mesh = mesh
+	node.visible = false
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.visibility_range_end = 3000.0
+	add_child(node)
+	return node
+
+
+## The war's shared moment, `since` seconds after (or before) the strike:
+## the line finds its mark, the lance comes down, the Colossus burns.
+func _strike(since: float) -> void:
+	var seen := 1.0 - Look.weather_cover
+	var mark := _body.global_position + Vector3(0, 20, 0)
+	var column := Transform3D(Basis.IDENTITY, mark + Vector3(0, LANCE_HEIGHT * 0.5, 0))
+	# Locking on: the line flickers, then holds steady just before the blow.
+	_guide.visible = since >= -LANCE_CHARGE and since < 0.4
+	if _guide.visible:
+		_guide.global_transform = column
+		var steady := since > -2.5 or int(since * 7.0) % 2 == 0
+		_guide.transparency = 1.0 - (0.9 if steady else 0.25) * seen
+	# The lance: full width at once, then thinning out as it burns.
+	_lance.visible = since >= 0.0 and since < LANCE_BURN
+	if _lance.visible:
+		var p := since / LANCE_BURN
+		var width := 1.0 - p * p
+		_lance.global_transform = Transform3D(Basis.IDENTITY.scaled(Vector3(width, 1.0, width)), column.origin)
+		_lance.transparency = 1.0 - (1.0 - p) * seen
+	_lance_glow.visible = _lance.visible
+	if _lance_glow.visible:
+		var p := since / LANCE_BURN
+		_lance_glow.global_transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * lerpf(1.0, 1.6, p) * Vector3(1, 0, 1) + Vector3.UP), column.origin)
+		_lance_glow.transparency = 1.0 - 0.22 * (1.0 - p) * seen
+	_impact.visible = since >= 0.0 and since < 3.0
+	if _impact.visible:
+		_impact.global_position = mark
+		_impact.scale = Vector3.ONE * lerpf(500.0, 900.0, since / 3.0)
+		_impact.transparency = 1.0 - (1.0 - since / 3.0) * seen
+	for fire in _fires:
+		fire.visible = since >= 0.5 and since < WRECK_GONE
+	# The blow and the crash of it landing, each heard once.
+	if soundscape != null and is_finite(_last_since):
+		if _last_since < 0.0 and since >= 0.0:
+			for i in 3:
+				soundscape.call("boom", mark + Vector3(i * 30.0, 0, 0))
+		if _last_since < FALL_TIME and since >= FALL_TIME:
+			soundscape.call("boom", _body.global_position)
+			soundscape.call("boom", _feet[0].global_position)
+	_last_since = since
+	# Coming and going, it fades with the smoke rather than popping.
+	var fade := shown(since)
+	if not is_equal_approx(fade, _shown_fade):
+		_shown_fade = fade
+		_colossus.visible = fade > 0.0
+		for part in _colossus_parts:
+			part.transparency = 1.0 - fade

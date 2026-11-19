@@ -393,6 +393,27 @@ static func _skyline(t: Node, raid: Raid) -> void:
 	var from := Vector3(-800, 360, 0)
 	var over := Vector3(20, 150, 30)
 	var to := Vector3(700, 400, 50)
+	# The orbital lance, the war's shared moment, on the same clock: the
+	# Colossus walks, is struck, falls where it stood, lies burning, fades
+	# into the smoke, and the next walks out of it.
+	var every: float = giants.LANCE_EVERY
+	var strike: float = every * 3.0 + giants.LANCE_AT
+	t.check(is_equal_approx(giants.since_lance(strike), 0.0) and giants.since_lance(strike - 5.0) < 0.0,
+			"the lance strikes once a round, at the same moment on every machine")
+	t.check(giants.downed(-1.0) == 0.0 and giants.downed(0.5) == 0.0 and giants.downed(giants.FALL_TIME * 0.5) > 0.2
+			and giants.downed(giants.FALL_TIME) == 1.0, "struck, the Colossus holds a moment, then goes down")
+	var struck: Transform3D = giants.colossus_at(strike)
+	t.check(giants.colossus_at(strike + 200.0).origin.is_equal_approx(struck.origin),
+			"a fallen Colossus lies where the lance caught it")
+	t.check(giants.shown(100.0) == 1.0 and giants.shown(giants.WRECK_GONE) == 0.0
+			and giants.shown(giants.WRECK_GONE - giants.FADE_TIME * 0.5) > 0.0 and giants.shown(giants.WRECK_GONE - giants.FADE_TIME * 0.5) < 1.0,
+			"the wreck fades into the smoke instead of vanishing")
+	t.check(giants.shown(-giants.LANCE_AT) == 0.0 and giants.shown(-giants.LANCE_AT + giants.FADE_TIME) == 1.0 and giants.shown(-1.0) == 1.0,
+			"the next Colossus walks out of the smoke, and stands whole until the strike")
+	t.check(not giants.colossus_at(strike + every - giants.LANCE_AT + 30.0).origin.is_equal_approx(struck.origin),
+			"the next Colossus walks its round again")
+	var lance_mat := Look.trim("lance") as BaseMaterial3D
+	t.check(lance_mat != null and lance_mat.disable_fog, "the lance burns through the haze")
 	t.check(giants.flight_point(from, over, to, 0.0).is_equal_approx(from) and giants.flight_point(from, over, to, 0.5).is_equal_approx(over)
 			and giants.flight_point(from, over, to, 1.0).is_equal_approx(to),
 			"a dropship wing flies from the capital ship down over the fighting and away")
@@ -413,6 +434,22 @@ static func _skyline(t: Node, raid: Raid) -> void:
 		closest = minf(closest, sky.near_miss(ship, sky.WING_MISS.x, n / 12.0, fmod(n * 0.37, 1.0)).distance_to(ship))
 	t.check(closest > sky.WING_MISS.x - 0.1, "flak bursts round a passing dropship but never on it")
 	t.check(Look.trim("tracer") != null and Look.trim("flak_smoke") != null, "tracers and flak smoke have their own finishes")
+	# Sunlight through the smoke: view only, timed by the wall clock.
+	var shafts: Script = map.get_script().get_script_constant_map()["SUNSHAFTS"]
+	t.check(map.get_node_or_null("SunShafts") == null, "a map without a view draws no sun shafts")
+	t.check(shafts.openness(0.0) < 0.01 and shafts.openness(0.5) > 0.99 and shafts.openness(1.0) < 0.01,
+			"a break in the smoke opens, stands and closes again, never snapping")
+	var opened := 0
+	for i in shafts.SHAFTS:
+		if shafts.openness(shafts.cycle_of(i, 5000.0).y) > 0.5:
+			opened += 1
+	t.check(opened < shafts.SHAFTS, "the shafts open in turn, never all at once")
+	var break_a: Vector2 = shafts.cycle_of(0, 5000.0)
+	var break_b: Vector2 = shafts.cycle_of(0, 5000.0 + shafts.OPEN_TIME.y * 2.0)
+	t.check(break_b.x > break_a.x, "a shaft closes and opens again somewhere new")
+	t.check(shafts.strength(0.0, 0.0) > shafts.strength(1.0, 0.0) and shafts.strength(0.0, 1.0) == 0.0,
+			"the war's smoke dims the sun shafts and a storm hides them")
+	t.check(Look.trim("sun_shaft") is ShaderMaterial, "a sun shaft is a soft cone of light")
 	# The war heard: view only, so a headless map makes no soundscape.
 	t.check(map.get_node_or_null("Soundscape") == null, "a map without a view hears nothing (no soundscape headless)")
 	t.check(is_equal_approx(Soundscape.boom_delay(510.0), 1.5) and is_equal_approx(Soundscape.boom_delay(3000.0), Soundscape.BOOM_DELAY_MAX),
