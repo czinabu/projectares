@@ -39,6 +39,27 @@ extends Raid
 ## a race closes each person's finish goes to the bank, which moves their
 ## rating and pays its scrip (`RaceLeague.apply`).
 ##
+## Ghosts: the authority records every person's lap as it is driven
+## (`Run.recording`, a `RaceGhost`), and a counted lap faster than the
+## racer's best on that track and machine goes to the bank
+## (`LeagueBank.keep_ghost`: the account online, a file solo) and back to
+## the racer (`ghost_kept`). Which ghost a racer chases is theirs to pick on
+## the race icon (`GHOST_PICKS`: their own best, a friend's, the board
+## leader's, or none); `want_ghost` asks for it (solo the bank, online the
+## server, who knows each racer's friends) and `take_ghost` keeps the
+## answer for `RaceView` to play. Friends' best laps come the same way
+## (`friend_bests`) for the pit boards.
+##
+## Getting on and off made easy (Caleb's ask): race control's desks (map
+## markers in group "race_desk", metas "track" and "machine") put whoever
+## uses one straight onto the grid of that track's next race on a fresh
+## machine (`sign_up`, asked as "signup:<track>:<machine>"); the watch desk
+## (no machine) is `RaceView`'s, a view of the racers. Once a person's run
+## is done, they are guided into the pits (the track's `RaceTrack.pit`, a
+## waypoint on their HUD) and set down on pit row when they drive within
+## `PIT_RADIUS` of it, or after `PIT_TIME` wherever they are; the machine
+## goes (a bay fills again by itself).
+##
 ## A world may lay out several tracks (Meridian has Coilrun and Skyhook),
 ## each with its own pit bays, grid, gantry, gates and board. A run is on
 ## the track whose road the machine was nearest when it was got on
@@ -82,6 +103,19 @@ const AI_STUCK := 3.0
 const RADIO_GAP := 5.0
 const RIVAL_GAP := 20.0
 const RADIO_QUIET := 4.0
+## A finished racer is set down within this of the track's pit (metres)...
+const PIT_RADIUS := 9.0
+## ...or this long after their finish, wherever they are (seconds).
+const PIT_TIME := 40.0
+## How near a race control desk or a pit bench a person must stand to use it (metres).
+const DESK_REACH := 3.0
+
+## What the race icon's ghost pick turns through, in order.
+const GHOST_PICKS: Array[String] = ["mine", "friend", "leader", "off"]
+## Solo: where the profile's ghosts are kept (the same file older builds
+## kept the view's ghosts in, read in either form).
+const GHOST_PATH := "user://race_ghosts.json"
+
 ## The callsigns of AI racers who are not named rivals.
 const AI_NAMES: Array[String] = ["Vex Morrow", "Juno Kade", "Rook Halloran", "Sable Ito", "Dax Ferro",
 		"Mika Strand", "Tavi Okonkwo", "Wren Castell", "Bodhi Lark", "Ines Varga", "Cass Rennick", "Oto Brandt"]
@@ -97,6 +131,12 @@ signal heat_changed
 signal radio(actor: Actor, from: String, text: String)
 ## A race moved `actor`'s league standing (sent to their bank).
 signal league_changed(actor: Actor)
+## A person's lap was kept as their best ghost (authority).
+signal ghost_kept(actor: Actor, track_id: String, machine: String, ghost: RaceGhost)
+## A ghost asked for with `want_ghost` came (or came back empty).
+signal ghost_changed
+## Online server: a racer's friends' best laps should be sent again.
+signal bests_changed
 
 ## The first track, and every track the map lays out (`circuits`; `tracks`
 ## is the `Raid`'s footprints).
@@ -125,6 +165,19 @@ var drivers := {}
 var _ai_made := 0
 ## Online client: sends a request (`request`'s action) to the server.
 var send_request: Callable
+## Online client: asks the server for a ghost (pick, track id, machine).
+var send_ghost_ask: Callable
+## "pick|track|machine" -> the ghost asked for: {"name", "machine", "lap",
+## "ghost": RaceGhost}, {} when there is none, {"waiting": true} until it
+## comes (`want_ghost`, `take_ghost`). The local racer's only.
+var ghosts := {}
+## The local racer's friends' best laps: [{"name", "track", "machine",
+## "time"}], fastest first (online only; solo has no friends).
+## Kits fitted this session, ahead of the bank catching up (authority):
+## owner key -> machine -> kit.
+var _tunes := {}
+var friend_bests: Array = []
+var _leaders := {}
 
 
 class Run:
@@ -172,6 +225,14 @@ class Run:
 	## The race radio: when this racer last heard a line, and from whom.
 	var radio_at := -INF
 	var heard := {}
+	## The lap being driven, as a ghost (people only, authority).
+	var recording := RaceGhost.new()
+	## When the run was done (race clock), for the way into the pits.
+	var done_at := 0.0
+	## The machine was made for this run at a desk (`sign_up`).
+	var desk_made := false
+	## The tuning kit fitted for this run (`RaceLeague.KITS`; people only).
+	var kit := "stock"
 
 
 ## One track's live race.
@@ -196,8 +257,8 @@ class Heat:
 		return runs.filter(func(r: Run) -> bool: return not r.ai).size()
 
 
-## Where racers' league standings are kept: nothing here (every racer a
-## fresh rookie, nothing recorded). Keys are owner keys.
+## Where racers' league standings and best-lap ghosts are kept: nothing
+## here (every racer a fresh rookie, nothing recorded). Keys are owner keys.
 class LeagueBank:
 	extends RefCounted
 
@@ -208,16 +269,94 @@ class LeagueBank:
 	func record(_key: String, _result: Dictionary) -> void:
 		pass
 
+	## The racer's best lap on a track and machine, or -1.
+	func best(key: String, track_id: String, machine: String) -> float:
+		return RaceLeague.best_lap(state(key), track_id, machine)
 
-## Solo: the local profile.
+	## Keeps `ghost` as the racer's best there (its `lap_time` is the lap's).
+	func keep_ghost(_key: String, _track_id: String, _machine: String, _ghost: RaceGhost) -> void:
+		pass
+
+	## The fastest ghost kept among `keys` on a track (on `machine`, any
+	## with none), as `StashService.race_ghost` answers. Solo only: the
+	## server asks its accounts, awaited.
+	func ghost_of(_keys: Array, _track_id: String, _machine: String) -> Dictionary:
+		return {"ok": false}
+
+	## Fits `kit` to the racer's `machine` (`RaceLeague.set_kit`, checked first).
+	func tune(_key: String, _machine: String, _kit: String) -> void:
+		pass
+
+
+## Solo: the local profile, and its ghosts in `GHOST_PATH`.
 class ProfileLeagueBank:
 	extends LeagueBank
+
+	## Track id -> machine -> {"lap", "ghost": packed}.
+	var _kept := {}
+	var _loaded := false
 
 	func state(_key: String) -> Dictionary:
 		return RaceLeague.clean(Profile.racing)
 
 	func record(_key: String, result: Dictionary) -> void:
 		Profile.record_race(result)
+
+	func tune(_key: String, machine: String, kit: String) -> void:
+		Profile.tune_race(machine, kit)
+
+	func best(_key: String, track_id: String, machine: String) -> float:
+		load_kept()
+		return RaceLeague.best_lap(Profile.racing, track_id, machine)
+
+	func keep_ghost(_key: String, track_id: String, machine: String, ghost: RaceGhost) -> void:
+		load_kept()
+		if not Profile.keep_race_best(track_id, machine, ghost.lap_time):
+			return
+		if not _kept.has(track_id):
+			_kept[track_id] = {}
+		_kept[track_id][machine] = {"lap": ghost.lap_time, "ghost": ghost.to_packed()}
+		if Profile.persist:
+			var file := FileAccess.open(GHOST_PATH, FileAccess.WRITE)
+			if file != null:
+				file.store_string(JSON.stringify(_kept))
+
+	func ghost_of(_keys: Array, track_id: String, machine: String) -> Dictionary:
+		load_kept()
+		var on := machine if machine != "" else RaceLeague.best_machine(Profile.racing, track_id)
+		var kept: Dictionary = _kept.get(track_id, {}).get(on, {})
+		if kept.is_empty():
+			return {"ok": false}
+		return {"ok": true, "name": Profile.player_name, "machine": on, "lap": float(kept.lap),
+				"ghost": str(kept.ghost)}
+
+	## The ghosts on disk, older builds' too, with their laps noted as the
+	## profile's bests.
+	func load_kept() -> void:
+		if _loaded:
+			return
+		_loaded = true
+		if not FileAccess.file_exists(GHOST_PATH):
+			return
+		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(GHOST_PATH))
+		if not data is Dictionary:
+			return
+		for track_id: Variant in data:
+			if not data[track_id] is Dictionary:
+				continue
+			for machine: Variant in data[track_id]:
+				var entry: Variant = data[track_id][machine]
+				var ghost: RaceGhost = null
+				if entry is Dictionary and entry.has("ghost"):
+					ghost = RaceGhost.from_packed(entry.ghost, str(machine), float(entry.get("lap", -1.0)))
+				else:
+					ghost = RaceGhost.from_data(entry)
+				if ghost == null or ghost.lap_time <= 0.0:
+					continue
+				if not _kept.has(str(track_id)):
+					_kept[str(track_id)] = {}
+				_kept[str(track_id)][str(machine)] = {"lap": ghost.lap_time, "ghost": ghost.to_packed()}
+				RaceLeague.note_best(Profile.racing, str(track_id), str(machine), ghost.lap_time)
 
 
 ## Server: the accounts a `StashService` (or an `AccountLink`) keeps.
@@ -235,6 +374,12 @@ class StashLeagueBank:
 
 	func record(key: String, result: Dictionary) -> void:
 		service.record_race(key, result)
+
+	func tune(key: String, machine: String, kit: String) -> void:
+		service.tune_race(key, machine, kit)
+
+	func keep_ghost(key: String, track_id: String, machine: String, ghost: RaceGhost) -> void:
+		service.keep_ghost(key, track_id, machine, ghost.lap_time, ghost.to_packed())
 
 
 # --- Setting up ---------------------------------------------------------------
@@ -319,6 +464,16 @@ func _on_vehicle_dismounted(actor: Actor, vehicle: Node3D) -> void:
 	var run: Run = runs.get(actor)
 	if run != null and run.vehicle == vehicle:
 		retire(actor)
+		if run.desk_made:
+			# A machine a desk made goes when its racer gets off.
+			_drop_machine.call_deferred(vehicle.get_instance_id())
+
+
+## A desk's machine whose racer got off, once the getting off is done.
+func _drop_machine(id: int) -> void:
+	var vehicle := instance_from_id(id) as Node3D
+	if vehicle != null and vehicle.get("rider") == null:
+		remove_vehicle(vehicle)
 
 
 ## Puts `actor`, riding `vehicle`, on a free start slot, held for the lights.
@@ -335,6 +490,8 @@ func start_run(actor: Actor, vehicle: Node3D) -> void:
 		run.best_lap = old.best_lap
 		run.best_splits = old.best_splits
 	runs[actor] = run
+	run.kit = kit_for(run.key, run.machine)
+	fit(vehicle, run.kit)
 	var heat: Heat = heats.get(run.track.id)
 	if heat != null and heat.phase == "forming" and heat.runs.size() < GRID_SIZE:
 		_join(run, heat)
@@ -374,6 +531,7 @@ func _to_grid(run: Run) -> void:
 	run.last_delta = NAN
 	run.last_lap = -1.0
 	run.total = -1.0
+	run.recording.clear()
 	run.last_pos = vehicle.global_position
 	run.hint = rt.locate(run.last_pos)
 	run_changed.emit(run.actor)
@@ -400,8 +558,13 @@ func _tick_run(run: Run, _delta: float) -> void:
 	var from := run.last_pos
 	run.last_pos = pos
 	run.hint = rt.locate(pos, run.hint)
+	if run.phase == "done" and not run.ai:
+		_tick_pit_in(run, pos)
+		return
 	if run.phase != "racing":
 		return
+	if not run.ai:
+		run.recording.record(clock - run.lap_start, pos, vehicle.global_rotation.y)
 	if run.clean and rt.is_off_track(pos, run.hint):
 		run.clean = false
 		run.actor.notice.emit("Off the track: this lap will not count" if run.heat == null
@@ -442,6 +605,9 @@ func _finish_lap(run: Run, at: float) -> void:
 		# An AI racer's laps are not people's times.
 		if not run.ai:
 			add_record(run.actor.display_name, run.machine, lap_time, state.owner if state != null else "", run.track.id)
+	if counted and not run.ai:
+		_keep_ghost(run, lap_time)
+	run.recording = RaceGhost.new()
 	lap_finished.emit(run.actor, lap_time, counted)
 	run.splits.clear()
 	run.clean = true
@@ -449,6 +615,7 @@ func _finish_lap(run: Run, at: float) -> void:
 	run.next_gate = 1
 	if run.lap >= run.track.laps:
 		run.phase = "done"
+		run.done_at = clock
 		run.total = at - run.go_at
 		if run.heat != null:
 			_finished_in_heat(run)
@@ -457,6 +624,53 @@ func _finish_lap(run: Run, at: float) -> void:
 	else:
 		run.lap += 1
 	run_changed.emit(run.actor)
+
+
+## A person's counted lap: kept as their ghost if it beats their best there.
+func _keep_ghost(run: Run, lap_time: float) -> void:
+	var ghost := run.recording
+	if league_bank == null or ghost.samples() < 10:
+		return
+	var best := league_bank.best(run.key, run.track.id, run.machine)
+	if best > 0.0 and best <= lap_time:
+		return
+	ghost.machine = run.machine
+	ghost.lap_time = lap_time
+	league_bank.keep_ghost(run.key, run.track.id, run.machine, ghost)
+	ghost_kept.emit(run.actor, run.track.id, run.machine, ghost)
+	bests_changed.emit()
+	if run.actor == player:
+		take_ghost("mine", run.track.id, run.machine, {"ok": true, "name": run.actor.display_name,
+				"machine": run.machine, "lap": lap_time, "ghost": ghost})
+
+
+## A person's run is done: once they drive into the pits (or the time for
+## it is up) they are set down on pit row and the machine goes.
+func _tick_pit_in(run: Run, pos: Vector3) -> void:
+	var pit := run.track.pit_spot()
+	var near := Vector2(pos.x - pit.x, pos.z - pit.z).length() <= PIT_RADIUS and absf(pos.y - pit.y) < 6.0
+	if near or clock - run.done_at >= PIT_TIME:
+		set_down(run.actor, not near)
+
+
+## Takes `actor` off their machine and out of their run, standing on pit row
+## (`to_pit`: put there; else where they got off), and the machine goes.
+func set_down(actor: Actor, to_pit := true) -> void:
+	var run: Run = runs.get(actor)
+	if run == null:
+		return
+	var vehicle := run.vehicle
+	var pit := run.track.pit_spot()
+	retire(actor)
+	if is_instance_valid(vehicle):
+		if vehicle.get("rider") == actor:
+			vehicle.call("dismount")
+		remove_vehicle(vehicle)
+	if is_instance_valid(actor):
+		if to_pit:
+			actor.velocity = Vector3.ZERO
+			actor.global_position = _stand(pit + Vector3(0, 0.3, 0))
+		actor.notice.emit("On pit row · take a machine or sign up at race control")
 
 
 ## Ends `actor`'s run: they keep their machine until they get off it, and
@@ -472,6 +686,8 @@ func retire(actor: Actor) -> void:
 		heat_changed.emit()
 	if is_instance_valid(run.vehicle):
 		run.vehicle.set("held", false)
+		if run.kit != "stock":
+			fit(run.vehicle, "stock")
 	if is_instance_valid(actor):
 		run_changed.emit(actor)
 
@@ -485,6 +701,13 @@ func request(actor: Actor, action: String) -> Dictionary:
 			send_request.call(action)
 		return {"ok": true}
 	var run: Run = runs.get(actor)
+	if action.begins_with("tune:"):
+		return tune(actor, action.substr(5))
+	if action.begins_with("signup:"):
+		var parts := action.split(":")
+		if parts.size() != 3:
+			return {"ok": false, "error": "Unknown request"}
+		return sign_up(actor, parts[1], parts[2])
 	match action:
 		"race":
 			return join_race(actor)
@@ -540,6 +763,7 @@ func add_record(racer: String, machine: String, time: float, key := "", track_id
 		if counts[entry.track] <= BOARD_SIZE:
 			kept.append(entry)
 	board = kept
+	_forget_leader_ghosts()
 	board_changed.emit()
 
 
@@ -649,6 +873,130 @@ func join_race(actor: Actor) -> Dictionary:
 		heats[run.track.id] = heat
 	_join(run, heat)
 	return {"ok": true}
+
+
+# --- Tuning ---------------------------------------------------------------------
+
+## Sets `vehicle` to its race profile with `kit` fitted (`RaceLeague.tuned`).
+## Every machine reads as stock unless a person's run fits a kit.
+static func fit(vehicle: Node3D, kit: String) -> void:
+	if not is_instance_valid(vehicle):
+		return
+	vehicle.call("apply_race_profile")
+	if kit == "stock" or not RaceLeague.KITS.has(kit):
+		return
+	var profile := RaceLeague.tuned(vehicle.get("race"), kit)
+	for stat: String in profile:
+		if stat in vehicle:
+			vehicle.set(stat, profile[stat])
+
+
+## A racer's league state with this session's fitted kits over the bank's.
+func tune_state(key: String) -> Dictionary:
+	var state := league_bank.state(key) if league_bank != null else RaceLeague.fresh()
+	var fitted: Dictionary = _tunes.get(key, {})
+	for machine: String in fitted:
+		RaceLeague.set_kit(state, machine, fitted[machine])
+	return state
+
+
+## The kit on a racer's machine (no AI or nameless racer has one).
+func kit_for(key: String, machine: String) -> String:
+	if key == "" or league_bank == null:
+		return "stock"
+	return RaceLeague.kit_of(tune_state(key), machine)
+
+
+## The pit bench for `machine` that `actor` stands at, or null.
+func bench_near(actor: Actor, machine: String) -> Node3D:
+	if map == null:
+		return null
+	for node: Node in _map_nodes("race_tune"):
+		var bench := node as Node3D
+		if bench != null and str(bench.get_meta("machine", "")) == machine \
+				and Vector2(bench.global_position.x - actor.global_position.x,
+						bench.global_position.z - actor.global_position.z).length() <= DESK_REACH:
+			return bench
+	return null
+
+
+## The pit bench: fits the next kit the racer's league has unlocked to
+## their `machine` (round to stock), kept on their account. A machine on
+## the grid takes it at once; one racing keeps its kit to the flag.
+func tune(actor: Actor, machine: String) -> Dictionary:
+	var state := state_for(actor)
+	if state == null or league_bank == null:
+		return {"ok": false, "error": "No tuning here"}
+	if bench_near(actor, machine) == null:
+		return {"ok": false, "error": "Tune a machine at its bench in the pits"}
+	var key: String = state.owner
+	var league := tune_state(key)
+	var kits := RaceLeague.kits_for(league)
+	if kits.size() < 2:
+		return {"ok": false, "error": "Tuning kits open from the %s league" % RaceLeague.league_name(1)}
+	var kit := RaceLeague.next_kit(league, machine)
+	if not _tunes.has(key):
+		_tunes[key] = {}
+	_tunes[key][machine] = kit
+	league_bank.tune(key, machine, kit)
+	var run: Run = runs.get(actor)
+	if run != null and run.machine == machine and run.phase in ["grid", "waiting"]:
+		run.kit = kit
+		fit(run.vehicle, kit)
+		run_changed.emit(actor)
+	actor.notice.emit("%s · %s · %s" % [ItemDB.item_name(machine), RaceLeague.kit_name(kit),
+			str(RaceLeague.KITS[kit].about)])
+	return {"ok": true, "kit": kit}
+
+
+## The race control desk for a track and machine `actor` stands at, or null.
+func desk_near(actor: Actor, track_id: String, machine: String) -> Node3D:
+	if map == null:
+		return null
+	for node: Node in _map_nodes("race_desk"):
+		var desk := node as Node3D
+		if desk != null and str(desk.get_meta("track", "")) == track_id and str(desk.get_meta("machine", "")) == machine \
+				and Vector2(desk.global_position.x - actor.global_position.x,
+						desk.global_position.z - actor.global_position.z).length() <= DESK_REACH:
+			return desk
+	return null
+
+
+## A desk at race control: `actor` goes straight onto the grid of the
+## track's next race on a fresh `machine` (one of the track's own),
+## leaving any run or machine they had. A race forms if none is.
+func sign_up(actor: Actor, track_id: String, machine: String) -> Dictionary:
+	var rt := track_by_id(track_id)
+	if rt == null or rt.id != track_id or machine not in _class_machines(rt):
+		return {"ok": false, "error": "No such race"}
+	if desk_near(actor, track_id, machine) == null:
+		return {"ok": false, "error": "Sign up at race control's desk"}
+	var heat: Heat = heats.get(rt.id)
+	if heat != null and heat.phase == "racing":
+		return {"ok": false, "error": "%s's race is on: the next forms once it is over. Watch it from the desk beside" \
+				% rt.display_name}
+	if heat != null and heat.phase == "forming" and heat.runs.size() >= GRID_SIZE:
+		return {"ok": false, "error": "The grid is full"}
+	var run: Run = runs.get(actor)
+	if run != null and run.heat == heat and heat != null and heat.phase == "forming" and run.machine == machine:
+		return {"ok": true}
+	if actor.vehicle != null:
+		# Off the old machine first (a desk's own goes as you get off).
+		actor.vehicle.call("dismount")
+	retire(actor)
+	var slot: Transform3D = rt.start_slots[0]
+	var vehicle := spawn_vehicle(machine, slot.origin + Vector3(0, 0.4, 0), slot.basis.get_euler().y)
+	if not vehicle.call("mount", actor):
+		remove_vehicle(vehicle)
+		return {"ok": false, "error": "Could not get on"}
+	run = runs.get(actor)
+	if run == null:
+		start_run(actor, vehicle)
+		run = runs.get(actor)
+	if run == null:
+		return {"ok": false, "error": "No machine to race"}
+	run.desk_made = true
+	return join_race(actor)
 
 
 ## Puts `run` on `heat`'s grid, held at a free slot.
@@ -1025,6 +1373,7 @@ func _close_heat(heat: Heat) -> void:
 		if run.phase == "racing":
 			# Out of time: the run ends where it is.
 			run.phase = "done"
+			run.done_at = clock
 			run.total = -1.0
 		if not run.ai and is_instance_valid(run.actor):
 			run.actor.notice.emit("P%d of %d%s" % [i + 1, order.size(), "" if finished else " · did not finish"])
@@ -1159,6 +1508,108 @@ func set_remote_heats(rows: Array) -> void:
 	heat_changed.emit()
 
 
+# --- Ghosts -------------------------------------------------------------------
+
+static func _ghost_slot(pick: String, track_id: String, machine: String) -> String:
+	return "%s|%s|%s" % [pick, track_id, machine]
+
+
+## Asks for the ghost the local racer picked (`GHOST_PICKS`) on a track
+## and machine, once: solo from the bank, online from the server. The
+## answer lands in `ghosts` (`ghost_shown`) and `ghost_changed` says so.
+func want_ghost(pick: String, track_id: String, machine: String) -> void:
+	if pick not in GHOST_PICKS or pick == "off" or track_id == "" or machine == "":
+		return
+	var slot := _ghost_slot(pick, track_id, machine)
+	if ghosts.has(slot):
+		return
+	ghosts[slot] = {"waiting": true}
+	if mode == Mode.CLIENT:
+		if send_ghost_ask.is_valid():
+			send_ghost_ask.call(pick, track_id, machine)
+		return
+	var owners := ghost_owners(pick, player, track_id, machine)
+	var answer: Dictionary = {"ok": false}
+	if league_bank != null and not (owners.keys as Array).is_empty():
+		answer = league_bank.ghost_of(owners.keys, track_id, owners.machine)
+	take_ghost(pick, track_id, machine, answer)
+
+
+## Whose ghosts a pick looks among, for `actor`: {"keys", "machine"} (an
+## empty machine for any). A friend's needs the friends, which only the
+## server knows, so here it is nobody's.
+func ghost_owners(pick: String, actor: Actor, track_id: String, machine: String) -> Dictionary:
+	var state := state_for(actor) if actor != null and is_instance_valid(actor) else null
+	match pick:
+		"mine":
+			return {"keys": [state.owner if state != null else ""], "machine": machine}
+		"leader":
+			var rows := board_for(track_id)
+			if not rows.is_empty():
+				return {"keys": [str(rows[0].get("key", ""))], "machine": str(rows[0].machine)}
+	return {"keys": [], "machine": machine}
+
+
+## Keeps a ghost answer (`StashService.race_ghost`'s, its "ghost" packed
+## text or a `RaceGhost`) for the pick it was asked for.
+func take_ghost(pick: String, track_id: String, machine: String, answer: Dictionary) -> void:
+	var slot := _ghost_slot(pick, track_id, machine)
+	var shown := {}
+	if answer.get("ok", false):
+		var ghost: Variant = answer.get("ghost")
+		var kept_machine := str(answer.get("machine", machine))
+		var lap := float(answer.get("lap", -1.0))
+		if not ghost is RaceGhost:
+			ghost = RaceGhost.from_packed(ghost, kept_machine, lap)
+		if ghost != null and lap > 0.0:
+			ghost.machine = kept_machine
+			ghost.lap_time = lap
+			shown = {"name": str(answer.get("name", "?")).left(24), "machine": kept_machine, "lap": lap,
+					"ghost": ghost}
+	ghosts[slot] = shown
+	ghost_changed.emit()
+
+
+## The ghost for a pick on a track and machine: {"name", "machine", "lap",
+## "ghost"}, or {} (none, or not here yet).
+func ghost_shown(pick: String, track_id: String, machine: String) -> Dictionary:
+	var shown: Dictionary = ghosts.get(_ghost_slot(pick, track_id, machine), {})
+	return shown if shown.has("ghost") else {}
+
+
+## Forgets the board leader's ghosts where a track's leader changed, so
+## they are asked for again.
+func _forget_leader_ghosts() -> void:
+	var now := {}
+	for row: Dictionary in board:
+		if not now.has(row.track):
+			now[row.track] = "%s|%s|%s" % [row.get("key", row.name), row.machine, row.time]
+	for slot: String in ghosts.keys():
+		var track_id := slot.get_slice("|", 1)
+		if slot.begins_with("leader|") and _leaders.get(track_id, "") != now.get(track_id, ""):
+			ghosts.erase(slot)
+	_leaders = now
+
+
+## Online client: the local racer's friends' best laps.
+func set_friend_bests(rows: Array) -> void:
+	friend_bests.clear()
+	for row: Variant in rows.slice(0, 64):
+		if row is Dictionary and float(row.get("time", -1.0)) > 0.0:
+			friend_bests.append({"name": str(row.get("name", "?")).left(24), "track": str(row.get("track", "")),
+					"machine": str(row.get("machine", "")), "time": float(row.time)})
+	board_changed.emit()
+
+
+## A track's friends' best laps, fastest first.
+func friends_on(track_id: String) -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	for row: Dictionary in friend_bests:
+		if row.track == track_id:
+			rows.append(row)
+	return rows
+
+
 # --- Views --------------------------------------------------------------------
 
 ## A run as plain data, for the watch, the visor and `RaceView`, and to send
@@ -1171,6 +1622,7 @@ func run_view(actor: Actor) -> Dictionary:
 	return {
 		"phase": run.phase,
 		"machine": run.machine,
+		"kit": run.kit,
 		"track": run.track.id,
 		"lap": run.lap,
 		"laps": run.track.laps,
@@ -1254,11 +1706,12 @@ static func run_line(view: Dictionary) -> String:
 			if str(view.get("heat", "")) != "":
 				var finish := int(view.get("finish_place", 0))
 				if finish <= 0:
-					return "%s · finished %s · waiting for the rest" % [place, format_time(float(view.get("total", -1.0)))]
+					return "%s · finished %s · head to the pits" % [place, format_time(float(view.get("total", -1.0)))]
 				if float(view.get("total", -1.0)) < 0.0:
 					return "P%d/%d · did not finish" % [finish, int(view.get("field", 1))]
-				return "P%d/%d · %s" % [finish, int(view.get("field", 1)), format_time(float(view.get("total", -1.0)))]
-			return "Finished %s · best %s" % [format_time(float(view.get("total", -1.0))),
+				return "P%d/%d · %s · head to the pits" % [finish, int(view.get("field", 1)),
+						format_time(float(view.get("total", -1.0)))]
+			return "Finished %s · best %s · head to the pits" % [format_time(float(view.get("total", -1.0))),
 					format_time(float(view.get("best_lap", -1.0)))]
 	return ""
 
@@ -1314,6 +1767,11 @@ static func format_delta(delta: float) -> String:
 func set_remote_run(view: Dictionary) -> void:
 	var was := remote_run
 	remote_run = view.duplicate()
+	# The machine under you runs with the kit the server fitted, so it
+	# predicts the same.
+	if player != null and is_instance_valid(player) and player.vehicle != null \
+			and str(view.get("kit", "stock")) != str(was.get("kit", "stock")):
+		fit(player.vehicle, str(view.get("kit", "stock")))
 	if not remote_run.is_empty():
 		remote_run["made"] = Time.get_ticks_msec()
 	if player != null and is_instance_valid(player):
@@ -1332,4 +1790,5 @@ func set_remote_board(rows: Array) -> void:
 			board.append({"name": str(row.get("name", "?")), "machine": str(row.get("machine", "")),
 					"time": float(row.time), "key": str(row.get("name", "?")),
 					"track": str(row.get("track", track.id if track != null else ""))})
+	_forget_leader_ghosts()
 	board_changed.emit()

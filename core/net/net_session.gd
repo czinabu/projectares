@@ -656,6 +656,9 @@ func _start_server_raid() -> void:
 		race.league_bank = Race.StashLeagueBank.new(stash)
 		race.radio.connect(_on_race_radio)
 		race.league_changed.connect(_on_race_league_changed)
+		# Kept ghosts go back to their racer, and friends' times to everyone.
+		race.ghost_kept.connect(_on_race_ghost_kept)
+		race.bests_changed.connect(_send_friend_bests_all)
 	raid.start_server(world)
 
 
@@ -1652,6 +1655,7 @@ func _send_world(peer: int) -> void:
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
 		_race_heats.rpc_id(peer, (raid as Race).public_heats())
+		_send_friend_bests(peer)
 
 
 ## Server: whichever connection plays `actor` now, if it is online, else 0.
@@ -1730,17 +1734,92 @@ func _arena_request(action: String, args: Dictionary) -> void:
 	_board_dirty = true
 
 
-## Race: a racer asks to race, for a restart or to stop their run. The server's own
+## Race: a racer asks to race, signs up at a race control desk
+## ("signup:<track>:<machine>"), tunes at a pit bench ("tune:<machine>"), asks for a restart or to stop their run. The server's own
 ## `Race.request` decides, for the sender's own actor.
 @rpc("any_peer", "call_remote", "reliable")
 func _race_request(action: String) -> void:
+	if not _allow("world"):
+		return
 	var peer := _api.get_remote_sender_id()
 	var race := raid as Race
-	if not is_server or race == null or not _peer_actor.has(peer) or action not in ["race", "restart", "retire"]:
+	if not is_server or race == null or not _peer_actor.has(peer) or action.length() > 80 \
+			or not (action in ["race", "restart", "retire"] or action.begins_with("signup:") \
+					or action.begins_with("tune:")):
 		return
 	var result := race.request(_peer_actor[peer], action)
 	if not result.ok and peer in _api.get_peers():
 		_notice.rpc_id(peer, result.error)
+
+
+## Race: a racer asks for the ghost they picked (`Race.GHOST_PICKS`) on a
+## track and machine. Their own best and the board leader's are the race's
+## to name; a friend's is the fastest among their saved contacts.
+@rpc("any_peer", "call_remote", "reliable")
+func _race_ghost_ask(pick: String, track_id: String, machine: String) -> void:
+	if not _allow("social"):
+		return
+	var peer := _api.get_remote_sender_id()
+	var race := raid as Race
+	if not is_server or race == null or not _here(peer) or not _peer_actor.has(peer) or pick not in Race.GHOST_PICKS:
+		return
+	track_id = track_id.left(32)
+	machine = machine.left(32)
+	var owners := race.ghost_owners(pick, _peer_actor[peer], track_id, machine)
+	var keys: Array = owners.keys
+	if pick == "friend":
+		keys = _friend_ids(_peer_account[peer])
+	var answer: Dictionary = {"ok": false}
+	if not keys.is_empty():
+		answer = await stash.race_ghost(keys, track_id, str(owners.machine))
+	if _here(peer):
+		_race_ghost.rpc_id(peer, pick, track_id, machine, _ghost_out(answer))
+
+
+## A ghost as a racer is sent it: no account id.
+static func _ghost_out(answer: Dictionary) -> Dictionary:
+	if not answer.get("ok", false):
+		return {"ok": false}
+	return {"ok": true, "name": str(answer.get("name", "?")), "machine": str(answer.get("machine", "")),
+			"lap": float(answer.get("lap", -1.0)), "ghost": str(answer.get("ghost", ""))}
+
+
+## The account ids a player keeps as friends: saved contacts they have not
+## blocked (the phone's records).
+func _friend_ids(account_id: String) -> Array:
+	var phone: Dictionary = stash.social_snapshot(account_id) if stash.is_remote() else social.snapshot(account_id)
+	var ids: Array = []
+	for contact: Variant in phone.get("contacts", []):
+		if contact is Dictionary and contact.get("saved", false) and not contact.get("blocked", false):
+			ids.append(str(contact.get("id", "")))
+	return ids
+
+
+## A racer's new best lap goes straight back to them as their own ghost.
+func _on_race_ghost_kept(actor: Actor, track_id: String, machine: String, ghost: RaceGhost) -> void:
+	var peer := _owner_peer(actor)
+	if peer in _api.get_peers():
+		_race_ghost.rpc_id(peer, "mine", track_id, machine, {"ok": true, "name": actor.display_name,
+				"machine": machine, "lap": ghost.lap_time, "ghost": ghost.to_packed()})
+
+
+## Sends one racer their friends' best laps, for the pit boards.
+func _send_friend_bests(peer: int) -> void:
+	if not _here(peer):
+		return
+	var ids := _friend_ids(_peer_account[peer])
+	var rows: Array = []
+	if not ids.is_empty():
+		rows = await stash.race_bests(ids)
+	if _here(peer) and raid is Race:
+		_race_friends.rpc_id(peer, rows)
+
+
+## Someone kept a best lap: everyone's friends' times are sent again.
+func _send_friend_bests_all() -> void:
+	for peer: int in _peer_actor.keys():
+		if peer in _joined_peers:
+			_send_friend_bests(peer)
 
 
 func _on_race_run_changed(actor: Actor) -> void:
@@ -2742,6 +2821,7 @@ func _welcome(actor_id: int) -> void:
 		raid.send_request = arena_request
 	elif raid is Race:
 		raid.send_request = race_request
+		raid.send_ghost_ask = race_ghost_ask
 
 
 ## Client: someone's power weapon slot changed (taken off a rack, swapped,
@@ -3302,6 +3382,28 @@ func arena_request(action: String, args := {}) -> void:
 func race_request(action: String) -> void:
 	if _is_connected() and my_actor_id >= 0:
 		_race_request.rpc_id(1, action)
+
+
+## Race: ask the server for a ghost to chase (see `Race.want_ghost`).
+func race_ghost_ask(pick: String, track_id: String, machine: String) -> void:
+	if _is_connected() and my_actor_id >= 0:
+		_race_ghost_ask.rpc_id(1, pick, track_id, machine)
+
+
+## Race: the ghost asked for (or a new best of your own, as "mine").
+@rpc("authority", "call_remote", "reliable")
+func _race_ghost(pick: String, track_id: String, machine: String, answer: Dictionary) -> void:
+	var race := raid as Race
+	if race != null and str(answer.get("ghost", "")).length() <= 400_000:
+		race.take_ghost(pick, track_id, machine, answer)
+
+
+## Race: your friends' best laps, for the pit boards.
+@rpc("authority", "call_remote", "reliable")
+func _race_friends(rows: Array) -> void:
+	var race := raid as Race
+	if race != null:
+		race.set_friend_bests(rows)
 
 
 ## Race: your own run, as the server judged it.
@@ -3918,6 +4020,9 @@ func _request_contact(action: String, other: String) -> void:
 		return
 	var peer := _api.get_remote_sender_id()
 	_social_answer(peer, await _social_do("contact", account_id, [action, other.left(64)]))
+	if raid is Race and _peer_actor.has(peer):
+		# Friends changed: so do the friends' times on the pit boards.
+		_send_friend_bests(peer)
 
 
 @rpc("authority", "call_remote", "reliable")

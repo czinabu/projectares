@@ -260,10 +260,10 @@ var portal_pick := 0
 var map_pick := 0
 var standing_pick := 0
 var pack_pick := 0
-## On a race track: the race icon's pick, and whether the best lap's ghost
-## is shown (view only, flipped by `main.gd`).
+## On a race track: the race icon's pick, and which ghost is shown
+## (`Race.GHOST_PICKS`; view only, turned by `main.gd`).
 var race_pick := 0
-var ghost_on := true
+var ghost_pick := "mine"
 ## The opened map's targets (`Hud.map_targets`), kept up to date by the HUD
 ## while the watch is up, so the wheel knows how many there are. View only.
 var map_targets: Array[Dictionary] = []
