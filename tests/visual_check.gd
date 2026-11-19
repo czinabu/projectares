@@ -223,6 +223,13 @@ func _ready() -> void:
 		await _armor_shots(out_dir)
 		get_tree().quit()
 		return
+	# `-- <output_dir> --paints-only` shoots every armor paint (rows, the
+	# frame's own colours first) on a light, a medium and a heavy frame
+	# (columns), from the front three-quarter: paints.png.
+	if "--paints-only" in args:
+		await _paint_shots(out_dir)
+		get_tree().quit()
+		return
 	# `-- <output_dir> --visors-only` shoots each helmet's visor in first person.
 	if "--visors-only" in args:
 		await _visor_shots(out_dir)
@@ -2071,6 +2078,66 @@ func _armor_shots(out_dir: String) -> void:
 			sheet.blit_rect(cut, Rect2i(0, 0, size, size), Vector2i(i * size, row * size))
 	sheet.save_png(out_dir.path_join("armor.png"))
 	print("saved armor.png")
+	raid.queue_free()
+
+
+func _paint_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, [Loadout.BARE])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -200, 0)
+	var player := raid.player
+	player.set_physics_process(false)
+	player.cmd.yaw = player.rotation.y
+	player.cmd.pitch = 0.0
+	player.cmd.aim_dir = -player.global_basis.z
+	await _settle(10)
+	var cam := Camera3D.new()
+	raid.add_child(cam)
+	cam.current = true
+	cam.fov = 30.0
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 9.0
+	lamp.light_energy = 1.4
+	cam.add_child(lamp)
+	lamp.position = Vector3(0.8, 0.6, 0)
+	var paints: Array[String] = [""]
+	paints.append_array(ArmorPaint.ids())
+	var frames := ["frame_runner", "frame_trooper", "frame_bulwark"]
+	var size := 300
+	var sheet := Image.create(frames.size() * size, paints.size() * size, false, Image.FORMAT_RGBA8)
+	var base_look := {"build": "m", "head": "Casual_2", "body": "Casual_2", "legs": "Casual_2", "feet": "Casual_2"}
+	for row in paints.size():
+		var look := base_look.duplicate()
+		if paints[row] != "":
+			var chosen := {}
+			for frame_look: String in ArmorPaint.LOOKS:
+				chosen[frame_look] = paints[row]
+			look["paints"] = chosen
+		Look.set_appearance(player, look)
+		for col in frames.size():
+			Loadout.wear_frame(player, frames[col])
+			var skin: Node = player.get_node("Skin")
+			for k in 10:
+				skin._process(1.0 / 60.0)
+				await get_tree().process_frame
+			var f := -player.global_basis.z
+			var r := player.global_basis.x
+			var mid := player.global_position + Vector3(0, 1.12, 0)
+			cam.global_position = mid + (f + r * 0.6).normalized() * 3.5 + Vector3(0, 0.3, 0)
+			cam.look_at(mid)
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut := frame.get_region(Rect2i(w / 2 - h * 3 / 8, h / 8, h * 3 / 4, h * 3 / 4))
+			cut.resize(size, size)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(0, 0, size, size), Vector2i(col * size, row * size))
+	sheet.save_png(out_dir.path_join("paints.png"))
+	print("saved paints.png")
 	raid.queue_free()
 
 

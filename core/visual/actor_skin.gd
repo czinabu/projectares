@@ -1903,6 +1903,23 @@ static func frame_look(id: String) -> String:
 	return FRAME_LOOKS.get(id, WEIGHT_LOOKS[frame_weight(id)])
 
 
+## The colours and details a frame is built in: its look's `FRAME_STYLES`
+## row, worn in the armor paint `paint` (`ArmorPaint.paint_style`; "" for
+## the look's own colours).
+static func frame_style(id: String, paint := "") -> Dictionary:
+	return ArmorPaint.paint_style(FRAME_STYLES[frame_look(id)], paint)
+
+
+## The armor paint this body wears on the frame `id`: the one its
+## appearance picked for the frame's look ("" for none, and always none on
+## a skin's own plates).
+func frame_paint(id: String) -> String:
+	if id == "" or id.begins_with("skin:"):
+		return ""
+	var paints: Variant = _appearance.get("paints", {})
+	return str(paints.get(frame_look(id), "")) if typeof(paints) == TYPE_DICTIONARY else ""
+
+
 ## Puts the worn armor frame on the body, rebuilt when another goes on: the
 ## carrier on the chest, the belt on the hips and a piece on each upper arm,
 ## forearm, thigh and shin, every one hung on the bone it moves with, over
@@ -1914,10 +1931,12 @@ func _update_frame() -> void:
 	var own: String = _def.get("frame", "") if id == "" else ""
 	if own != "":
 		id = "skin:" + own
-	if id == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
+	var paint := frame_paint(id)
+	var key := id + ("|" + paint if paint != "" else "")
+	if key == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
-	_frame_id = id
-	_wear_undersuit(FRAME_STYLES[frame_look(id)] if id != "" else {})
+	_frame_id = key
+	_wear_undersuit(frame_style(id, paint) if id != "" else {})
 	for part in _frame_parts:
 		if is_instance_valid(part):
 			part.queue_free()
@@ -1925,17 +1944,17 @@ func _update_frame() -> void:
 	if id == "" or _skeleton == null:
 		return
 	var height: float = _def.get("height", 1.8)
-	_frame_parts.append(_hang(build_frame(id), "Frame", _def.get("back_bone", ""), frame_offset,
+	_frame_parts.append(_hang(build_frame(id, paint), "Frame", _def.get("back_bone", ""), frame_offset,
 			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
 	var hips: String = _def.get("hip_bone", "")
 	if hips != "" and _skeleton.find_bone(hips) >= 0:
-		_frame_parts.append(_hang(build_belt(id), "Belt", hips, Vector3.ZERO, Vector3.ZERO))
+		_frame_parts.append(_hang(build_belt(id, paint), "Belt", hips, Vector3.ZERO, Vector3.ZERO))
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
-		for limb: Array in [["UpperArm", "LowerArm", build_pad(id, out), Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z)],
-				["LowerArm", "Wrist", build_bracer(id, out), Vector3.ZERO],
-				["UpperLeg", "LowerLeg", build_tasset(id, out), Vector3.ZERO],
-				["LowerLeg", "Foot", build_shin(id, out), Vector3.ZERO]]:
+		for limb: Array in [["UpperArm", "LowerArm", build_pad(id, out, paint), Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z)],
+				["LowerArm", "Wrist", build_bracer(id, out, paint), Vector3.ZERO],
+				["UpperLeg", "LowerLeg", build_tasset(id, out, paint), Vector3.ZERO],
+				["LowerLeg", "Foot", build_shin(id, out, paint), Vector3.ZERO]]:
 			var piece: Node3D = limb[2]
 			var held := _hang_limb(piece, limb[0] + "." + side, limb[1] + "." + side, limb[3])
 			if held == null:
@@ -2028,48 +2047,51 @@ func _drop_materials(part: MeshInstance3D) -> void:
 
 ## A frame's carrier and plates, front toward -Z, built round the chest
 ## bone (`armor_model.gd`): its weight sets the bulk and coverage, its look
-## (`FRAME_STYLES`) the colours and the details. `id` is a frame's item id,
-## a weight or "skin:<weight>". One mesh per material; the named plates are
+## (`FRAME_STYLES`, in its armor paint, `frame_style`) the colours and the
+## details. `id` is a frame's item id, a weight or "skin:<weight>". One mesh per material; the named plates are
 ## in its "parts" meta (`GearShapes.has_part`).
-static func build_frame(id: String) -> Node3D:
-	return _armor("torso", id)
+static func build_frame(id: String, paint := "") -> Node3D:
+	return _armor("torso", id, 0.0, paint)
 
 
 ## The frame's battle belt, built round the hips bone.
-static func build_belt(id: String) -> Node3D:
-	return _armor("belt", id)
+static func build_belt(id: String, paint := "") -> Node3D:
+	return _armor("belt", id, 0.0, paint)
 
 
 ## A shoulder pad for the side `out` (-1 left, 1 right): a dome over the
 ## shoulder and `FRAME_BULK` "pads" lames down the arm, built standing up
 ## the upper arm from the shoulder joint.
-static func build_pad(id: String, out: float) -> Node3D:
-	return _armor("pauldron", id, out)
+static func build_pad(id: String, out: float, paint := "") -> Node3D:
+	return _armor("pauldron", id, out, paint)
 
 
 ## An elbow pad and bracer for the side `out`, built down the forearm.
-static func build_bracer(id: String, out: float) -> Node3D:
-	return _armor("forearm", id, out)
+static func build_bracer(id: String, out: float, paint := "") -> Node3D:
+	return _armor("forearm", id, out, paint)
 
 
 ## A thigh plate (tassets) for the side `out`, built down the thigh from
 ## the hip; the right one carries a drop-leg pouch.
-static func build_tasset(id: String, out: float) -> Node3D:
-	return _armor("thigh", id, out)
+static func build_tasset(id: String, out: float, paint := "") -> Node3D:
+	return _armor("thigh", id, out, paint)
 
 
 ## A knee pad and shin guard (a greave on heavy), built down the shin.
-static func build_shin(id: String, out: float) -> Node3D:
-	return _armor("shin", id, out)
+static func build_shin(id: String, out: float, paint := "") -> Node3D:
+	return _armor("shin", id, out, paint)
 
 
 ## A frame's `piece` ("torso", "belt", "pauldron", "forearm", "thigh",
 ## "shin") for the side `out`, built once per weight, look and side and
-## shared after (`GearShapes.cached`).
-static func _armor(piece: String, id: String, out := 0.0) -> Node3D:
+## shared after (`GearShapes.cached`). `paint` is an armor paint
+## (`ArmorPaint`) or "" for the look's own colours.
+static func _armor(piece: String, id: String, out := 0.0, paint := "") -> Node3D:
 	var weight := frame_weight(id)
-	var style: Dictionary = FRAME_STYLES[frame_look(id)]
-	return ArmorModel.G.cached("%s:%s:%s:%s" % [piece, weight, frame_look(id), out], func() -> Node3D:
+	if not ArmorPaint.PAINTS.has(paint):
+		paint = ""
+	var style := frame_style(id, paint)
+	return ArmorModel.G.cached("%s:%s:%s:%s:%s" % [piece, weight, frame_look(id), out, paint], func() -> Node3D:
 		match piece:
 			"torso":
 				return ArmorModel.torso(weight, style)

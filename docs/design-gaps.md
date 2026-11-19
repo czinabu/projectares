@@ -172,7 +172,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | One everyday currency named scrip | Built | The banked balance and the scrip you carry are both scrip (`Economy`, `Profile.scrip`). Old saves with a "credits" field still load. |
-| Hub cosmetics for scrip: skins, thruster trail colours, watch faces | Partly | The Tailor sells clothing; trail colours and watch faces are missing. |
+| Hub cosmetics for scrip: skins, thruster trail colours, watch faces | Partly | The Tailor sells clothing and armor paints (`ArmorPaint`, picked at the base's armor stands; a few earned only, from Ashfront's warlords and the Heart Warden's vault); trail colours and watch faces are missing. |
 | Blueprints and tech cores, earned through risk, dropped on PvP death until banked | Partly | Blueprints are items tagged `blueprint`, at stake until home, then learned onto the account (`Crafting.learn`, `Profile.blueprints`, the account's online). Vehicle blueprints build the mech and the jet. Missing: tech cores, and the meteor, PvE dungeons and arena as sources. |
 | Mk1 blueprints for weapons and rigs as PvP drops, kept for good once extracted | Partly | Three rig blueprints and two gun blueprints in Ashfront's rooftop caches, and any blueprint from a warlord or supply pod. Missing: blueprints for the other weapons and for helmets. |
 | Upgrade data from hot zones, elites, players, contracts and bounties, kept only on extract | Partly | The item `upgrade_data`: rooftop caches, warlords and supply pods in Ashfront, and whatever a killed player carried. Contracts pay it too (the expedition weeklies). Missing: bounties as a source. |
