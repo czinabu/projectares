@@ -213,6 +213,10 @@ const FERAL_DROPS := [
 
 
 func _init() -> void:
+	# The Glacier (DESIGN.md "Planet kit"): its sky, ground and horizon. Its
+	# rule defaults are only a start; the cold, the shot's carry and the
+	# grip below and in `surface_grip` are Frostline's own.
+	take_planet("glacier")
 	id = "frostline"
 	display_name = "Frostline"
 	description = "A frozen valley climbing to a buried engine. Wardens and Ferals fight each other and you. Co-op, no PvP, you keep your equipped gear when you die."
@@ -300,7 +304,9 @@ func register_items() -> void:
 
 
 func create_map() -> Node3D:
-	return MapScript.new()
+	var map := MapScript.new()
+	map.planet = planet_type()
+	return map
 
 
 func prepare_map() -> void:

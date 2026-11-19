@@ -14,6 +14,10 @@ extends Node3D
 ## and spawns vary. The rest of the game relies only on the map contract in
 ## WorldDef. The ground, its collision and the navigation mesh are worked out
 ## once per run of the game and shared by every copy of the map.
+##
+## It stands on the Glacier planet type (DESIGN.md "Planet kit"): its sky
+## and light, its snow, ice and banded rock on the ground, and its land and
+## shards past the valley's walls out to the horizon, all view only.
 
 const LAYOUT_SEED := 4242
 ## Metres between ground samples, and how many there are along each edge.
@@ -170,6 +174,11 @@ const LAKE_RADIUS := Vector2(44.0, 40.0)
 ## The middle of the lake is thin ice (`WorldDef.thin_ice`): within this
 ## share of its radius a heavy vehicle breaks through. The shore ice holds.
 const THIN_ICE := 0.7
+## The planet's land past the map's edge rises this far, to meet the
+## heightfield's mountains there (DESIGN.md "Planet kit").
+const FAR_RIM := 80.0
+## The planet's props stand this far past the rim's top, or further.
+const PROPS_PAST_RIM := 24.0
 
 
 ## The ground the Engine lies on, levelled flat.
@@ -336,12 +345,16 @@ var _camp := Vector3.ZERO
 ## `bot_count` markers at the start, so a mix of both factions comes first.
 var _bot_spots: Array[Dictionary] = []
 var _weather: Node3D
+## The planet the map stands on (`WorldDef.planet_type`), set before it
+## enters the tree; a map made on its own (as the checks do) takes the
+## Glacier.
+var planet: PlanetType
+## The valley floor's rocks wear the planet's ground, so their tops hold
+## snow and their sides show the banded rock of the walls.
+var ROCK: Material
 
-@onready var SNOW := Look.surface("ground", {"tint": Color(0.62, 0.68, 0.78), "snow": 0.85, "snow_patchy": 0.35,
-		"grime": 0.0, "scale": 0.1, "rough_mult": 0.6, "saturation": 0.25})
 @onready var ICE_WALL := Look.surface("concrete", {"tint": Color(0.36, 0.5, 0.66), "snow": 0.35, "grime": 0.0,
 		"scale": 0.06, "rough_mult": 0.4})
-@onready var ROCK := Look.surface("ground", {"tint": Color(0.3, 0.33, 0.38), "snow": 0.6, "grime": 0.3, "scale": 0.25})
 @onready var STEEL := Look.surface("metal", {"tint": Color(0.42, 0.46, 0.52), "snow": 0.8, "grime": 0.5, "scale": 0.3,
 		"window_glow": Color(1.0, 0.6, 0.3), "lit_windows": 0.15})
 @onready var HULL := Look.surface("metal", {"tint": Color(0.34, 0.38, 0.44), "snow": 0.45, "grime": 0.6, "scale": 0.08})
@@ -353,6 +366,9 @@ var _weather: Node3D
 
 
 func _ready() -> void:
+	if planet == null:
+		planet = PlanetTypes.get_type("glacier")
+	ROCK = Planet.ground_material(planet)
 	_seed_layout()
 	_build_environment()
 	nav_region = NavigationRegion3D.new()
@@ -454,44 +470,12 @@ func _process(_delta: float) -> void:
 
 
 func _build_environment() -> void:
-	# A war that ended long ago: a low bright sun on the snow, long blue
-	# shadows, and clear air down the valley. The only warm colours are the
-	# heaters' and the Engine's one teal light.
-	Look.atmosphere(self, {
-		"sky_tint": Color(0.78, 0.86, 1.0),
-		"sky_saturation": 0.35,
-		"sky_energy": 1.0,
-		"fog_color": Color(0.62, 0.72, 0.86),
-		"fog_density": 0.0016,
-		"haze_height": 0.4,
-		"sun_color": Color(1.0, 0.9, 0.76),
-		"sun_energy": 1.8,
-		"sun_angles": Vector3(-11, -35, 0),
-		"ambient_color": Color(0.45, 0.56, 0.75),
-		"ambient_energy": 0.7,
-		"saturation": 0.85,
-		"contrast": 1.12,
-	}, {}, {
-		# The heart of a whiteout (DESIGN.md "Frostline"): the sun gone to a
-		# pale smear, everything the same blue-white, a body a shape at
-		# 30 m and gone by 70 m (Look.soften_weather keeps it from closing
-		# in further). Flat light, so the snow and the sky run together.
-		"sky_tint": Color(0.86, 0.9, 0.96),
-		"sky_saturation": 0.15,
-		"sky_energy": 0.9,
-		"fog_color": Color(0.8, 0.85, 0.92),
-		"fog_density": 0.985,
-		"fog_depth_begin": 4.0,
-		"fog_depth_end": 55.0,
-		"fog_depth_curve": 0.8,
-		"haze_height": 1.0,
-		"sun_color": Color(0.9, 0.93, 1.0),
-		"sun_energy": 0.45,
-		"ambient_color": Color(0.7, 0.76, 0.86),
-		"ambient_energy": 1.3,
-		"saturation": 0.6,
-		"contrast": 0.95,
-	})
+	# A war that ended long ago: the Glacier's low bright sun on the snow,
+	# long blue shadows, and clear air down the valley. The only warm colours
+	# are the heaters' and the Engine's one teal light. The planet's storm
+	# mood is the heart of a whiteout (DESIGN.md "Frostline"): the sun gone
+	# to a pale smear, a body a shape at 30 m and gone by 70 m.
+	Planet.atmosphere(self, planet)
 	var sun := get_node_or_null("Sun") as DirectionalLight3D
 	if sun != null:
 		# A low sun throws long shadows: reach far enough to keep them.
@@ -606,7 +590,7 @@ func _build_ground() -> void:
 	var collision: PackedFloat32Array = _ground_shared["collision"]
 	terrain.heights = _ground_shared["heights"]
 	_ground_lock.unlock()
-	terrain.build(SNOW, collision)
+	terrain.build(Planet.ground_material(planet), collision)
 	nav_region.add_child(terrain)
 	# Nobody leaves over the mountains.
 	var edge := terrain.extent() * 0.5 - 6.0
@@ -2359,20 +2343,19 @@ func _dress_listening_posts(art: Node3D) -> void:
 		art.add_child(dish)
 
 
-## Ice peaks beyond the rims, fading into the haze.
+## Past the valley's walls the Glacier's own land runs on to the horizon;
+## none of it collides. The land near the map's edge is raised
+## (`FAR_RIM`) to meet the mountains the heightfield ends on. The planet's
+## boulders and shards stand only up on those mountains, past the rim
+## (`PROPS_PAST_RIM`), never where anyone fights or takes cover.
 func _dress_horizon(art: Node3D) -> void:
-	for i in 26:
-		var z := lerpf(300.0, -300.0, float(i) / 25.0) + _art_rng.randf_range(-10.0, 10.0)
-		for side: float in [-1.0, 1.0]:
-			var size := Vector3(_art_rng.randf_range(30, 60), _art_rng.randf_range(40, 90), _art_rng.randf_range(30, 60))
-			var peak := MeshInstance3D.new()
-			var mesh := PrismMesh.new()
-			mesh.size = size
-			mesh.left_to_right = _art_rng.randf_range(0.25, 0.75)
-			mesh.material = ICE_WALL
-			peak.mesh = mesh
-			var x := centre(z) + side * (half_width(z) + RIM_TO + _art_rng.randf_range(60.0, 110.0))
-			peak.position = Vector3(x, terrain.height_at(x, z) + size.y * 0.5 - 6.0, z)
-			peak.rotation.y = _art_rng.randf() * TAU
-			peak.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			art.add_child(peak)
+	var recipe := planet.terrain.duplicate()
+	recipe["rim"] = FAR_RIM
+	var land := PlanetTerrain.new(recipe, LAYOUT_SEED)
+	var half := terrain.extent() * 0.5
+	art.add_child(Planet.horizon(planet, land, half))
+	var height_of := func(x: float, z: float) -> float:
+		return terrain.height_at(x, z) if maxf(absf(x), absf(z)) < half else land.height_at(x, z)
+	var clear := func(x: float, z: float) -> bool:
+		return absf(x - centre(z)) - half_width(z) > RIM_TO + PROPS_PAST_RIM
+	PlanetProps.scatter(art, planet, height_of, half, LAYOUT_SEED + 3, clear)

@@ -1032,8 +1032,13 @@ Basalt Rift, Dune Sea and Spore Marsh. Check by eye with
 `planet_check.tscn -- <dir> [type ids]`. Meridian stands on the Salt Flat:
 its sky, light, salt pan, horizon and rocks (kept clear of the circuits),
 with the pan's grip set back to full, since the race profiles are tuned on
-it. Frostline and Ashfront move in their own PRs once the threads working
-in them have merged.
+it. Frostline stands on the Glacier: its sky and light (the whiteout is the
+type's storm mood), snow, blue ice and banded rock on the valley's ground
+and rocks, and the Glacier's land and peaks past the walls to the horizon
+(raised at the map's edge to meet its mountains; the planet's boulders and
+shards only up past the rim, out of the fight). The cold, the still air's
+carry and the snow and ice grip stay Frostline's own. Ashfront moves in
+its own PR.
 
 ## 3. The watch
 
