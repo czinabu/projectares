@@ -290,9 +290,12 @@ static func build_attachment(id: String) -> Node3D:
 			root.add_child(_glow(Weapon.make_part(Vector3(0.0009, 0.0009, 0.0004), at, Color(1.0, 0.3, 0.2), true), 0.6))
 			# The eyepiece's glass, which the aiming view draws the magnified
 			# picture on (`PlayerController._update_scope`); plain glass else.
-			var lens := _pane(Vector2(radius * 2.0, radius * 2.0), Vector3(0, axis, length * 0.5 - 0.004), cyan)
+			# It sits just behind the eyepiece's rim, nearer the eye than any
+			# part of the tube, and fits inside the rim's flats, so no edge of
+			# the tube ever crosses the picture.
+			var glass := radius * 1.12 * cos(PI / 6.0) * 0.97
+			var lens := _pane(Vector2(glass * 2.0, glass * 2.0), Vector3(0, axis, length * 0.5 + 0.001), cyan)
 			lens.name = "Lens"
-			lens.set_meta("radius", radius * 0.98)
 			root.add_child(lens)
 			# The eye sits a scope's eye relief behind the eyepiece, so the
 			# lens is a picture in the middle of the view, not the whole view.

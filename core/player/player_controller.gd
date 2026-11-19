@@ -42,6 +42,8 @@ enum ViewMode { FIRST, THIRD }
 ## How the melee side is picked: by flicking the mouse, or by the movement keys.
 enum StanceControl { MOUSE, MOVE }
 
+## The meta a station's view camera carries (`screen_view_up`).
+const SCREEN_VIEW := "screen_view"
 const VIEW_NAMES := ["First-person", "Third-person"]
 const STANCE_CONTROL_NAMES := ["mouse flick", "movement keys"]
 const STANCE_CONTROL_HINTS := [
@@ -64,6 +66,11 @@ var input_blocked := false
 ## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
 ## the view until the phone is.
 var phone_out := false
+## Set while a view setting's slider is dragged on the phone (`Main`, Caleb's
+## ask for a live preview): the view stops dropping to the phone, zooming
+## in on it and reading it from close, so the field of view and the camera
+## are shown as they are; the phone stays in the hand.
+var phone_preview := false
 ## Crouched by the crouch key: a toggle, sent as the held `ActorCommand.crouch`.
 ## Sprinting, jumping or getting on a vehicle stands you back up.
 var crouch_toggled := false
@@ -185,6 +192,9 @@ var scope_pixels := 640
 ## How far ahead the scope's camera starts drawing, so the gun and the scope
 ## itself are never in their own picture.
 var scope_near := 0.9
+## The nearest the lens is taken to be in front of the eye, so the picture's
+## zoom can never blow up while the gun is still coming up.
+var scope_min_reach := 0.05
 var _scope_view: SubViewport
 var _scope_cam: Camera3D
 var _scope_mat: ShaderMaterial
@@ -1027,6 +1037,17 @@ func _live_aim() -> void:
 		motion.live_yaw = yaw
 
 
+## True while a station's own view has the screen (a `WorldScreen` or the
+## bench's view, which set `SCREEN_VIEW` on their camera): they stand about
+## where the head is, so the head is left out of them as in first person,
+## wherever the player stands (Caleb's feedback: it blocked the bench).
+func screen_view_up() -> bool:
+	if not is_inside_tree():
+		return false
+	var current := get_viewport().get_camera_3d()
+	return current != null and current != camera and current.has_meta(SCREEN_VIEW)
+
+
 func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
@@ -1046,7 +1067,7 @@ func _process(delta: float) -> void:
 	_update_recoil(delta)
 	_update_dip(delta)
 	_update_shake(delta)
-	_phone_look = move_toward(_phone_look, 1.0 if phone_out and not actor.is_dead else 0.0, phone_read_rate * delta)
+	_phone_look = move_toward(_phone_look, 1.0 if phone_out and not phone_preview and not actor.is_dead else 0.0, phone_read_rate * delta)
 	var reading_pitch := phone_mirror_pitch if mirror_in_view() else phone_view_pitch
 	var view_pitch := lerpf(pitch, reading_pitch, smoothstep(0.0, 1.0, _phone_look))
 	var look := Basis.from_euler(Vector3(view_pitch + _shake.y, yaw + _shake.x, 0.0))
@@ -1098,7 +1119,7 @@ func _process(delta: float) -> void:
 		actor.body_mesh.visible = true
 	camera.cull_mask = 0xFFFFF & ~(1 << (MirrorScript.HEAD_LAYER - 1)) if first_person else 0xFFFFF
 	if skin != null and skin.has_method("hide_head"):
-		skin.hide_head(first_person)
+		skin.hide_head(first_person or screen_view_up())
 	ActionPose.of(actor).advance(delta)
 	# Aiming down sights the body brings the gun up to its eyes, the same in
 	# both views (`ActionPose.ads`). First person then settles the eye on the
@@ -1145,12 +1166,22 @@ func _update_scope(gun: Gun) -> void:
 		_scope_mat.set_shader_parameter("view", _scope_view.get_texture())
 	_scope_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	lens.material_override = _scope_mat
+	# The lens is read where it is drawn this frame (`ActionPose.shown_global`),
+	# never where the last physics tick parked the hand: that spot is off the
+	# eye line, so the zoom worked out from it jumped about from frame to
+	# frame (Caleb's buggy 4x and 8x picture).
+	var glass := ActionPose.shown_global(gun, lens.global_transform)
 	var eye := camera.global_transform
 	var ahead := -eye.basis.z.normalized()
-	var reach := maxf((lens.global_position - eye.origin).dot(ahead), 0.01)
-	var half := (lens.mesh as QuadMesh).size.y * 0.5 * lens.global_basis.get_scale().y
+	var reach := maxf((glass.origin - eye.origin).dot(ahead), scope_min_reach)
+	var half := (lens.mesh as QuadMesh).size.y * 0.5 * glass.basis.get_scale().y
 	var zoom := maxf(gun.aim_zoom(), 1.0)
-	_scope_cam.global_transform = eye
+	# The picture looks where the eye aims, turned with the glass it is drawn
+	# on, so a canted scope never shows the world tipped inside its lens.
+	var up := glass.basis.y - ahead * glass.basis.y.dot(ahead)
+	if up.length_squared() < 0.0001:
+		up = eye.basis.y
+	_scope_cam.global_transform = Transform3D(Basis.looking_at(ahead, up.normalized()), eye.origin)
 	_scope_cam.cull_mask = camera.cull_mask
 	_scope_cam.near = scope_near
 	_scope_cam.fov = rad_to_deg(2.0 * atan(half / reach / zoom))
@@ -1417,7 +1448,8 @@ func is_third_person() -> bool:
 ## from over the shoulder and widens to keep the reflection in frame.
 func _read_phone(delta: float) -> void:
 	var face := phone_panel()
-	var wanted := 1.0 if phone_out and face != null and _wants_third_person() and not actor.is_dead else 0.0
+	var wanted := 1.0 if phone_out and not phone_preview and face != null and _wants_third_person() \
+			and not actor.is_dead else 0.0
 	phone_read = move_toward(phone_read, wanted, phone_read_rate * delta)
 	if phone_read <= 0.0 or face == null:
 		return
@@ -1445,7 +1477,7 @@ func _read_phone(delta: float) -> void:
 
 ## Whether the view is zoomed in on the phone in the hand (`phone_zoom`).
 func phone_zoomed() -> bool:
-	return phone_out and phone_panel() != null and not actor.is_dead and not mirror_in_view()
+	return phone_out and not phone_preview and phone_panel() != null and not actor.is_dead and not mirror_in_view()
 
 
 ## The field of view (degrees) from where the camera is now at which the

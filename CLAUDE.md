@@ -41,7 +41,12 @@ without Caleb, and update the gap list when a PR closes a row.
   and the aim stay put, and the view zooms in on it like aiming down sights
   until the phone stands `phone_zoom` of the view's height, whatever the
   field of view setting, with all of it kept in frame (`phone_fit_fov`,
-  Caleb's pick so the screen reads; not with the mirror up).
+  Caleb's pick so the screen reads; not with the mirror up). While a
+  view setting's slider is dragged on the phone (`Phone.PREVIEW_KEYS`)
+  all of that lets go (`PlayerController.phone_preview`) so the change is
+  seen live, and the slider follows the mouse's motion. The Mirror app
+  lowers the phone (`Phone.mirror_lowered`, `held`, Caleb's call) so the
+  mirror shows the whole kit; a click, right click or Esc brings it up.
   The third-person camera stands over the right shoulder
   (`PlayerController.shoulder`) and, aiming, moves in and further out
   over it (`shoulder_aim`), so the head never sits on the sight line;
@@ -625,7 +630,13 @@ without Caleb, and update the gap list when a PR closes a row.
   with the shoulder; `camera_tests.gd` (`_check_steady_on_the_run`)
   measures it. In a fight the run-and-shoot arms come back and the gun points where
   it shoots; a shot, aim or reload takes it out of the carry at once
-  (`carry_out_rate`). All of it is read from velocity and the command, so
+  (`carry_out_rate`). A tap of aim is not a fight: let go without a shot,
+  the gun goes back to its carry after `ActorSkin.aim_release_hold`, not
+  `aim_hold` (Caleb's in-between wobble). Held up at the hip on the move,
+  the gun rides the same steadied frame as the carry at the clip's wrist
+  averaged over a stride, turned to the aim (`WeaponArm._hold_at_hip`), so
+  the clip's arm swing never reaches it; `_check_hip_after_aim_tap`
+  measures it. All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
@@ -663,7 +674,10 @@ without Caleb, and update the gap list when a PR closes a row.
   the shoulders from behind)
   and leaves out only the head (`ActorSkin.hide_head` moves it and what is
   worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
-  a mirror still see it). Never build a first-person-only copy of the arms,
+  a mirror still see it). A station's own view (the bench's, a
+  `WorldScreen`'s) stands about where the head is, so it leaves the head
+  out the same way in either view (`PlayerController.screen_view_up`, its
+  camera's `SCREEN_VIEW` meta; Caleb's feedback: it blocked the bench). Never build a first-person-only copy of the arms,
   a weapon or a prop, and never move anything in front of the camera for
   first person. Aiming down sights is a body animation, the same in both
   views (`ActionPose.ads`, eased by `ads_rate`): `WeaponArm._reach_sight`
@@ -1950,7 +1964,16 @@ without Caleb, and update the gap list when a PR closes a row.
   An AI racer is a bot (meta "race_ai") on a machine of its own, driven
   only through its `ActorCommand` by a `RaceDriver`, which is also the
   bench's driver; never give one speed, grip or a rule a player lacks, and
-  never put its laps on the board. Where a road runs over
+  never put its laps on the board. The league (`core/race/race_league.gd`,
+  static rules like `Contracts`) is kept on the account (`Profile.racing`,
+  `Account.racing`, in the snapshot and `StashRules.CARRIED`) and moved
+  only by a live race's close: the authority's `Race` sends each person's
+  finish to its `league_bank` (`StashLeagueBank` online, a sure
+  `record_race` call; `ProfileLeagueBank` solo), where `RaceLeague.apply`
+  moves the rating and pays the capped scrip. A grid's AI are the named
+  rivals of its best rider's league; their radio lines go only to the
+  racer they are said to (`Race.radio`, `NetSession._race_radio`) and are
+  drawn on the visor (`Hud.comms`, `VisorHud._draw_comms`). Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
   (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration

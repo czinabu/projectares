@@ -60,6 +60,12 @@ static func ensure_loaded() -> void:
 	_loaded = true
 	load_settings()
 	apply()
+	# Once more after the first frame: a window still being shown at start
+	# can drop the mode set before it, leaving it the other way round from
+	# the setting.
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null:
+		tree.process_frame.connect(apply_window, CONNECT_ONE_SHOT)
 
 
 static func reset() -> void:
@@ -125,11 +131,26 @@ static func apply() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	apply_graphics()
-	var want := DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
+	apply_window()
+
+
+## Whether the game's window is fullscreen now, read from the window
+## itself (Caleb's report: the switch read the other way round when the
+## window and the saved setting disagreed). With no window, the setting.
+static func window_is_full() -> bool:
+	if DisplayServer.get_name() == "headless":
+		return fullscreen
 	var mode := DisplayServer.window_get_mode()
-	var is_full := mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
-	if is_full != fullscreen:
-		DisplayServer.window_set_mode(want)
+	return mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+
+
+## Puts the window in the mode the setting asks for, whatever it is in now.
+static func apply_window() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if window_is_full() != fullscreen:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen
+				else DisplayServer.WINDOW_MODE_WINDOWED)
 
 
 ## Sets the main view's edge smoothing (only the main view: the scope's and

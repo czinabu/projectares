@@ -4135,6 +4135,19 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open_app("news")
 	await _settle(10)
 	await _shot(out_dir.path_join("phone_news.png"))
+	# The Racing app with a few races run (a copy: the profile is put back).
+	var racing_before: Dictionary = Profile.racing.duplicate(true)
+	var league := preload("res://core/race/race_league.gd")
+	var state: Dictionary = league.fresh()
+	for result: Dictionary in [{"track": "coilrun", "place": 2, "field": 8, "behind": ["pip", "moss"]},
+			{"track": "skyhook", "place": 5, "field": 8, "ahead": ["moss"], "behind": ["haro"]},
+			{"track": "coilrun", "place": 1, "field": 8, "behind": ["pip", "haro"]}]:
+		state = league.apply(state, result, 1).state
+	Profile.racing = state
+	phone.open_app("racing")
+	await _settle(10)
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_racing_screen.png"))
+	Profile.racing = racing_before
 	phone.open_app("settings")
 	await _settle(10)
 	await _shot(out_dir.path_join("phone_settings.png"))
@@ -4147,6 +4160,13 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open_settings_tab("view")
 	await _settle(10)
 	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_view_screen.png"))
+	# Dragging a view slider: the view shows itself as it is, live.
+	controller.phone_preview = true
+	controller.base_fov = 100.0
+	await _settle(30)
+	await _shot(out_dir.path_join("phone_settings_preview.png"))
+	controller.phone_preview = false
+	controller.base_fov = 80.0
 	phone.open_settings_tab("dev")
 	await _settle(10)
 	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_settings_dev_screen.png"))
@@ -4170,6 +4190,19 @@ func _phone_shots(out_dir: String) -> void:
 	controller.toggle_view()
 	await _settle(40)
 	await _shot(out_dir.path_join("phone_mirror_first.png"))
+	# Lowered to look in the mirror: the whole kit shows, in both views.
+	phone.mirror_up = true
+	phone.set_mirror_lowered(true)
+	controller.phone_out = phone.held()
+	await _settle(40)
+	await _shot(out_dir.path_join("phone_mirror_lowered_first.png"))
+	controller.toggle_view()
+	await _settle(40)
+	await _shot(out_dir.path_join("phone_mirror_lowered_third.png"))
+	controller.toggle_view()
+	phone.set_mirror_lowered(false)
+	phone.mirror_up = false
+	controller.phone_out = true
 	controller.phone_mirror = null
 	mirror.queue_free()
 	phone.go_home()
