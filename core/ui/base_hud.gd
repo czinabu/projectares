@@ -136,6 +136,7 @@ func _update_wrist(delta: float) -> void:
 	wrist.mount(p, controller, visible, delta)
 	var slots := Hud.base_watch_slots("Home base" if base.owner_name == "" else "%s's base" % base.owner_name, base.loadout,
 			contracts, controller.portal_pick if controller != null else 0, p if is_instance_valid(p) else null,
+			controller.emote_pick if controller != null else 0, controller.emote_playing if controller != null else "",
 			objective, controller.mission_pick if controller != null else 0,
 			controller != null and controller.watch_open == "contract")
 	if controller != null:

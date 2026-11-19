@@ -48,6 +48,11 @@ var reload_pressed := false
 ## Unused since melee became timing based (the blade picks its own sides,
 ## `MeleeWeapon.next_stance`); kept so the packet layout stays the same.
 var stance := 0
+## Held: the emote playing (`Emotes.IDS`, counting from 1; 0 for none).
+## Nothing in the simulation reads it; it travels with the held keys, in
+## the stance's slot (`EMOTE_SHIFT`), so everyone sees the same emote
+## (`ActionPose.emote`, `Locomotion.emote_pose`).
+var emote := 0
 
 var interact_pressed := false
 var heal_pressed := false
@@ -108,6 +113,10 @@ const ARRAY_SIZE := 10
 const FLAGS_INDEX := 7
 const STANCE_INDEX := 8
 const SWITCH_INDEX := 9
+## The emote rides in the stance's slot above its two bits, so the packet
+## stays the same size (`NetSession.pack_inputs` sends it as one byte).
+const EMOTE_SHIFT := 2
+const MAX_EMOTE := 31
 
 const FLAG_SPRINT := 1
 const FLAG_JUMP := 2
@@ -192,7 +201,7 @@ func flags() -> int:
 
 
 func to_array() -> Array:
-	return [move.x, move.y, yaw, pitch, aim_dir.x, aim_dir.y, aim_dir.z, flags(), stance, switch_weapon]
+	return [move.x, move.y, yaw, pitch, aim_dir.x, aim_dir.y, aim_dir.z, flags(), (clampi(emote, 0, MAX_EMOTE) << EMOTE_SHIFT) | clampi(stance, 0, 3), switch_weapon]
 
 
 ## Fills this command from `to_array` output. Values are clamped, because on a
@@ -237,7 +246,9 @@ func apply_array(data: Array) -> void:
 	helmet_off = bits & FLAG_HELMET_OFF != 0
 	visor_level = (bits & VISOR_LEVEL_MASK) >> VISOR_LEVEL_SHIFT
 	phone = bits & FLAG_PHONE != 0
-	stance = clampi(int(_number(data[STANCE_INDEX])), 0, 2)
+	var held := maxi(int(_number(data[STANCE_INDEX])), 0)
+	stance = clampi(held & 3, 0, 2)
+	emote = clampi(held >> EMOTE_SHIFT, 0, MAX_EMOTE)
 	switch_weapon = clampi(int(_number(data[SWITCH_INDEX])), HOLSTER, 8)
 
 

@@ -333,6 +333,19 @@ without Caleb, and update the gap list when a PR closes a row.
   world doorway (`heat_signs`) and the wanted on the most-wanted board
   (`wanted_text`, the map's "wanted_board" label). Anything else that
   advertises a world reads `world_status`, not a second channel.
+- The Concourse's megacity (Caleb's "tall and grand"): the deck is one
+  terrace part way up a city, not its roof. `worlds/plaza/megacity.gd`
+  (view only, built by the map only where `Look` is on, its own RNG) stands
+  rings of towers from a canyon floor far below (`FLOOR_Y`) to over a
+  kilometre above, landmark spires, skyways (the near ring tied out past
+  the rail, `_ties`), a monorail ring, lit signs and air traffic.
+  Windows are never geometry: `megacity.gdshader` lights them floor by floor
+  from the world position (the near ring wears it too, `material_for(true)`)
+  and does its own haze; the traffic is one MultiMesh flown by
+  `sky_traffic.gdshader` (the monorail's trains too). All of it is a handful of meshes, so a new tower
+  is a box in the same batch, never a node. The map asks the view to draw
+  out to `VIEW_FAR` (its "view_far" meta). Check by eye with
+  `visual_check.tscn -- <dir> --hub-only`.
 - The War Room (DESIGN.md section 2, "Spectating screens"): the plaza's
   big screen is `WarRoom` (`core/social/war_room.gd`, view only, made by
   `PlazaView` only where `Look` is on, drawn into a `SubViewport` on the
@@ -469,7 +482,8 @@ without Caleb, and update the gap list when a PR closes a row.
   without a slot keeps its gun on the target and holds fire, crouched in
   cover from the target's eyes (`_find_cover`, a few ray probes every
   1.5 s) or, past the outer ring, working round a flank. Return fire
-  (`return_fire_time`) and anything inside `point_blank` skip the queue,
+  (`return_fire_time`, not for a kind with the meta "holds_turn",
+  Frostline's Wardens) and anything inside `point_blank` skip the queue,
   and bots fighting bots are never rationed (`BotBrain.is_person`). Spotting
   takes longer far off and against a crouch (`notice_mult`), and the gun
   comes up halfway through the reaction with a bark heard nearby
@@ -1668,6 +1682,31 @@ without Caleb, and update the gap list when a PR closes a row.
   switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+- Emotes (DESIGN.md "Emotes", `core/visual/emotes.gd`): picked on the
+  watch's emote icon (Status tab, `Hud.emote_slot`), played by the
+  controller as the held `ActorCommand.emote` (in the stance's byte,
+  `EMOTE_SHIFT`), so they predict and replicate with no message of their
+  own, and posed on the one body (`ActionPose.emote`, timed by each view;
+  `Locomotion._emote_body` and `emote_pose`), the same in both views. View
+  only: nothing in the simulation reads one. Moving, firing, drawing, the
+  phone or watch, a vehicle or the air ends one, and starting one puts the
+  weapon away (`PlayerController._tick_emote`). A new emote is an
+  `Emotes.IDS` entry and a pose; check by eye with `visual_check.tscn --
+  <dir> --emotes-only`. Shortcut keys (DESIGN.md "Shortcut keys") only
+  raise the same watch or take out the same phone at an icon or app
+  (`PlayerController.watch_shortcut`, `quick_emote`, `Phone.shortcut`),
+  never a menu of their own; a new one is an `InputSetup` action and a
+  `Phone.CONTROLS` row, and no two actions share a key (a test checks it).
+- Squads and friends (DESIGN.md "Squads and friends"): a squad is the
+  server's `SocialService` (made by a "squad" invite, kept in memory, left
+  with "squad" ["leave"] or by going offline, `MAX_SQUAD`), and it is the
+  key `Raid.set_squad` keeps for portals in place of the clan
+  (`NetSession._set_squad_key`, refreshed with every phone snapshot), never
+  a side. Squad chat is a message "to" `SocialService.SQUAD_CHAT`. Which
+  world someone is in (`world_of`) is shown only to friends (contacts who
+  saved each other) and squadmates, and the phone's Join goes there through
+  `Main.join_world` (the squad portal's way), never from a world where gear
+  is at stake.
 - Bug reports (the must-work checklist's "Bug reporting with logs"): the
   phone's Report app (`Phone.report_requested`) hands `Main` a line of
   text, and `core/report/bug_report.gd` (`Main.bug_report`, view and

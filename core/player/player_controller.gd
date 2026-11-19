@@ -268,6 +268,15 @@ var artifact_pick := 0
 ## Which destination is picked out on the watch's portal icon
 ## (`portal_choices`), counting from 0.
 var portal_pick := 0
+## Which emote is picked out on the watch's emote icon (`Emotes.IDS`), the
+## emote playing ("" for none) and the seconds it has left (0 for one held
+## until you move). Sent as the held `ActorCommand.emote`.
+var emote_pick := 0
+var emote_playing := ""
+var emote_left := 0.0
+## True on the tick an emote started, so its own holster is not taken for
+## a weapon key that ends it.
+var _emote_fresh := false
 ## The opened Status icons and the pack list (Caleb's call: Status icons open
 ## with a click): the map target picked out, the Standing page, and the
 ## item picked out in the pack. View only.
@@ -398,6 +407,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		wrist_raised = not wrist_raised
 		watch_focus_moved = false
 		watch_open = ""
+	elif event.is_action_pressed("emote_wheel"):
+		watch_shortcut("emote")
+	elif event.is_action_pressed("watch_map"):
+		watch_shortcut("map")
+	elif event.is_action_pressed("quick_emote"):
+		quick_emote()
+	elif event.is_action_pressed("ping") and captured and is_instance_valid(actor) and not actor.is_dead:
+		ping_requested.emit()
 	elif event.is_action_pressed("sign_out"):
 		sign_out_requested.emit()
 	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
@@ -406,6 +423,30 @@ func _unhandled_input(event: InputEvent) -> void:
 			and actor.is_dead and event.keycode >= KEY_1 and event.keycode <= KEY_9:
 		drop_pick = event.keycode - KEY_1
 		drop_requested.emit(event.keycode - KEY_1)
+
+
+## A shortcut key for watch icon `id` (the emote wheel, the map): raises
+## the watch straight onto it, opened if it holds several things, or lowers
+## it if it is already up there. The same watch the check-wrist key raises,
+## so the wheel and a click work on it as usual.
+func watch_shortcut(id: String) -> void:
+	if wrist_raised and watch_focus_moved and focused_watch_icon() == id:
+		wrist_raised = false
+		watch_open = ""
+		return
+	wrist_raised = true
+	watch_focus = Hud.Wrist.SLOTS.find(id)
+	watch_focus_moved = true
+	watch_open = id if watch_entries(id) > 1 else ""
+
+
+## The quick emote key: plays the emote last picked on the watch, or stops
+## the one playing.
+func quick_emote() -> void:
+	if emote_playing != "":
+		stop_emote()
+	else:
+		start_emote(Emotes.IDS[clampi(emote_pick, 0, Emotes.IDS.size() - 1)])
 
 
 ## How many places to land the watch's death report offers now.
@@ -560,6 +601,15 @@ func click_watch() -> bool:
 		var at := clampi(mission_pick if watch_open == "contract" else 0, 0, missions.size() - 1)
 		GameSettings.cycle_mission(str(missions[at].key))
 		return true
+	if is_watch_on("emote") and _is_open("emote"):
+		var picked: String = Emotes.IDS[clampi(emote_pick, 0, Emotes.IDS.size() - 1)]
+		if picked == emote_playing:
+			stop_emote()
+		else:
+			start_emote(picked)
+		wrist_raised = false
+		watch_open = ""
+		return true
 	if is_watch_on("portal") and not portal_choices().is_empty() and _is_open("portal"):
 		var choices := portal_choices()
 		portal_requested.emit(choices[clampi(portal_pick, 0, choices.size() - 1)])
@@ -572,7 +622,7 @@ func click_watch() -> bool:
 ## True while fire works the raised watch instead of the weapon.
 func watch_takes_fire() -> bool:
 	return (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
-			or is_watch_on("ping") or is_watch_on("portal") or is_on_sign_out() \
+			or is_watch_on("ping") or is_watch_on("portal") or is_watch_on("emote") or is_on_sign_out() \
 			or (is_watch_on("helmet") and actor.visor.enabled) \
 			or (is_watch_on("map") and not map_targets.is_empty()) \
 			or (watch_open == "standing" and is_watch_on(watch_open)) \
@@ -689,6 +739,8 @@ func watch_entries(id: String) -> int:
 			return Hud.artifact_entries(actor).size()
 		"portal":
 			return portal_choices().size()
+		"emote":
+			return Emotes.IDS.size()
 		"map":
 			return map_targets.size()
 		"standing":
@@ -711,6 +763,8 @@ func _watch_pick(id: String) -> int:
 			return artifact_pick
 		"portal":
 			return portal_pick
+		"emote":
+			return emote_pick
 		"map":
 			return map_pick
 		"standing":
@@ -732,6 +786,8 @@ func _set_watch_pick(id: String, pick: int) -> void:
 			artifact_pick = pick
 		"portal":
 			portal_pick = pick
+		"emote":
+			emote_pick = pick
 		"map":
 			map_pick = pick
 		"standing":
@@ -885,6 +941,8 @@ func _physics_process(delta: float) -> void:
 		cmd.visor_level = 0
 		stop_inspect()
 		cmd.inspect = false
+		stop_emote()
+		cmd.emote = 0
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	cmd.yaw = yaw
@@ -968,6 +1026,49 @@ func _physics_process(delta: float) -> void:
 			or cmd.interact_pressed or cmd.switch_weapon != -1:
 		stop_inspect()
 	_tick_inspect(cmd, delta)
+	_tick_emote(cmd, delta)
+
+
+## Starts emote `id` (`Emotes`): the weapon in hand is put away and the body
+## plays it until it ends, or until you move, jump, fire, draw, ride or get
+## the phone or watch out. Nothing on a vehicle, in the air or down.
+func start_emote(id: String) -> void:
+	if actor == null or not is_instance_valid(actor) or actor.is_dead or is_riding() \
+			or not actor.is_on_floor() or Emotes.number_of(id) <= 0:
+		return
+	emote_playing = id
+	emote_left = Emotes.seconds_of(id)
+	_emote_fresh = actor.get_active_weapon() != null
+	crouch_toggled = false
+	stop_inspect()
+	if actor.get_active_weapon() != null:
+		_pending_switch = ActorCommand.HOLSTER
+
+
+func stop_emote() -> void:
+	emote_playing = ""
+	emote_left = 0.0
+	_emote_fresh = false
+
+
+## Counts a one-off emote down and ends any once the body is wanted for
+## something else. Sends what is playing as the held `cmd.emote`.
+func _tick_emote(cmd: ActorCommand, delta: float) -> void:
+	if emote_playing != "":
+		var switched := cmd.switch_weapon != -1 and not (_emote_fresh and cmd.switch_weapon == ActorCommand.HOLSTER)
+		if cmd.move.length() > 0.1 or cmd.jump_pressed or cmd.jump or cmd.sprint or cmd.dash or cmd.slide \
+				or cmd.crouch or cmd.primary_pressed or cmd.secondary_pressed or cmd.reload_pressed \
+				or cmd.heal_pressed or cmd.ability_pressed or cmd.kick_pressed or cmd.interact_pressed \
+				or switched or wrist_raised or phone_out or is_riding() or actor.is_dead \
+				or actor.airborne_time > 0.15 or held_toy != "":
+			stop_emote()
+		elif emote_left > 0.0:
+			emote_left -= delta
+			if emote_left <= 0.0:
+				stop_emote()
+	if cmd.switch_weapon != -1:
+		_emote_fresh = false
+	cmd.emote = Emotes.number_of(emote_playing) if emote_playing != "" else 0
 
 
 ## Takes the worn helmet off onto the hip, or puts it back on (the watch's

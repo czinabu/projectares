@@ -22,8 +22,9 @@ and add a row for each new source.
 | `assets/props` `Backpack` `GasCan` `PropaneTank` `Trashcan` `Tent` `Bonfire` | Survival Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/survival.html |
 | `assets/props` `Streetlight_*` `TrafficLight` `Sign_Stop` | Modular Streets Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/modularstreets.html |
 | `assets/props` `Wreck_Tank` | Animated Tanks Pack (`Tank.glb`, renamed) | Quaternius | CC0 1.0 | https://quaternius.com/packs/animatedtanks.html |
-| `assets/textures` | Asphalt021, Bricks066, Concrete012, Grass007, Ground031, Ground037, Ground079L, Ground098, Ground110, Ice001, Metal063, Road001, Rock051, Rock060, Snow008A, Snow008C (Color and NormalGL only, resized to 1K) | ambientCG | CC0 1.0 | https://ambientcg.com |
+| `assets/textures` | Asphalt021, Bricks066, Concrete012, Grass007, Ground031, Ground037, Ground079L, Ground098, Ground110, Ice001, Metal063, Road001, MetalPlates015A, Rock051, Rock060, Snow008A, Snow008C (Color and NormalGL only, resized to 1K) | ambientCG | CC0 1.0 | https://ambientcg.com |
 | `assets/sky` | kloppenheim_06_puresky (2K HDRI) | Poly Haven | CC0 1.0 | https://polyhaven.com/a/kloppenheim_06_puresky |
+| `assets/sky` | qwantani_dusk_1_puresky (2K HDRI, the Concourse's dusk) | Poly Haven | CC0 1.0 | https://polyhaven.com/a/qwantani_dusk_1_puresky |
 | `assets/fonts` | Rajdhani SemiBold | Indian Type Foundry | SIL OFL 1.1, see `assets/fonts/OFL.txt` | https://github.com/google/fonts/tree/main/ofl/rajdhani |
 
 `assets/branding` (the placeholder logo: `icon.png`, `icon.ico`, `splash.png`) was made for this project by `assets/branding/make_logo.py` and is CC0; the splash sets its name in Rajdhani.
@@ -56,5 +57,6 @@ license. The license terms are the authors' own, linked above.
 - ambientCG textures and the Poly Haven sky:
   https://github.com/petroulacl/fps-buildings-env-kit (commit 1dd8e93).
 - Rajdhani: https://github.com/google/fonts
+- MetalPlates015A (Color, NormalGL, Roughness) and the qwantani_dusk_1_puresky sky were downloaded straight from ambientCG and Poly Haven.
 
 CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
