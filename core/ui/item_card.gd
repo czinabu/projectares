@@ -219,7 +219,7 @@ const KINDS := [
 	["frame_heavy", "heavy armor frame"], ["helmet", "helmet"], ["attachment", "weapon attachment"],
 	["ability", "ability chip"], ["artifact", "artifact"], ["vehicle", "vehicle"],
 	["blueprint", "blueprint"], ["upgrade_data", "crafting data"], ["heal", "healing item"],
-	["cosmetic", "clothing"], ["decor", "decoration"], ["furniture", "furniture"],
+	["paint", "armor paint"], ["cosmetic", "clothing"], ["decor", "decoration"], ["furniture", "furniture"],
 	["relic", "relic"], ["augment", "salvage"], ["material", "crafting material"],
 ]
 
@@ -332,6 +332,11 @@ static func facts(id: String) -> Array[String]:
 		if not made.is_empty():
 			out.append("Crafts: %s" % ", ".join(made))
 		out.append("Learned for good once it reaches your stash")
+	elif ItemDB.has_tag(id, "paint"):
+		out.append("Paints armor frames, picked at your base's armor stands")
+		out.append("Looks only: no armor, speed or stats change")
+		if ItemDB.item_rarity(id) == ItemDB.Rarity.RELIC:
+			out.append("Earned only: never sold or traded")
 	elif ItemDB.has_tag(id, "cosmetic"):
 		out.append("Unlocks %d outfit%s in the wardrobe" % [(stats.get("outfits", []) as Array).size(),
 				"" if (stats.get("outfits", []) as Array).size() == 1 else "s"])
@@ -497,6 +502,13 @@ static func _stand_in(id: String, color: Color) -> Node3D:
 		root.add_child(_box(Vector3(0.36, 0.24, 0.14), Vector3.ZERO, Color(0.85, 0.85, 0.82)))
 		root.add_child(_box(Vector3(0.16, 0.05, 0.01), Vector3(0, 0, 0.075), Color(1.0, 0.25, 0.2), true))
 		root.add_child(_box(Vector3(0.05, 0.16, 0.01), Vector3(0, 0, 0.075), Color(1.0, 0.25, 0.2), true))
+	elif ItemDB.has_tag(id, "paint"):
+		# A tin of the paint: its plate colour, a band of its lit accent.
+		var colours := ArmorPaint.colours(str(ItemDB.item_stats(id).get("paint", "")))
+		if not colours.is_empty():
+			root.add_child(_box(Vector3(0.3, 0.34, 0.3), Vector3.ZERO, colours["plate"]))
+			root.add_child(_box(Vector3(0.31, 0.06, 0.31), Vector3(0, 0.05, 0), colours["accent"], true))
+			root.add_child(_box(Vector3(0.24, 0.03, 0.24), Vector3(0, 0.185, 0), colours["plate2"]))
 	elif ItemDB.has_tag(id, "cosmetic"):
 		for i in 3:
 			root.add_child(_box(Vector3(0.44, 0.05, 0.32), Vector3(0, i * 0.055, 0), Color(0.3, 0.32, 0.36).lerp(color, 0.25 * i)))

@@ -25,6 +25,8 @@ var armor_break := 0.0
 ## reads its tags to tell small arms from rounds it cannot stop.
 var weapon_id := ""
 var blocked := false
+## Blocked by a guard raised just in time (`MeleeWeapon.timed_window`).
+var timed := false
 ## The hit landed on the target's head.
 var headshot := false
 var parried := false

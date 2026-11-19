@@ -293,6 +293,8 @@ func _ready() -> void:
 	hub.look_changed.connect(func(appearance: Dictionary) -> void:
 		Profile.set_appearance(appearance, hub.character.owned)
 		_wear_look()
+		if base != null and not base.read_only:
+			base.show_paints(_my_look().get("paints", {}))
 		if net != null:
 			net.send_look(Profile.appearance))
 	# The game opens in the world: your home base.
@@ -393,6 +395,8 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.name = "HomeBase"
 	base.owner_name = owner_name
 	base.read_only = owner_name != ""
+	if not base.read_only:
+		base.paints = _my_look().get("paints", {})
 	base.show_gear(stash, loadout, upgrades, plan)
 	if not base.read_only:
 		base.set_scrip(hub.scrip())
@@ -400,6 +404,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.equip_requested.connect(_on_base_equip)
 	base.upgrade_requested.connect(_on_base_upgrade)
 	base.room_placed.connect(_on_base_room_placed)
+	base.paint_requested.connect(_on_base_paint)
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
 	base.bench_used.connect(open_bench)
@@ -718,9 +723,33 @@ func _on_base_room_placed(key: String, value: String) -> void:
 	_refresh_base()
 
 
+## An armor paint picked at a stand's swatch: it goes in the look (the
+## paints are cosmetic, like clothing, and travel and are checked with it),
+## so the body, the stands and, online, everyone else see it.
+func _on_base_paint(frame_look: String, paint: String) -> void:
+	if base == null or base.read_only:
+		return
+	var next := Profile.appearance.duplicate(true)
+	var paints: Dictionary = next.get("paints", {}).duplicate()
+	if paint == "":
+		paints.erase(frame_look)
+	else:
+		paints[frame_look] = paint
+	next["paints"] = paints
+	var owned := Economy.unlocked_outfits(hub.stash_items())
+	Profile.set_appearance(next, owned)
+	hub.character.owned = owned
+	hub.character.set_appearance(Profile.appearance)
+	_wear_look()
+	if net != null:
+		net.send_look(Profile.appearance)
+	_refresh_base()
+
+
 ## Shows the base whatever the hub would show now.
 func _refresh_base() -> void:
 	if base and not base.read_only:
+		base.show_paints(_my_look().get("paints", {}))
 		base.set_scrip(hub.scrip())
 		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades(), hub.base_plan())
 		_tour_check()
@@ -1509,8 +1538,6 @@ func _apply_settings() -> void:
 		controller.base_fov_third = GameSettings.field_of_view_third
 		controller.third_person_distance = GameSettings.camera_distance
 		controller.eye_pullback = GameSettings.eye_pullback
-		controller.stance_control = PlayerController.StanceControl.MOVE if Profile.melee_control == "move" \
-				else PlayerController.StanceControl.MOUSE
 	if nameplates != null and is_instance_valid(nameplates):
 		nameplates.visible = GameSettings.show_nameplates
 

@@ -24,6 +24,7 @@ static func _check_head_follows_aim(t: Node) -> void:
 	raid.start(Worlds.get_world("ashfront"), 34, ["rifle_carbine", "blade_scrap", "plate_light"])
 	await t.frames(20)
 	var p := raid.player
+	p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 	var skin := p.get_node_or_null("Skin")
 	t.check(skin != null and skin.locomotion != null and skin.locomotion._head >= 0,
 			"the player wears a model with a head that can look")
@@ -108,6 +109,7 @@ static func _check_third_person(t: Node) -> void:
 		bot.global_position += Vector3(0, -500, 0)
 	await t.frames(5)
 	var p := raid.player
+	p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 	var controller := PlayerController.new()
 	controller.setup(p)
 	raid.add_child(controller)
@@ -181,6 +183,7 @@ static func _check_shown_motion(t: Node) -> void:
 	raid.start(Worlds.get_world("ashfront"), 36, ["rifle_carbine"])
 	await t.frames(3)
 	var p := raid.player
+	p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 	p.set_physics_process(false)
 	var motion := ShownMotion.new()
 	motion.name = "ShownMotion"
@@ -227,6 +230,7 @@ static func _check_steady_on_the_run(t: Node) -> void:
 			bot.global_position += Vector3(0, -500, 0)
 		await t.frames(3)
 		var p := raid.player
+		p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 		var controller := PlayerController.new()
 		controller.setup(p)
 		raid.add_child(controller)
@@ -292,6 +296,7 @@ static func _check_head_out_of_station_views(t: Node) -> void:
 		bot.global_position += Vector3(0, -500, 0)
 	await t.frames(3)
 	var p := raid.player
+	p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 	var controller := PlayerController.new()
 	controller.setup(p)
 	raid.add_child(controller)
@@ -351,6 +356,7 @@ static func _check_hip_after_aim_tap(t: Node) -> void:
 			bot.global_position += Vector3(0, -500, 0)
 		await t.frames(3)
 		var p := raid.player
+		p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 		var controller := PlayerController.new()
 		controller.setup(p)
 		raid.add_child(controller)

@@ -104,7 +104,7 @@ func _process(delta: float) -> void:
 	# On a vehicle, F gets you off, so nothing else is offered (as in `Hud`).
 	var target := base.player.find_interactable() if base.player.vehicle == null else null
 	var lines := describe(target)
-	_prompt.text = lines[0]
+	_prompt.text = lines[0] if target != null else Hud.reload_prompt(base.player)
 	_show_tag(target as HomeBase.Display, lines[1])
 	_update_wrist(delta)
 	if _notice_left > 0.0:

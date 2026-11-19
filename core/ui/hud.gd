@@ -27,6 +27,7 @@ const RenownLedger := preload("res://core/progression/renown_ledger.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const SkinScript := preload("res://core/visual/actor_skin.gd")
+const PhoneScript := preload("res://core/phone/phone.gd")
 ## The watch map's risk-zone grid is this many cells a side, how much room
 ## it leaves round what it shows, and the least half width it shows (metres).
 const MAP_GRID := 16
@@ -36,6 +37,8 @@ const MAP_MIN_HALF := 40.0
 const TABLE_GRID := 24
 ## The pages of the Standing icon, opened with a click: what you would lose
 ## now, what is already safe, and how this life is going.
+## The mag share at or under which the reload prompt shows.
+const RELOAD_PROMPT_SHARE := 0.25
 const STANDING_PAGES := ["At stake", "Safe", "This life"]
 ## How close (metres) to a waypoint set on the watch map counts as there.
 const WAYPOINT_REACHED := 8.0
@@ -173,9 +176,7 @@ func _process(delta: float) -> void:
 
 	var weapon := p.get_active_weapon()
 	var blade := weapon as MeleeWeapon
-	_stance.stance = blade.stance if blade else -1
-	_stance.guarding = blade != null and blade.is_blocking()
-	_stance.threat = incoming_side(p)
+	_stance.threat = incoming_side(p) if blade else -1
 	_update_ammo_counters(p)
 	if crosshair:
 		# Looking down an optic, its own reticle marks the middle.
@@ -202,7 +203,7 @@ func _process(delta: float) -> void:
 	else:
 		# On a vehicle, F gets you off, so nothing else is offered.
 		var target := p.find_interactable() if p.vehicle == null else null
-		_prompt.text = target.get_prompt() if target else ""
+		_prompt.text = target.get_prompt() if target else reload_prompt(p)
 
 	if progress_ring:
 		progress_ring.show_progress(-1.0 if p.is_dead else (leaving if leaving >= 0.0 else (banking if banking > 0.0 else -1.0)),
@@ -290,6 +291,21 @@ func _process(delta: float) -> void:
 ## Two-level watch (Caleb's call): an icon that holds several things shows
 ## the wheel glyph only once opened; on the main row it shows a click, which
 ## opens it, and the wheel moves between icons.
+## The line under the crosshair when the gun in hand needs a reload (Caleb's
+## call: a gun never reloads on its own, it asks): empty or low with rounds in
+## the pack, "R  Reload"; empty with nothing left, "Out of ammo". Shown with
+## or without a helmet and in both views; empty otherwise.
+static func reload_prompt(p: Actor) -> String:
+	var gun := p.get_active_weapon() as Gun if p != null else null
+	if gun == null or gun.is_reloading() or gun.is_power() or p.weapons_locked:
+		return ""
+	if gun.ammo_in_mag <= 0 and gun.reserve_ammo <= 0:
+		return "Out of ammo"
+	if gun.reserve_ammo > 0 and gun.ammo_in_mag <= floori(gun.mag_size * RELOAD_PROMPT_SHARE):
+		return "%s  Reload" % PhoneScript.key_name("reload")
+	return ""
+
+
 static func mark_open(slots: Array[Dictionary], opened: String) -> void:
 	for slot in slots:
 		if int(slot.get("count", 0)) > 1 and slot.id != opened:
@@ -1623,21 +1639,18 @@ class HitMarker:
 		for dir: Vector2 in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
 			draw_line(c + dir * 7.0 * grow, c + dir * 15.0 * grow, color, 2.5 * _size)
 
-## Three marks around the crosshair for directional melee: which side you are
-## set to attack or guard, and which side an enemy swing is coming at.
+## A mark beside the crosshair on the side an enemy swing is coming from, so
+## a blade out in first person reads a swing at the edge of the view. Guards
+## turn to meet a swing by themselves; the mark is only for timing.
 ## Kept as an inner class so the HUD never depends on the editor's class cache.
 class StanceIndicator:
 	extends Control
 
 	const OFFSETS := [Vector2(0, -1), Vector2(-1, 0), Vector2(1, 0)]
 
-	## The player's `MeleeWeapon.Dir`, or -1 to hide the stance marks.
-	var stance := -1
-	var guarding := false
 	## The side of the screen an enemy swing is coming at, or -1 for none.
 	var threat := -1
 
-	var radius := 34.0
 	var threat_radius := 48.0
 	var mark_length := 22.0
 
@@ -1651,13 +1664,6 @@ class StanceIndicator:
 		for dir in OFFSETS.size():
 			var out: Vector2 = OFFSETS[dir]
 			var along := Vector2(-out.y, out.x) * mark_length * 0.5
-			if stance >= 0:
-				var active := dir == stance
-				var color := Color(1, 1, 1, 0.22)
-				if active:
-					color = Color(0.45, 0.75, 1.0) if guarding else Color.WHITE
-				var at := center + out * radius
-				draw_line(at - along, at + along, color, 4.0 if active else 2.0)
 			if dir == threat:
 				var at := center + out * threat_radius
 				# Yellow on a dark outline, so it shows against red enemies and sky.

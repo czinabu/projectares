@@ -1266,6 +1266,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
 	actor.global_position = _stand(at)
 	Loadout.equip(actor, state.kit)
+	Loadout.arrive_unarmed(actor)
 	actor.weapons_locked = world.safe_zone or not world.weapons_free
 	state.actor = actor
 	state.owner = p_owner if p_owner != "" else "#%d" % actor.get_instance_id()
@@ -2804,6 +2805,9 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 		var relic := world.roll_artifact(rng, world.warlord_artifact_chance)
 		if relic != "":
 			bot.inventory.add_item(relic)
+		# And sometimes an earned armor paint, the trophy of the fight.
+		if world.warlord_paint != "" and rng.randf() < world.warlord_paint_chance:
+			bot.inventory.add_item(world.warlord_paint)
 		# And what crafting runs on (DESIGN.md section 10).
 		for id in world.roll_crafting_loot(rng, world.warlord_blueprint_chance, world.warlord_upgrade_data):
 			bot.inventory.add_item(id)

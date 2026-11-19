@@ -70,6 +70,7 @@ static func _check_controller(t: Node) -> void:
 	raid.start(Worlds.get_world("ashfront"), 51, ["rifle_carbine", "blade_scrap", "pistol_service"])
 	await t.frames(5)
 	var p := raid.player
+	p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 	var controller := PlayerController.new()
 	controller.setup(p)
 	raid.add_child(controller)
