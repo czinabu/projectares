@@ -32,8 +32,8 @@ func build(tracks: Array) -> void:
 	_gantry_crane(Vector3(360, 0, -200), 0.6)
 	_gantry_crane(Vector3(-520, 0, -300), -0.4)
 	_booster(Vector3(-300, 0, 640), -0.6)
-	_pylons(Vector3(620, 0, 520), Vector3(1, 0, 0.55).normalized(), 9)
-	_pylons(Vector3(-420, 0, -620), Vector3(-0.8, 0, -1).normalized(), 9)
+	_pylons(Vector3(620, 0, 520), Vector3(1, 0, 0.55).normalized(), 3)
+	_pylons(Vector3(-420, 0, -620), Vector3(-0.8, 0, -1).normalized(), 3)
 	for spec: Array in [[Vector3(-150, 0, 75), 0.0], [Vector3(-40, 0, 75), 1.7], [Vector3(60, 0, 75), 3.1],
 			[Vector3(-60, 56, -62), 4.4], [Vector3(-230, 0, -175), 2.2]]:
 		var light := SearchLight.new()

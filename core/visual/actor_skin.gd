@@ -313,6 +313,10 @@ var _rig_holders: Array[Node3D] = []
 var _rig_back: Node3D
 var _vitals: Node3D
 var _helmet: Node3D
+## The body's sun shadow, drawn in one piece (`_update_shadow_body`), and
+## what it was made from.
+var _shadow_body: MeshInstance3D
+var _shadow_parts := 0
 var _frame_parts: Array[Node3D] = []
 ## The frame `_frame_parts` were built for; "" for none.
 var _frame_id := ""
@@ -503,6 +507,59 @@ func _ready() -> void:
 	_mark_storm()
 
 
+## A body is several skinned parts (head, body, legs, feet), each of a few
+## materials, and every part's every surface used to cost a draw in every
+## sun shadow split. The shadow is drawn instead by one shadow-only copy
+## of the parts showing, merged into a single surface on the same skeleton
+## and bones, so it has exactly the body's shape and pose; the parts
+## themselves cast none. Rebuilt whenever a part comes or goes (a helmet
+## hides the head). A part that is not skinned, or is drawn on another
+## layer, keeps its own shadow. View only.
+func _update_shadow_body() -> void:
+	if _skeleton == null:
+		return
+	var parts: Array[MeshInstance3D] = []
+	var key := 17
+	for node in _skeleton.get_children():
+		var part := node as MeshInstance3D
+		if part == null or part == _shadow_body or part.skin == null or part.mesh == null:
+			continue
+		if part.has_meta("shadow_merged") or (part.visible and part.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON):
+			key = hash([key, part.get_instance_id(), part.visible, part.mesh.get_rid().get_id()])
+			if part.visible:
+				parts.append(part)
+	if key == _shadow_parts and (_shadow_body == null or is_instance_valid(_shadow_body)):
+		return
+	_shadow_parts = key
+	if _shadow_body != null and is_instance_valid(_shadow_body):
+		_shadow_body.queue_free()
+	_shadow_body = null
+	var shaped: Array = look.shadow_body(parts) if not parts.is_empty() else []
+	for part in parts:
+		if part.has_meta("shadow_merged") and (shaped.is_empty() or not (shaped[2] as Array).has(part)):
+			part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			part.remove_meta("shadow_merged")
+	if shaped.is_empty():
+		return
+	var body := MeshInstance3D.new()
+	body.name = "ShadowBody"
+	body.mesh = shaped[0]
+	body.skin = shaped[1]
+	body.transform = (shaped[2][0] as MeshInstance3D).transform
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	_skeleton.add_child(body)
+	body.skeleton = body.get_path_to(_skeleton)
+	_shadow_body = body
+	for part: MeshInstance3D in shaped[2]:
+		part.set_meta("shadow_merged", true)
+		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## The body's one-piece shadow (for checks), or null.
+func shadow_body() -> MeshInstance3D:
+	return _shadow_body if _shadow_body != null and is_instance_valid(_shadow_body) else null
+
+
 ## Faction rim and a lighter fog on this body, its gear and its weapons.
 func _mark_storm() -> void:
 	if actor == null or look == null:
@@ -643,9 +700,10 @@ func _set_detail(every: int) -> void:
 	_gear_shadows(every == 1)
 
 
-## Weapons cast shadows only on a body posed every frame (close by): further
-## out a gun's shadow is a few pixels, but it costs a draw in every shadow
-## split. Only what cast a shadow before is switched back on.
+## Weapons, a helmet and armor plates cast shadows only on a body posed
+## every frame (close by): further out their shadow is a few pixels inside
+## the body's own, but each costs a draw in every shadow split. Only what
+## cast a shadow before is switched back on.
 func _gear_shadows(on: bool) -> void:
 	if on:
 		for node in _unshadowed:
@@ -660,6 +718,11 @@ func _gear_shadows(on: bool) -> void:
 	for worn: Variant in _stowed.values():
 		if worn != null and is_instance_valid(worn):
 			holders.append(worn)
+	if _helmet != null and is_instance_valid(_helmet):
+		holders.append(_helmet)
+	for part: Variant in _frame_parts:
+		if part != null and is_instance_valid(part):
+			holders.append(part)
 	for holder in holders:
 		for node in holder.find_children("*", "GeometryInstance3D", true, false):
 			var geometry := node as GeometryInstance3D
@@ -685,6 +748,7 @@ func _update(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_helmet()
+	_update_shadow_body()
 	_update_frame()
 	_update_vitals()
 	_update_phone()
@@ -1412,7 +1476,9 @@ func _update_helmet() -> void:
 	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
 	var tier := actor.visor.tier if own == "" else 1
 	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier),
-			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset)
+			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset, true)
+	if _detail_every > 1:
+		_gear_shadows(false)
 
 
 ## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
@@ -1453,7 +1519,7 @@ func _hang_at(part: Node3D, holder_name: String, bone_name: String, at: Vector3)
 	var offset := at
 	if bone >= 0:
 		offset = at - _rest_at(bone_name)
-	return _hang(part, holder_name, bone_name if bone >= 0 else "", offset, at)
+	return _hang(part, holder_name, bone_name if bone >= 0 else "", offset, at, true)
 
 
 ## Where a bone sits at rest, as the actor sees it.
@@ -2018,10 +2084,10 @@ func _update_frame() -> void:
 		return
 	var height: float = _def.get("height", 1.8)
 	_frame_parts.append(_hang(build_frame(id, paint), "Frame", _def.get("back_bone", ""), frame_offset,
-			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
+			Vector3(0.0, height * 0.72, 0.0) + frame_offset, true))
 	var hips: String = _def.get("hip_bone", "")
 	if hips != "" and _skeleton.find_bone(hips) >= 0:
-		_frame_parts.append(_hang(build_belt(id, paint), "Belt", hips, Vector3.ZERO, Vector3.ZERO))
+		_frame_parts.append(_hang(build_belt(id, paint), "Belt", hips, Vector3.ZERO, Vector3.ZERO, true))
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
 		for limb: Array in [["UpperArm", "LowerArm", build_pad(id, out, paint), Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z)],
@@ -2034,6 +2100,8 @@ func _update_frame() -> void:
 				piece.free()
 			else:
 				_frame_parts.append(held)
+	if _detail_every > 1:
+		_gear_shadows(false)
 
 
 ## Hangs a limb piece, built standing up its limb (Y from the far joint
@@ -2047,7 +2115,7 @@ func _hang_limb(part: Node3D, bone: String, child: String, offset: Vector3) -> N
 	var up := (at - _rest_at(child)).normalized()
 	var front := Vector3.FORWARD - up * up.dot(Vector3.FORWARD)
 	front = front.normalized() if front.length() > 0.1 else Vector3.FORWARD
-	var held := _hang(part, part.name, bone, offset, at)
+	var held := _hang(part, part.name, bone, offset, at, true)
 	part.basis = Basis(up.cross(-front).normalized(), up, -front)
 	return held
 
@@ -3213,7 +3281,12 @@ func _wear_part(part: Node3D, bone_name: String, offset: Vector3, fallback: Vect
 ## actor's way; this undoes the model's scale and turn so they come out that
 ## way. `offset` is from the bone, in the actor's frame. Skins without the
 ## bone get the part at `fallback` (actor frame), fixed to the body.
-func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3, fallback: Vector3) -> Node3D:
+func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3, fallback: Vector3,
+		merge := false) -> Node3D:
+	if merge:
+		# Plates, a helmet and armor parts are built from many still pieces:
+		# drawn as one mesh per material they cost a few draws, not dozens.
+		look.merge_pieces(part)
 	var bone := _skeleton.find_bone(bone_name) if _skeleton and bone_name != "" else -1
 	var holder := Node3D.new()
 	holder.name = holder_name

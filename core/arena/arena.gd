@@ -24,6 +24,14 @@ extends Raid
 ##   - A duel may carry a stake that both fighters put up; the winner takes both.
 ##   - A tournament charges an entry fee; the champion takes the pot. Empty
 ##     bracket slots are filled with bot gladiators (or byes with `bot_fill` off).
+##   - Every bout and tournament has rules (`RULES`): "open" (anything the
+##     loadout carries), "blades" (melee only: guns stay locked and flight
+##     rigs jammed) or "blades_boots" (melee, and thruster boots may fly).
+##     `_apply_rules` holds them on the fighters on every machine, from the
+##     bout here or the board on a client, so prediction agrees.
+##   - A tournament under blade rules is the Blade Tournament: its champion
+##     also takes the weekly prize, a trophy and a chance at an artifact,
+##     once a week per account (`_crown`, `Bank.prize`).
 ##
 ## The arena decides every result and every payout itself, and only in SOLO or
 ## SERVER mode. A client sends requests (`ask`) and shows the `board` the
@@ -41,6 +49,15 @@ signal bout_finished(summary: Dictionary)
 enum Phase { IDLE, CALLING, COUNTDOWN, FIGHT, RESULT }
 const PHASE_NAMES := ["idle", "calling", "countdown", "fight", "result"]
 const ArenaVenue := preload("res://core/arena/arena_venue.gd")
+const Contracts := preload("res://core/economy/contracts.gd")
+## What a bout allows: everything, blades only, or blades with boots.
+const RULES: Array[String] = ["open", "blades", "blades_boots"]
+const RULE_NAMES := {"open": "Open", "blades": "Blades", "blades_boots": "Blades and boots"}
+## The Blade Tournament champion's weekly trophy.
+const BLADE_TROPHY := "trophy_blade_champion"
+## How long a barred rig is jammed each tick it is held (renewed every tick).
+const RIG_HOLD := 0.3
+const NO_BLADE := "Blades only: put a melee weapon in your loadout first."
 
 # Tuning.
 var call_time := 15.0
@@ -62,6 +79,10 @@ var tournament_max := 8
 var bot_fill := true
 ## How long a challenge stays open.
 var challenge_time := 60.0
+## The Blade Tournament champion's chance at an artifact with the trophy.
+var blade_prize_artifact := 0.35
+## Every this many exhibitions is fought under blade rules.
+var blade_exhibition_every := 2
 
 ## Where money and records go. See `Bank`. Null means nobody can bet.
 var bank: Bank
@@ -83,7 +104,10 @@ var _keys := {}           # Actor -> account key
 var _gates: Array[Vector3] = [Vector3(-12, 0.1, 0), Vector3(12, 0.1, 0)]
 var _idle_time := 0.0
 var _bot_serial := 0
+var _exhibitions := 0
 var _dirty := true
+## Fighters `_apply_rules` has locked, so they are let go when they leave.
+var _ruled: Array = []
 
 
 ## One fight between two sides. A side is a player's Actor, or a bot seed
@@ -93,6 +117,8 @@ class Bout:
 
 	## "duel", "practice", "exhibition" or "tournament".
 	var kind := "duel"
+	## One of `RULES`.
+	var rules := "open"
 	var sides: Array = [null, null]
 	var fighters: Array[Actor] = [null, null]
 	var names: Array[String] = ["", ""]
@@ -118,6 +144,8 @@ class Tournament:
 	extends RefCounted
 
 	var entrants: Array = []
+	## One of `RULES`; a blade one makes it the Blade Tournament.
+	var rules := "open"
 	var running := false
 	var signup_left := 0.0
 	var pot := 0
@@ -152,6 +180,15 @@ class Bank:
 	func record(_key: String, _won: bool) -> void:
 		pass
 
+	## The week (`Contracts.week_of`) the account last won the Blade
+	## Tournament's weekly prize, or -1.
+	func prize_week(_key: String) -> int:
+		return -1
+
+	## Hands the weekly prize's items to the account for `week`.
+	func prize(_key: String, _week: int, _items: Array) -> void:
+		pass
+
 
 ## Solo: the local profile's scrip.
 class ProfileBank:
@@ -165,6 +202,12 @@ class ProfileBank:
 
 	func record(_key: String, won: bool) -> void:
 		Profile.record_arena(won)
+
+	func prize_week(_key: String) -> int:
+		return Profile.arena_prize_week
+
+	func prize(_key: String, week: int, items: Array) -> void:
+		Profile.arena_prize(week, items)
 
 
 ## Server: the accounts a `StashService` keeps.
@@ -185,6 +228,12 @@ class StashBank:
 
 	func record(key: String, won: bool) -> void:
 		service.record_arena(key, won)
+
+	func prize_week(key: String) -> int:
+		return int(service.snapshot(key).get("arena_prize_week", -1))
+
+	func prize(key: String, week: int, items: Array) -> void:
+		service.arena_prize(key, week, items)
 
 
 # --- Starting ------------------------------------------------------------------
@@ -280,28 +329,30 @@ static func wager_payouts(bets: Dictionary, winner: int, cut: float) -> Dictiona
 ## Anything a player can ask the arena. Online the server calls this with the
 ## sender's own actor, so nobody can act for someone else. Returns {"ok"} or
 ## {"ok": false, "error"}.
-##   "challenge"        {"to": node name, "stake": int}
+##   "challenge"        {"to": node name, "stake": int, "rules": one of `RULES`}
 ##   "accept"/"decline" {"from": node name}
-##   "practice"         {} fight a bot gladiator
+##   "practice"         {"rules"} fight a bot gladiator
 ##   "bet"              {"side": 0 or 1, "amount": int}
-##   "join_tournament", "leave_tournament"
+##   "join_tournament"  {"rules"} (the rules only start a new one)
+##   "leave_tournament"
 func request(actor: Actor, action: String, args: Dictionary) -> Dictionary:
 	if mode == Mode.CLIENT or actor == null or actor.is_dead or state_for(actor) == null:
 		return _fail("You are not in the arena.")
 	var result: Dictionary
 	match action:
 		"challenge":
-			result = _challenge(actor, _player_named(str(args.get("to", ""))), int(args.get("stake", 0)))
+			result = _challenge(actor, _player_named(str(args.get("to", ""))), int(args.get("stake", 0)),
+					clean_rules(args.get("rules", "open")))
 		"accept":
 			result = _accept(actor, _player_named(str(args.get("from", ""))))
 		"decline":
 			result = _decline(actor, _player_named(str(args.get("from", ""))))
 		"practice":
-			result = _practice(actor)
+			result = _practice(actor, clean_rules(args.get("rules", "open")))
 		"bet":
 			result = _bet(actor, int(args.get("side", -1)), int(args.get("amount", 0)))
 		"join_tournament":
-			result = _join_tournament(actor)
+			result = _join_tournament(actor, clean_rules(args.get("rules", "open")))
 		"leave_tournament":
 			result = _leave_tournament(actor)
 		_:
@@ -322,7 +373,17 @@ func ask(action: String, args := {}) -> void:
 		_tell(player, result.error)
 
 
-func _challenge(actor: Actor, target: Actor, stake: int) -> Dictionary:
+## `rules` as one of `RULES`, "open" for anything else.
+static func clean_rules(rules: Variant) -> String:
+	return str(rules) if typeof(rules) == TYPE_STRING and str(rules) in RULES else "open"
+
+
+## True for rules that leave only blades.
+static func is_blades(rules: String) -> bool:
+	return rules == "blades" or rules == "blades_boots"
+
+
+func _challenge(actor: Actor, target: Actor, stake: int, rules := "open") -> Dictionary:
 	if target == null or target == actor:
 		return _fail("Pick someone in the arena to challenge.")
 	if stake < 0 or stake > max_stake:
@@ -331,14 +392,19 @@ func _challenge(actor: Actor, target: Actor, stake: int) -> Dictionary:
 		return _fail("You already have a bout lined up.")
 	if is_busy(target):
 		return _fail("%s already has a bout lined up." % target.display_name)
+	if is_blades(rules) and actor.blade_index() < 0:
+		return _fail(NO_BLADE)
+	if is_blades(rules) and target.blade_index() < 0:
+		return _fail("%s has no melee weapon for a blade duel." % target.display_name)
 	if stake > 0 and (bank == null or bank.scrip(key_of(actor)) < stake):
 		return _fail("You do not have %d scrip." % stake)
 	for c in challenges:
 		if c.from == actor and c.to == target:
 			return _fail("You already challenged %s." % target.display_name)
-	challenges.append({"from": actor, "to": target, "stake": stake, "left": challenge_time})
+	challenges.append({"from": actor, "to": target, "stake": stake, "rules": rules, "left": challenge_time})
 	var staked := " for %d scrip" % stake if stake > 0 else ""
-	_tell(target, "%s challenges you to a duel%s" % [actor.display_name, staked])
+	var kind := "a blade duel" if is_blades(rules) else "a duel"
+	_tell(target, "%s challenges you to %s%s" % [actor.display_name, kind, staked])
 	return {"ok": true}
 
 
@@ -349,6 +415,8 @@ func _accept(actor: Actor, from: Actor) -> Dictionary:
 	challenges.erase(found)
 	if is_busy(actor) or is_busy(from):
 		return _fail("One of you already has a bout lined up.")
+	if is_blades(clean_rules(found.get("rules", "open"))) and (actor.blade_index() < 0 or from.blade_index() < 0):
+		return _fail("A blade duel needs a melee weapon on both of you.")
 	var stake: int = found.stake
 	if stake > 0:
 		if bank == null or not bank.change(key_of(from), -stake):
@@ -359,7 +427,7 @@ func _accept(actor: Actor, from: Actor) -> Dictionary:
 	# Neither of them can take up another challenge now.
 	challenges = challenges.filter(func(c: Dictionary) -> bool:
 		return c.from != actor and c.to != actor and c.from != from and c.to != from)
-	var duel := _new_bout("duel", from, actor)
+	var duel := _new_bout("duel", from, actor, clean_rules(found.get("rules", "open")))
 	duel.stake = stake * 2
 	queue.append(duel)
 	_tell(from, "%s accepted your duel" % actor.display_name)
@@ -376,10 +444,12 @@ func _decline(actor: Actor, from: Actor) -> Dictionary:
 	return {"ok": true}
 
 
-func _practice(actor: Actor) -> Dictionary:
+func _practice(actor: Actor, rules := "open") -> Dictionary:
 	if is_busy(actor):
 		return _fail("You already have a bout lined up.")
-	queue.append(_new_bout("practice", actor, _next_bot_seed()))
+	if is_blades(rules) and actor.blade_index() < 0:
+		return _fail(NO_BLADE)
+	queue.append(_new_bout("practice", actor, _next_bot_seed(rules), rules))
 	return {"ok": true}
 
 
@@ -405,17 +475,20 @@ func _bet(actor: Actor, side: int, amount: int) -> Dictionary:
 	return {"ok": true}
 
 
-func _join_tournament(actor: Actor) -> Dictionary:
+func _join_tournament(actor: Actor, rules := "open") -> Dictionary:
 	if tournament != null and tournament.running:
 		return _fail("A tournament is under way. Sign up for the next one.")
 	if is_busy(actor):
 		return _fail("You already have a bout lined up.")
 	if tournament != null and tournament.entrants.size() >= tournament_max:
 		return _fail("The bracket is full.")
+	if is_blades(tournament.rules if tournament != null else rules) and actor.blade_index() < 0:
+		return _fail(NO_BLADE)
 	if tournament_fee > 0 and (bank == null or not bank.change(key_of(actor), -tournament_fee)):
 		return _fail("The entry fee is %d scrip." % tournament_fee)
 	if tournament == null:
 		tournament = Tournament.new()
+		tournament.rules = rules
 		tournament.signup_left = tournament_signup_time
 	tournament.entrants.append(actor)
 	tournament.pot += tournament_fee
@@ -447,6 +520,7 @@ func _physics_process(delta: float) -> void:
 		if board.has("phase_left"):
 			board.phase_left = maxf(float(board.phase_left) - delta, 0.0)
 		_drive_stage()
+		_apply_rules()
 		return
 	_tick_challenges(delta)
 	_tick_tournament(delta)
@@ -457,7 +531,10 @@ func _physics_process(delta: float) -> void:
 			elif exhibition_delay >= 0.0 and not active_players().is_empty():
 				_idle_time += delta
 				if _idle_time >= exhibition_delay:
-					_call_bout(_new_bout("exhibition", _next_bot_seed(), _next_bot_seed()))
+					_exhibitions += 1
+					var rules := "blades" if blade_exhibition_every > 0 \
+							and _exhibitions % blade_exhibition_every == 0 else "open"
+					_call_bout(_new_bout("exhibition", _next_bot_seed(rules), _next_bot_seed(rules), rules))
 		Phase.CALLING:
 			_tick_phase(delta)
 			if phase_left <= 0.0:
@@ -477,6 +554,7 @@ func _physics_process(delta: float) -> void:
 				_clear_pit()
 	_keep_crowd_out()
 	_drive_stage()
+	_apply_rules()
 	if _dirty:
 		_dirty = false
 		board_changed.emit()
@@ -666,6 +744,60 @@ func phase_name() -> String:
 	return String(board.get("phase", "idle")) if mode == Mode.CLIENT else PHASE_NAMES[phase]
 
 
+## The rules of the bout in the pit (from the board on a client), "open"
+## with none.
+func bout_rules() -> String:
+	if mode == Mode.CLIENT:
+		return clean_rules(board.get("bout", {}).get("rules", "open"))
+	return bout.rules if bout != null else "open"
+
+
+## The two fighters of the bout in the pit, as far as this machine knows
+## them (by node name from the board on a client). Either may be null.
+func fighters_now() -> Array:
+	if mode != Mode.CLIENT:
+		return bout.fighters.duplicate() if bout != null else []
+	var out: Array = []
+	for node: Variant in board.get("bout", {}).get("nodes", []):
+		var found := get_node_or_null(NodePath(str(node))) as Actor if str(node) != "" else null
+		out.append(found)
+	return out
+
+
+## True if `fighter` may fly their rig under `rules`: anything open, only
+## thruster boots (`Actor.dodge_style`'s "jet_step") with "blades_boots",
+## nothing with "blades".
+static func rig_allowed(rules: String, fighter: Actor) -> bool:
+	if not is_blades(rules) or not fighter.flight.enabled:
+		return true
+	return rules == "blades_boots" and fighter.flight.graze_window > 0.0 and fighter.flight.glide_speed <= 0.0
+
+
+## Holds the bout's rules on its fighters while it is fought (the countdown
+## and the fight): under blade rules no gun comes out (`Actor.guns_locked`)
+## and a barred rig stays jammed. Run every tick on every machine, from the
+## same phase and rules, so a client's prediction matches the server.
+func _apply_rules() -> void:
+	var rules := bout_rules()
+	var on := phase_name() == "countdown" or phase_name() == "fight"
+	var held: Array = []
+	if on and is_blades(rules):
+		for f: Variant in fighters_now():
+			if not _is_actor(f):
+				continue
+			held.append(f)
+			f.guns_locked = true
+			if not rig_allowed(rules, f):
+				f.flight.jam(RIG_HOLD)
+	for f: Variant in _ruled:
+		if _is_actor(f) and f not in held:
+			f.guns_locked = false
+			# Only the hold's own jam is let go, never a longer one.
+			if f.flight.jam_left <= RIG_HOLD:
+				f.flight.jam_left = 0.0
+	_ruled = held
+
+
 ## Moves the venue's doors and rising barriers to match the bout. Every
 ## machine works it out from the same phase and clock, so it needs no
 ## messages of its own.
@@ -744,7 +876,7 @@ func _start_tournament() -> void:
 		size *= 2
 	size = maxi(size, 4) if bot_fill else size
 	while bot_fill and field.size() < size:
-		field.append(_next_bot_seed())
+		field.append(_next_bot_seed(tournament.rules))
 	field.shuffle()
 	tournament.running = true
 	_next_round(field)
@@ -761,7 +893,7 @@ func _next_round(field: Array) -> void:
 			# An odd one out goes straight through.
 			tournament.advancing.append(field[i])
 			break
-		var b := _new_bout("tournament", field[i], field[i + 1])
+		var b := _new_bout("tournament", field[i], field[i + 1], tournament.rules)
 		b.round_name = label
 		tournament.bouts.append(b)
 		queue.append(b)
@@ -776,15 +908,39 @@ func _crown() -> void:
 	if _is_actor(champion) and bank != null and tournament.pot > 0:
 		bank.change(key_of(champion), tournament.pot)
 		_tell(champion, "You won the tournament and %d scrip" % tournament.pot)
+	if is_blades(tournament.rules):
+		last_result = "%s is the Blade Champion" % name
+		if _is_actor(champion):
+			_pay_blade_prize(champion)
 	tournament = null
 	_dirty = true
 
 
+## The Blade Tournament's weekly prize: the trophy and a chance at an
+## artifact, once a week per account (the account checks again).
+func _pay_blade_prize(champion: Actor) -> void:
+	var key := key_of(champion)
+	if bank == null or key == "":
+		return
+	var week: int = Contracts.week_of(Contracts.today())
+	if bank.prize_week(key) == week:
+		_tell(champion, "You already hold this week's Blade Champion trophy")
+		return
+	var items: Array = [BLADE_TROPHY]
+	var relic := world.roll_artifact(rng, blade_prize_artifact)
+	if relic != "":
+		items.append(relic)
+	bank.prize(key, week, items)
+	_tell(champion, "Blade Champion: the trophy%s goes to your stash" % (
+			" and %s" % ItemDB.item_name(relic) if relic != "" else ""))
+
+
 # --- Helpers -------------------------------------------------------------------
 
-func _new_bout(kind: String, a: Variant, b: Variant) -> Bout:
+func _new_bout(kind: String, a: Variant, b: Variant, rules := "open") -> Bout:
 	var made := Bout.new()
 	made.kind = kind
+	made.rules = clean_rules(rules)
 	made.sides = [a, b]
 	made.names = [_side_name(a), _side_name(b)]
 	return made
@@ -811,8 +967,17 @@ func _side_name(side: Variant) -> String:
 	return ArenaVenue.GLADIATOR_NAMES[probe.randi() % ArenaVenue.GLADIATOR_NAMES.size()]
 
 
-func _next_bot_seed() -> int:
-	return rng.randi()
+## A seed for a bot gladiator; under blade rules one whose gladiator
+## carries a blade (`ArenaVenue.gladiator_has_blade`), so every machine
+## that builds it from the seed gives it the same blade.
+func _next_bot_seed(rules := "open") -> int:
+	var made := rng.randi()
+	if is_blades(rules):
+		for i in 64:
+			if ArenaVenue.gladiator_has_blade(made):
+				break
+			made = rng.randi()
+	return made
 
 
 func _player_named(node_name: String) -> Actor:
@@ -961,13 +1126,17 @@ func board_for(viewer: Actor) -> Dictionary:
 			fighters.append(String(f.name) if f != null and is_instance_valid(f) else "")
 		out.bout = {"kind": bout.kind, "names": bout.names.duplicate(), "nodes": fighters,
 				"pools": bout.pools.duplicate(), "stake": bout.stake, "round": bout.round_name,
-				"winner": bout.winner}
+				"winner": bout.winner, "rules": bout.rules}
 	for b in queue:
-		out.queue.append("%s vs %s (%s)" % [b.names[0], b.names[1], b.round_name if b.round_name != "" else b.kind])
+		var label := b.round_name if b.round_name != "" else b.kind
+		if b.rules != "open":
+			label += ", %s" % str(RULE_NAMES[b.rules]).to_lower()
+		out.queue.append("%s vs %s (%s)" % [b.names[0], b.names[1], label])
 	for c in challenges:
 		if c.to == viewer or c.from == viewer:
 			out.challenges.append({"from": c.from.display_name, "from_node": String(c.from.name),
-					"to": c.to.display_name, "incoming": c.to == viewer, "stake": c.stake})
+					"to": c.to.display_name, "incoming": c.to == viewer, "stake": c.stake,
+					"rules": c.get("rules", "open")})
 	for state in players:
 		var a := state.actor
 		if a != viewer and a != null and is_instance_valid(a) and not a.is_dead and not state.finished:
@@ -977,12 +1146,14 @@ func board_for(viewer: Actor) -> Dictionary:
 		for a: Variant in tournament.entrants:
 			names.append(_side_name(a))
 		out.tournament = {"running": tournament.running, "entrants": names, "pot": tournament.pot,
-				"starts_in": maxf(tournament.signup_left, 0.0), "round": tournament.round}
+				"starts_in": maxf(tournament.signup_left, 0.0), "round": tournament.round,
+				"rules": tournament.rules}
 	if viewer != null:
 		var key := key_of(viewer)
 		var you := {"scrip": bank.scrip(key) if bank != null and key != "" else 0,
 				"busy": is_busy(viewer), "fighting": bout != null and viewer in bout.fighters,
-				"entered": tournament != null and tournament.has(viewer)}
+				"entered": tournament != null and tournament.has(viewer),
+				"prized": bank != null and key != "" and bank.prize_week(key) == Contracts.week_of(Contracts.today())}
 		if bout != null and bout.bets.has(key):
 			you["bet_side"] = bout.bets[key][0]
 			you["bet"] = bout.bets[key][1]

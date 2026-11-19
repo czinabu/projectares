@@ -479,7 +479,7 @@ func _build_environment() -> void:
 	var sun := get_node_or_null("Sun") as DirectionalLight3D
 	if sun != null:
 		# A low sun throws long shadows: reach far enough to keep them.
-		sun.directional_shadow_max_distance = 220.0
+		Look.GameSettings.fit_sun(sun, 220.0)
 	Look.weather(self, "snow", 40.0, 24.0)
 	_weather = get_node_or_null("Weather")
 
