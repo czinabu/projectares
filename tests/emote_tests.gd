@@ -123,6 +123,84 @@ static func _controller(t: Node) -> void:
 	t.check(controller.emote_playing == "cheer", "the quick emote key plays the one last picked")
 	controller.quick_emote()
 	t.check(controller.emote_playing == "", "and stops it")
+	# The quick wheel: up at once with no watch, the mouse picks a slice.
+	controller.wrist_raised = true
+	controller.open_emote_wheel()
+	t.check(controller.emote_wheel_open and not controller.wrist_raised,
+			"the emote key brings the quick wheel up and the watch down")
+	t.check(controller.wheel_slice(Vector2.ZERO) == -1 and controller.wheel_slice(Vector2(0, -80)) == 0
+			and controller.wheel_slice(Vector2(80, 0)) == 2 and controller.wheel_slice(Vector2(0, 80)) == 4
+			and controller.wheel_slice(Vector2(-80, 0)) == 6, "the wheel's slices run clockwise from the top")
+	var yaw_before := controller.yaw
+	var motion := InputEventMouseMotion.new()
+	motion.relative = Vector2(50, 50)
+	t.check(controller._wheel_input(motion) and controller.emote_wheel_pick == Emotes.IDS.find("cheer")
+			and controller.yaw == yaw_before, "the mouse points at a slice and the view stays put")
+	var held := InputEventAction.new()
+	held.action = "emote_wheel"
+	held.pressed = false
+	controller._wheel_held_ms -= 1000
+	controller._wheel_input(held)
+	t.check(not controller.emote_wheel_open and controller.emote_playing == "cheer" and controller.emote_pick == 3,
+			"held, letting go plays the slice pointed at")
+	controller.stop_emote()
+	controller.open_emote_wheel()
+	controller._wheel_held_ms -= 1000
+	controller._wheel_input(held)
+	t.check(not controller.emote_wheel_open and controller.emote_playing == "",
+			"held and let go without pointing, nothing plays")
+	controller.open_emote_wheel()
+	controller._wheel_input(held)
+	t.check(controller.emote_wheel_open, "a tap leaves the wheel up")
+	var wheel := InputEventMouseButton.new()
+	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	wheel.pressed = true
+	controller._wheel_input(wheel)
+	t.check(controller.emote_wheel_pick == 4, "the mouse wheel steps round it")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	controller._wheel_input(click)
+	t.check(not controller.emote_wheel_open and controller.emote_playing == "sit", "and a click plays the slice")
+	controller.stop_emote()
+	controller.open_emote_wheel()
+	var right := InputEventMouseButton.new()
+	right.button_index = MOUSE_BUTTON_RIGHT
+	right.pressed = true
+	controller._wheel_input(right)
+	t.check(not controller.emote_wheel_open and controller.emote_playing == "", "a right click puts it away")
+	controller.open_emote_wheel()
+	controller.phone_out = true
+	controller._physics_process(1.0 / 60.0)
+	t.check(not controller.emote_wheel_open, "the phone puts it away")
+	controller.phone_out = false
+	p.cmd.phone = false
+	# Where it is drawn: on a working visor, else thrown from the wrist.
+	controller.open_emote_wheel()
+	var visor_hud := VisorHud.new()
+	visor_hud.controller = controller
+	visor_hud.raid = raid
+	t.check(Hud.emote_wheel_holo(p, controller) == not p.visor.working(),
+			"with no working visor the wrist throws the wheel up as a hologram")
+	t.check(visor_hud.emote_wheel_shown() == p.visor.working(), "and with one it is on the glass")
+	Loadout.wear_helmet(p, "helm_seeker")
+	t.check(p.visor.working() and visor_hud.emote_wheel_shown() and not Hud.emote_wheel_holo(p, controller),
+			"a helmet on, the wheel is on the visor and not over the wrist")
+	p.visor.stowed = true
+	t.check(not p.visor.working() and Hud.emote_wheel_holo(p, controller) and not visor_hud.emote_wheel_shown(),
+			"the helmet taken off, it goes back over the wrist")
+	p.visor.stowed = false
+	Loadout.wear_helmet(p, "")
+	var holo := Hud.EmoteHolo.new()
+	raid.add_child(holo)
+	var spot := holo.spot_for(p)
+	t.check(spot.y < p.get_eye_position().y and spot.distance_to(p.get_eye_position()) < 1.0,
+			"the hologram stands in front of the chest, below the eyes")
+	holo.show_wheel(p, controller, p.global_position + Vector3(-0.3, 1.0, 0.0))
+	t.check(holo._labels.size() == Emotes.IDS.size(), "and names every emote")
+	holo.queue_free()
+	visor_hud.free()
+	controller.close_emote_wheel(false)
 	for action in ["emote_wheel", "quick_emote", "watch_map", "ping", "squad_chat", "friends"]:
 		t.check(InputMap.has_action(action) and not InputMap.action_get_events(action).is_empty(),
 				"the %s shortcut has a key" % action)

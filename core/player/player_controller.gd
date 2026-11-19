@@ -274,6 +274,27 @@ var portal_pick := 0
 var emote_pick := 0
 var emote_playing := ""
 var emote_left := 0.0
+## The quick emote wheel (Caleb's call): held on the emote key, it comes up
+## at once without raising the watch, drawn on the visor glass with a
+## helmet working (`VisorHud._draw_emote_wheel`) or as a small hologram
+## over the wrist without one (`Hud.EmoteHolo`). While it is up the mouse
+## picks a slice instead of turning the view, the wheel steps round it, a
+## click or letting go of a hold plays the slice, and a right click or the
+## key again closes it. A tap of the key leaves it up to pick at leisure.
+var emote_wheel_open := false
+## The slice the wheel points at (an `Emotes.IDS` index), and the mouse's
+## pull from the middle that picks it, in pixels.
+var emote_wheel_pick := 0
+var emote_wheel_aim := Vector2.ZERO
+## Held shorter than this, the key leaves the wheel up; longer, letting go
+## plays the slice picked.
+var emote_wheel_tap := 0.25
+## How far the mouse must pull from the middle before a slice is picked,
+## and how far the pull goes at most (pixels).
+var emote_wheel_dead := 24.0
+var emote_wheel_reach := 120.0
+var _wheel_held_ms := 0
+var _wheel_moved := false
 ## True on the tick an emote started, so its own holster is not taken for
 ## a weapon key that ends it.
 var _emote_fresh := false
@@ -376,6 +397,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if input_blocked:
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if emote_wheel_open and _wheel_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseMotion and captured:
 		# Zoomed in (a scope or binoculars), the mouse turns the view less, so
 		# a target moves across the screen at the same speed as without it.
@@ -400,8 +424,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		wrist_raised = not wrist_raised
 		watch_focus_moved = false
 		watch_open = ""
-	elif event.is_action_pressed("emote_wheel"):
-		watch_shortcut("emote")
+	elif event.is_action_pressed("emote_wheel") and not event.is_echo():
+		open_emote_wheel()
 	elif event.is_action_pressed("watch_map"):
 		watch_shortcut("map")
 	elif event.is_action_pressed("quick_emote"):
@@ -431,6 +455,83 @@ func watch_shortcut(id: String) -> void:
 	watch_focus = Hud.Wrist.SLOTS.find(id)
 	watch_focus_moved = true
 	watch_open = id if watch_entries(id) > 1 else ""
+
+
+## Brings the quick emote wheel up on the emote key, pointing at the emote
+## last picked. Not while down, riding or with the phone out; the watch goes
+## down for it.
+func open_emote_wheel() -> void:
+	if actor == null or not is_instance_valid(actor) or actor.is_dead or is_riding() or phone_out:
+		return
+	emote_wheel_open = true
+	emote_wheel_pick = clampi(emote_pick, 0, Emotes.IDS.size() - 1)
+	emote_wheel_aim = Vector2.ZERO
+	_wheel_moved = false
+	_wheel_held_ms = Time.get_ticks_msec()
+	wrist_raised = false
+	watch_open = ""
+
+
+## Puts the wheel away, playing the slice it points at when `play` (or
+## stopping it, if that emote is already playing).
+func close_emote_wheel(play: bool) -> void:
+	if not emote_wheel_open:
+		return
+	emote_wheel_open = false
+	emote_wheel_aim = Vector2.ZERO
+	if not play:
+		return
+	emote_pick = emote_wheel_pick
+	var picked: String = Emotes.IDS[clampi(emote_wheel_pick, 0, Emotes.IDS.size() - 1)]
+	if picked == emote_playing:
+		stop_emote()
+	else:
+		start_emote(picked)
+
+
+## The slice of the wheel (an `Emotes.IDS` index) a pull of the mouse
+## points at: the first at the top, then round clockwise. -1 inside the
+## dead middle.
+func wheel_slice(pull: Vector2) -> int:
+	if pull.length() < emote_wheel_dead:
+		return -1
+	var count := Emotes.IDS.size()
+	var turn := fposmod(atan2(pull.x, -pull.y), TAU)
+	return int(round(turn / (TAU / count))) % count
+
+
+## The wheel's own input while it is up. True when it took the event.
+func _wheel_input(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion:
+		emote_wheel_aim = (emote_wheel_aim + (event as InputEventMouseMotion).relative).limit_length(emote_wheel_reach)
+		var slice := wheel_slice(emote_wheel_aim)
+		if slice >= 0:
+			emote_wheel_pick = slice
+			_wheel_moved = true
+		return true
+	if event is InputEventMouseButton and event.pressed:
+		match (event as InputEventMouseButton).button_index:
+			MOUSE_BUTTON_LEFT:
+				close_emote_wheel(true)
+			MOUSE_BUTTON_RIGHT:
+				close_emote_wheel(false)
+			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
+				var step := 1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1
+				emote_wheel_pick = posmod(emote_wheel_pick + step, Emotes.IDS.size())
+				_wheel_moved = true
+			_:
+				return false
+		return true
+	if event.is_action_pressed("emote_wheel") and not event.is_echo():
+		# Tapped up, the key again puts it away.
+		close_emote_wheel(false)
+		return true
+	if event.is_action_released("emote_wheel"):
+		# Held, letting go plays what it points at; a tap leaves it up.
+		if Time.get_ticks_msec() - _wheel_held_ms >= int(emote_wheel_tap * 1000.0):
+			close_emote_wheel(_wheel_moved)
+		return true
+	return false
 
 
 ## The quick emote key: plays the emote last picked on the watch, or stops
@@ -901,7 +1002,10 @@ func _physics_process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor) or actor.is_dead:
 		crouch_toggled = false
 		_could_fight = false
+		emote_wheel_open = false
 		return
+	if emote_wheel_open and (input_blocked or wrist_raised or phone_out or is_riding()):
+		close_emote_wheel(false)
 	var cmd := actor.cmd
 	cmd.clear_one_shots()
 	cmd.phone = phone_out
@@ -946,6 +1050,12 @@ func _physics_process(delta: float) -> void:
 	cmd.primary_pressed = captured and Input.is_action_just_pressed("fire")
 	cmd.secondary = captured and Input.is_action_pressed("alt_fire")
 	cmd.secondary_pressed = captured and Input.is_action_just_pressed("alt_fire")
+	if emote_wheel_open:
+		# The wheel has the mouse's buttons: a click picks, never shoots.
+		cmd.primary = false
+		cmd.primary_pressed = false
+		cmd.secondary = false
+		cmd.secondary_pressed = false
 	var busy_hands := cmd.primary_pressed or cmd.secondary_pressed or cmd.sprint or cmd.dash or cmd.slide
 	if not wrist_raised:
 		watch_open = ""
