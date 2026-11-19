@@ -46,8 +46,11 @@ const THROAT_END := 44.0
 ## The gallery ([x0, x1, z0, z1]) and the root pillar it loops round.
 const GALLERY := [-17.0, 17.0, 44.0, 72.0]
 const PILLAR := [-5.0, 5.0, 53.0, 63.0]
-## The passage down from the gallery to the chamber.
+## The passage down from the gallery to the chamber, and how far across
+## it and the chamber sit from the throat: the way bends round the
+## pillar, so the chamber is never in sight from the cut.
 const PASSAGE_END := 80.0
+const BEND := 11.0
 ## The keeper's chamber: its middle (on z) and its radius.
 const CHAMBER_Z := 96.0
 const CHAMBER_RADIUS := 16.0
@@ -118,10 +121,14 @@ static func way_at(pos: Vector3) -> int:
 		var p := local(ROOTWAYS[i], pos)
 		if p.y > ROOF or p.y < CHAMBER_FLOOR - 1.0 or p.z < CUT or p.z > END:
 			continue
-		if absf(p.x) <= HALF + WALL * 0.5 or (p.z > GALLERY[2] - WALL and p.z < GALLERY[3] + WALL
-				and absf(p.x) <= GALLERY[1] + WALL * 0.5):
+		var across := HALF + WALL * 0.5
+		if p.z < GALLERY[2] and absf(p.x) <= across:
 			return i
-		if Vector2(p.x, p.z - CHAMBER_Z).length() <= CHAMBER_RADIUS + WALL * 0.5:
+		if p.z >= GALLERY[2] - WALL and p.z < GALLERY[3] + WALL and absf(p.x) <= GALLERY[1] + WALL * 0.5:
+			return i
+		if p.z >= GALLERY[3] and absf(p.x - BEND) <= across:
+			return i
+		if Vector2(p.x - BEND, p.z - CHAMBER_Z).length() <= CHAMBER_RADIUS + WALL * 0.5:
 			return i
 	return -1
 
@@ -231,8 +238,10 @@ static func _build_tunnels(parts: Parts) -> void:
 		parts.box(Vector3(side * (x1 + WALL * 0.5), 0, (gz0 + gz1) * 0.5), Vector2(WALL, gz1 - gz0),
 				FLOOR - 1.0, roof_top)
 		var span := x1 + WALL - HALF
-		for z: float in [z0 - WALL * 0.5, float(g[3]) + WALL * 0.5]:
-			parts.box(Vector3(side * (HALF + span * 0.5), 0, z), Vector2(span, WALL), FLOOR - 1.0, roof_top)
+		parts.box(Vector3(side * (HALF + span * 0.5), 0, z0 - WALL * 0.5), Vector2(span, WALL), FLOOR - 1.0, roof_top)
+	# The back wall, but where the passage leaves it beside the pillar.
+	var back := BEND - HALF + x1 + WALL
+	parts.box(Vector3((BEND - HALF - x1 - WALL) * 0.5, 0, float(g[3]) + WALL * 0.5), Vector2(back, WALL), FLOOR - 1.0, roof_top)
 	# The pillar: its foot is walked round, the rest stands up into the roof.
 	var mid := Vector3((float(p[0]) + float(p[1])) * 0.5, 0, (float(p[2]) + float(p[3])) * 0.5)
 	var size := Vector2(float(p[1]) - float(p[0]), float(p[3]) - float(p[2]))
@@ -240,11 +249,11 @@ static func _build_tunnels(parts: Parts) -> void:
 	parts.box(mid, size, FLOOR + 2.5, ROOF + 0.1)
 	# The passage down to the chamber.
 	var door := CHAMBER_Z - sqrt(CHAMBER_RADIUS * CHAMBER_RADIUS - CUT_HALF * CUT_HALF) + 1.0
-	parts.slope(-HALF, HALF, Vector2(z1, FLOOR), Vector2(PASSAGE_END, CHAMBER_FLOOR), 1.0)
+	parts.slope(BEND - HALF, BEND + HALF, Vector2(z1, FLOOR), Vector2(PASSAGE_END, CHAMBER_FLOOR), 1.0)
 	for side: float in [-1.0, 1.0]:
-		parts.box(Vector3(side * (HALF + WALL * 0.5), 0, (float(g[3]) + door) * 0.5), Vector2(WALL, door - float(g[3])),
+		parts.box(Vector3(BEND + side * (HALF + WALL * 0.5), 0, (float(g[3]) + door) * 0.5), Vector2(WALL, door - float(g[3])),
 				CHAMBER_FLOOR - 1.0, roof_top)
-	parts.box(Vector3(0, 0, (float(g[3]) + door) * 0.5), Vector2(CUT_HALF * 2.0, door - float(g[3])), ROOF, roof_top)
+	parts.box(Vector3(BEND, 0, (float(g[3]) + door) * 0.5), Vector2(CUT_HALF * 2.0, door - float(g[3])), ROOF, roof_top)
 
 
 ## The keeper's round chamber: a round floor, a ring of root walls with the
@@ -252,11 +261,11 @@ static func _build_tunnels(parts: Parts) -> void:
 static func _build_chamber(parts: Parts) -> void:
 	var roof_top := ROOF + ROOF_THICK
 	var reach := CHAMBER_RADIUS + WALL
-	parts.disc(Vector3(0, CHAMBER_FLOOR - 0.5, CHAMBER_Z), CHAMBER_RADIUS + 0.3, 1.0)
+	parts.disc(Vector3(BEND, CHAMBER_FLOOR - 0.5, CHAMBER_Z), CHAMBER_RADIUS + 0.3, 1.0)
 	# The step in from the passage, over the ring's edge.
 	var door := CHAMBER_Z - CHAMBER_RADIUS
-	parts.box(Vector3(0, 0, door + 1.0), Vector2(HALF * 2.0, 2.4), CHAMBER_FLOOR - 1.0, CHAMBER_FLOOR, 0.0, true, true)
-	parts.box(Vector3(0, 0, CHAMBER_Z), Vector2(reach * 2.0, reach * 2.0), ROOF, roof_top)
+	parts.box(Vector3(BEND, 0, door + 1.0), Vector2(HALF * 2.0, 2.4), CHAMBER_FLOOR - 1.0, CHAMBER_FLOOR, 0.0, true, true)
+	parts.box(Vector3(BEND, 0, CHAMBER_Z), Vector2(reach * 2.0, reach * 2.0), ROOF, roof_top)
 	var step := TAU / CHAMBER_SIDES
 	var width := 2.0 * reach * tan(step * 0.5) + 0.3
 	for k in CHAMBER_SIDES:
@@ -265,10 +274,10 @@ static func _build_chamber(parts: Parts) -> void:
 		# The door: the passage comes in from the cut's side (angle 0).
 		if absf(CHAMBER_RADIUS * sin(a)) < CUT_HALF and cos(a) > 0.0:
 			continue
-		var mid := Vector3(0, 0, CHAMBER_Z) + out * (CHAMBER_RADIUS + WALL * 0.5)
+		var mid := Vector3(BEND, 0, CHAMBER_Z) + out * (CHAMBER_RADIUS + WALL * 0.5)
 		parts.box(mid, Vector2(width, WALL), CHAMBER_FLOOR - 1.0, roof_top, a)
 	# Knots of root to duck behind, clear of the vents.
-	for knot: Array in [[Vector2(-12.5, 96.0), 0.4], [Vector2(12.5, 96.0), -0.4]]:
+	for knot: Array in [[Vector2(BEND - 12.5, CHAMBER_Z), 0.4], [Vector2(BEND + 12.5, CHAMBER_Z), -0.4]]:
 		var at: Vector2 = knot[0]
 		parts.box(Vector3(at.x, 0, at.y), Vector2(3.2, 1.8), CHAMBER_FLOOR - 0.2, CHAMBER_FLOOR + 1.5, float(knot[1]), true)
 
@@ -284,7 +293,7 @@ static func _place_markers(map: Node3D, way: Dictionary, f: Transform3D) -> void
 		marker.set_meta("radius", guard[2])
 	for spot: Vector3 in [Vector3(-14.5, FLOOR + 0.1, 46.5), Vector3(14.5, FLOOR + 0.1, 69.5)]:
 		(map.call("_add_marker", "spawn_cache", f * spot) as Marker3D).set_meta("loot_source", "rootway")
-	var boss: Marker3D = map.call("_add_marker", "spawn_boss", f * Vector3(0, CHAMBER_FLOOR + 0.1, CHAMBER_Z + 2.0))
+	var boss: Marker3D = map.call("_add_marker", "spawn_boss", f * Vector3(BEND, CHAMBER_FLOOR + 0.1, CHAMBER_Z + 2.0))
 	boss.set_meta("faction", "keeper")
 	boss.set_meta("boss", kind)
 	boss.set_meta("keeper", true)
@@ -294,19 +303,19 @@ static func _place_markers(map: Node3D, way: Dictionary, f: Transform3D) -> void
 	boss.set_meta("name", way["name"])
 	for angle: float in SOCKETS:
 		var a := deg_to_rad(angle)
-		var at := Vector3(-sin(a), 0.0, -cos(a)) * (CHAMBER_RADIUS - 1.5) + Vector3(0, CHAMBER_FLOOR + 0.1, CHAMBER_Z)
+		var at := Vector3(-sin(a), 0.0, -cos(a)) * (CHAMBER_RADIUS - 1.5) + Vector3(BEND, CHAMBER_FLOOR + 0.1, CHAMBER_Z)
 		var socket: Marker3D = map.call("_add_marker", "boss_socket", f * at)
 		socket.set_meta("keeper", kind)
 		socket.set_meta("faction", "broodling")
 	for lane: Array in VENTS:
 		var from: Vector2 = lane[0]
 		var to: Vector2 = lane[1]
-		var purge: Marker3D = map.call("_add_marker", "purge", f * Vector3(from.x, CHAMBER_FLOOR + 0.1, from.y))
+		var purge: Marker3D = map.call("_add_marker", "purge", f * Vector3(BEND + from.x, CHAMBER_FLOOR + 0.1, from.y))
 		purge.set_meta("keeper", kind)
-		purge.set_meta("toward", f * Vector3(to.x, CHAMBER_FLOOR + 0.1, to.y))
+		purge.set_meta("toward", f * Vector3(BEND + to.x, CHAMBER_FLOOR + 0.1, to.y))
 		purge.set_meta("width", VENT_WIDTH)
 		purge.set_meta("damage", VENT_DAMAGE)
-	var vault: Marker3D = map.call("_add_marker", "vault", f * Vector3(0, CHAMBER_FLOOR + 0.1, CHAMBER_Z + CHAMBER_RADIUS - 3.5))
+	var vault: Marker3D = map.call("_add_marker", "vault", f * Vector3(BEND, CHAMBER_FLOOR + 0.1, CHAMBER_Z + CHAMBER_RADIUS - 3.5))
 	vault.basis = f.basis
 	vault.set_meta("keeper", kind)
 
@@ -428,31 +437,34 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 	var lights: Array[Dictionary] = []
 	var roots := SurfaceTool.new()
 	roots.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var weave := SurfaceTool.new()
+	weave.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var caps: Array[Transform3D] = []
 	var eggs: Array[Transform3D] = []
 	for way: Dictionary in ROOTWAYS:
 		var f := frame(way)
 		var top := float(ground.call(f.origin.x, f.origin.z))
 		_dress_roots(roots, f, rng, top)
+		_dress_weave(weave, f, rng, top)
 		_dress_caps(caps, f, rng, top)
 		# Jade lights down the way, none casting shadows.
 		for spot: Vector3 in [Vector3(0, FLOOR + 4.2, 40.0), Vector3(-11.0, FLOOR + 4.2, 52.0), Vector3(11.0, FLOOR + 4.2, 64.0),
-				Vector3(0, FLOOR + 3.5, 76.0)]:
+				Vector3(BEND, FLOOR + 3.5, 76.0)]:
 			art.add_child(_light(f * spot, Color(0.45, 1.0, 0.65), 2.4, 15.0))
-		var chamber := _light(f * Vector3(0, ROOF - 1.5, CHAMBER_Z), CHAMBER_GLOW[1], 3.0, 28.0)
+		var chamber := _light(f * Vector3(BEND, ROOF - 1.5, CHAMBER_Z), CHAMBER_GLOW[1], 3.0, 28.0)
 		art.add_child(chamber)
 		lights.append({"light": chamber, "keeper": way["keeper"]})
 		# The sockets' egg sacs and the vault's cocoon.
 		for angle: float in SOCKETS:
 			var a := deg_to_rad(angle)
-			var at := Vector3(-sin(a), 0.0, -cos(a)) * (CHAMBER_RADIUS - 0.4) + Vector3(0, CHAMBER_FLOOR, CHAMBER_Z)
+			var at := Vector3(-sin(a), 0.0, -cos(a)) * (CHAMBER_RADIUS - 0.4) + Vector3(BEND, CHAMBER_FLOOR, CHAMBER_Z)
 			for k in 9:
 				var s := rng.randf_range(0.3, 0.6)
 				var up := rng.randf_range(0.3, 2.6)
 				var off := Vector3(rng.randf_range(-1.3, 1.3), up, rng.randf_range(-0.3, 0.3))
 				eggs.append(Transform3D(Basis(Vector3.UP, -a).scaled(Vector3(s, s * 1.3, s)), f * (at + Basis(Vector3.UP, -a) * off)))
 			art.add_child(_light(f * (at + Vector3(0, 1.6, 0) - Vector3(-sin(a), 0, -cos(a)) * 1.2), Color(0.6, 1.0, 0.5), 1.5, 8.0))
-		var vault := f * Vector3(0, CHAMBER_FLOOR, CHAMBER_Z + CHAMBER_RADIUS - 1.6)
+		var vault := f * Vector3(BEND, CHAMBER_FLOOR, CHAMBER_Z + CHAMBER_RADIUS - 1.6)
 		for k in 14:
 			var s := rng.randf_range(0.4, 0.9)
 			eggs.append(Transform3D(Basis.from_scale(Vector3(s * 1.2, s * 1.5, s)),
@@ -469,6 +481,12 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 	root_node.name = "Roots"
 	root_node.mesh = roots.commit()
 	art.add_child(root_node)
+	weave.generate_normals()
+	weave.set_material(wall_material())
+	var weave_node := MeshInstance3D.new()
+	weave_node.name = "RootWeave"
+	weave_node.mesh = weave.commit()
+	art.add_child(weave_node)
 	art.add_child(_scatter("RootwayCaps", _cap_mesh(), caps))
 	var egg := SphereMesh.new()
 	egg.radius = 0.5
@@ -486,6 +504,150 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 	return {"vents": vents, "lights": lights}
 
 
+## The walls grown over: thick roots woven along every straight wall and
+## round the pillar, ribs arching over the throat and the passage, and
+## buttresses and bands round the chamber, so no flat face or corner shows.
+static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGenerator, top: float) -> void:
+	var g: Array = GALLERY
+	var p: Array = PILLAR
+	var gx := float(g[1])
+	var in_by := 0.25
+	# Straight walls, each from a to b along its inner face, and its floor.
+	var walls: Array = [
+		[Vector2(-HALF + in_by, CUT), Vector2(-HALF + in_by, float(g[2])), FLOOR],
+		[Vector2(HALF - in_by, CUT), Vector2(HALF - in_by, float(g[2])), FLOOR],
+		[Vector2(-gx + in_by, float(g[2])), Vector2(-gx + in_by, float(g[3])), FLOOR],
+		[Vector2(gx - in_by, float(g[2])), Vector2(gx - in_by, float(g[3]) + 4.0), FLOOR],
+		[Vector2(-gx, float(g[2]) + in_by), Vector2(-HALF, float(g[2]) + in_by), FLOOR],
+		[Vector2(HALF, float(g[2]) + in_by), Vector2(gx, float(g[2]) + in_by), FLOOR],
+		[Vector2(-gx, float(g[3]) - in_by), Vector2(BEND - HALF, float(g[3]) - in_by), FLOOR],
+		[Vector2(BEND - HALF + in_by, float(g[3])), Vector2(BEND - HALF + in_by, PASSAGE_END + 2.0), CHAMBER_FLOOR],
+		[Vector2(float(p[0]) - in_by, float(p[2])), Vector2(float(p[0]) - in_by, float(p[3])), FLOOR],
+		[Vector2(float(p[1]) + in_by, float(p[2])), Vector2(float(p[1]) + in_by, float(p[3])), FLOOR],
+		[Vector2(float(p[0]), float(p[2]) - in_by), Vector2(float(p[1]), float(p[2]) - in_by), FLOOR],
+		[Vector2(float(p[0]), float(p[3]) + in_by), Vector2(float(p[1]), float(p[3]) + in_by), FLOOR],
+	]
+	for wall: Array in walls:
+		var a: Vector2 = wall[0]
+		var b: Vector2 = wall[1]
+		var low: float = wall[2]
+		for band in 5:
+			var y := lerpf(low + 0.3, ROOF - 0.4, band / 4.0) + rng.randf_range(-0.35, 0.35)
+			_root_along(st, f, a, b, y, rng.randf_range(0.28, 0.5), rng)
+	# The cut's walls, banded down the ramp and under the ground's edge.
+	for side: float in [-1.0, 1.0]:
+		for band in 4:
+			var z0 := 0.0
+			while z0 < CUT:
+				var z1 := minf(z0 + 9.0, CUT)
+				var y := floor_at((z0 + z1) * 0.5, top) + 0.4 + band * 1.6 + rng.randf_range(-0.3, 0.3)
+				if y < top - 0.3:
+					_root_along(st, f, Vector2(side * (HALF - in_by), z0), Vector2(side * (HALF - in_by), z1), y,
+							rng.randf_range(0.25, 0.45), rng)
+				z0 = z1
+	# Ribs over the throat and the passage, wall foot over to wall foot.
+	var z := CUT + 1.5
+	while z < PASSAGE_END + 2.0:
+		var centre := 0.0 if z < float(g[2]) else BEND
+		if z < float(g[2]) or z > float(g[3]) + 0.5:
+			_rib(st, f, centre, z + rng.randf_range(-0.5, 0.5), floor_at(z, top), rng)
+		z += 3.2
+	# Ribs over the gallery's ring, pillar to wall.
+	for side: float in [-1.0, 1.0]:
+		var zz := float(g[2]) + 2.0
+		while zz < float(g[3]) - 1.0:
+			var from := Vector3(side * float(p[1]), ROOF - 0.3, zz)
+			var to := Vector3(side * gx, FLOOR + 0.5, zz + rng.randf_range(-1.0, 1.0))
+			_arc(st, f, from, to, 0.3, rng)
+			zz += 3.5
+	# The chamber: buttresses up its wall into the roof, and bands round it.
+	var ring := CHAMBER_RADIUS - 0.2
+	for k in 28:
+		var a := TAU * k / 28.0 + rng.randf_range(-0.05, 0.05)
+		if absf(ring * sin(a)) < CUT_HALF and cos(a) > 0.0:
+			continue
+		var out := Vector3(-sin(a), 0, -cos(a))
+		var foot := Vector3(BEND, CHAMBER_FLOOR - 0.1, CHAMBER_Z) + out * (ring - 1.2)
+		var head := Vector3(BEND, ROOF - 0.2, CHAMBER_Z) + out * (ring - 3.5)
+		var points := PackedVector3Array()
+		var radii := PackedFloat32Array()
+		var colours: Array[Color] = []
+		var thick := rng.randf_range(0.35, 0.65)
+		for i in 7:
+			var t := i / 6.0
+			var at := Vector3(BEND, 0, CHAMBER_Z) + out * lerpf(ring - 1.2, ring - 0.2, sin(t * PI * 0.5))
+			at = at.lerp(Vector3(head.x, 0, head.z), t * t)
+			at.y = lerpf(foot.y, head.y, t)
+			points.append(f * at)
+			radii.append(thick * lerpf(1.3, 0.7, t))
+			colours.append(Color.WHITE)
+		Flora._tube(st, points, radii, colours, 7)
+	var white: Array[Color] = [Color.WHITE, Color.WHITE]
+	for band in 3:
+		var y := lerpf(CHAMBER_FLOOR + 0.8, ROOF - 1.0, band / 2.0)
+		var steps := 30
+		for k in steps:
+			var a0 := TAU * k / steps
+			var a1 := TAU * (k + 1) / steps
+			if absf(ring * sin(a0)) < CUT_HALF + 0.5 and cos(a0) > 0.0:
+				continue
+			var p0 := Vector3(BEND - sin(a0) * ring, y + sin(a0 * 3.0 + band) * 0.4, CHAMBER_Z - cos(a0) * ring)
+			var p1 := Vector3(BEND - sin(a1) * ring, y + sin(a1 * 3.0 + band) * 0.4, CHAMBER_Z - cos(a1) * ring)
+			Flora._tube(st, PackedVector3Array([f * p0, f * p1]), PackedFloat32Array([0.4, 0.4]), white, 7)
+
+
+## A thick root running along a wall from `a` to `b` (x, z) at height `y`,
+## swelling and sagging as it goes.
+static func _root_along(st: SurfaceTool, f: Transform3D, a: Vector2, b: Vector2, y: float, thick: float,
+		rng: RandomNumberGenerator) -> void:
+	var length := a.distance_to(b)
+	var steps := maxi(int(length / 1.5), 2)
+	var phase := rng.randf() * TAU
+	var points := PackedVector3Array()
+	var radii := PackedFloat32Array()
+	var colours: Array[Color] = []
+	for i in steps + 1:
+		var t := float(i) / steps
+		var at := a.lerp(b, t)
+		points.append(f * Vector3(at.x, y + sin(t * length * 0.4 + phase) * 0.45, at.y))
+		radii.append(thick * (0.75 + 0.35 * sin(t * length * 0.7 + phase * 2.0)))
+		colours.append(Color.WHITE)
+	Flora._tube(st, points, radii, colours, 7)
+
+
+## A rib arching over a tunnel at `z`, from one wall's foot to the other's.
+static func _rib(st: SurfaceTool, f: Transform3D, centre: float, z: float, floor_y: float, rng: RandomNumberGenerator) -> void:
+	var h := HALF - 0.3
+	var thick := rng.randf_range(0.3, 0.5)
+	var shape: Array[Vector2] = [Vector2(-h, floor_y - 0.2), Vector2(-h, ROOF - 1.6), Vector2(-h + 0.6, ROOF - 0.7),
+			Vector2(-h + 2.0, ROOF - 0.25), Vector2(h - 2.0, ROOF - 0.25), Vector2(h - 0.6, ROOF - 0.7),
+			Vector2(h, ROOF - 1.6), Vector2(h, floor_y - 0.2)]
+	var points := PackedVector3Array()
+	var radii := PackedFloat32Array()
+	var colours: Array[Color] = []
+	for corner in shape:
+		points.append(f * Vector3(centre + corner.x, minf(corner.y, ROOF - 0.25), z + rng.randf_range(-0.2, 0.2)))
+		radii.append(thick * rng.randf_range(0.8, 1.15))
+		colours.append(Color.WHITE)
+	Flora._tube(st, points, radii, colours, 7)
+
+
+## A root arching from `from` (up under the roof) down to `to`.
+static func _arc(st: SurfaceTool, f: Transform3D, from: Vector3, to: Vector3, thick: float, rng: RandomNumberGenerator) -> void:
+	var points := PackedVector3Array()
+	var radii := PackedFloat32Array()
+	var colours: Array[Color] = []
+	var bow := rng.randf_range(0.5, 1.2)
+	for i in 7:
+		var t := i / 6.0
+		var at := from.lerp(to, t)
+		at.y = lerpf(from.y, to.y, t * t) + sin(t * PI) * bow * 0.3
+		points.append(f * at)
+		radii.append(thick * lerpf(0.9, 1.3, t))
+		colours.append(Color.WHITE)
+	Flora._tube(st, points, radii, colours, 7)
+
+
 ## Roots: hanging from the roof all the way down, and climbing the walls.
 static func _dress_roots(st: SurfaceTool, f: Transform3D, rng: RandomNumberGenerator, top: float) -> void:
 	var dark := Color(0.16, 0.12, 0.12)
@@ -494,12 +656,13 @@ static func _dress_roots(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 	var z := CUT + 2.0
 	while z < END - 2.0:
 		for k in 3:
-			spots.append(Vector2(rng.randf_range(-HALF + 0.5, HALF - 0.5), z + rng.randf_range(-1.5, 1.5)))
+			var centre := BEND if z > GALLERY[3] else 0.0
+			spots.append(Vector2(centre + rng.randf_range(-HALF + 0.5, HALF - 0.5), z + rng.randf_range(-1.5, 1.5)))
 			if z > GALLERY[2] and z < GALLERY[3]:
 				spots.append(Vector2(rng.randf_range(GALLERY[0] + 0.5, GALLERY[1] - 0.5), z + rng.randf_range(-1.5, 1.5)))
 			if z > CHAMBER_Z - CHAMBER_RADIUS and z < CHAMBER_Z + CHAMBER_RADIUS:
 				var a := rng.randf() * TAU
-				spots.append(Vector2(cos(a), sin(a)) * sqrt(rng.randf()) * (CHAMBER_RADIUS - 1.0) + Vector2(0, CHAMBER_Z))
+				spots.append(Vector2(cos(a), sin(a)) * sqrt(rng.randf()) * (CHAMBER_RADIUS - 1.0) + Vector2(BEND, CHAMBER_Z))
 		z += 2.5
 	for at in spots:
 		var roof := ROOF
@@ -529,9 +692,9 @@ static func _dress_roots(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 		if cos(a) > 0.92:
 			continue
 		var out := Vector3(-sin(a), 0, -cos(a))
-		var foot := Vector3(0, CHAMBER_FLOOR - 0.2, CHAMBER_Z) + out * (CHAMBER_RADIUS - 0.1)
+		var foot := Vector3(BEND, CHAMBER_FLOOR - 0.2, CHAMBER_Z) + out * (CHAMBER_RADIUS - 0.1)
 		var b := a + rng.randf_range(-0.25, 0.25)
-		var head := Vector3(0, ROOF - 0.1, CHAMBER_Z) + Vector3(-sin(b), 0, -cos(b)) * (CHAMBER_RADIUS - 0.1)
+		var head := Vector3(BEND, ROOF - 0.1, CHAMBER_Z) + Vector3(-sin(b), 0, -cos(b)) * (CHAMBER_RADIUS - 0.1)
 		_wall_root(st, f, head, foot, rng, dark, pale)
 
 
@@ -565,7 +728,7 @@ static func _dress_caps(caps: Array[Transform3D], f: Transform3D, rng: RandomNum
 		var a := TAU * k / 16.0 + rng.randf_range(-0.1, 0.1)
 		if cos(a) > 0.85:
 			continue
-		clumps.append(Vector2(-sin(a), -cos(a)) * (CHAMBER_RADIUS - 0.6) + Vector2(0, CHAMBER_Z))
+		clumps.append(Vector2(-sin(a), -cos(a)) * (CHAMBER_RADIUS - 0.6) + Vector2(BEND, CHAMBER_Z))
 	for clump in clumps:
 		for k in rng.randi_range(4, 9):
 			var at := clump + Vector2(rng.randf_range(-0.6, 0.6), rng.randf_range(-0.9, 0.9))
@@ -620,7 +783,7 @@ static func _vent(art: Node3D, f: Transform3D, lane: Array) -> Dictionary:
 	var from: Vector2 = lane[0]
 	var to: Vector2 = lane[1]
 	var run := to - from
-	var mid := (from + to) * 0.5
+	var mid := (from + to) * 0.5 + Vector2(BEND, 0.0)
 	var basis := f.basis * Basis(Vector3.UP, atan2(run.x, run.y))
 	var crack_mat := StandardMaterial3D.new()
 	crack_mat.albedo_color = Color(0.05, 0.06, 0.05)

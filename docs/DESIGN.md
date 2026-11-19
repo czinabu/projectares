@@ -1520,21 +1520,27 @@ middle, then the Rotwood near the core), each keeper harder than the last.
   `Terrain.holes`, and the black water is not drawn over it). At its foot
   the way runs on under the ground and the pools' beds, roofed: a throat,
   a gallery that loops round a root pillar (two ways round, so a fight
-  there can be flanked), a passage down and the keeper's round chamber,
-  32 m across and 8 m high. No way is narrower than 9 m (Caleb's squad
+  there can be flanked), a passage that bends aside round the pillar's
+  far side, so the chamber is not in sight from the gallery, and the
+  keeper's round chamber, 32 m across and 8 m high. No way is narrower than 9 m (Caleb's squad
   rule), and nothing needs two people.
 - **Inside.** Out of the weather (`WorldDef.sheltered_at`) and in the
   forests' close air all the way, the mist and dark at their deepest; bots
   see no further than in a forest (`sight_at`). Roots hang from the roof
   and climb the walls, glowcaps grow along the walls' feet and jade lights
-  glow in the dark. A garrison of the marsh's beasts stands in the throat
+  glow in the dark. The walls read as a burrow, not a corridor: thick roots
+  run along them, root ribs arch over the throat and the passage, arches
+  ring the gallery and buttresses and bands hold up the chamber's wall. A garrison of the marsh's beasts stands in the throat
   and the gallery (stalkers and a bloater), and the gallery holds two
   caches of the marsh's goods ("rootway").
 - **The Rootmother.** The Westwood Rootway's keeper: the brood's mother, a
   brood keeper grown to 3.4 m, 1,200 health, 45 armor, slow, her hooks on
   a long windup you can parry, and the egg sacs on her back her weak spot
   (twice the damage from behind). Made for one player, she grows tougher
-  with company like every boss. Her fight runs on the Engine's keeper
+  with company like every boss. She has a body of her own (Look's
+  "brood_mother"), not a scaled brood keeper: a swollen abdomen of lit
+  eggs, six woody roots arching from her back to the ground, and a crown
+  of root horns. Her fight runs on the Engine's keeper
   machinery: while she is above half health broodlings come out of four
   root sockets in her chamber's wall, a few at a time; below half the
   floor's four spore vents open, two at a time, each glowing ochre before

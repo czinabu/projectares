@@ -64,7 +64,9 @@ date in the same PR.
   world builds it in `make_warlord` from the "boss" meta, `roll_vault`
   pays its shares, and the map draws the vents (`show_purge`, indexes
   in "purge" marker order) and lights the chamber from the "keepers" meta
-  (`Rootway.animate`), view only. Every gap in it is 9 m or more. Check
+  (`Rootway.animate`), view only. The passage and chamber sit `BEND` across
+  from the line of the mouth; `Rootway.inside` and `way_at` know it, so
+  anything placed past the gallery adds it. Every gap in it is 9 m or more. Check
   by eye with `visual_check.tscn -- <dir> --rootway-only`.
 - The scenery army (DESIGN.md "The scenery army", Caleb's call): Ashfront's
   far fights are view only (`worlds/ashfront/battle.gd`, added by the map's

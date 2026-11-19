@@ -31,6 +31,8 @@ static func _shape(t: Node) -> void:
 	t.check(Rootway.CHAMBER_RADIUS * 2.0 >= 30.0 and Rootway.ROOF - Rootway.CHAMBER_FLOOR >= 7.0
 			and Rootway.ROOF - Rootway.FLOOR >= 5.0, "the keeper's chamber is a round room 32 m across with room over a big beast")
 	t.check(Rootway.ARENA >= Rootway.CHAMBER_RADIUS, "the keeper's arena takes in its whole chamber")
+	t.check(Rootway.BEND - Rootway.HALF >= float(Rootway.PILLAR[1]) and Rootway.HALF <= float(Rootway.PILLAR[1]) + 1.0,
+			"the way bends round the pillar: the passage leaves the gallery beside it, out of line with the throat")
 	var on_grid := true
 	for hole in Rootway.holes():
 		for n: float in [hole.position.x, hole.position.y, hole.size.x, hole.size.y]:
@@ -51,7 +53,7 @@ static func _shape(t: Node) -> void:
 		open += hole.get_area()
 	t.check(not over_hole and is_equal_approx(covered + open, area.get_area()),
 			"the black water covers the basin but the cuts (%d pieces)" % pieces.size())
-	t.check(Rootway.inside(Rootway.frame(Rootway.ROOTWAYS[0]) * Vector3(0, Rootway.CHAMBER_FLOOR + 1.0, Rootway.CHAMBER_Z))
+	t.check(Rootway.inside(Rootway.frame(Rootway.ROOTWAYS[0]) * Vector3(Rootway.BEND, Rootway.CHAMBER_FLOOR + 1.0, Rootway.CHAMBER_Z))
 			and Rootway.inside(Rootway.frame(Rootway.ROOTWAYS[0]) * Vector3(12.0, Rootway.FLOOR + 1.0, 50.0))
 			and not Rootway.inside(Rootway.frame(Rootway.ROOTWAYS[0]) * Vector3(0, 1.0, 10.0))
 			and not Rootway.inside(Rootway.frame(Rootway.ROOTWAYS[0]) * Vector3(0, 2.0, Rootway.CHAMBER_Z)),
@@ -85,9 +87,9 @@ static func _built(t: Node) -> void:
 	# Floors to stand on all the way.
 	var floors := []
 	for spot: Vector3 in [Vector3(0, Rootway.FLOOR, 40.0), Vector3(-11.0, Rootway.FLOOR, 58.0), Vector3(11.0, Rootway.FLOOR, 58.0),
-			Vector3(0, Rootway.FLOOR, 48.0), Vector3(0, Rootway.FLOOR, 68.0), Vector3(0, Rootway.floor_at(76.0, top), 76.0),
-			Vector3(0, Rootway.CHAMBER_FLOOR, 81.0), Vector3(0, Rootway.CHAMBER_FLOOR, Rootway.CHAMBER_Z),
-			Vector3(-12.0, Rootway.CHAMBER_FLOOR, Rootway.CHAMBER_Z + 6.0)]:
+			Vector3(0, Rootway.FLOOR, 48.0), Vector3(0, Rootway.FLOOR, 68.0), Vector3(Rootway.BEND, Rootway.floor_at(76.0, top), 76.0),
+			Vector3(Rootway.BEND, Rootway.CHAMBER_FLOOR, 81.0), Vector3(Rootway.BEND, Rootway.CHAMBER_FLOOR, Rootway.CHAMBER_Z),
+			Vector3(Rootway.BEND - 12.0, Rootway.CHAMBER_FLOOR, Rootway.CHAMBER_Z + 6.0)]:
 		var from := f * (spot + Vector3(0, 3.0, 0))
 		var hit := _ray(space, from, from + Vector3(0, -6.0, 0))
 		if hit.is_empty() or absf(hit.position.y - spot.y) > 0.35:
@@ -96,8 +98,8 @@ static func _built(t: Node) -> void:
 	# Closed round: walls each side and a roof overhead, all the way.
 	var open := []
 	for spot: Vector3 in [Vector3(0, Rootway.FLOOR + 2.0, 40.0), Vector3(-11.0, Rootway.FLOOR + 2.0, 50.0),
-			Vector3(11.0, Rootway.FLOOR + 2.0, 66.0), Vector3(0, Rootway.FLOOR + 1.0, 76.0),
-			Vector3(0, Rootway.CHAMBER_FLOOR + 2.0, Rootway.CHAMBER_Z)]:
+			Vector3(11.0, Rootway.FLOOR + 2.0, 66.0), Vector3(Rootway.BEND, Rootway.FLOOR + 1.0, 76.0),
+			Vector3(Rootway.BEND, Rootway.CHAMBER_FLOOR + 2.0, Rootway.CHAMBER_Z)]:
 		var at := f * spot
 		for dir: Vector3 in [f.basis.x, -f.basis.x, f.basis.z, Vector3.UP]:
 			var hit := _ray(space, at, at + dir * 60.0)
@@ -116,7 +118,8 @@ static func _built(t: Node) -> void:
 	var shallow := []
 	var z := Rootway.CUT
 	while z <= Rootway.END:
-		for x: float in [-Rootway.GALLERY[1] - Rootway.WALL, -6.0, 0.0, 6.0, Rootway.GALLERY[1] + Rootway.WALL]:
+		for x: float in [-Rootway.GALLERY[1] - Rootway.WALL, -6.0, 0.0, 6.0, Rootway.GALLERY[1] + Rootway.WALL,
+				Rootway.BEND + Rootway.CHAMBER_RADIUS + Rootway.WALL]:
 			var at := f * Vector3(x, 0.0, z)
 			if float(map.call("ground_height", at.x, at.z)) < Rootway.ROOF + Rootway.ROOF_THICK + 0.3:
 				shallow.append(Vector2(x, z))
@@ -136,7 +139,7 @@ static func _built(t: Node) -> void:
 	# A bot can walk from the shore down to the keeper.
 	var nav := raid.get_world_3d().navigation_map
 	var outside := f * Vector3(0, top, -12.0)
-	var goal := f * Vector3(0, Rootway.CHAMBER_FLOOR, Rootway.CHAMBER_Z - 6.0)
+	var goal := f * Vector3(Rootway.BEND, Rootway.CHAMBER_FLOOR, Rootway.CHAMBER_Z - 6.0)
 	for i in 600:
 		if NavigationServer3D.map_get_iteration_id(nav) > 0 \
 				and NavigationServer3D.map_get_closest_point(nav, goal).distance_to(goal) < 1.0 \
@@ -151,7 +154,7 @@ static func _built(t: Node) -> void:
 	var back := NavigationServer3D.map_get_path(nav, goal, shore, true)
 	t.check(back.size() > 1 and back[back.size() - 1].distance_to(shore) < 1.5, "and back up")
 	# Out of the weather, in close air.
-	var deep := f * Vector3(0, Rootway.CHAMBER_FLOOR + 1.0, Rootway.CHAMBER_Z)
+	var deep := f * Vector3(Rootway.BEND, Rootway.CHAMBER_FLOOR + 1.0, Rootway.CHAMBER_Z)
 	var gallery := f * Vector3(11.0, Rootway.FLOOR + 1.0, 58.0)
 	var cut := f * Vector3(0, Rootway.floor_at(10.0, top) + 1.0, 10.0)
 	t.check(marsh.sheltered_at(deep) and marsh.sheltered_at(gallery) and not marsh.sheltered_at(cut),
@@ -216,7 +219,7 @@ static func _keeper(t: Node) -> void:
 	for actor: Actor in [me, mate]:
 		actor.protected_left = 0.0
 	var floor_y := Rootway.CHAMBER_FLOOR + 0.2
-	me.global_position = f * Vector3(0, floor_y, Rootway.CHAMBER_Z - 10.0)
+	me.global_position = f * Vector3(Rootway.BEND, floor_y, Rootway.CHAMBER_Z - 10.0)
 	mate.global_position = f * Vector3(0, Rootway.FLOOR + 0.2, 40.0)
 	# Phase one: broodlings out of the wall.
 	raid._tick_keeper(boss, marsh.keeper_socket_first + 0.1)
@@ -247,7 +250,7 @@ static func _keeper(t: Node) -> void:
 		t.check(me.health.health < mine, "then it vents and hurts whoever stands in it")
 		raid._tick_keeper(boss, Raid.PURGE_VENT + 0.1)
 	# The fall.
-	me.global_position = f * Vector3(0, floor_y, Rootway.CHAMBER_Z - 10.0)
+	me.global_position = f * Vector3(Rootway.BEND, floor_y, Rootway.CHAMBER_Z - 10.0)
 	keeper.kill("test", me)
 	raid._tick_bosses(0.1)
 	t.check(int(raid.keepers.get(kind, -1)) == 0, "she falls")

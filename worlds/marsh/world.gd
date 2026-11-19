@@ -566,7 +566,7 @@ func make_warlord(bot: Actor) -> void:
 ## randomness, like every boss.
 func _make_rootmother(bot: Actor) -> void:
 	bot.display_name = "The Rootmother"
-	bot.set_meta("look", "brood_keeper")
+	bot.set_meta("look", "brood_mother")
 	bot.set_meta("feint_chance", 0.2)
 	bot.set_meta("aim_turn", 90.0)
 	bot.body_color = Color(0.26, 0.22, 0.27)
