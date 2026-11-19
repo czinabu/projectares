@@ -75,6 +75,10 @@ static var shadows := 0
 static var render_scale := 0
 ## Ambient occlusion (the soft shade in corners and under things).
 static var ambient_occlusion := true
+## Low battle smoke over the ground where a planet has some
+## (`PlanetType.smoke`, `Planet.GroundSmoke`): volumetric fog, so it costs
+## frame time and can be switched off.
+static var ground_smoke := true
 static var _loaded := false
 
 
@@ -108,6 +112,7 @@ static func reset() -> void:
 	shadows = 0
 	render_scale = 0
 	ambient_occlusion = true
+	ground_smoke = true
 
 
 static func set_value(key: String, value: Variant) -> void:
@@ -140,6 +145,8 @@ static func set_value(key: String, value: Variant) -> void:
 			render_scale = clampi(int(value), 0, RENDER_SCALE.size() - 1)
 		"ambient_occlusion":
 			ambient_occlusion = bool(value)
+		"ground_smoke":
+			ground_smoke = bool(value)
 		_:
 			return
 	apply()
@@ -152,7 +159,7 @@ static func to_dict() -> Dictionary:
 			"eye_pullback": eye_pullback,
 			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates,
 			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink, "shadows": shadows,
-			"render_scale": render_scale, "ambient_occlusion": ambient_occlusion}
+			"render_scale": render_scale, "ambient_occlusion": ambient_occlusion, "ground_smoke": ground_smoke}
 
 
 ## Pushes the settings that live outside the game's own nodes: volume, the
@@ -209,6 +216,8 @@ static func apply_graphics() -> void:
 		fit_sun(sun as DirectionalLight3D)
 	for atmosphere: Node in tree.get_nodes_in_group(ATMOSPHERE_GROUP):
 		fit_atmosphere(atmosphere as WorldEnvironment)
+	for smoke: Node in tree.get_nodes_in_group("ground_smoke"):
+		smoke.call("show_smoke", ground_smoke)
 
 
 ## A world's sun and atmosphere (`Look.atmosphere`) are in these groups, so

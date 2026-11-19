@@ -2143,6 +2143,7 @@ func _draw_settings() -> void:
 			scale_pick.item_selected.connect(func(index: int) -> void: change_setting("render_scale", index))
 			_body.add_child(scale_pick)
 			_toggle("Ambient occlusion", "ambient_occlusion", GameSettings.ambient_occlusion)
+			_toggle("Battle smoke over the ground", "ground_smoke", GameSettings.ground_smoke)
 			_body.add_child(_section("CAMERA"))
 			_slider("Field of view, first person", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
 					func(v: float) -> String: return "%d" % roundi(v))

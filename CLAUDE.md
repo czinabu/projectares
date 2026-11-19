@@ -254,8 +254,11 @@ without Caleb, and update the gap list when a PR closes a row.
   (`PlanetTerrain`, thread safe) reach the simulation, the rest is view
   only through `Planet` and a no-op headless. Each ground layer wears a
   CC0 scan named in `PlanetType.surfaces` (detail only: the recipe's
-  colours keep the hue). Check by eye with `planet_check.tscn -- <dir>
-  [type ids]`.
+  colours keep the hue). A type's `smoke` lays low battle smoke over the
+  ground (`Planet.GroundSmoke`, a volumetric fog box that follows the
+  camera, thicker with the war and in a storm), off with
+  `GameSettings.ground_smoke`. Check by eye with `planet_check.tscn --
+  <dir> [type ids]`.
 - Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
   collision and a mesh that knows nothing about any world. A map on one
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
@@ -364,6 +367,17 @@ without Caleb, and update the gap list when a PR closes a row.
   (view only, added by the `Raid` only where `Look` is on), timed from what
   it was told; the jolt is `PlayerController.feel_blast`. Check by eye with
   `visual_check.tscn -- <dir> --shells-only` (with `--fixed-fps 60`).
+- The scenery army (DESIGN.md "The scenery army", Caleb's call): Ashfront's
+  far fights are view only (`worlds/ashfront/battle.gd`, added by the map's
+  `make_battle` only where `Look` is on): no collision, no `Combat.deal`,
+  nothing sent online, and never nearer a player or the camera than
+  `keep_off`, so up close every soldier is a real bot. Its soldiers are far
+  copies of the armies' own riflemen (the world's `dress_extra`), baked
+  once per run in a world of their own (`_Baker`) into one mesh per pose
+  and drawn one MultiMesh per pose (`extras.gdshader`, dithered fade). A
+  round from the local player's gun or a shell drops one on that screen
+  only. Check by eye with `visual_check.tscn -- <dir> --battle-only` (with
+  `--fixed-fps 60`).
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
