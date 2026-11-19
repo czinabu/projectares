@@ -179,6 +179,7 @@ const VIEW_FAR := 1400.0
 ## The Colossus and the capital ship past the rim (view only).
 const GIANTS := preload("res://worlds/ashfront/giants.gd")
 const SKYFIRE := preload("res://worlds/ashfront/skyfire.gd")
+const SUNSHAFTS := preload("res://worlds/ashfront/sunshafts.gd")
 ## The burning horizon: a ring of fire-glow this far out, behind the
 ## skyline, glowing this much when quiet and in all-out war.
 const GLOW_RING := 560.0
@@ -276,6 +277,9 @@ func _ready() -> void:
 		skyfire.soundscape = _soundscape
 		skyfire.giants = giants
 		add_child(skyfire)
+		var shafts: Node3D = SUNSHAFTS.new()
+		shafts.floor_y = RIM_HEIGHT - 8.0
+		add_child(shafts)
 	set_process(Look.enabled)
 
 
@@ -1881,14 +1885,15 @@ func _dress_forge(art: Node3D) -> void:
 		pivot.rotation = Vector3(0.38, 0.0 if sign > 0.0 else PI, 0.0)
 		var cone := MeshInstance3D.new()
 		var shape := CylinderMesh.new()
-		shape.top_radius = 10.0
-		shape.bottom_radius = 0.5
+		# Its lamp is the cone's top, where the beam is lit from.
+		shape.top_radius = 0.5
+		shape.bottom_radius = 10.0
 		shape.height = 180.0
 		shape.cap_top = false
 		shape.cap_bottom = false
 		shape.material = Look.trim("beam")
 		cone.mesh = shape
-		cone.rotation.x = -PI * 0.5
+		cone.rotation.x = PI * 0.5
 		cone.position = Vector3(0, 0, -90.0)
 		cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		cone.visibility_range_end = FAR_SIGHT

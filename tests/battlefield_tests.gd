@@ -413,6 +413,22 @@ static func _skyline(t: Node, raid: Raid) -> void:
 		closest = minf(closest, sky.near_miss(ship, sky.WING_MISS.x, n / 12.0, fmod(n * 0.37, 1.0)).distance_to(ship))
 	t.check(closest > sky.WING_MISS.x - 0.1, "flak bursts round a passing dropship but never on it")
 	t.check(Look.trim("tracer") != null and Look.trim("flak_smoke") != null, "tracers and flak smoke have their own finishes")
+	# Sunlight through the smoke: view only, timed by the wall clock.
+	var shafts: Script = map.get_script().get_script_constant_map()["SUNSHAFTS"]
+	t.check(map.get_node_or_null("SunShafts") == null, "a map without a view draws no sun shafts")
+	t.check(shafts.openness(0.0) < 0.01 and shafts.openness(0.5) > 0.99 and shafts.openness(1.0) < 0.01,
+			"a break in the smoke opens, stands and closes again, never snapping")
+	var opened := 0
+	for i in shafts.SHAFTS:
+		if shafts.openness(shafts.cycle_of(i, 5000.0).y) > 0.5:
+			opened += 1
+	t.check(opened < shafts.SHAFTS, "the shafts open in turn, never all at once")
+	var break_a: Vector2 = shafts.cycle_of(0, 5000.0)
+	var break_b: Vector2 = shafts.cycle_of(0, 5000.0 + shafts.OPEN_TIME.y * 2.0)
+	t.check(break_b.x > break_a.x, "a shaft closes and opens again somewhere new")
+	t.check(shafts.strength(0.0, 0.0) > shafts.strength(1.0, 0.0) and shafts.strength(0.0, 1.0) == 0.0,
+			"the war's smoke dims the sun shafts and a storm hides them")
+	t.check(Look.trim("sun_shaft") is ShaderMaterial, "a sun shaft is a soft cone of light")
 	# The war heard: view only, so a headless map makes no soundscape.
 	t.check(map.get_node_or_null("Soundscape") == null, "a map without a view hears nothing (no soundscape headless)")
 	t.check(is_equal_approx(Soundscape.boom_delay(510.0), 1.5) and is_equal_approx(Soundscape.boom_delay(3000.0), Soundscape.BOOM_DELAY_MAX),

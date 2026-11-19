@@ -612,8 +612,12 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   the sky (`worlds/ashfront/skyfire.gd`, view only): guns past the rim
   hosing tracer up into the smoke, more of them firing the hotter the war,
   shells bursting high and leaving puffs hanging, and bursts chasing a
-  dropship wing but never hitting it; a storm hides it all. Planned,
-  in this order: god rays,
+  dropship wing but never hitting it; a storm hides it all. Sunlight
+  breaking through the smoke (`worlds/ashfront/sunshafts.gd`, view only,
+  timed by the wall clock): a few great soft shafts slanting down along
+  the sun, each opening where the smoke parts, standing a minute or so and
+  closing again somewhere else, dimmer the hotter the war and hidden by a
+  storm. Planned, in this order:
   a shared moment (the orbital lance brings the Colossus down), and ash on
   the visor glass.
 - Full loot on death.
