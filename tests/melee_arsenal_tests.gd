@@ -222,7 +222,7 @@ static func _in_raid(t: Node) -> void:
 	await t.frames(3)
 	t.check(blade.is_charging() and not blade.is_winding_up(), "a held attack button charges before it swings")
 	p.cmd.primary = false
-	await t.frames(int(blade.light_windup * 60.0) + 6)
+	await t.frames(int((blade.light_windup + blade.light_tell) * 60.0) + 6)
 	t.check(is_equal_approx(foe.health.max_health - foe.health.health, blade.light_damage), "a tap is a light attack")
 	await t.frames(90)
 	_reset(foe)
@@ -238,7 +238,7 @@ static func _in_raid(t: Node) -> void:
 	p.cmd.primary_pressed = true
 	await t.frames(1)
 	p.cmd.primary_pressed = false
-	await t.frames(int(blade.light_windup * 60.0) + 6)
+	await t.frames(int((blade.light_windup + blade.light_tell) * 60.0) + 6)
 	t.check(is_equal_approx(foe.health.max_health - foe.health.health, blade.light_damage), "a bare press is a light attack")
 	t.check(not InputMap.has_action("heavy"), "no separate heavy-attack key is bound")
 	await t._end_raid(raid)

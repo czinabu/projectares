@@ -176,9 +176,7 @@ func _process(delta: float) -> void:
 
 	var weapon := p.get_active_weapon()
 	var blade := weapon as MeleeWeapon
-	_stance.stance = blade.stance if blade else -1
-	_stance.guarding = blade != null and blade.is_blocking()
-	_stance.threat = incoming_side(p)
+	_stance.threat = incoming_side(p) if blade else -1
 	_update_ammo_counters(p)
 	if crosshair:
 		# Looking down an optic, its own reticle marks the middle.
@@ -1641,21 +1639,18 @@ class HitMarker:
 		for dir: Vector2 in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
 			draw_line(c + dir * 7.0 * grow, c + dir * 15.0 * grow, color, 2.5 * _size)
 
-## Three marks around the crosshair for directional melee: which side you are
-## set to attack or guard, and which side an enemy swing is coming at.
+## A mark beside the crosshair on the side an enemy swing is coming from, so
+## a blade out in first person reads a swing at the edge of the view. Guards
+## turn to meet a swing by themselves; the mark is only for timing.
 ## Kept as an inner class so the HUD never depends on the editor's class cache.
 class StanceIndicator:
 	extends Control
 
 	const OFFSETS := [Vector2(0, -1), Vector2(-1, 0), Vector2(1, 0)]
 
-	## The player's `MeleeWeapon.Dir`, or -1 to hide the stance marks.
-	var stance := -1
-	var guarding := false
 	## The side of the screen an enemy swing is coming at, or -1 for none.
 	var threat := -1
 
-	var radius := 34.0
 	var threat_radius := 48.0
 	var mark_length := 22.0
 
@@ -1669,13 +1664,6 @@ class StanceIndicator:
 		for dir in OFFSETS.size():
 			var out: Vector2 = OFFSETS[dir]
 			var along := Vector2(-out.y, out.x) * mark_length * 0.5
-			if stance >= 0:
-				var active := dir == stance
-				var color := Color(1, 1, 1, 0.22)
-				if active:
-					color = Color(0.45, 0.75, 1.0) if guarding else Color.WHITE
-				var at := center + out * radius
-				draw_line(at - along, at + along, color, 4.0 if active else 2.0)
 			if dir == threat:
 				var at := center + out * threat_radius
 				# Yellow on a dark outline, so it shows against red enemies and sky.

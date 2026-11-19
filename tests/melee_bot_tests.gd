@@ -41,24 +41,25 @@ static func run(t: Node) -> void:
 	t.check("heavy" in kinds, "a bot holds the attack button into a heavy (%s)" % str(kinds))
 	await _settle(t, brain, blade)
 
-	# A feint: it shows one side, then lets go as a light from another.
+	# A feint: it hangs on a charge that reads as a heavy coming, then lets
+	# go as a light (sides are the blade's own, so the feint is the timing).
 	brain.heavy_share = 0.0
 	brain.feint_chance = 1.0
 	brain._melee_wait = 0.0
 	foe.global_position = fighter.global_position + Vector3(0, 0, -2.0)
 	_face(fighter, foe)
 	fighter.stamina = fighter.max_stamina
-	var shown := -1
-	var struck := -1
+	var charged := false
+	var struck := ""
 	for i in 40:
 		_think(brain, blade)
-		if blade.is_charging() and shown < 0:
-			shown = blade.threat_dir()
+		if blade.is_charging():
+			charged = true
 		await t.frames(1)
-		if blade.is_winding_up() and struck < 0:
-			struck = blade.attack_dir
-	t.check(shown >= 0 and struck >= 0 and shown != struck,
-			"a feint shows one side and strikes from another (%d then %d)" % [shown, struck])
+		if blade.is_winding_up() and struck == "":
+			struck = blade._windup_kind
+	t.check(charged and struck == "light",
+			"a feint hangs on a charge, then lets go as a light (%s, %s)" % [charged, struck])
 	await _settle(t, brain, blade)
 
 	# A dash-strike: sprinting in from out of reach.

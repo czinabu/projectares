@@ -39,13 +39,10 @@ signal pack_requested
 signal map_target_clicked(index: int)
 
 enum ViewMode { FIRST, THIRD }
-## How the melee side is picked: by flicking the mouse, or by the movement keys.
-enum StanceControl { MOUSE, MOVE }
 
 ## The meta a station's view camera carries (`screen_view_up`).
 const SCREEN_VIEW := "screen_view"
 const VIEW_NAMES := ["First-person", "Third-person"]
-const STANCE_CONTROL_NAMES := ["mouse flick", "movement keys"]
 const STANCE_CONTROL_HINTS := [
 	"flick the mouse left, right or up",
 	"hold A, D or W as you attack or guard",
@@ -227,12 +224,6 @@ var pullback_fade_pitch := 0.45
 ## as a head bowing forward does, so the chest is seen from the front and
 ## never from over the shoulders.
 var look_down_lean := 0.05
-## How far the mouse has to move, in pixels, to count as a stance flick.
-var flick_threshold := 45.0
-## How quickly old mouse movement stops counting toward a flick.
-var flick_decay := 9.0
-var stance := 0
-var stance_control := StanceControl.MOVE
 
 ## The toy vehicle in the hand (an item id off the watch), or "". While one
 ## is held the weapon is put away: fire throws it, aim puts it back.
@@ -292,7 +283,6 @@ var _cam_dist := 0.0
 var _pending_switch := -1
 ## The zoom level asked of a helmet with binoculars. The visor key steps it.
 var _visor_level := 0
-var _flick := Vector2.ZERO
 var _rng := RandomNumberGenerator.new()
 var _thrust_audio: AudioStreamPlayer
 ## Fades hostile bodies the eyes cannot see out of the third-person view.
@@ -322,7 +312,6 @@ var _speed_fov_now := 0.0
 
 func setup(p_actor: Actor) -> void:
 	actor = p_actor
-	stance_control = StanceControl.MOVE if Profile.melee_control == "move" else StanceControl.MOUSE
 	yaw = actor.cmd.yaw
 
 
@@ -377,7 +366,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Pulling down against a spray: that much kick is yours, not the
 		# gun's, and will not be given back.
 		_kick_held = maxf(0.0, _kick_held - maxf(vertical * turn, 0.0))
-		_flick += event.relative
 	elif event is InputEventMouseButton and event.pressed and not captured:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
@@ -392,8 +380,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		wrist_raised = not wrist_raised
 		watch_focus_moved = false
 		watch_open = ""
-	elif event.is_action_pressed("melee_control"):
-		toggle_stance_control()
 	elif event.is_action_pressed("sign_out"):
 		sign_out_requested.emit()
 	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
@@ -817,36 +803,6 @@ func active_view() -> int:
 	return ride_view if is_riding() else view_mode
 
 
-## Turns recent mouse movement into a melee stance: a flick left or right
-## picks that side, a flick up picks overhead. Anything else keeps `current`.
-static func stance_from_flick(flick: Vector2, current: int, threshold: float) -> int:
-	if flick.length() < threshold:
-		return current
-	if absf(flick.x) >= absf(flick.y):
-		return MeleeWeapon.Dir.LEFT if flick.x < 0.0 else MeleeWeapon.Dir.RIGHT
-	if flick.y < 0.0:
-		return MeleeWeapon.Dir.OVERHEAD
-	return current
-
-
-## Turns the movement keys into a melee stance: strafing left or right picks
-## that side, moving forward picks overhead. Standing still or backing up
-## keeps `current`.
-static func stance_from_move(move: Vector2, current: int) -> int:
-	if absf(move.x) > 0.5 and absf(move.x) >= absf(move.y):
-		return MeleeWeapon.Dir.LEFT if move.x < 0.0 else MeleeWeapon.Dir.RIGHT
-	if move.y > 0.5:
-		return MeleeWeapon.Dir.OVERHEAD
-	return current
-
-
-func toggle_stance_control() -> void:
-	stance_control = StanceControl.MOVE if stance_control == StanceControl.MOUSE else StanceControl.MOUSE
-	Profile.melee_control = "move" if stance_control == StanceControl.MOVE else "mouse"
-	Profile.save()
-	actor.notice.emit("Melee side: %s" % STANCE_CONTROL_NAMES[stance_control])
-
-
 ## The crouch key (C), after the move, sprint and jump keys are in `cmd`:
 ## pressed while sprinting forward it is a slide (`ActorCommand.slide`);
 ## otherwise it toggles the crouch. In the air with a flight rig it only
@@ -895,17 +851,12 @@ func _physics_process(delta: float) -> void:
 	cmd.move = Vector2(
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_back", "move_forward"))
-	if stance_control == StanceControl.MOVE:
-		stance = stance_from_move(cmd.move, stance)
-	else:
-		stance = stance_from_flick(_flick, stance, flick_threshold)
-	_flick *= exp(-flick_decay * delta)
-	cmd.stance = stance
 	cmd.sprint = Input.is_action_pressed("sprint")
 	cmd.sprint_pressed = Input.is_action_just_pressed("sprint")
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
+	cmd.kick_pressed = Input.is_action_just_pressed("kick")
 	cmd.descend = Input.is_action_pressed("crouch")
 	crouch_key(Input.is_action_just_pressed("crouch"))
 	cmd.free_look = Input.is_action_pressed("free_look")
