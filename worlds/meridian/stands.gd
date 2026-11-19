@@ -79,6 +79,7 @@ func finish() -> void:
 		node.mesh.surface_set_material(0, mat)
 		if mat is StandardMaterial3D and (mat as StandardMaterial3D).emission_enabled:
 			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.set_meta("walk_through", "the spectacle is decoration only (docs/systems/arena-and-race.md)")
 		root.add_child(node)
 	_batches.clear()
 	if crowd.count() > 0:
