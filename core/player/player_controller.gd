@@ -185,6 +185,9 @@ var scope_pixels := 640
 ## How far ahead the scope's camera starts drawing, so the gun and the scope
 ## itself are never in their own picture.
 var scope_near := 0.9
+## The nearest the lens is taken to be in front of the eye, so the picture's
+## zoom can never blow up while the gun is still coming up.
+var scope_min_reach := 0.05
 var _scope_view: SubViewport
 var _scope_cam: Camera3D
 var _scope_mat: ShaderMaterial
@@ -1145,12 +1148,22 @@ func _update_scope(gun: Gun) -> void:
 		_scope_mat.set_shader_parameter("view", _scope_view.get_texture())
 	_scope_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	lens.material_override = _scope_mat
+	# The lens is read where it is drawn this frame (`ActionPose.shown_global`),
+	# never where the last physics tick parked the hand: that spot is off the
+	# eye line, so the zoom worked out from it jumped about from frame to
+	# frame (Caleb's buggy 4x and 8x picture).
+	var glass := ActionPose.shown_global(gun, lens.global_transform)
 	var eye := camera.global_transform
 	var ahead := -eye.basis.z.normalized()
-	var reach := maxf((lens.global_position - eye.origin).dot(ahead), 0.01)
-	var half := (lens.mesh as QuadMesh).size.y * 0.5 * lens.global_basis.get_scale().y
+	var reach := maxf((glass.origin - eye.origin).dot(ahead), scope_min_reach)
+	var half := (lens.mesh as QuadMesh).size.y * 0.5 * glass.basis.get_scale().y
 	var zoom := maxf(gun.aim_zoom(), 1.0)
-	_scope_cam.global_transform = eye
+	# The picture looks where the eye aims, turned with the glass it is drawn
+	# on, so a canted scope never shows the world tipped inside its lens.
+	var up := glass.basis.y - ahead * glass.basis.y.dot(ahead)
+	if up.length_squared() < 0.0001:
+		up = eye.basis.y
+	_scope_cam.global_transform = Transform3D(Basis.looking_at(ahead, up.normalized()), eye.origin)
 	_scope_cam.cull_mask = camera.cull_mask
 	_scope_cam.near = scope_near
 	_scope_cam.fov = rad_to_deg(2.0 * atan(half / reach / zoom))

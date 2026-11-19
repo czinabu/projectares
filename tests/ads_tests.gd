@@ -12,6 +12,7 @@ static func run(t: Node) -> void:
 			["rifle_carbine", "plain sights"],
 			["rifle_carbine,optic_reflex", "a reflex sight"],
 			["rifle_carbine,optic_scope", "a scope"],
+			["dmr_longshot,optic_longscope", "an 8x scope"],
 			["pistol_service", "a sidearm"],
 			["power_rail_lance", "a power weapon"]]:
 		await _check_with_skin(t, (kit[0] as String).split(","), kit[1])
@@ -171,13 +172,38 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 		# Picture in picture: the world around the scope stays as wide as
 		# plain sights, and the lens shows the view magnified by the zoom.
 		var lens := gun.visual.find_child("Lens", true, false) as MeshInstance3D
-		var reach := (lens.global_position - cam.global_position).dot(ahead)
-		var seen_deg := rad_to_deg(2.0 * atan((lens.mesh as QuadMesh).size.y * 0.5 * lens.global_basis.get_scale().y / reach))
+		var glass := ActionPose.shown_global(gun, lens.global_transform)
+		var reach := (glass.origin - cam.global_position).dot(ahead)
+		var seen_deg := rad_to_deg(2.0 * atan((lens.mesh as QuadMesh).size.y * 0.5 * glass.basis.get_scale().y / reach))
 		t.check(controller.scoped() and lens.material_override != null
 				and absf(controller._scope_cam.fov * gun.aim_zoom() - seen_deg) < seen_deg * 0.15 + 0.5,
 				"%s: the lens shows the view magnified %.1fx (%.1f of %.1f deg)" % [what, gun.aim_zoom(), controller._scope_cam.fov, seen_deg])
 		t.check(seen_deg < cam.fov * 0.7 and absf(controller.aim_fov(gun) - controller.ads_fov) < 0.01,
 				"%s: the scope is a picture in the middle of the view, the world around it still seen (%.0f of %.0f deg)" % [what, seen_deg, cam.fov])
+		# The glass sits nearer the eye than any part of the scope and inside
+		# its rim, so no edge of the tube crosses the picture.
+		var mount := lens.get_parent() as Node3D
+		var half_glass := (lens.mesh as QuadMesh).size.x * 0.5
+		var crossed := ""
+		for part in mount.find_children("*", "MeshInstance3D", true, false):
+			var piece := part as MeshInstance3D
+			if piece == lens or not piece.visible:
+				continue
+			var box := mount.global_transform.affine_inverse() * piece.global_transform * piece.get_aabb()
+			var past := box.end.z > lens.position.z - 0.0001
+			var round_glass := Vector2(box.get_center().x - lens.position.x, box.get_center().y - lens.position.y).length() < half_glass
+			if past and round_glass:
+				crossed = piece.name
+		t.check(crossed == "", "%s: nothing of the scope stands between the eye and its picture (%s)" % [what, crossed])
+		# The picture's zoom follows the lens as it is drawn, never where a
+		# physics tick parked the hand (Caleb's jumpy 4x and 8x picture).
+		var steady := controller._scope_cam.fov
+		var parked := p.hand.position
+		p.hand.position = Actor.HAND_REST
+		controller._update_scope(gun)
+		t.check(absf(controller._scope_cam.fov - steady) < 0.05,
+				"%s: a parked hand leaves the scope's zoom alone (%.2f, was %.2f deg)" % [what, controller._scope_cam.fov, steady])
+		p.hand.position = parked
 	# The stutter: a physics tick parks the hand node at its rest; the view
 	# must follow the sight as drawn, not where the tick left it.
 	var shown_local: Transform3D = p.hand.get_meta("shown_local")
