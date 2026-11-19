@@ -237,17 +237,27 @@ const GUN_GLOW := [
 ## how far up from the pommel the hand grips it, and how it folds away when holstered (see `set_extend`): "blade" draws the
 ## blade into the hilt, "telescope" slides the shaft into itself, "" keeps
 ## its shape, and how it is held ready in one hand (a key of
-## `ActionPose.ready_holds`; two-handed weapons are carried instead). No file
-## means the model is built in code (see `_spear_model`).
+## `ActionPose.ready_holds`; two-handed weapons are carried instead), and
+## the way its striking face (an axe's bit, a hammer's face, a blade's edge)
+## points in the pack model's own space, across its length. No file means
+## the model is built in code (see `_spear_model`). The model is turned so
+## that face points along `STRIKE_FACE`, the way every technique leads with
+## (`ActionPose.cut_edge`); a pack model may face any way across, so the
+## face is read from the model, never assumed (assuming it held the axe and
+## hammer sideways through their swings). `melee_orientation_tests.gd`
+## checks each face against the model's shape.
 const MELEE_MODELS := [
-	["hammer", "Hammer.glb", 1.15, 0.3, "", "upright"],
-	["knife", "Knife.glb", 0.5, 0.1, "blade", "knife"],
-	["axe", "Axe.glb", 0.85, 0.12, "", "upright"],
-	["spear", "", 2.1, 0.75, "telescope", "upright"],
-	["starter", "Sword.glb", 0.7, 0.085, "blade", "upright"],
-	["blade", "Katana.glb", 1.2, 0.14, "blade", "katana"],
+	["hammer", "Hammer.glb", 1.15, 0.3, "", "upright", Vector3(1, 0, 0)],
+	["knife", "Knife.glb", 0.5, 0.1, "blade", "knife", Vector3(-1, 0, 0)],
+	["axe", "Axe.glb", 0.85, 0.12, "", "upright", Vector3(-1, 0, 0)],
+	["spear", "", 2.1, 0.75, "telescope", "upright", Vector3(1, 0, 0)],
+	["starter", "Sword.glb", 0.7, 0.085, "blade", "upright", Vector3(1, 0, 0)],
+	["blade", "Katana.glb", 1.2, 0.14, "blade", "katana", Vector3(0, 0, 1)],
 ]
-const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade", "upright"]
+const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade", "upright", Vector3(1, 0, 0)]
+## Which way a melee model's striking face points once it is built (its
+## holder's space; the length runs along +Y).
+const STRIKE_FACE := Vector3(0, 0, -1)
 const GUN_LENGTH := 0.72
 
 ## False on a headless server: nothing is dressed and no art is loaded.
@@ -2553,6 +2563,8 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	var pick := _melee_pick(weapon)
 	if pick[1] == "":
 		var spear := _spear_model(pick[2], pick[3], energy_color(weapon.item_id), energy_strength(weapon.item_id))
+		var head := spear.get_node("Spear") as Node3D
+		head.transform = Transform3D(strike_turn(pick[6]), Vector3.ZERO) * head.transform
 		# Its grip is wrapped where the weapon hand goes, so it keeps that spot.
 		_fit_hands(spear, "spear@%.2f" % pick[2], is_two_handed(weapon), pick[3])
 		return spear
@@ -2563,17 +2575,32 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	holder.name = "Model"
 	holder.add_child(model)
 	_fit(model, WEAPONS + pick[1], pick[2], true)
+	# Turned about its length so its striking face leads every swing.
+	var turn := strike_turn(pick[6])
+	model.transform = Transform3D(turn, Vector3.ZERO) * model.transform
 	holder.position.y = -pick[3]
 	var key := "%s@%.2f" % [pick[1], pick[2]]
 	_fit_hands(holder, key, is_two_handed(weapon))
 	var scrap := ItemDB.has_tag(weapon.item_id, "starter")
 	if scrap:
-		_scrap_bits(holder, _handles.get(key, {}))
+		_scrap_bits(holder, _handles.get(key, {}), turn)
 	# Scrap runs dim and worn: a faint edge on beaten metal.
 	_tech_melee(holder, energy_color(weapon.item_id), energy_strength(weapon.item_id) * (scrap_energy if scrap else 1.0),
 			scrap_wear if scrap else (0.7 if weapon.item_id == "" else 0.3), {"mode": pick[4]},
 			not ItemDB.has_tag(weapon.item_id, "hammer"))
 	return holder
+
+
+## How a melee model is turned about its length (+Y) so the striking face
+## it has in its own space (`face`, the last field of `MELEE_MODELS`) points
+## along `STRIKE_FACE`.
+static func strike_turn(face: Vector3) -> Basis:
+	var across := Vector3(face.x, 0.0, face.z)
+	if across.length() < 0.001:
+		return Basis.IDENTITY
+	var angle := Vector2(across.x, across.z).angle_to(Vector2(STRIKE_FACE.x, STRIKE_FACE.z))
+	# A turn of the XZ plane by `angle` is a turn about +Y the other way.
+	return Basis(Vector3.UP, -angle)
 
 
 ## The scrap kit's blade is a sword made from scrap (Caleb's call): welded
@@ -2589,13 +2616,16 @@ var scrap_grip_radius := 0.016
 var scrap_energy := 0.4
 var scrap_wear := 0.95
 
-func _scrap_bits(holder: Node3D, handle: Dictionary) -> void:
+func _scrap_bits(holder: Node3D, handle: Dictionary, turn := Basis.IDENTITY) -> void:
 	if handle.is_empty():
 		return
 	var bits := Node3D.new()
 	bits.name = "Scrap"
 	holder.add_child(bits)
-	var centre: Vector2 = handle["centre"]
+	# Built across the pack model's own flat, then turned with it.
+	bits.basis = turn
+	var flat := turn.inverse() * Vector3(handle["centre"].x, 0.0, handle["centre"].y)
+	var centre := Vector2(flat.x, flat.z)
 	var guard: float = handle["top"]
 	var bottom: float = handle["bottom"]
 	var at := func(y: float, x := 0.0) -> Vector3:
@@ -3087,6 +3117,12 @@ func _spear_part(model: Node3D, mesh: PrimitiveMesh, at: Vector3, mat: Material,
 	part.position = at
 	part.scale = scale
 	model.add_child(part)
+
+
+## How far a melee weapon reaches past the hand that grips it, in meters.
+func blade_reach(weapon: Weapon) -> float:
+	var pick := _melee_pick(weapon)
+	return maxf(float(pick[2]) - float(pick[3]), 0.1)
 
 
 ## How `weapon` is held ready in one hand (see `MELEE_MODELS`).
