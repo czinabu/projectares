@@ -2096,6 +2096,22 @@ void fragment() {
 		attach.add_child(watch)
 		_worn = attach
 
+	var _emote_holo: EmoteHolo
+
+	## The quick emote wheel thrown over the wrist where there is no visor
+	## to draw it on (no helmet, or one taken off; `Hud.emote_wheel_holo`).
+	func _mount_emote_holo(p: Actor, controller: PlayerController, shown: bool) -> void:
+		var wanted: bool = shown and controller != null and Hud.emote_wheel_holo(p, controller)
+		if not wanted:
+			if _emote_holo != null and is_instance_valid(_emote_holo):
+				_emote_holo.visible = false
+			return
+		if _emote_holo == null or not is_instance_valid(_emote_holo):
+			_emote_holo = EmoteHolo.new()
+			add_child(_emote_holo)
+		_emote_holo.visible = true
+		_emote_holo.show_wheel(p, controller, watch_position(p))
+
 	## Where the watch is in the world, third person: on the wrist bone, or
 	## where a left wrist would be when there is no skin.
 	func watch_position(p: Actor) -> Vector3:
@@ -2106,6 +2122,7 @@ void fragment() {
 	## Puts the watch and its card where the view can see them, and opens or
 	## closes the card towards `raised`. Hidden with the HUD.
 	func mount(p: Actor, controller: PlayerController, shown: bool, delta := 0.0) -> void:
+		_mount_emote_holo(p, controller, shown)
 		# The card rises off the watch on your own wrist in both views: first
 		# and third person differ only in where the camera is (Caleb's rule).
 		var third := true
@@ -3115,3 +3132,118 @@ void fragment() {
 					draw_rect(Rect2(c + Vector2(-2, -12), Vector2(4, 8)), color)
 				"click":
 					draw_rect(Rect2(c + Vector2(-8, -13), Vector2(8, 10)), color)
+
+
+## True while the quick emote wheel is up with no working visor to draw it
+## on (no helmet, or one taken off onto the hip): the wrist throws it as a
+## small hologram instead (`EmoteHolo`). With a visor it is on the glass
+## (`VisorHud._draw_emote_wheel`).
+static func emote_wheel_holo(p: Actor, controller: PlayerController) -> bool:
+	return controller != null and controller.emote_wheel_open and p != null and is_instance_valid(p) \
+			and not p.is_dead and not p.visor.working()
+
+
+## The quick emote wheel as projected light, for a player with no visor to
+## draw it on: a ring of the emotes standing in front of the chest, below
+## the eyes and a little left, thrown up from the watch by a thin beam. It
+## stands in the world, from the body's own eyes and aim, so it is the same
+## in both views; a camera further off sees it grown to read the same.
+## View only.
+class EmoteHolo:
+	extends Node3D
+
+	## Where the ring stands from the eyes: ahead, down and to the left
+	## (metres), and its radius.
+	var ahead := 0.55
+	var down := 0.2
+	var left := 0.3
+	var radius := 0.1
+	## Seen from further than this, the ring grows to read as big.
+	var read_at := 0.6
+	const INK := Color(0.45, 0.95, 1.0)
+
+	var _labels: Array[Label3D] = []
+	var _lines: MeshInstance3D
+	var _mesh: ImmediateMesh
+
+	func _ready() -> void:
+		top_level = true
+		for id: String in Emotes.IDS:
+			var label := Label3D.new()
+			label.text = Emotes.name_of(id).to_upper()
+			label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			label.no_depth_test = true
+			label.shaded = false
+			label.double_sided = true
+			label.font_size = 32
+			label.outline_size = 6
+			label.outline_modulate = Color(0.0, 0.03, 0.05, 0.6)
+			label.pixel_size = 0.0006
+			label.render_priority = 2
+			label.outline_render_priority = 1
+			label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(label)
+			_labels.append(label)
+		_mesh = ImmediateMesh.new()
+		_lines = MeshInstance3D.new()
+		_lines.mesh = _mesh
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.no_depth_test = true
+		mat.vertex_color_use_as_albedo = true
+		mat.render_priority = 1
+		_lines.material_override = mat
+		_lines.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_lines.top_level = true
+		add_child(_lines)
+
+	## Where the ring's middle stands for `p`: from the eyes along the aim's
+	## heading, never with the view's pitch, so it stays put as you look.
+	func spot_for(p: Actor) -> Vector3:
+		var aim := p.get_aim_dir()
+		var heading := Vector3(aim.x, 0.0, aim.z)
+		heading = heading.normalized() if heading.length() > 0.01 else -p.global_basis.z
+		var side := heading.cross(Vector3.UP).normalized()
+		return p.get_eye_position() + heading * ahead + Vector3.DOWN * down - side * left
+
+	func show_wheel(p: Actor, controller: PlayerController, wrist: Vector3) -> void:
+		var middle := spot_for(p)
+		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+		var grow := 1.0
+		var up := Vector3.UP
+		var right := Vector3.RIGHT
+		if cam != null:
+			grow = clampf(cam.global_position.distance_to(middle) / read_at, 1.0, 5.0)
+			var basis := cam.global_basis.orthonormalized()
+			up = basis.y
+			right = basis.x
+		global_position = middle
+		var r := radius * grow
+		var picked := controller.emote_wheel_pick
+		for i in _labels.size():
+			var label := _labels[i]
+			var dir := Emotes.slice_dir(i)
+			label.global_position = middle + (right * dir.x - up * dir.y) * r
+			var on := i == picked
+			label.pixel_size = 0.0006 * grow * (1.25 if on else 1.0)
+			label.modulate = Color(INK.r, INK.g, INK.b, 1.0 if on else 0.55)
+		# The ring, the picked slice's mark and the beam up from the watch.
+		_mesh.clear_surfaces()
+		_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+		var steps := 48
+		for k in steps:
+			for e in 2:
+				var a := TAU * float(k + e) / float(steps)
+				_mesh.surface_set_color(Color(INK.r, INK.g, INK.b, 0.25))
+				_mesh.surface_add_vertex(middle + (right * sin(a) + up * cos(a)) * r * 0.72)
+		var dir := Emotes.slice_dir(picked)
+		_mesh.surface_set_color(Color(INK.r, INK.g, INK.b, 0.9))
+		_mesh.surface_add_vertex(middle + (right * dir.x - up * dir.y) * r * 0.2)
+		_mesh.surface_set_color(Color(INK.r, INK.g, INK.b, 0.9))
+		_mesh.surface_add_vertex(middle + (right * dir.x - up * dir.y) * r * 0.72)
+		_mesh.surface_set_color(Color(INK.r, INK.g, INK.b, 0.5))
+		_mesh.surface_add_vertex(wrist)
+		_mesh.surface_set_color(Color(INK.r, INK.g, INK.b, 0.05))
+		_mesh.surface_add_vertex(middle - up * r * 0.72)
+		_mesh.surface_end()

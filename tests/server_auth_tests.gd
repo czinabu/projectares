@@ -13,12 +13,14 @@ extends RefCounted
 const PORT := 25311
 const StashService := preload("res://core/account/stash_service.gd")
 const ServerTrust := preload("res://core/net/server_trust.gd")
+const Manifest := preload("res://core/net/net_manifest.gd")
 const KNOWN := "user://test_known_servers.cfg"
 
 
 static func run(t: Node) -> void:
 	print("Server hardening: sign-in in the handshake, no relay, request limits")
 	_limits(t)
+	_manifest_rules(t)
 	_client_answers(t)
 	_trust_rules(t)
 
@@ -43,8 +45,20 @@ static func run(t: Node) -> void:
 			"a newer game is told the server is the one out of date")
 	var junk: Dictionary = await _raw_sign_in(t, PackedByteArray([7, 7, 7]))
 	t.check(not junk.answer.get("ok", true) and not junk.connected, "a sign-in that is not one is turned away")
-	var wrong: Dictionary = await _raw_sign_in(t, {"protocol": NetSession.PROTOCOL, "name": "Ada",
+	# The same handshake, but other messages: turned away too, and told what
+	# the server speaks so the game's log can name what differs.
+	var other: Dictionary = await _raw_sign_in(t, {"protocol": NetSession.PROTOCOL, "manifest": "0123abcd",
+			"build": 7, "name": "Odd", "secret": StashService.new_secret()})
+	t.check(not other.answer.get("ok", true) and not other.connected
+			and other.answer.get("outdated", "") == "either"
+			and Manifest.digest(Manifest.clean(other.answer.get("manifest"))) == Manifest.own_digest(),
+			"a game that says other messages never connects, and is sent the server's manifest")
+	var silent: Dictionary = await _raw_sign_in(t, {"protocol": NetSession.PROTOCOL, "name": "Mum",
 			"secret": StashService.new_secret()})
+	t.check(not silent.answer.get("ok", true) and not silent.connected and silent.answer.has("manifest"),
+			"nor does one that shows no manifest at all")
+	var wrong: Dictionary = await _raw_sign_in(t, {"protocol": NetSession.PROTOCOL, "name": "Ada",
+			"manifest": Manifest.own_digest(), "secret": StashService.new_secret()})
 	t.check(not wrong.answer.get("ok", true) and str(wrong.answer.get("error", "")) != "" and not wrong.connected,
 			"someone else's name with the wrong secret never connects")
 
@@ -107,6 +121,72 @@ static func _limits(t: Node) -> void:
 	t.check(steady == 600, "a game's own input, one packet a tick, is never limited")
 
 
+## The manifest: what a build says over the wire, read off its own code
+## (`NetManifest`), so no change online needs a shared version line.
+static func _manifest_rules(t: Node) -> void:
+	var base := "extends Node\n@rpc(\"authority\", \"call_remote\", \"reliable\")\nfunc _news(id: int, text: String) -> void:\n\tpass\n"
+	var was := _manifest_of(base)
+	t.check(was.size() == 1 and Manifest.digest(was) == Manifest.digest(_manifest_of(base)),
+			"a script's messages give the same manifest every time")
+	var changes := {
+		"a new message": base + "@rpc(\"any_peer\", \"call_remote\", \"reliable\")\nfunc _ask() -> void:\n\tpass\n",
+		"an argument of another type": base.replace("text: String", "text: Array"),
+		"another argument": base.replace("text: String", "text: String, more: int"),
+		"an argument that may be left out": base.replace("text: String", "text: String = \"\""),
+		"another way of sending": base.replace("\"reliable\"", "\"unreliable\""),
+		"another sender": base.replace("\"authority\"", "\"any_peer\""),
+		"a wire constant": base + "const WIRE_NEWS := 1\n",
+		"a listed constant": base + "const WIRE_ALSO := [\"BIT_\"]\nconst BIT_NEW := 4\n",
+	}
+	for what: String in changes:
+		t.check(Manifest.digest(_manifest_of(changes[what])) != Manifest.digest(was),
+				"%s changes the manifest" % what)
+	t.check(Manifest.digest(_manifest_of(base + "const WIRE_NEWS := 1\n"))
+			!= Manifest.digest(_manifest_of(base + "const WIRE_NEWS := 2\n")),
+			"and raising a wire constant changes it again")
+	var same := {
+		"an argument's name": base.replace("text: String", "words: String"),
+		"what the message does": base.replace("\tpass", "\tprint(text)"),
+		"a method that is not a message": base + "func _helper(a: int) -> int:\n\treturn a\n",
+		"a constant that is not listed": base + "const SPEED := 4\n",
+	}
+	for what: String in same:
+		t.check(Manifest.digest(_manifest_of(same[what])) == Manifest.digest(was),
+				"%s does not" % what)
+	var own := Manifest.own()
+	var rpcs: Dictionary = (load("res://core/net/net_session.gd") as Script).get_rpc_config()
+	var listed := true
+	for method: Variant in rpcs:
+		listed = listed and own.has("net_session.%s" % method)
+	t.check(rpcs.size() > 50 and listed and own.has("net_session.WIRE_ACTOR_STATE")
+			and own.has("actor_command.WIRE_COMMAND") and own.has("actor_command.FLAG_SPRINT")
+			and own.has("actor_command.STATE_HOVERING"),
+			"this game's manifest lists every message, the wire constants and the command's bits (%d entries)" % own.size())
+	t.check(Manifest.own_digest().length() == 32 and Manifest.own_digest() == Manifest.digest(own),
+			"and its digest is what a game shows at the door")
+	t.check(var_to_bytes({"ok": false, "protocol": NetSession.PROTOCOL, "error": "Versions differ.",
+			"certificate": "x".repeat(2048), "build": 1, "manifest": own}).size() < NetSession.MAX_ANSWER_BYTES / 2,
+			"a refusal carrying the whole manifest fits the answer a game will read, twice over")
+	var theirs := own.duplicate()
+	theirs["net_session.WIRE_ACTOR_STATE"] = 99
+	t.check(Array(Manifest.differences(own, theirs)) == ["net_session.WIRE_ACTOR_STATE (changed)"]
+			and Manifest.differences(own, own).is_empty(),
+			"two manifests name what they disagree on")
+	t.check(Manifest.clean("junk").is_empty() and Manifest.clean({"a": 1, 2: 3, "b": "c", "d": [1]}) == {"a": 1}
+			and Manifest.clean({"a": 1, "b": 2, "c": 3}, 2).size() == 2,
+			"a manifest from the other side is kept only as names and numbers, and only so many")
+	t.check(Manifest.older(3, 5) == "mine" and Manifest.older(5, 3) == "theirs" and Manifest.older(0, 3) == ""
+			and Manifest.older(3, 0) == "" and Manifest.older(4, 4) == "",
+			"build numbers say which build is older, and nothing where one has none")
+
+
+static func _manifest_of(source: String) -> Dictionary:
+	var script := GDScript.new()
+	script.source_code = source
+	script.reload()
+	return Manifest.of([script] as Array[Script])
+
+
 ## How a game takes the server's answer to signing in.
 static func _client_answers(t: Node) -> void:
 	var cases := [
@@ -124,6 +204,29 @@ static func _client_answers(t: Node) -> void:
 		t.check(session.outdated == case[1] and session.refused and said[0] != "",
 				"a game told %s knows which side is out of date (\"%s\")" % [JSON.stringify(case[0]), said[0]])
 		session.queue_free()
+	# The same handshake, other messages: the build numbers say who is older.
+	var theirs := Manifest.own().duplicate()
+	theirs["net_session._brand_new"] = 1
+	theirs.erase("net_session._weather")
+	for case: Array in [[10, 12, "client"], [10, 8, "server"], [0, 8, "either"], [10, 0, "either"]]:
+		var session := NetSession.new()
+		t.add_child(session)
+		session.build = case[0]
+		var said := [""]
+		session.failed.connect(func(reason: String) -> void: said[0] = reason)
+		session._client_auth(1, var_to_bytes({"ok": false, "protocol": NetSession.PROTOCOL, "outdated": "either",
+				"error": "Versions differ.", "build": case[1], "manifest": theirs}))
+		t.check(session.outdated == case[2] and session.refused and said[0] != ""
+				and Array(session.differs) == ["net_session._brand_new (only there)", "net_session._weather (only here)"],
+				"build %d turned away by build %d for its messages: \"%s\" (%s)" % [case[0], case[1], said[0], session.differs])
+		session.queue_free()
+	var hello := NetSession.new()
+	t.check(hello._hello().get("manifest", "") == Manifest.own_digest() and hello._hello().has("build")
+			and int(hello._hello().protocol) == NetSession.PROTOCOL,
+			"a game shows its manifest and build as it signs in")
+	hello._join_mode = "probe"
+	t.check(not hello._hello().has("name"), "and still no name when it only asks for the certificate")
+	hello.free()
 	var updater := NetSession.new()
 	t.add_child(updater)
 	var reason := [""]

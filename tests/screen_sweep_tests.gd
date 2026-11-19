@@ -140,3 +140,16 @@ static func _sweep_hand(t: Node, main: Node, where: String) -> void:
 	await t.frames(5)
 	t.check(seen.size() == slots.size(), "%s: the wheel reaches every watch icon (%d of %d)"
 			% [where, seen.size(), slots.size()])
+	# Emotes are for every place you stand (Caleb's call): the quick wheel
+	# comes up, a pick plays on the body, and it puts away again.
+	var p: Actor = controller.actor
+	controller.open_emote_wheel()
+	await t.frames(5)
+	var up := controller.emote_wheel_open
+	controller.emote_wheel_pick = Emotes.IDS.find("wave")
+	controller.close_emote_wheel(true)
+	await t.frames(30)
+	t.check(up and controller.emote_playing == "wave" and p.cmd.emote == Emotes.number_of("wave")
+			and ActionPose.of(p).emote > 0.5, "%s: the emote wheel plays an emote on the body" % where)
+	controller.stop_emote()
+	await t.frames(10)

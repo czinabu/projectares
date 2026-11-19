@@ -62,7 +62,12 @@ date in the same PR.
   phone or watch, a vehicle or the air ends one, and starting one puts the
   weapon away (`PlayerController._tick_emote`). A new emote is an
   `Emotes.IDS` entry and a pose; check by eye with `visual_check.tscn --
-  <dir> --emotes-only`. Shortcut keys (DESIGN.md "Shortcut keys") only
+  <dir> --emotes-only`. The emote key's quick wheel comes up without the
+  watch (`PlayerController.open_emote_wheel`, `emote_wheel_open`; the
+  mouse picks a slice, `wheel_slice`, and never turns the view while it is
+  up), drawn on the visor (`VisorHud._draw_emote_wheel`) or, with no
+  working visor, as a hologram from the wrist (`Hud.EmoteHolo`,
+  `emote_wheel_holo`), the same in both views. Shortcut keys (DESIGN.md "Shortcut keys") only
   raise the same watch or take out the same phone at an icon or app
   (`PlayerController.watch_shortcut`, `quick_emote`, `Phone.shortcut`),
   never a menu of their own; a new one is an `InputSetup` action and a

@@ -120,6 +120,28 @@ func _groups() -> Array[String]:
 	return _groups_cache
 
 
+## A group's file and every test script it preloads, near or far, that did
+## not compile. Such a script still loads, but every call on it does nothing,
+## so its group would pass by running no checks at all.
+func _broken_scripts(group: String) -> Array[String]:
+	var broken: Array[String] = []
+	var preload_re := RegEx.create_from_string("preload\\(\"(res://tests/[\\w/]+\\.gd)\"\\)")
+	var seen := {group: true}
+	var todo: Array[String] = [group]
+	while not todo.is_empty():
+		var path: String = todo.pop_back()
+		var script := load(path) as GDScript
+		if script == null or not script.can_instantiate():
+			broken.append(path)
+		for m in preload_re.search_all(FileAccess.get_file_as_string(path)):
+			var dep := m.get_string(1)
+			if not seen.has(dep) and dep != "res://tests/test_runner.gd":
+				seen[dep] = true
+				todo.append(dep)
+	broken.sort()
+	return broken
+
+
 func _group_label(group: String) -> String:
 	return group.get_file().trim_suffix("_tests.gd")
 
@@ -221,8 +243,11 @@ func _run_selected(args: PackedStringArray) -> void:
 	for group in groups:
 		var failed_before := _failed
 		var started := Time.get_ticks_msec()
-		var file: Variant = load(group)
-		await file.run(self)
+		var broken := _broken_scripts(group)
+		for path in broken:
+			check(false, "%s compiles" % path)
+		if broken.is_empty():
+			await (load(group) as GDScript).run(self)
 		var seconds := (Time.get_ticks_msec() - started) / 1000.0
 		took[_group_label(group)] = snappedf(seconds, 0.1)
 		print("== %s: %.1fs%s" % [_group_label(group), seconds, "" if _failed == failed_before else ", FAILED"])

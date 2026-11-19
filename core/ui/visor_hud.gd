@@ -853,6 +853,8 @@ func _draw() -> void:
 	var v := p.visor
 	var ink := v.glass_color
 	var centre := size * 0.5 + sway
+	# Even a failing scrap visor holds the emote wheel steady while it is up.
+	_draw_emote_wheel(ink, centre)
 	if v.mode == "":
 		# A scrap visor's projector is failing: the picture drops out now and then.
 		if sin(_time * 1.7) * sin(_time * 4.3) > 0.82:
@@ -909,6 +911,46 @@ func _draw() -> void:
 	_draw_pickups(p, ink)
 	_draw_slivers(p, centre, felt, felt_time, Color(1.0, 0.2, 0.12), 0.4)
 	_draw_slivers(p, centre, hit_marks, hit_mark_time, Color(1.0, 0.6, 0.1), 0.34)
+
+
+## True while the quick emote wheel is drawn here, on the glass (or flat in
+## third person, `flat_shown`): it is up and a helmet is working. Without
+## one the wrist throws it as a hologram instead (`Hud.EmoteHolo`).
+func emote_wheel_shown() -> bool:
+	return controller != null and controller.emote_wheel_open and (glass_shown() or flat_shown())
+
+
+## The quick emote wheel (`PlayerController.emote_wheel_open`): every emote
+## round a ring about the middle of the view, the one pointed at lit with
+## its slice of the ring and a line out to it from the middle.
+func _draw_emote_wheel(ink: Color, centre: Vector2) -> void:
+	if not emote_wheel_shown():
+		return
+	var radius := size.y * 0.17
+	var count := Emotes.IDS.size()
+	var picked := controller.emote_wheel_pick
+	var slice := TAU / float(count)
+	# A faint dark glass behind it, so the names read against a bright sky.
+	draw_circle(centre, radius * 1.4, Color(0.0, 0.02, 0.04, 0.28 * boot))
+	draw_arc(centre, radius * 0.32, 0.0, TAU, 48, _lit(ink, 0.35, false), 1.0, true)
+	draw_arc(centre, radius * 1.18, 0.0, TAU, 96, _lit(ink, 0.18, false), 1.0, true)
+	# The picked slice of the ring: drawn round from the top, clockwise.
+	var mid := -PI * 0.5 + slice * float(picked)
+	draw_arc(centre, radius * 1.18, mid - slice * 0.42, mid + slice * 0.42, 16, _lit(ink, 0.95, false), 3.0, true)
+	var pull := controller.emote_wheel_aim
+	if pull.length() >= controller.emote_wheel_dead:
+		draw_line(centre + pull.normalized() * radius * 0.32, centre + pull.normalized() * radius * 0.9,
+				_lit(ink, 0.6, false), 1.5, true)
+	for i in count:
+		var id: String = Emotes.IDS[i]
+		var at := centre + Emotes.slice_dir(i) * radius
+		var on := i == picked
+		var label := Emotes.name_of(id).to_upper()
+		if id == controller.emote_playing:
+			label += " ·"
+		_text(at + Vector2(0.0, 5.0), label, _lit(ink if on else ink.darkened(0.1), 1.0 if on else 0.8, false),
+				HORIZONTAL_ALIGNMENT_CENTER, 140.0, 16 if on else 13)
+	_text(centre + Vector2(0.0, radius * 1.18 + 24.0), "EMOTE", _lit(ink, 0.5, false), HORIZONTAL_ALIGNMENT_CENTER, 120.0, 11)
 
 
 ## True in third person while a working helmet's reticle is drawn (it is, as
