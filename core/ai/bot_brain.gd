@@ -198,6 +198,20 @@ var _on_target := false
 ## the aim has to stay on a target it can see, from the actor's meta
 ## "lock_time" (0 for none). Breaking the line of sight starts it over.
 var lock_time := 0.0
+## A pack hunter's ways (DESIGN.md "The enemy AI pass"), set by a world with
+## metas: "tracker" follows fresh tracks within that many metres (a trail of
+## places, never where someone is now, through `_sensed`), "preys_on_cold"
+## goes first for someone shivering, and "shuns_warmth" never fights anyone
+## standing in a heater's or a beacon's warmth, nor walks into one.
+var tracker_range := 0.0
+var preys_on_cold := false
+var shuns_warmth := false
+## Seconds a track stays fresh enough to follow, and how often a tracker
+## looks at the ground.
+var track_fresh := 40.0
+var sniff_every := 1.0
+var _sniff_left := 0.0
+var _trail_id := 0
 ## Group fights (DESIGN.md "Group fights", Caleb's call): a person (a
 ## player, or a bot that plays like one) is shot at by only `attack_slots`
 ## army bots at a time. The rest hold off, take cover or work round the
@@ -214,6 +228,9 @@ var return_fire_time := 2.0
 var point_blank := 7.0
 ## Bots on the outer ring hold their cover; further in they also flank.
 var flanks := true
+## How many bots work round one person's flank at once: one, or two for a
+## pincer from both sides (meta "flankers").
+var flankers := 1
 ## A target further off is spotted more slowly: the reaction time grows
 ## to this many times its near value at the edge of sight, and a crouched
 ## target takes `crouch_notice_mult` longer still.
@@ -234,6 +251,12 @@ var max_hunters := 4
 ## How far past its patrol radius a bot follows anything before it turns
 ## back to its post (a bot that plays like a person, or on an errand, roams).
 var leash := 35.0
+## The ground it fights on (the enemy AI pass, step 4): its kind and how
+## much slower it is to notice someone there. `set_ground` sets both.
+var ground := ""
+var ground_notice := 1.0
+var _base_ground := {}
+var _own_patrol := -1.0
 ## How many bots go to look at one person's noise; the rest turn to face it.
 var noise_lookers := 3
 ## A person sprinting is heard this far off (through walls too), a jog
@@ -265,6 +288,14 @@ var suppress_spread_deg := 2.5
 ## Below this share of its health a soldier falls back to its post and only
 ## fights back when pressed (heavier kinds stand their ground).
 var fall_back_below := 0.35
+## A fireteam that has lost this share of itself breaks off: each of the
+## rest falls back to its post for `break_time` (meta "breaks_at"; 0 never).
+## Losses count from when it joined the team (`set_team`, `ally_down`).
+var breaks_at := 0.0
+var break_time := 12.0
+var team_size := 0
+var _allies_lost := 0
+var _broken_left := 0.0
 ## Seconds a bot runs from a grenade or rocket about to burst near it, and
 ## its chance to notice one, from its lowest skill to its highest.
 var dodge_time := 1.0
@@ -284,6 +315,9 @@ var _cover_left := 0.0
 var _lock := 0.0
 var _stuck_for := 0.0
 var _lift_left := 0.0
+var _side_left := 0.0
+var _climb_for := 0.0
+var _climb_from := Vector3.ZERO
 var _hop_in := 3.0
 var _hop_left := 0.0
 var _contact_id := 0
@@ -344,6 +378,25 @@ func _ready() -> void:
 		attack_range = float(actor.get_meta("reach"))
 	if actor.has_meta("far_notice"):
 		far_notice_mult = float(actor.get_meta("far_notice"))
+	# How it fires ("burst": seconds on the trigger, seconds off): a slow,
+	# steady gun keeps its trigger down longer than a rifle's short bursts.
+	# How it fights a doctrine (the enemy AI pass, step 3): the distance it
+	# keeps ("range"), how badly hurt before it falls back ("fall_back"),
+	# how many more of it may hunt one person ("hunters", added to the
+	# ring's), a pincer ("flankers") and when its team breaks ("breaks_at").
+	if actor.has_meta("range"):
+		preferred_range = float(actor.get_meta("range"))
+	if actor.has_meta("fall_back"):
+		fall_back_below = float(actor.get_meta("fall_back"))
+	flankers = int(actor.get_meta("flankers", 1))
+	breaks_at = float(actor.get_meta("breaks_at", 0.0))
+	if actor.has_meta("burst"):
+		var burst: Vector2 = actor.get_meta("burst")
+		burst_time = burst.x
+		burst_pause = burst.y
+	tracker_range = float(actor.get_meta("tracker", 0.0))
+	preys_on_cold = bool(actor.get_meta("preys_on_cold", false))
+	shuns_warmth = bool(actor.get_meta("shuns_warmth", false))
 	var ring := int(actor.get_meta("zone", 1))
 	attack_slots = RING_SLOTS[clampi(ring, 0, RING_SLOTS.size() - 1)]
 	max_hunters = RING_HUNTERS[clampi(ring, 0, RING_HUNTERS.size() - 1)]
@@ -354,6 +407,13 @@ func _ready() -> void:
 	heavy_feint_chance = RING_HEAVY_FEINT[clampi(ring, 0, RING_HEAVY_FEINT.size() - 1)]
 	melee_dodge_chance = RING_DODGE[clampi(ring, 0, RING_DODGE.size() - 1)]
 	flanks = ring > 0
+	# A world may hold a kind to fewer shooters at one person ("slots").
+	if actor.has_meta("slots"):
+		attack_slots = int(actor.get_meta("slots"))
+	max_hunters += int(actor.get_meta("hunters", 0))
+	# A kind that dash-strikes whatever its ring ("dash", a chance).
+	if actor.has_meta("dash"):
+		dash_chance = float(actor.get_meta("dash"))
 	# A world may make a kind feint more than its ring would ("feint_chance":
 	# the marsh's stalkers circle and feint before they strike).
 	if actor.has_meta("feint_chance"):
@@ -366,9 +426,30 @@ func _ready() -> void:
 ## then on. Fights along the way still come first.
 func post_to(point: Vector3, radius: float) -> void:
 	_home = point
-	patrol_radius = minf(patrol_radius, maxf(radius * 0.8, 4.0))
+	# Never wider than the bot's own round, and a tight post (a line, a
+	# siege ring) does not keep it tight at the next one.
+	if _own_patrol < 0.0:
+		_own_patrol = patrol_radius
+	patrol_radius = minf(_own_patrol, maxf(radius * 0.8, 4.0))
 	_has_dest = false
 	_wait_left = 0.0
+
+
+## Fights the way its ground asks (`WorldDef.ground_styles`): "range"
+## scales the distance it keeps, "hunters" is added to how many may hunt
+## one person, "leash" is how far it chases and "notice" scales how long
+## it takes to spot someone. Each style is laid over the bot's own numbers,
+## never over the last style, so moving ground to ground never drifts.
+func set_ground(kind: String, style: Dictionary) -> void:
+	if kind == ground:
+		return
+	if _base_ground.is_empty():
+		_base_ground = {"range": preferred_range, "hunters": max_hunters, "leash": leash}
+	ground = kind
+	preferred_range = float(_base_ground["range"]) * float(style.get("range", 1.0))
+	max_hunters = maxi(0, int(_base_ground["hunters"]) + int(style.get("hunters", 0)))
+	leash = float(style.get("leash", _base_ground["leash"]))
+	ground_notice = float(style.get("notice", 1.0))
 
 
 ## Where the bot is posted.
@@ -424,9 +505,13 @@ func _physics_process(delta: float) -> void:
 		_think_danger()
 		if target == null and _heard_at.is_finite() and state != State.ATTACK:
 			_on_heard(_heard_at, _heard_from)
+		if target == null and tracker_range > 0.0 and state != State.ATTACK:
+			_sniff(0.2)
 		if not _falling_back and not uses_kit and _stands_ground() == false \
 				and actor.health.health < actor.health.max_health * fall_back_below:
 			_falling_back = true
+		if _broken_left > 0.0:
+			_broken_left -= 0.2
 
 	if _dodge_left > 0.0:
 		_dodge_left -= delta
@@ -568,7 +653,8 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		return
 	_aim_gun(cmd, eye, chest, dist, delta)
 	_combat_hop(cmd, delta)
-	if _falling_back and dist > point_blank and not (_hit_by == target and _since_hit() < return_fire_time):
+	if (_falling_back or _broken_left > 0.0) and dist > point_blank \
+			and not (_hit_by == target and _since_hit() < return_fire_time):
 		_fall_back(cmd, delta)
 		return
 	var my_turn := _may_attack(dist)
@@ -654,7 +740,8 @@ func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delt
 		_seen_time = 0.0
 		_lock = 0.0
 		_reaction = reaction_time * _rng.randf_range(0.8, 1.3) * (1.4 - 0.8 * sharp) \
-				* notice_mult(dist, sight_range, target.crouched, far_notice_mult, crouch_notice_mult)
+				* notice_mult(dist, sight_range, target.crouched, far_notice_mult, crouch_notice_mult) \
+				* ground_notice
 		if _hit_by == target and _since_hit() < return_fire_time:
 			_reaction *= 0.5
 		_wander_left = 0.0
@@ -950,7 +1037,7 @@ func _plan_search() -> void:
 	var drift := Vector3(_last_vel.x, 0.0, _last_vel.z).limit_length(6.0)
 	var guess := _last_seen + drift
 	if _contact_person and flanks and SquadBoard.flank(_contact_id, get_instance_id(),
-			Engine.get_physics_frames(), 6.0):
+			Engine.get_physics_frames(), 6.0, flankers):
 		var off := actor.global_position - guess
 		off.y = 0.0
 		if off.length() > 0.5:
@@ -1064,6 +1151,31 @@ func _fall_back(cmd: ActorCommand, delta: float) -> void:
 		cmd.crouch = true
 
 
+## Joins fireteam `id` of `size` (the `Raid`'s orders); a new team starts
+## counting its losses afresh.
+func set_team(id: int, size: int) -> void:
+	if id != team:
+		_allies_lost = 0
+	team = id
+	team_size = size
+
+
+## One of its fireteam fell. A team that breaks (`breaks_at`) falls back
+## once it has lost that share of itself.
+func ally_down() -> void:
+	if team == 0 or breaks_at <= 0.0 or uses_kit:
+		return
+	_allies_lost += 1
+	if _broken_left <= 0.0 and _allies_lost >= maxi(1, ceili(team_size * breaks_at)):
+		_broken_left = break_time
+		_allies_lost = 0
+
+
+## Broken off from a fight its team was losing (`ally_down`).
+func is_broken() -> bool:
+	return _broken_left > 0.0
+
+
 ## A grenade or rocket about to burst near the bot: it runs (`_dodge`). A
 ## bot notices each round once, and only sometimes, by skill.
 func _think_danger() -> void:
@@ -1108,6 +1220,36 @@ func _dodge(cmd: ActorCommand, delta: float) -> void:
 	cmd.move = Vector2(local.x, -local.z)
 	if flies:
 		_unstick(cmd, delta)
+	else:
+		_climb_out(cmd, delta)
+
+
+## A bot on foot pressing on and getting nowhere (a crater's lip, a wall
+## its path runs into) jumps and steps aside, as a person would: the same
+## keys a player presses.
+func _climb_out(cmd: ActorCommand, delta: float) -> void:
+	if _side_left > 0.0:
+		_side_left -= delta
+		cmd.move = (cmd.move + Vector2(_strafe_sign, 0.0)).normalized()
+		return
+	# Measured by ground covered, not speed: a bot sliding back down a
+	# slope it cannot climb is moving, and going nowhere. Pressing into
+	# the person it is fighting is not being stuck.
+	if target != null and _flat_dist(target.global_position) < 4.0:
+		_climb_for = 0.0
+		_climb_from = actor.global_position
+		return
+	_climb_for += delta
+	if _climb_for < stuck_time * 2.0:
+		return
+	var gone := actor.global_position - _climb_from
+	gone.y = 0.0
+	_climb_for = 0.0
+	_climb_from = actor.global_position
+	if gone.length() < 1.0 and actor.is_on_floor():
+		cmd.jump_pressed = true
+		_side_left = 0.7
+		_strafe_sign = -_strafe_sign
 
 
 func _patrol(cmd: ActorCommand, delta: float) -> void:
@@ -1140,6 +1282,8 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 	# when the path it has ran out short of it: a search only reaches so far,
 	# and a long march arrives in legs.
 	_repath_left -= delta
+	if shuns_warmth:
+		dest = _outside_warmth(dest)
 	var dir := dest - actor.global_position
 	if _repath_left <= 0.0:
 		var moved := dest.distance_to(_path_to)
@@ -1166,6 +1310,8 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 	cmd.move = Vector2(local.x, -local.z)
 	if flies:
 		_unstick(cmd, delta)
+	else:
+		_climb_out(cmd, delta)
 
 
 ## A flier pushing against something it cannot walk over lifts off: a jump
@@ -1258,12 +1404,16 @@ func _find_target() -> Actor:
 				_heard_at = other.global_position
 				_heard_from = other
 		var score := dist * (person_bias if person else 1.0) * (0.85 if other == target else 1.0)
+		if preys_on_cold and other.shivering:
+			score *= 0.6
 		if dist >= sight_range or score >= best_score:
 			continue
 		if weather != null and dist >= sight_range * weather.sight_between(eye, chest):
 			continue
 		# Smoke hides a body from a bot as it does from a player's eyes.
 		if raid != null and raid.smoke.blocks(eye, chest):
+			continue
+		if shuns_warmth and raid != null and in_warmth(raid, other.global_position):
 			continue
 		# A Phase Cloak hides all but someone right beside the bot.
 		if other.is_cloaked() and dist > other.artifact.cloak_sense_range:
@@ -1288,6 +1438,71 @@ func _find_target() -> Actor:
 		_heard_at = Vector3.INF
 		_heard_from = null
 	return best
+
+
+## A tracker reads the ground (`tracker_range`): the freshest mark near it
+## that it has not followed yet sends it there, as a place to search, never
+## the person's live position. Who made it is only the contact it is after.
+func _sniff(delta: float) -> void:
+	_sniff_left -= delta
+	if _sniff_left > 0.0:
+		return
+	_sniff_left = sniff_every
+	var raid := Raid.of(actor)
+	if raid == null or not raid.world.tracks:
+		return
+	var newest: Array = []
+	for mark: Array in raid.tracks.near(actor.global_position, tracker_range):
+		if int(mark[0]) <= _trail_id or float(mark[4]) < raid.clock - track_fresh:
+			continue
+		if newest.is_empty() or int(mark[0]) > int(newest[0]):
+			newest = mark
+	if newest.is_empty():
+		return
+	_trail_id = int(newest[0])
+	var at: Vector3 = newest[1]
+	var world := Worlds.of(actor)
+	var maker: Actor = null
+	var best := 40.0
+	for node in get_tree().get_nodes_in_group("actors"):
+		var other := node as Actor
+		if other == null or other.is_dead or other.faction == actor.faction or not is_person(other):
+			continue
+		if not Raid.together(actor, other) or (world and not world.can_damage(actor, other, null)):
+			continue
+		var dist := other.global_position.distance_to(at)
+		if dist < best:
+			best = dist
+			maker = other
+	if maker != null:
+		_sensed(at, maker, false, true)
+
+
+## Whether `at` stands in a heater's, vent's or beacon's warmth.
+static func in_warmth(raid: Raid, at: Vector3) -> bool:
+	for source in raid.warmth:
+		if raid.waits_on_keeper(source):
+			continue
+		var off := at - source.global_position
+		var radius := float(source.get_meta("radius", 4.0))
+		if absf(off.y) < 3.0 and Vector2(off.x, off.z).length_squared() <= radius * radius:
+			return true
+	return false
+
+
+## `dest`, moved out to the edge of any warmth it stands in.
+func _outside_warmth(dest: Vector3) -> Vector3:
+	var raid := Raid.of(actor)
+	if raid == null:
+		return dest
+	for source in raid.warmth:
+		var off := dest - source.global_position
+		var radius := float(source.get_meta("radius", 4.0)) + 1.0
+		var flat := Vector2(off.x, off.z)
+		if absf(off.y) < 3.0 and flat.length_squared() < radius * radius:
+			var out := flat.normalized() if flat.length() > 0.1 else Vector2.RIGHT
+			return Vector3(source.global_position.x + out.x * radius, dest.y, source.global_position.z + out.y * radius)
+	return dest
 
 
 ## How far off a bot hears `other` move (0: silent): an occupied vehicle's
@@ -1338,6 +1553,13 @@ func _on_heard(at: Vector3, source: Actor) -> void:
 ## ground comes to look, the rest face that way.
 func hear_callout(at: Vector3, about: Actor) -> void:
 	_sensed(at, about, false, true)
+
+
+## Its army holds a grudge against `about` (`Raid._tick_grudges`): the bot
+## goes to look round where they roughly are, as it would for a noise heard
+## (off by a tenth of the distance), if it may hunt them.
+func hunt_grudge(at: Vector3, about: Actor) -> void:
+	_sensed(at, about, false, false)
 
 
 ## Something tells the bot about `source` at `at`: it searches from there
@@ -1490,7 +1712,7 @@ func _wait_turn(cmd: ActorCommand, delta: float, dist: float) -> void:
 		_cover = _find_cover(false)
 		if not _cover.is_finite() and flanks and _may_close(target.global_position) \
 				and (not _contact_person or SquadBoard.flank(_contact_id, get_instance_id(),
-					Engine.get_physics_frames(), 4.0)):
+					Engine.get_physics_frames(), 4.0, flankers)):
 			_cover = _flank_point(dist)
 	if _cover.is_finite() and _flat_dist(_cover) > 1.0:
 		_move_toward(cmd, _cover, delta, false)
@@ -1599,7 +1821,13 @@ func _flank_point(dist: float) -> Vector3:
 	off.y = 0.0
 	if off.length() < 0.1:
 		off = Vector3.FORWARD
-	var turn := deg_to_rad(50.0) * (1.0 if _rng.randf() < 0.5 else -1.0)
+	var side := 1.0 if _rng.randf() < 0.5 else -1.0
+	if flankers > 1 and _contact_person:
+		# A pincer: the flankers come round both sides.
+		var taken := SquadBoard.flank_side(_contact_id, get_instance_id())
+		if taken != 0:
+			side = float(taken)
+	var turn := deg_to_rad(50.0) * side
 	var reach := clampf(dist, preferred_range * 0.8, attack_range * 0.8)
 	return target.global_position + off.normalized().rotated(Vector3.UP, turn) * reach
 

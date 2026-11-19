@@ -1715,6 +1715,46 @@ func heat_view(track_id: String) -> Dictionary:
 	}
 
 
+## What the plaza's War Room shows of the races here: `Raid.status` with
+## "race", the AI-only race running now (`Heat.ambient`) as {track, name,
+## laps, racers: [{name, lap, at (share of the lap, 0 to 1), place}]},
+## leader first; {} with none. Only AI racers are ever placed on the track,
+## and only for a race nobody is in; a live race with people is told as
+## {track, name, phase, people} with no positions.
+func status() -> Dictionary:
+	var out := super()
+	out["race"] = race_feed()
+	return out
+
+
+func race_feed() -> Dictionary:
+	if mode == Mode.CLIENT:
+		return {}
+	var live := {}
+	for rt in circuits:
+		var heat: Heat = heats.get(rt.id)
+		if heat == null:
+			continue
+		if not heat.ambient:
+			if live.is_empty():
+				live = {"track": rt.id, "name": rt.display_name.left(24), "phase": heat.phase,
+						"people": heat.people()}
+			continue
+		if heat.phase != "racing":
+			continue
+		var racers: Array[Dictionary] = []
+		for run in heat.runs:
+			if not run.ai or not is_instance_valid(run.actor) or rt.points.is_empty():
+				continue
+			var at := clampf(float(maxi(run.hint, 0)) / rt.points.size(), 0.0, 0.99)
+			racers.append({"name": run.actor.display_name.left(20), "lap": clampi(run.lap, 1, rt.laps),
+					"at": snappedf(at, 0.01), "place": run.place})
+		racers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return int(a.lap) + float(a.at) > int(b.lap) + float(b.at))
+		return {"track": rt.id, "name": rt.display_name.left(24), "laps": rt.laps, "racers": racers}
+	return live
+
+
 ## Every track's live race, as sent to clients.
 func public_heats() -> Array:
 	var out: Array = []
