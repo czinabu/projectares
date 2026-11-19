@@ -81,7 +81,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Primary with attachments | Built | Four attachment slots, fitted at the gunsmith bench: one gun on the bench, the wheel turns through guns and each slot's attachments. |
-| Sidearm | Built | Key 2. A dry primary stays in hand and reloads by itself; the sidearm is one press away. |
+| Sidearm | Built | Key 2. A dry primary stays in hand and asks for a reload (R, or a fresh pull); the sidearm is one press away. |
 | Melee weapon | Built | Six types, directional, block and parry. |
 | Melee against guns: dash-strike, back strike, timed bullet deflect, armor-piercing blades, silent kills, one/two-handed classes | Built | `MeleeWeapon` (`dash_range`, `back_strike_mult`, `deflect_window`, `guard_rearm`, `armor_pierce`, the hold tags), `Combat.noise`. Still to come: interiors that favour blades, more gun ammo pressure. |
 | Melee bots: heavies, feints, dash-strikes, openings; cut soldiers flinch | Built | DESIGN.md "Melee bots". `BotBrain` (`RING_HEAVY`, `RING_FEINT`, `RING_DASH`, `_start_attack`, `_carry_charge`, `_try_dash_strike`, `melee_flinch`, `blade_backoff`); Ashfront heavies' slower heavy. Measured with the duel bench's `--melee <blade>`. |
