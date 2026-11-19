@@ -85,10 +85,27 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 59
+## The sign-in handshake's own version, and nothing else's. It changes only
+## when the handshake itself changes shape (what `_hello` and the server's
+## answer are), which is rare. What the game says once signed in is not
+## versioned here: every message declares itself and `NetManifest`
+## (`core/net/net_manifest.gd`) works out whether two builds agree, so a new
+## or changed message never touches this line.
+##   - A new, removed or changed `@rpc` method is seen by itself.
+##   - A change to what an existing message carries (a new bit in the actor
+##     state, another field in a packed array) raises the `WIRE_` constant
+##     beside the code that packs it, or adds one there.
+## Up to 59 this number was raised for every online change (the list below
+## is that history); 60 is the handshake that carries the manifest.
+const PROTOCOL := 60
+const NetManifest := preload("res://core/net/net_manifest.gd")
+## Where the release workflow stamps a build's number (as `Updater` reads
+## it): how two builds whose manifests differ tell which is the older.
+const BUILD_SETTING := "ares/build/number"
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
-## and client must agree, so a change here needs a new PROTOCOL.
+## and client must agree before a word is understood, so a change here needs
+## a new PROTOCOL and a release note: the two sides cannot even say why.
 ## 30: a sign-out tells the client the countdown's full span, and actor state
 ## carries the airborne sign-out beacon bit.
 ## 31: a squad portal carries how long it unfolds (a portal home out in a
@@ -134,6 +151,12 @@ const BACK_IN_BODY := "body"
 const AUTH_TIMEOUT := 10.0
 ## The most bytes a sign-in or its answer may be. Read before anything else.
 const MAX_AUTH_BYTES := 4096
+## The most bytes a server's answer may be: one that turns a game away for
+## its version carries the server's whole manifest.
+const MAX_ANSWER_BYTES := 32768
+## What a game turned away for its version is told.
+const NEWER_SERVER := "This server runs a newer version of the game. Get the update from the Servers app on your phone."
+const OLDER_SERVER := "This server runs an older version of the game. Its host needs to update it to the latest build."
 const COMPRESSION := ENetConnection.COMPRESS_RANGE_CODER
 const StashService := preload("res://core/account/stash_service.gd")
 const ServerTrust := preload("res://core/net/server_trust.gd")
@@ -293,8 +316,15 @@ var account := {}
 var refused := false
 ## Client: why the versions did not match, if they did not: "client" (this
 ## game is older than the server, get the update at UPDATE_URL) or "server"
-## (the server is older; its host must update it). "" when they match.
+## (the server is older; its host must update it), or "either" (they differ
+## and a build without a number is in it, an editor run, so nobody can say
+## which is older). "" when they match.
 var outdated := ""
+## Client: what this game and the server that turned it away disagree on
+## (`NetManifest.differences`), for the log and a bug report.
+var differs := PackedStringArray()
+## This build's number (0 in the editor and in tests).
+var build := int(ProjectSettings.get_setting(BUILD_SETTING, 0))
 ## Client: the server showed a different certificate from the one this game
 ## remembered for it ("this server changed", see `ServerTrust`): {"host",
 ## "was", "now" (fingerprints), "certificate" (the new one, PEM)}. The join
@@ -762,14 +792,21 @@ func _register(actor: Actor) -> int:
 ## Signing in. A new connection is held in Godot's handshake
 ## (`SceneMultiplayer.auth_callback`) until it has signed in, and only then
 ## counts as connected. The client sends one Dictionary (`var_to_bytes`):
-## {"protocol", "name", "secret"}, or {"protocol", "name", "token"} with the
-## token an earlier sign-in gave it (below), or {"protocol", "probe": true}
-## to only fetch the certificate (`ServerTrust`); the server answers with
-## one: {"ok": true, "protocol", "world", "certificate", "token"} or
-## {"ok": false, "protocol", "error", "certificate"}. Both always carry
-## "protocol", in every version to come, so any two versions can tell each
-## other apart and say which one needs the update. Keep that shape whatever
-## else changes.
+## {"protocol", "manifest", "build", "name", "secret"}, or the same with
+## "token" (the token an earlier sign-in gave it, below) in place of
+## "secret", or {"protocol", "probe": true} to only fetch the certificate
+## (`ServerTrust`); the server answers with one: {"ok": true, "protocol",
+## "world", "certificate", "token"} or {"ok": false, "protocol", "error",
+## "certificate"}. Both always carry "protocol", in every version to come,
+## so any two versions can tell each other apart and say which one needs
+## the update. Keep that shape whatever else changes.
+##
+## "manifest" is the digest of what this build says once signed in
+## (`NetManifest.own_digest`), and the server lets in only a game whose
+## digest is its own. One that differs is answered {"ok": false, "outdated",
+## "build", "manifest"}: the server's build number and its whole manifest,
+## so the game can say which side is older (`NetManifest.older`; "either"
+## when a build carries no number) and name what differs in its log.
 ##
 ## The token stands for the sign-in (`StashService.sign_in_with`): the game
 ## shows it to the next server it travels to instead of its secret, and
@@ -790,6 +827,13 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 	if hello.get("probe", false):
 		# Only asking which certificate this server shows (it changed).
 		_refuse(peer, "Certificate only.")
+		return
+	if str(hello.get("manifest", "")) != NetManifest.own_digest():
+		# The same handshake, but what is said after it differs.
+		var their_build: Variant = hello.get("build")
+		var side := NetManifest.older(build, int(their_build) if typeof(their_build) == TYPE_INT else 0)
+		_refuse(peer, "Versions differ.", {"mine": "server", "theirs": "client"}.get(side, "either"),
+				{"build": build, "manifest": NetManifest.own()})
 		return
 	var token := str(hello.get("token", "")).left(256)
 	var credentials := {"method": "token", "token": token} if token != "" else \
@@ -839,9 +883,12 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 
 ## Server: turns a connection away during the handshake with a reason its
 ## game can show, then drops it once the answer has had time to arrive.
-## `outdated_side` is "client" or "server" when the versions differ.
-func _refuse(peer: int, reason: String, outdated_side := "") -> void:
+## `outdated_side` is "client" or "server" when the versions differ
+## ("either" when nobody can say which is older), and `more` goes in the
+## answer as it is.
+func _refuse(peer: int, reason: String, outdated_side := "", more := {}) -> void:
 	var answer := {"ok": false, "protocol": PROTOCOL, "error": reason, "certificate": _certificate}
+	answer.merge(more)
 	if outdated_side != "":
 		answer["outdated"] = outdated_side
 	_api.send_auth(peer, var_to_bytes(answer))
@@ -1988,6 +2035,10 @@ func _send_input(packet: PackedByteArray) -> void:
 	(_inputs[peer] as InputBuffer).receive(inputs)
 
 
+## Raise it when the bytes of a packed input change (`NetManifest`).
+const WIRE_INPUTS := 1
+
+
 ## Inputs ([number, command array, view tick], see `ActorCommand.to_array`)
 ## as the bytes of one packet: `INPUT_BYTES` each, so sixteen fit in a
 ## datagram with room to spare.
@@ -2243,6 +2294,10 @@ func _send_states() -> void:
 				_switches[tier].erase(id)
 
 
+## Raise it when what a state entry carries changes (`NetManifest`).
+const WIRE_ACTOR_STATE := 1
+
+
 ## One actor's state as it goes out to viewers of `tier`, with the presses
 ## made since that tier last heard.
 func _state_entry(id: int, tier: int) -> Array:
@@ -2297,7 +2352,7 @@ static func split_address(address: String) -> Array:
 
 ## Client: what this game says to sign in (see `_server_auth`).
 func _hello() -> Dictionary:
-	var hello := {"protocol": PROTOCOL}
+	var hello := {"protocol": PROTOCOL, "manifest": NetManifest.own_digest(), "build": build}
 	if ahead:
 		hello["ahead"] = true
 	if _join_mode == "probe":
@@ -2345,7 +2400,7 @@ func _on_connection_failed() -> void:
 func _client_auth(id: int, data: PackedByteArray) -> void:
 	if id != 1 or _gave_up:
 		return
-	var answer: Variant = bytes_to_var(data) if data.size() <= MAX_AUTH_BYTES else null
+	var answer: Variant = bytes_to_var(data) if data.size() <= MAX_ANSWER_BYTES else null
 	if typeof(answer) != TYPE_DICTIONARY:
 		_give_up("That server is not a Project Ares server.")
 		return
@@ -2368,12 +2423,24 @@ func _client_auth(id: int, data: PackedByteArray) -> void:
 		refused = true
 		_give_up("Could not make a secure connection to the server.")
 		return
+	if protocol == PROTOCOL and not answer.get("ok", false) and answer.has("manifest"):
+		# The same handshake, but what is said after it differs. The build
+		# numbers say which side is older, where both builds carry one.
+		refused = true
+		var theirs := NetManifest.clean(answer.manifest)
+		differs = NetManifest.differences(NetManifest.own(), theirs)
+		var their_build: Variant = answer.get("build")
+		outdated = {"mine": "client", "theirs": "server"}.get(
+				NetManifest.older(build, int(their_build) if typeof(their_build) == TYPE_INT else 0), "either")
+		print("The server speaks a different version (its build %s, this one %d). Differs in: %s" % [
+				their_build, build, ", ".join(differs) if not differs.is_empty() else "nothing it named"])
+		_give_up({"client": NEWER_SERVER, "server": OLDER_SERVER}.get(outdated,
+				"This server runs a different version of the game. Both need the same build to play together."))
+		return
 	if protocol != PROTOCOL or str(answer.get("outdated", "")) != "":
 		refused = true
 		outdated = "client" if protocol > PROTOCOL else "server"
-		_give_up("This server runs a newer version of the game. Get the update from the Servers app on your phone."
-				if outdated == "client" else
-				"This server runs an older version of the game. Its host needs to update it to the latest build.")
+		_give_up(NEWER_SERVER if outdated == "client" else OLDER_SERVER)
 		return
 	if not answer.get("ok", false) and str(answer.get("again", "")) == "secret" and ticket != "":
 		# The token ran out: sign in with the secret, on this same connection.
@@ -3224,6 +3291,10 @@ func _vehicle_gone(id: int) -> void:
 	if raid != null:
 		raid.vehicles.erase(vehicle)
 	vehicle.queue_free()
+
+
+## Raise it when what a vehicle's entry carries changes (`NetManifest`).
+const WIRE_VEHICLE_STATE := 1
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
