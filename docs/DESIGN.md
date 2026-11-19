@@ -622,7 +622,10 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   Colossus, an orbital lance comes down on it out of the sky with a blinding
   flash, and it buckles and falls where it stood, its eye and searchlight
   dying; it lies burning for about nine minutes, fades into the smoke, and
-  the next one walks out of it. Planned: ash on the visor glass.
+  the next one walks out of it. Out in an ash storm, ash settles on the
+  visor glass (`VisorHud._draw_ash`, the glass only, like frost): grains in
+  clumps from the rim inward, darkest in the corners, the middle always
+  clear, more the deeper in the storm, and it blows off slowly after.
 - Full loot on death.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).

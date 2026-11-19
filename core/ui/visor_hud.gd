@@ -79,6 +79,12 @@ const BODY_HEAT_INK := Color(0.6, 0.85, 1.0)
 const WARMING_INK := Color(1.0, 0.6, 0.25)
 ## How far frost has crept in over the glass (0 to 1), from body heat.
 var frost := 0.0
+## How much ash has settled on the glass (0 to 1), from an ash storm.
+var ash := 0.0
+## Most specks of ash the glass holds, and how far in from the rim they
+## settle (a share of the way to the middle, which stays clear).
+const ASH_SPECKS := 220
+const ASH_CLEAR := 0.55
 ## The armor arc's colour (stamina takes the glass's own).
 const ARMOR_INK := Color(0.5, 0.75, 1.0)
 ## Colours of the heading strip's marks that are not the glass's own.
@@ -385,6 +391,11 @@ func _process(delta: float) -> void:
 	if p != null and Hud.feels_cold(p):
 		frosted = clampf(1.0 - p.body_heat / maxf(p.max_body_heat * 0.5, 1.0), 0.0, 1.0)
 	frost = move_toward(frost, frosted, delta * (0.15 if frosted > frost else 0.5))
+	# Ash settles on the glass in an ash storm and blows off slowly after.
+	var ashing := 0.0
+	if p != null and raid != null and raid.weather != null and raid.world != null:
+		ashing = ash_settling(raid.world.weather_kind, raid.weather.strength_at(p.global_position))
+	ash = move_toward(ash, ashing, delta * (0.06 if ashing > ash else 0.04))
 	landing = Hud.landing_warning(p) if p != null and (glass_shown() or flat_shown()) else 0.0
 	_animate(p, delta)
 	if p == null or _world == null or not _world.is_inside_tree():
@@ -823,6 +834,7 @@ func _draw() -> void:
 	if not flat:
 		_draw_glass(ink)
 		_draw_frost()
+		_draw_ash()
 	_draw_vitals(p, ink)
 	_draw_landing(p)
 	_draw_weapon(p, ink)
@@ -976,6 +988,63 @@ func _draw_frost() -> void:
 				var twig := length * (0.28 - b * 0.06)
 				draw_line(on, on + dir.rotated(0.7) * twig, color, 1.0, true)
 				draw_line(on, on + dir.rotated(-0.7) * twig, color, 1.0, true)
+
+
+## How much ash a storm of `kind` this `strength` (0 to 1) settles on the
+## glass: only an ash storm's (DESIGN.md "Weather: ash storms").
+static func ash_settling(kind: String, strength: float) -> float:
+	return clampf(strength, 0.0, 1.0) if kind == "ash" else 0.0
+
+
+## Speck `i` of the ash on the glass: where it sits, in the glass's own
+## frame (-1 to 1 each way, the middle 0), and its size (0 to 1). The same
+## every frame, so ash builds up rather than shimmering, and never inside
+## `ASH_CLEAR` of the middle.
+static func ash_speck(i: int) -> Vector3:
+	# Grains land in clumps of eight, each clump somewhere round the rim.
+	var clump := RandomNumberGenerator.new()
+	clump.seed = hash(int(i / 8) * 7919 + 31)
+	var angle := clump.randf() * TAU
+	# Thickest at the rim, thinning in toward the clear middle.
+	var reach := lerpf(ASH_CLEAR + 0.08, 1.05, pow(clump.randf(), 0.4))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(i * 104729 + 7)
+	var at := Vector2(cos(angle), sin(angle)) * reach + Vector2(rng.randf_range(-0.07, 0.07), rng.randf_range(-0.09, 0.09))
+	# Kept off the middle, whatever the scatter did.
+	if at.length() < ASH_CLEAR:
+		at = at.normalized() * ASH_CLEAR
+	return Vector3(at.x, at.y, rng.randf())
+
+
+## Ash on the glass in an ash storm: dark grains and a few smears settling
+## in from the rim, thickest there, the middle always clear. The glass
+## itself, so first person only, like frost.
+func _draw_ash() -> void:
+	if ash <= 0.01:
+		return
+	var half := size * 0.5
+	# A fine dusting first, darkest in the corners.
+	for corner: Vector2 in [Vector2(0, 0), Vector2(1, 0), Vector2(0, 1), Vector2(1, 1)]:
+		var at := Vector2(corner.x * size.x, corner.y * size.y)
+		for ring in 3:
+			draw_circle(at, size.y * (0.16 + ring * 0.1), Color(0.18, 0.14, 0.12, 0.07 * ash))
+	var shown := ash * ASH_SPECKS
+	for i in ASH_SPECKS:
+		if float(i) >= shown:
+			break
+		var speck := ash_speck(i)
+		var at := half + Vector2(speck.x * half.x, speck.y * half.y)
+		# Each grain darkens in as it lands rather than popping on.
+		var landed := clampf(shown - i, 0.0, 1.0)
+		var grain := size.y * (0.0018 + speck.z * speck.z * 0.0045)
+		var dark := Color(0.2, 0.16, 0.14, 0.55 * landed)
+		if i % 23 == 0:
+			# A smear, dragged along by the wind across the glass.
+			var drag := Vector2(grain * 7.0, grain * (speck.z - 0.5) * 2.0)
+			draw_line(at - drag, at + drag, Color(dark, dark.a * 0.6), grain * 1.6, true)
+		draw_circle(at, grain, dark)
+		# Lit grit catches the light on its upper edge.
+		draw_circle(at - Vector2(0, grain * 0.4), grain * 0.45, Color(0.85, 0.6, 0.45, 0.25 * landed))
 
 
 ## Where the curved heading strip is at `off` degrees from straight ahead:
