@@ -130,6 +130,9 @@ const FIELD_PATROLS := 8
 ## Risk zones (DESIGN.md section 2): the core is the molten Foundry, the
 ## middle reaches past the four landmarks, the outer ring is the rest.
 const CORE_RADIUS := 52.0
+## The war intensity the Foundry waits on before the armies send their
+## elites at it (`Strongpoint.hot_at`).
+const FOUNDRY_HOT := 0.5
 const MIDDLE_RADIUS := 225.0
 ## Gate outposts: safe bubbles on four of the rim's drop points, where
 ## players arrive. Each is a walled yard open toward the middle of the map.
@@ -168,6 +171,23 @@ const FORGE_TOWER := Vector2(3.0, 34.0)
 ## The old front: which trench lines face across no man's land, so sandbags
 ## go on their lips and tank traps out in front of them.
 const FRONT_LINES := [0, 1, 3, 4, 5]
+## The trench lines, each a run of points on the field.
+const TRENCHES := [
+	# The Breach: two lines facing the middle, and a communication trench.
+	[Vector2(-180, 96), Vector2(-132, 92), Vector2(-96, 110), Vector2(-88, 150)],
+	[Vector2(-196, 82), Vector2(-150, 70), Vector2(-104, 78)],
+	[Vector2(-132, 92), Vector2(-126, 118)],
+	# The old front across the middle of the field.
+	[Vector2(-70, -64), Vector2(-20, -78), Vector2(34, -70), Vector2(84, -86)],
+	[Vector2(-84, 62), Vector2(-30, 74), Vector2(26, 66), Vector2(70, 80)],
+	[Vector2(96, -30), Vector2(110, 20), Vector2(100, 62)],
+]
+## Skirmish lines (the enemy AI pass, step 4): each army keeps soldiers in
+## the front's trenches on its own half of the field, this far apart along
+## a line, on a "line_post" marker. A line well inside an army's half is
+## its own; the old front across the middle is split down the centre.
+const LINE_POST_EVERY := 14.0
+const LINE_POST_MIDDLE := 12.0
 const SANDBAG_EVERY := 15.0
 const TRAP_OFFSET := 13.0
 const TRAP_EVERY := 6.5
@@ -422,16 +442,9 @@ func _plan() -> void:
 	for ramp in _ramp_spots():
 		var at: Vector2 = ramp["at"]
 		_pads.append({"at": at, "radius": 10.0, "height": _rolling(at.x, at.y)})
-	_trenches = [
-		# The Breach: two lines facing the middle, and a communication trench.
-		PackedVector2Array([Vector2(-180, 96), Vector2(-132, 92), Vector2(-96, 110), Vector2(-88, 150)]),
-		PackedVector2Array([Vector2(-196, 82), Vector2(-150, 70), Vector2(-104, 78)]),
-		PackedVector2Array([Vector2(-132, 92), Vector2(-126, 118)]),
-		# The old front across the middle of the field.
-		PackedVector2Array([Vector2(-70, -64), Vector2(-20, -78), Vector2(34, -70), Vector2(84, -86)]),
-		PackedVector2Array([Vector2(-84, 62), Vector2(-30, 74), Vector2(26, 66), Vector2(70, 80)]),
-		PackedVector2Array([Vector2(96, -30), Vector2(110, 20), Vector2(100, 62)]),
-	]
+	_trenches.clear()
+	for line: Array in TRENCHES:
+		_trenches.append(PackedVector2Array(line))
 	for i in CRATERS:
 		var radius := _rng.randf_range(6.0, 15.0)
 		var at := _free_spot(radius, false)
@@ -686,6 +699,8 @@ func _build_sites() -> void:
 		marker.set_meta("radius", radius)
 		match site["kind"]:
 			"foundry":
+				# Both armies' elites fight for it, and only in a hot war.
+				marker.set_meta("hot_at", FOUNDRY_HOT)
 				_build_foundry(at)
 				# The Forge stands on the middle: the point bots are sent to
 				# hold is the open ground at its foot.
@@ -917,6 +932,7 @@ func _build_field() -> void:
 		var at: Vector2 = ramp["at"]
 		_add_ramp_lot(_ground(at), _facing(dir), _ground(at + side * 4.0 - dir * 6.0))
 	_fortify_front()
+	_add_line_posts()
 
 
 func _add_building(at: Vector2, size: Vector3, lootable: bool) -> void:
@@ -1273,6 +1289,43 @@ func _spot_clear(at: Vector2, radius: float) -> bool:
 			if at.distance_to(Geometry2D.get_closest_point_to_segment(at, line[i], line[i + 1])) < radius * 0.7 + 5.0:
 				return false
 	return true
+
+
+## The skirmish lines' posts: on the fire step of each front trench, just
+## behind the sandbags on its lip, every `LINE_POST_EVERY` along it, each
+## the army's whose half of the field it is on. Laid after the sandbags, so
+## those stand where they were. The lines take turns in the list, so an
+## army that mans only a few posts spreads them along its front.
+func _add_line_posts() -> void:
+	var lines: Array = []
+	for index: int in FRONT_LINES:
+		var line: PackedVector2Array = _trenches[index]
+		var spots: Array[Vector2] = []
+		for i in line.size() - 1:
+			var a := line[i]
+			var b := line[i + 1]
+			var along := (b - a).normalized()
+			var out := along.orthogonal()
+			if out.dot(-(a + b) * 0.5) < 0.0:
+				out = -out
+			var d := LINE_POST_EVERY * 0.5
+			while d < a.distance_to(b):
+				var spot := a + along * d + out * 3.5
+				if absf(spot.x) > LINE_POST_MIDDLE and _road_distance(spot) > ROAD_CLEAR:
+					spots.append(spot)
+				d += LINE_POST_EVERY
+		lines.append(spots)
+	var left := true
+	var n := 0
+	while left:
+		left = false
+		for spots: Array in lines:
+			if n < spots.size():
+				left = true
+				var spot: Vector2 = spots[n]
+				var post := _add_marker("line_post", _ground(spot))
+				post.set_meta("faction", "legion" if spot.x < 0.0 else "tide")
+		n += 1
 
 
 ## The front lines, dug in: sandbag walls along the lips of the trenches
