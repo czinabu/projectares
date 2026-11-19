@@ -562,6 +562,11 @@ var _watch_raise := 0.0
 ## How far the phone is up in the right hand (0..1), from the actor's
 ## command (`ActorCommand.phone`), so everyone who sees them agrees.
 var phone := 0.0
+## The helmet coming off onto the hip or going back on, as shown: the
+## simulated `Actor.helmet_stow` (0 on the head, 1 on the hip) followed
+## smoothly between ticks. `helmet_hand`, `helmet_carry` and `helmet_place`
+## read the off hand's reach, the helmet's way down and where it hangs.
+var helmet := 0.0
 ## How far the hand is up holding a toy or throwing it (0..1), eased.
 var toy := 0.0
 ## Seconds into the toy throw being shown, or below zero when none is.
@@ -576,6 +581,16 @@ var _toy_thrown := ""
 ## `ActorCommand.inspect`.
 var inspect := 0.0
 var inspect_clock := 0.0
+## The emote shown (`ActorCommand.emote`, `Emotes`): which one, how far it
+## has come in (0 to 1, eased) and seconds since this view saw it start, so
+## a remote player's wave is timed from when it was seen, like the inspect.
+## The last one stays named while it eases out.
+var emote := 0.0
+var emote_id := ""
+var emote_clock := 0.0
+## How fast an emote comes in and goes out (a share a second).
+var emote_rate := 3.0
+var _emote_raise := 0.0
 var _inspect_raise := 0.0
 var _inspect_was := false
 
@@ -657,6 +672,7 @@ func advance(delta: float) -> void:
 		inspect_clock = 0.0
 	_inspect_raise = move_toward(_inspect_raise, 1.0 if inspect_wanted else 0.0, inspect_rate * delta)
 	inspect = smoothstep(0.0, 1.0, _inspect_raise)
+	advance_emote(delta)
 
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
@@ -694,6 +710,10 @@ func advance(delta: float) -> void:
 	watch = ease(_watch_raise, -2.0)
 	var phone_wanted := actor.cmd != null and actor.cmd.phone and not actor.is_dead and actor.vehicle == null
 	phone = move_toward(phone, 1.0 if phone_wanted else 0.0, phone_rate * delta)
+	if actor.visor.enabled:
+		helmet = move_toward(helmet, actor.helmet_stow, 1.5 * delta / maxf(actor.helmet_stow_time, 0.01))
+	else:
+		helmet = 0.0
 	advance_toy(delta)
 
 	var gun := weapon as Gun
@@ -862,6 +882,28 @@ func carry_bob() -> Vector3:
 ## Moves the toy hold and throw on by `delta` seconds. A throw starts when
 ## `Actor.toy_throws` goes up (not for the count first seen: a body that
 ## comes into view mid-game does not replay an old throw).
+## Eases the emote in and out from the held `ActorCommand.emote`. None
+## shows while down, riding, in the air or with the phone out, whatever the
+## command says, so a late packet never sits a body on a bike.
+func advance_emote(delta: float) -> void:
+	var wanted := Emotes.id_of(actor.cmd.emote) if actor.cmd != null else ""
+	if actor.is_dead or actor.vehicle != null or actor.airborne_time > 0.15 or (actor.cmd != null and actor.cmd.phone):
+		wanted = ""
+	if wanted != "" and wanted != emote_id:
+		# A new one: it starts again from its first beat (from the last
+		# one's pose, which it blends out of as it comes in).
+		emote_id = wanted
+		emote_clock = 0.0
+		_emote_raise = minf(_emote_raise, 0.5)
+	if emote_id != "":
+		emote_clock += delta
+	_emote_raise = move_toward(_emote_raise, 1.0 if wanted != "" else 0.0, emote_rate * delta)
+	emote = smoothstep(0.0, 1.0, _emote_raise)
+	if emote <= 0.0 and wanted == "":
+		emote_id = ""
+		emote_clock = 0.0
+
+
 func advance_toy(delta: float) -> void:
 	if _toy_throws_seen < 0:
 		_toy_throws_seen = actor.toy_throws
@@ -1537,3 +1579,35 @@ static func inspect_turn(seconds: float) -> Vector3:
 			var done := (seconds - float(from[0])) / maxf(float(to[0]) - float(from[0]), 0.001)
 			return (from[1] as Vector3).lerp(to[1], smoothstep(0.0, 1.0, done))
 	return Vector3.ZERO
+
+
+## How far the off hand is on the helmet at `stow` (see `helmet`): it comes
+## up to the head before the helmet leaves it (`Actor.HELMET_LIFTED`), stays
+## on it all the way down and lets go once it is clipped on, and the same
+## backwards to put it on.
+static func helmet_hand(stow: float) -> float:
+	return smoothstep(0.0, Actor.HELMET_LIFTED - 0.05, stow) * (1.0 - smoothstep(0.8, 1.0, stow))
+
+
+## How far the weapon hand is on the helmet at `stow`: both hands lift it
+## off the head (and set it on), and the weapon hand lets go a little way
+## down, leaving the off hand to clip it on. Only with nothing in that hand
+## (`PlayerController.toggle_helmet` puts a drawn weapon away first).
+static func helmet_both(stow: float) -> float:
+	return smoothstep(0.08, Actor.HELMET_LIFTED - 0.03, stow) * (1.0 - smoothstep(0.42, 0.58, stow))
+
+
+## How far the helmet is on its way from the head (0) to the hip clip (1).
+static func helmet_carry(stow: float) -> float:
+	return smoothstep(Actor.HELMET_LIFTED, HELMET_CLIPPED, stow)
+
+
+## Where the helmet hangs at `stow`: "head", "hand" (carried between) or "hip".
+static func helmet_place(stow: float) -> String:
+	if stow < Actor.HELMET_LIFTED:
+		return "head"
+	return "hand" if stow < HELMET_CLIPPED else "hip"
+
+
+## How far into the take off the helmet is on its clip.
+const HELMET_CLIPPED := 0.78

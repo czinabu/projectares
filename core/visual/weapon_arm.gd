@@ -32,6 +32,14 @@ var grip_offset := Vector3.ZERO
 ## Where the elbows point, in the actor's space.
 var elbow := Vector3(0.8, 0.8, 0.3)
 var off_elbow := Vector3(-0.8, 0.8, 0.3)
+## How much sooner than its reach a hand's hold on the helmet is full: the
+## hand is moved up its reach (`ActorSkin.helmet_reach`), not blended there.
+const HELMET_TAKE_UP := 4.0
+## Taking the helmet off or putting it on (`ActionPose.helmet_hand`): where
+## the off elbow points with the hand up at the head, and down at the hip
+## clip (actor frame).
+var helmet_elbow_up := Vector3(-0.9, 1.3, -0.3)
+var helmet_elbow_down := Vector3(-0.9, 0.6, 0.4)
 ## Raising the watch (`ActionPose.watch`): where the left wrist comes up to,
 ## from the eyes along the aim (metres right, up and ahead, pitch clamped to
 ## `watch_pitch`), so it comes up into the line of sight in both views, and
@@ -164,6 +172,8 @@ var _hilt := 0.0
 var _off_weight := 0.0
 var _gun_weight := 0.0
 var _watch := 0.0
+## How far the off hand is on the helmet, taking it off or putting it on.
+var _helm := 0.0
 ## How far a gun is up at the eye (`ActionPose.ads`), while it is shown.
 var _ads := 0.0
 ## What the arm's reach left between the sight and its target last frame,
@@ -451,6 +461,7 @@ func step(delta: float) -> void:
 			and gun.visual.visible and not _let_go() else 0.0
 	# The watch takes the left hand off any two-handed hold while it is up.
 	_watch = shared.watch if not _let_go() else 0.0
+	_helm = ActionPose.helmet_hand(shared.helmet) if not _let_go() else 0.0
 	_ads = shared.ads if gun != null and gun.visual != null and gun.visual.visible \
 			and not _let_go() and override_weight <= 0.001 else 0.0
 	if _ads <= 0.0:
@@ -496,12 +507,36 @@ func step(delta: float) -> void:
 	if hand_look > 0.0 and _weight <= 0.001 and override_weight <= 0.001:
 		_target.global_position = _target.global_position.lerp(shared.inspect_point(), hand_look)
 		reach_ik.influence = maxf(reach_ik.influence, hand_look)
+	# Both hands lift the helmet off the head (and set it back on): with
+	# nothing in it, the weapon hand comes up to its right side too and lets
+	# go as the helmet comes down (`ActionPose.helmet_both`).
+	var both := ActionPose.helmet_both(shared.helmet) if actor.get_active_weapon() == null \
+			and actor.vehicle == null and not _let_go() and shared.toy <= 0.0 else 0.0
+	if both > 0.0:
+		var skin := get_parent()
+		var grip: Variant = skin.helmet_reach(1.0, both) if skin != null and skin.has_method("helmet_reach") else null
+		if grip != null:
+			# The hand follows its reach up (`ActorSkin.helmet_reach`) under
+			# a quickly full hold, so the arm never swings out sideways as a
+			# half-blended pose would.
+			var on := minf(both * HELMET_TAKE_UP, 1.0)
+			var held_by := reach_ik.influence
+			_target.global_position = grip if held_by <= 0.0 else _target.global_position.lerp(grip as Vector3, on)
+			reach_ik.influence = maxf(held_by, on)
+			var up := Vector3(-helmet_elbow_up.x, helmet_elbow_up.y, helmet_elbow_up.z)
+			_pole.global_position = _pole.global_position.lerp(actor.global_transform * up, both)
 	if off_ik:
-		off_ik.influence = maxf(maxf(maxf(maxf(_off_weight, _support), _guard), _hilt) * (1.0 - _watch), _watch)
+		var held := maxf(maxf(maxf(maxf(_off_weight, _support), _guard), _hilt) * (1.0 - _watch), _watch)
+		var helm_on := minf(_helm * HELMET_TAKE_UP, 1.0)
+		off_ik.influence = maxf(held * (1.0 - helm_on), helm_on)
 		var off_pole := off_elbow.lerp(ads_off_elbow, _support) if _off_weight <= 0.0 else off_elbow
-		_off_pole.global_position = actor.global_transform * off_pole.lerp(watch_elbow, _watch)
-		if _watch > 0.0:
-			_off_target.global_position = watch_point()
+		off_pole = off_pole.lerp(watch_elbow, _watch)
+		if _helm > 0.0:
+			var down := ActionPose.helmet_carry(shared.helmet)
+			off_pole = off_pole.lerp(helmet_elbow_up.lerp(helmet_elbow_down, down), _helm)
+		_off_pole.global_position = actor.global_transform * off_pole
+		if _watch > 0.0 or _helm > 0.0:
+			_off_target.global_position = _off_goal(watch_point() if _watch > 0.0 else _off_target.global_position)
 
 
 ## Where the raised watch's wrist goes, in the world: below and ahead of
@@ -516,6 +551,17 @@ func watch_point() -> Vector3:
 	if eye == null:
 		eye = actor.get_eye_position()
 	return (eye as Vector3) + aim * watch_from_eyes
+
+
+## Where the off hand goes, given where it would go otherwise (`at`):
+## taking the helmet off or putting it on, it goes to the helmet's side
+## (`ActorSkin.helmet_grip`) instead, as far as it is on it.
+func _off_goal(at: Vector3) -> Vector3:
+	if _helm <= 0.0:
+		return at
+	var skin := get_parent()
+	var grip: Variant = skin.helmet_reach(-1.0, _helm) if skin != null and skin.has_method("helmet_reach") else null
+	return at if grip == null else at.lerp(grip as Vector3, minf(_helm * HELMET_TAKE_UP, 1.0))
 
 
 ## Once the off arm has reached for the watch: roll the forearm so the watch
@@ -839,7 +885,7 @@ func _place_weapon() -> void:
 		handle += actor.global_basis.orthonormalized() * _off_fix
 	if _guard > 0.0:
 		handle = handle.lerp(actor.global_transform * _pose().off_guard, _guard)
-	_off_target.global_position = handle.lerp(watch_point(), _watch)
+	_off_target.global_position = _off_goal(handle.lerp(watch_point(), _watch))
 
 
 ## Looking over what is in the hand (`ActionPose.inspect`): once the arm
@@ -906,7 +952,7 @@ func _steady_gun() -> void:
 			var along := d.dot(back)
 			var slide := along - sqrt(maxf(along * along - (d.length_squared() - length * length), 0.0))
 			at -= back * clampf(slide, 0.0, room)
-	_off_target.global_position = at.lerp(watch_point(), _watch)
+	_off_target.global_position = _off_goal(at.lerp(watch_point(), _watch))
 
 
 ## After the off arm has reached: its hand turns as the aim clip holds the

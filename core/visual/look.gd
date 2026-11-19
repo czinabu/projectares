@@ -42,6 +42,7 @@ const SURFACES := {
 	"road": {"tex": "Road001", "scale": 0.2},
 	"brick": {"tex": "Bricks066", "scale": 0.35},
 	"metal": {"tex": "Metal063", "scale": 0.4, "metal": 0.85},
+	"panels": {"tex": "MetalPlates015A", "scale": 0.18, "metal": 0.6},
 	"ground": {"tex": "Ground037", "scale": 0.25},
 }
 

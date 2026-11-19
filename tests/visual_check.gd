@@ -220,6 +220,19 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --emotes-only` shoots every emote (`Emotes`) on the one
+	# body: from the front at two beats, from the side, over the shoulder and
+	# from the eyes. `EMOTE_ROWS=wave,sit` shoots only those.
+	if "--emotes-only" in args:
+		await _emote_shots(out_dir)
+	# `-- <output_dir> --helmet-off-only` shoots a helmet taken off and
+	# clipped to the hip, at points through the take off, from the front
+	# left, over the shoulder and from the eyes.
+	if "--helmet-off-only" in args:
+		await _helmet_off_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --vehicles-only` shoots every vehicle parked, alone
 	# from three sides and in a row from far off, to compare their looks.
 	if "--vehicles-only" in args:
@@ -1118,7 +1131,7 @@ func _hub_shots(out_dir: String) -> void:
 	raid.start(plaza, 5)
 	var map: Node3D = raid.map
 	var camera := Camera3D.new()
-	camera.far = 1500.0
+	camera.far = maxf(1500.0, float(map.get_meta("view_far", 1500.0)))
 	camera.fov = 75.0
 	add_child(camera)
 	camera.make_current()
@@ -1131,6 +1144,11 @@ func _hub_shots(out_dir: String) -> void:
 		["civic", Vector3(108, 2.0, 4), Vector3(160, 4, 0)],
 		["residences", Vector3(-108, 2.0, -4), Vector3(-160, 4, 0)],
 		["lookout", Vector3(161, 1.7, -161), Vector3(0, 8, 0)],
+		["skyline", Vector3(0, 1.7, 40), Vector3(-40, 60, -200)],
+		["look_up", Vector3(60, 1.7, -60), Vector3(300, 380, -500)],
+		["rail", Vector3(-200, 1.7, 120), Vector3(-420, -120, 260)],
+		["monorail", Vector3(150, 1.7, 150), Vector3(260, 60, 250)],
+		["tower_foot", Vector3(37, 1.7, -93), Vector3(46, 9, -111)],
 		["overview", Vector3(260, 220, 260), Vector3(0, 0, 0)],
 	]
 	for v: Array in views:
@@ -4576,6 +4594,93 @@ func _inspect_shots(out_dir: String) -> void:
 	raid.queue_free()
 
 
+## The helmet coming off onto the hip (`Actor.helmet_stow`): a column per
+## point through the take off (on the head, the hand on it, on its way
+## down, clipped on, the hand gone), a row each from the front left, over
+## the shoulder and from the eyes. `VIEW_HELMET` picks the helmet. Saves
+## `helmet_off.png`, and each shot full size under `helmet_off/`.
+func _helmet_off_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	var helmet := OS.get_environment("VIEW_HELMET") if OS.has_environment("VIEW_HELMET") else "helm_warden"
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "frame_trooper", helmet])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -500, 0)
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await _settle(30)
+	p.set_physics_process(false)
+	controller.set_physics_process(false)
+	# Turned about, so the left side (the clip's) faces open ground.
+	controller.yaw += PI
+	controller.pitch = -0.15
+	p.cmd.pitch = controller.pitch
+	p.cmd.yaw = controller.yaw
+	p.rotation.y = controller.yaw
+	var pose := ActionPose.of(p)
+	var outside := Camera3D.new()
+	outside.fov = 40.0
+	raid.add_child(outside)
+	# Empty hands, as the take off leaves them (it puts a weapon away first).
+	p.active_weapon_index = -1
+	var stows := [0.0, 0.25, 0.5, 0.65, 1.0]
+	# `HELMET_STOWS=0,0.2,0.4` picks the points through the take off.
+	if OS.has_environment("HELMET_STOWS"):
+		stows = Array(OS.get_environment("HELMET_STOWS").split(",")).map(func(v: String) -> float: return float(v))
+	var size := Vector2i(320, 240)
+	var sheet := Image.create(stows.size() * size.x, 3 * size.y, false, Image.FORMAT_RGBA8)
+	DirAccess.make_dir_recursive_absolute(out_dir.path_join("helmet_off"))
+	# `HELMET_CAMS=0,2` shoots only those rows (0 front left, 1 third, 2 first).
+	var cams := [0, 1, 2]
+	if OS.has_environment("HELMET_CAMS"):
+		cams = Array(OS.get_environment("HELMET_CAMS").split(",")).map(func(c: String) -> int: return int(c))
+	for cam: int in cams:
+		for col in stows.size():
+			var stow: float = stows[col]
+			controller.view_mode = PlayerController.ViewMode.FIRST if cam == 2 else PlayerController.ViewMode.THIRD
+			outside.current = cam == 0
+			controller.camera.current = cam != 0
+			p.cmd.helmet_off = stow > 0.0
+			for k in 16:
+				p.helmet_stow = stow
+				p.visor.stowed = stow >= Actor.HELMET_LIFTED
+				pose.helmet = stow
+				if cam == 0:
+					var at := p.global_position
+					outside.global_position = at + p.global_basis * Vector3(-1.9, 1.5, -2.0)
+					outside.look_at(at + Vector3(0, 1.1, 0))
+				await get_tree().process_frame
+			if OS.has_environment("HELMET_DEBUG"):
+				var skin: Node = p.get_node("Skin")
+				var sk: Skeleton3D = skin.find_child("Skeleton3D", true, false)
+				var to_actor := p.global_transform.affine_inverse()
+				var bone := func(n: String) -> Vector3: return to_actor * (sk.global_transform * sk.get_bone_global_pose(sk.find_bone(n)).origin)
+				var gl: Variant = skin.helmet_grip(-1.0)
+				var gr: Variant = skin.helmet_grip(1.0)
+				print("STOW %.2f gripL %s handL %s gripR %s handR %s head %s hips %s" % [stow,
+						to_actor * gl if gl != null else "-", bone.call("Wrist.L"), to_actor * gr if gr != null else "-",
+						bone.call("Wrist.R"), bone.call("Head"), bone.call("Hips")])
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			frame.save_png(out_dir.path_join("helmet_off/%d_%s.png" % [roundi(stow * 100), ["front", "third", "first"][cam]]))
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut_w := h * size.x / size.y
+			var cut := frame.get_region(Rect2i((w - cut_w) / 2, 0, cut_w, h))
+			cut.resize(size.x, size.y)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(Vector2i.ZERO, size), Vector2i(col * size.x, cam * size.y))
+	sheet.save_png(out_dir.path_join("helmet_off.png"))
+	print("saved helmet_off.png")
+	raid.queue_free()
+
+
 ## A gun carried on the move, one sheet per gun (`carry_rifle.png`,
 ## `carry_pistol.png`): a row per way of moving (jog, sprint, strafe, slide,
 ## shooting on the run), and columns from the side at two points in the
@@ -5395,3 +5500,70 @@ func _sightline_shots(out_dir: String, args: PackedStringArray) -> void:
 	var file := FileAccess.open(out_dir.path_join("sightlines.txt"), FileAccess.WRITE)
 	if file != null:
 		file.store_string("\n".join(report) + "\n")
+
+
+## Every emote, a row each (`emotes.png`, full size under `emotes/`): from
+## the front at two beats, from the right, third person and first person.
+func _emote_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("plaza"), 42, [Loadout.BARE])
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	await _settle(30)
+	p.set_physics_process(false)
+	controller.set_physics_process(false)
+	controller.pitch = -0.05
+	p.cmd.pitch = controller.pitch
+	p.cmd.yaw = controller.yaw
+	# The body faces the way the view does (physics is off, so set it here).
+	p.rotation.y = controller.yaw
+	var pose := ActionPose.of(p)
+	var outside := Camera3D.new()
+	outside.fov = 40.0
+	raid.add_child(outside)
+	var rows: Array = Emotes.IDS.duplicate()
+	if OS.has_environment("EMOTE_ROWS"):
+		rows = Array(OS.get_environment("EMOTE_ROWS").split(","))
+	# [seconds in, camera]: 0 from the front, 1 from the right, 2 third person, 3 first person.
+	var cols := [[0.5, 0], [1.2, 0], [1.2, 1], [1.2, 2], [1.2, 3]]
+	var size := Vector2i(320, 240)
+	var sheet := Image.create(cols.size() * size.x, rows.size() * size.y, false, Image.FORMAT_RGBA8)
+	DirAccess.make_dir_recursive_absolute(out_dir.path_join("emotes"))
+	for row in rows.size():
+		var id: String = rows[row]
+		p.cmd.emote = Emotes.number_of(id)
+		for k in 60:
+			await get_tree().process_frame
+		for col in cols.size():
+			var at_time: float = cols[col][0]
+			var cam: int = cols[col][1]
+			controller.view_mode = PlayerController.ViewMode.FIRST if cam == 3 else PlayerController.ViewMode.THIRD
+			outside.current = cam <= 1
+			controller.camera.current = cam > 1
+			for k in 10:
+				pose.emote_clock = at_time
+				await get_tree().process_frame
+			var at := p.global_position
+			if cam == 0:
+				outside.global_position = at + p.global_basis * Vector3(0.0, 1.2, -3.4)
+			elif cam == 1:
+				outside.global_position = at + p.global_basis * Vector3(3.4, 1.2, 0.0)
+			outside.look_at(at + Vector3(0, 0.95, 0))
+			pose.emote_clock = at_time
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			frame.save_png(out_dir.path_join("emotes/%s_%d_%s.png" % [id, int(at_time * 100), ["front", "right", "third", "first"][cam]]))
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut_w := h * size.x / size.y
+			var cut := frame.get_region(Rect2i((w - cut_w) / 2, 0, cut_w, h))
+			cut.resize(size.x, size.y)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(Vector2i.ZERO, size), Vector2i(col * size.x, row * size.y))
+		print("shot %s" % id)
+	sheet.save_png(out_dir.path_join("emotes.png"))
+	print("saved emotes.png")
+	raid.queue_free()

@@ -226,6 +226,10 @@ var token_hold := Vector2(2.5, 4.0)
 var token_beat := 0.5
 var return_fire_time := 2.0
 var point_blank := 7.0
+## A kind that keeps its turn even when hit (meta "holds_turn", Frostline's
+## Wardens): return fire no longer skips the queue, so a post that is shot
+## at still opens up one at a time; only `point_blank` does.
+var holds_turn := false
 ## Bots on the outer ring hold their cover; further in they also flank.
 var flanks := true
 ## How many bots work round one person's flank at once: one, or two for a
@@ -419,6 +423,7 @@ func _ready() -> void:
 	# A world may hold a kind to fewer shooters at one person ("slots").
 	if actor.has_meta("slots"):
 		attack_slots = int(actor.get_meta("slots"))
+	holds_turn = bool(actor.get_meta("holds_turn", false))
 	max_hunters += int(actor.get_meta("hunters", 0))
 	# A kind that dash-strikes whatever its ring ("dash", a chance).
 	if actor.has_meta("dash"):
@@ -1650,7 +1655,9 @@ static func is_person(other: Actor) -> bool:
 func _may_attack(dist: float) -> bool:
 	if uses_kit or not ration_attacks or not is_person(target):
 		return true
-	if dist < point_blank or (_hit_by == target and _since_hit() < return_fire_time):
+	if dist < point_blank:
+		return true
+	if not holds_turn and _hit_by == target and _since_hit() < return_fire_time:
 		return true
 	return take_slot(target.get_instance_id(), get_instance_id(), attack_slots,
 			Engine.get_physics_frames(), self)

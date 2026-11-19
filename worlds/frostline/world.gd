@@ -18,7 +18,11 @@ const FERAL_CHANCE := 0.45
 ## and never steps into a heater's or a beacon's warmth.
 const WARDEN_HEALTH := [160.0, 180.0, 195.0]
 const WARDEN_ARMOR := [15.0, 20.0, 25.0]
-const WARDEN_DAMAGE := [24.0, 26.0, 30.0]
+## The glacier head's Wardens hit softer than the gate's (Caleb's pick):
+## with `holds_turn`, a solo player in the open beats its post of three
+## about one time in six (duel bench `--group 3`), while one Warden alone
+## still almost never wins.
+const WARDEN_DAMAGE := [24.0, 26.0, 21.0]
 const WARDEN_INTERVAL := 0.4
 const WARDEN_SPREAD := 0.6
 const WARDEN_SIGHT := 70.0
@@ -492,6 +496,7 @@ func _make_warden(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.set_meta("aim_turn", WARDEN_TURN)
 	bot.set_meta("burst", WARDEN_BURST)
 	bot.set_meta("slots", WARDEN_SLOTS[tier])
+	bot.set_meta("holds_turn", true)
 	for item in roll_loot("warden", rng):
 		bot.inventory.add_item(item)
 	var gun := Gun.new()

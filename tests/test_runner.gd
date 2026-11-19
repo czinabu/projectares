@@ -30,6 +30,7 @@ const CustomizerTests := preload("res://tests/customizer_tests.gd")
 const BattlefieldTests := preload("res://tests/battlefield_tests.gd")
 const VisorTests := preload("res://tests/visor_tests.gd")
 const ArmorPaintTests := preload("res://tests/armor_paint_tests.gd")
+const HelmetOffTests := preload("res://tests/helmet_off_tests.gd")
 const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
 const CraftingTests := preload("res://tests/crafting_tests.gd")
@@ -41,6 +42,8 @@ const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const UpdaterTests := preload("res://tests/updater_tests.gd")
 const ArtifactTests := preload("res://tests/artifact_tests.gd")
 const WatchTests := preload("res://tests/watch_tests.gd")
+const EmoteTests := preload("res://tests/emote_tests.gd")
+const SquadTests := preload("res://tests/squad_tests.gd")
 const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const PlazaLifeTests := preload("res://tests/plaza_life_tests.gd")
@@ -390,6 +393,7 @@ func _run() -> void:
 	await _test_battlefield()
 	await _test_visors()
 	await ArmorPaintTests.run(self)
+	await HelmetOffTests.run(self)
 	await _test_sidearms()
 	await _test_attachments()
 	await _test_power_weapons()
@@ -412,6 +416,8 @@ func _run() -> void:
 	await _test_heavy_units()
 	await _test_playtest_fixes()
 	await _test_watch()
+	await _test_emotes()
+	_test_squads()
 	await _test_portals()
 	await _test_feel()
 	await _test_view_match()
@@ -760,6 +766,14 @@ func _test_playtest_fixes() -> void:
 
 func _test_watch() -> void:
 	await WatchTests.run(self)
+
+
+func _test_emotes() -> void:
+	await EmoteTests.run(self)
+
+
+func _test_squads() -> void:
+	await SquadTests.run(self)
 
 
 func _test_portals() -> void:
@@ -6418,6 +6432,10 @@ func _test_plaza() -> void:
 			deck.global_position - Vector3(0, 5, 0), Actor.LAYER_WORLD))
 	check(not deck_hit.is_empty() and absf(deck_hit.position.y - deck.global_position.y) < 0.3,
 			"a landing deck is solid where it is marked")
+	# The megacity round the deck is scenery the view must reach (Caleb's
+	# "tall and grand"): drawn far enough, and never built headless.
+	check(float(raid.map.get_meta("view_far", 0.0)) >= 3000.0 and raid.map.find_child("Megacity", false, false) == null,
+			"the Concourse draws its megacity far off, and a server builds none of it")
 
 	# Leaving takes you and nothing else: no body, no bag.
 	raid.remove_player(b)
