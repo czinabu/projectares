@@ -93,17 +93,32 @@ static func _phone(t: Node) -> void:
 	var phone = PhoneScript.new()
 	var net := NetSession.new()
 	phone.net = net
+	t.add_child(phone)
 	net.social_state = {"account_id": "ana", "messages": [
 		{"id": 1, "from": "ben", "from_name": "Ben", "to": "ana", "to_name": "Ana", "text": "hi", "time": 1.0},
 		{"id": 2, "from": "ben", "from_name": "Ben", "to": "squad", "to_name": "Squad", "text": "go", "time": 2.0, "squad": true},
 		{"id": 3, "from": "ana", "from_name": "Ana", "to": "squad", "to_name": "Squad", "text": "ok", "time": 3.0, "squad": true},
-	], "contacts": [], "invites": [], "squad": {"id": "s1", "members": []}}
+	], "contacts": [], "invites": [], "squad": {"id": "s1", "members": [{"id": "ana", "name": "Ana", "online": true, "where": "", "world": "", "leader": true}, {"id": "ben", "name": "Ben", "online": true, "where": "", "world": "", "leader": false}]}}
 	var threads: Array[String] = phone.conversations()
 	t.check(threads.size() == 2 and threads[0] == SocialService.SQUAD_CHAT and "ben" in threads,
 			"squad messages are one conversation, apart from direct ones")
 	t.check(phone.conversation_with("ben").size() == 1 and phone.conversation_with(SocialService.SQUAD_CHAT).size() == 2,
 			"a squadmate's squad message is not in your chat with them")
 	t.check(phone.unread_from(SocialService.SQUAD_CHAT) == 1, "your own squad messages are never unread")
+	phone.shortcut("squad")
+	t.check(phone.is_open and phone.app == "messages" and phone.chat_with == SocialService.SQUAD_CHAT,
+			"the squad chat key opens the phone at the squad's chat")
+	phone.shortcut("squad")
+	t.check(not phone.is_open, "and again puts it away")
+	phone.shortcut("contacts")
+	t.check(phone.is_open and phone.app == "contacts", "the friends key opens it at Contacts")
+	phone.shortcut("squad")
+	t.check(phone.is_open and phone.chat_with == SocialService.SQUAD_CHAT, "and the squad key goes over to the chat")
+	phone.close()
+	net.social_state.squad = {}
+	phone.shortcut("squad")
+	t.check(phone.is_open and phone.app == "messages" and phone.chat_with == "", "with no squad it opens Messages")
+	phone.close()
 	phone.free()
 	net.free()
 

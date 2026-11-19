@@ -174,6 +174,10 @@ const CONTROLS := [
 		["Use your artifact (watch up, on the artifact icon)", "{fire}"],
 		["Ping where you look for your squad (watch up, on the ping icon)", "{fire}"],
 		["Emote: wave, salute, sit and more (watch up, Status tab, on the emote icon); move to stop", "{fire}"],
+		["Raise the watch straight onto the emotes, or lower it", "{emote_wheel}"],
+		["Play the emote last picked, or stop it", "{quick_emote}"],
+		["Raise the watch straight onto the map, or lower it", "{watch_map}"],
+		["Ping where you look for your squad, watch down", "{ping}"],
 	]],
 	["VEHICLES", [
 		["Get on or off", "{interact}"],
@@ -192,6 +196,8 @@ const CONTROLS := [
 	]],
 	["PHONE AND MOUSE", [
 		["Open or close the phone", "{phone}"],
+		["Open the phone at your squad's chat (Messages with no squad)", "{squad_chat}"],
+		["Open the phone at Contacts: friends, your squad, invites", "{friends}"],
 		["Open the phone at Settings, or close it; step back from a console", "Esc"],
 		["Mirror app: the phone goes down so the mirror shows your whole kit; bring it back up", "Click, right click or Esc"],
 		["Mirror app: wheel to a row, click it, wheel through it; right click to go back", "Wheel, clicks"],
@@ -495,6 +501,12 @@ func _input_lowered(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("phone"):
 		toggle()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("squad_chat"):
+		shortcut("squad")
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("friends"):
+		shortcut("contacts")
 		get_viewport().set_input_as_handled()
 	elif is_open and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		close()
@@ -812,6 +824,27 @@ func toggle() -> void:
 		close()
 	else:
 		open()
+
+
+## A shortcut key: takes the phone out straight at `where` ("contacts", or
+## "squad" for the squad's chat, which falls back to Messages with no
+## squad), or puts it away if it already shows it.
+func shortcut(where: String) -> void:
+	var to_squad := where == "squad"
+	var has_squad: bool = not (squad().get("members", []) as Array).is_empty()
+	var showing := false
+	if to_squad and has_squad:
+		showing = app == "messages" and chat_with == SocialService.SQUAD_CHAT
+	else:
+		showing = app == ("messages" if to_squad else where) and chat_with == ""
+	if is_open and showing:
+		close()
+		return
+	if to_squad and has_squad:
+		open_chat(SocialService.SQUAD_CHAT)
+	else:
+		open_app("messages" if to_squad else where)
+	open()
 
 
 func open(p_app := "") -> void:

@@ -389,6 +389,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		wrist_raised = not wrist_raised
 		watch_focus_moved = false
 		watch_open = ""
+	elif event.is_action_pressed("emote_wheel"):
+		watch_shortcut("emote")
+	elif event.is_action_pressed("watch_map"):
+		watch_shortcut("map")
+	elif event.is_action_pressed("quick_emote"):
+		quick_emote()
+	elif event.is_action_pressed("ping") and captured and is_instance_valid(actor) and not actor.is_dead:
+		ping_requested.emit()
 	elif event.is_action_pressed("sign_out"):
 		sign_out_requested.emit()
 	elif event.is_action_pressed("redeploy") and is_instance_valid(actor) and actor.is_dead:
@@ -397,6 +405,30 @@ func _unhandled_input(event: InputEvent) -> void:
 			and actor.is_dead and event.keycode >= KEY_1 and event.keycode <= KEY_9:
 		drop_pick = event.keycode - KEY_1
 		drop_requested.emit(event.keycode - KEY_1)
+
+
+## A shortcut key for watch icon `id` (the emote wheel, the map): raises
+## the watch straight onto it, opened if it holds several things, or lowers
+## it if it is already up there. The same watch the check-wrist key raises,
+## so the wheel and a click work on it as usual.
+func watch_shortcut(id: String) -> void:
+	if wrist_raised and watch_focus_moved and focused_watch_icon() == id:
+		wrist_raised = false
+		watch_open = ""
+		return
+	wrist_raised = true
+	watch_focus = Hud.Wrist.SLOTS.find(id)
+	watch_focus_moved = true
+	watch_open = id if watch_entries(id) > 1 else ""
+
+
+## The quick emote key: plays the emote last picked on the watch, or stops
+## the one playing.
+func quick_emote() -> void:
+	if emote_playing != "":
+		stop_emote()
+	else:
+		start_emote(Emotes.IDS[clampi(emote_pick, 0, Emotes.IDS.size() - 1)])
 
 
 ## How many places to land the watch's death report offers now.

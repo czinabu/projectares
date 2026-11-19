@@ -105,6 +105,28 @@ static func _controller(t: Node) -> void:
 	cmd.switch_weapon = 0
 	controller._tick_emote(cmd, 0.1)
 	t.check(controller.emote_playing == "", "drawing a weapon ends it")
+	# The shortcut keys: straight onto the emote icon, opened, and down again.
+	controller.wrist_raised = false
+	controller.watch_shortcut("emote")
+	t.check(controller.wrist_raised and controller.focused_watch_icon() == "emote" and controller.watch_open == "emote",
+			"the emote key raises the watch straight onto the opened emote wheel")
+	controller.watch_shortcut("emote")
+	t.check(not controller.wrist_raised, "and again lowers it")
+	controller.watch_shortcut("map")
+	t.check(controller.wrist_raised and controller.focused_watch_icon() == "map", "the map key raises it onto the map")
+	controller.watch_shortcut("emote")
+	t.check(controller.wrist_raised and controller.focused_watch_icon() == "emote", "and the emote key moves it over")
+	controller.wrist_raised = false
+	controller.watch_open = ""
+	controller.emote_pick = Emotes.IDS.find("cheer")
+	controller.quick_emote()
+	t.check(controller.emote_playing == "cheer", "the quick emote key plays the one last picked")
+	controller.quick_emote()
+	t.check(controller.emote_playing == "", "and stops it")
+	for action in ["emote_wheel", "quick_emote", "watch_map", "ping", "squad_chat", "friends"]:
+		t.check(InputMap.has_action(action) and not InputMap.action_get_events(action).is_empty(),
+				"the %s shortcut has a key" % action)
+	t.check(_no_key_shared(), "no two actions share a key")
 	# Everyone else's copy of the player plays what the command says.
 	cmd.emote = Emotes.number_of("cheer")
 	var pose := ActionPose.of(p)
@@ -177,3 +199,24 @@ static func _read(t: Node, p: Actor, skin: Node, skel: Skeleton3D, bones: Dictio
 	await t.frames(3)
 	skel.skeleton_updated.disconnect(read)
 	return seen
+
+
+## True if no key or mouse button is bound to two actions.
+static func _no_key_shared() -> bool:
+	var seen := {}
+	for action: StringName in InputMap.get_actions():
+		if str(action).begins_with("ui_"):
+			continue
+		for event: InputEvent in InputMap.action_get_events(action):
+			var key := ""
+			if event is InputEventKey:
+				key = "key %d" % (event as InputEventKey).physical_keycode
+			elif event is InputEventMouseButton:
+				key = "mouse %d" % (event as InputEventMouseButton).button_index
+			if key == "":
+				continue
+			if seen.has(key) and seen[key] != action:
+				print("    %s is bound to %s and %s" % [key, seen[key], action])
+				return false
+			seen[key] = action
+	return true

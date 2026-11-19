@@ -1593,7 +1593,11 @@ without Caleb, and update the gap list when a PR closes a row.
   phone or watch, a vehicle or the air ends one, and starting one puts the
   weapon away (`PlayerController._tick_emote`). A new emote is an
   `Emotes.IDS` entry and a pose; check by eye with `visual_check.tscn --
-  <dir> --emotes-only`.
+  <dir> --emotes-only`. Shortcut keys (DESIGN.md "Shortcut keys") only
+  raise the same watch or take out the same phone at an icon or app
+  (`PlayerController.watch_shortcut`, `quick_emote`, `Phone.shortcut`),
+  never a menu of their own; a new one is an `InputSetup` action and a
+  `Phone.CONTROLS` row, and no two actions share a key (a test checks it).
 - Squads and friends (DESIGN.md "Squads and friends"): a squad is the
   server's `SocialService` (made by a "squad" invite, kept in memory, left
   with "squad" ["leave"] or by going offline, `MAX_SQUAD`), and it is the
