@@ -44,6 +44,7 @@ func _build_station() -> void:
 	pad.mesh = slab
 	pad.position.y = floor_y + 0.1 - 0.65
 	pad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pad.set_meta("walk_through", "the floor of the bank area, level with the ground")
 	add_child(pad)
 
 	var terminal := StaticBody3D.new()
@@ -72,6 +73,12 @@ func _build_station() -> void:
 	mast.mesh = pole
 	mast.position = Vector3(TERMINAL_SIZE.x * 0.5 - 0.2, MAST_HEIGHT * 0.5, TERMINAL_SIZE.z * 0.5 - 0.15)
 	terminal.add_child(mast)
+	var mast_shape := BoxShape3D.new()
+	mast_shape.size = pole.size
+	var mast_col := CollisionShape3D.new()
+	mast_col.shape = mast_shape
+	mast_col.position = mast.position
+	terminal.add_child(mast_col)
 
 
 ## What an actor would bank here: everything in the backpack except healing,

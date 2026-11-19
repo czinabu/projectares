@@ -66,6 +66,10 @@ func _ready() -> void:
 	var size := Vector3(0.7, 0.5, 0.7) if is_bag else Vector3(1.1, 0.8, 0.8)
 	if pile:
 		size = Vector3(0.8, 0.25, 0.8)
+	# A cache is a crate you bump into and duck behind. A bag or a pile lies
+	# where someone fell and is stepped over, never caught on.
+	if not is_bag and not pile:
+		collision_layer |= Actor.LAYER_WORLD
 	var shape := BoxShape3D.new()
 	shape.size = size
 	var col := CollisionShape3D.new()

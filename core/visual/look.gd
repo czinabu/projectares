@@ -3289,6 +3289,7 @@ func _dress_depot(zone: Depot) -> void:
 	var steel := surface("metal", {"tint": Color(0.36, 0.38, 0.37), "scale": 0.5, "grime": 0.6})
 	var station := Node3D.new()
 	station.name = "Station"
+	station.set_meta("walk_through", "the pad's lit rim and slim corner lamps")
 	zone.add_child(station)
 	# The rim: a lit strip just inside each edge of the pad, so the bank
 	# area's edge reads from any side.
@@ -3445,6 +3446,7 @@ func _dress_depot(zone: Depot) -> void:
 	column.material = faint
 	beam.mesh = column
 	beam.position = beacon.position + Vector3(0, column.height * 0.5 + 0.2, 0)
+	beam.set_meta("walk_through", "a beam of light")
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	terminal.add_child(beam)
 

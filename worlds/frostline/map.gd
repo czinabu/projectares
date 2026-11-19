@@ -748,6 +748,9 @@ func _build_listening_posts() -> void:
 		var base := _ground(at)
 		_box(Vector3(5, 4, 5), base + Vector3(0, 1.8, 0), STEEL)
 		_box(Vector3(1, 8, 1), base + Vector3(0, 7.8, 0), STEEL)
+		# The dish on the bunker's roof.
+		var top := base + Vector3(0, 3.8, 0)
+		SolidProp.place(nav_region, "Antenna_2.glb", 2.2, top + Vector3(1.4, 0, 1.0), -float(spot["side"]) * PI / 2.0, 0.5)
 		_add_marker("spawn_cache", base + Vector3(0, 4.0, 0)).set_meta("loot_source", "rooftop")
 		if i % 2 == 0:
 			_bot_spot(_ground(at + Vector2(-float(spot["side"]) * 4.0, 0)), "warden", 2)
@@ -1107,6 +1110,16 @@ func _build_galleries(engine: StaticBody3D) -> void:
 		_part(engine, Vector3(5.0, 1.6, 2.4), Vector3(at.x, g + 0.8, at.y), STEEL, Basis(Vector3.UP, spot[1]))
 	for at: Vector2 in coil_spots():
 		_tank(engine, Vector3(at.x, g, at.y), COIL_RADIUS, 5.0, STEEL)
+		# The plinth, frost cap and conduit the dressing draws round it
+		# (`_dress_gallery_shell`).
+		for part: Array in [[COIL_RADIUS + 0.3, 0.4, g], [COIL_RADIUS + 0.05, 0.35, g + 5.0], [0.45, GALLERY_UP - 5.2, g + 5.2]]:
+			var drum := CylinderShape3D.new()
+			drum.radius = part[0]
+			drum.height = part[1]
+			var col := CollisionShape3D.new()
+			col.shape = drum
+			col.position = Vector3(at.x, float(part[2]) + float(part[1]) * 0.5, at.y)
+			engine.add_child(col)
 	_build_walkway(engine)
 	var frame := engine_frame()
 	_add_warmth(frame * Vector3(0.0, g, 74.0), ENGINE_BAY)
@@ -1397,6 +1410,14 @@ func _build_heart(engine: StaticBody3D) -> void:
 	# The pylons, floor to roof: cover a solo player dashes round.
 	for spot: Vector2 in heart_pylons():
 		_tank(engine, Vector3(spot.x, bottom, spot.y), PYLON_RADIUS, up, HULL_DARK)
+		# The collar the dressing puts round its foot (`_dress_heart`).
+		var collar := CylinderShape3D.new()
+		collar.radius = PYLON_RADIUS + 0.6
+		collar.height = 1.2
+		var foot := CollisionShape3D.new()
+		foot.shape = collar
+		foot.position = Vector3(spot.x, bottom + 0.6, spot.y)
+		engine.add_child(foot)
 	# Cover: fallen housings and crates off the middle.
 	for spot: Array in [[Vector2(-19.0, c - 17.0), 0.4], [Vector2(18.0, c - 19.0), -0.3], [Vector2(-21.0, c + 15.0), 1.2],
 			[Vector2(20.0, c + 16.0), -1.0], [Vector2(0.0, c - 22.0), 0.0]]:
@@ -1496,6 +1517,8 @@ func _build_beacons() -> void:
 		marker.set_meta("radius", BEACON["radius"])
 		_add_warmth(at, BEACON)
 		_box(Vector3(0.5, 5.0, 0.5), at + Vector3(0, 2.5, 0), STEEL)
+		# The heat lamp the dressing hangs on top (`_dress_beacons`).
+		SolidProp.box(nav_region, Vector3(1.1, 0.5, 1.1), Transform3D(Basis.IDENTITY, at + Vector3(0, 5.2, 0)))
 
 
 ## A place that gives body heat back (`WorldDef`'s "The cold").
@@ -1600,7 +1623,6 @@ func _dress() -> void:
 	_dress_warmth(art)
 	_dress_beacons(art)
 	_dress_engine(art)
-	_dress_listening_posts(art)
 	_dress_horizon(art)
 
 
@@ -1830,6 +1852,7 @@ func _dress_engine(art: Node3D) -> void:
 	sphere.material = teal
 	bulb.mesh = sphere
 	bulb.position = frame * Vector3(-ENGINE_RADIUS - 0.6, HALL_FLOOR + HATCH_HEIGHT + 1.4, HATCH_Z)
+	bulb.set_meta("walk_through", "a warning lamp over the hatch")
 	art.add_child(bulb)
 	var light := Look.lamp(Color(0.2, 1.0, 0.85), 5.0, 22.0)
 	light.position = frame * Vector3(-ENGINE_RADIUS - 2.0, HALL_FLOOR + HATCH_HEIGHT + 1.0, HATCH_Z)
@@ -2022,7 +2045,9 @@ func _dress_lift(art: Node3D, frame: Transform3D) -> void:
 		art.add_child(light)
 		_lift_lights.append(light)
 		_dress_cage(stop, head, roof)
-		_flush_deco(art, frame)
+		for cage in _flush_deco(art, frame):
+			# A cage you step into: its bars are too thin to stop anyone.
+			cage.set_meta("walk_through", "the lift's cage")
 	_glow_box(art, frame, Vector3(1.0, 0.5, 0.1), Vector3(LIFT_SWITCH.x, DESCENT_FLOOR + 1.2, LIFT_SWITCH.y + 0.75), _lift_glow)
 
 
@@ -2311,7 +2336,8 @@ func _deco_batch(material: Material) -> SurfaceTool:
 	return _deco_batches[material]
 
 
-func _flush_deco(art: Node3D, frame: Transform3D) -> void:
+func _flush_deco(art: Node3D, frame: Transform3D) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
 	for material: Material in _deco_batches:
 		var mesh := (_deco_batches[material] as SurfaceTool).commit()
 		mesh.surface_set_material(0, material)
@@ -2320,7 +2346,9 @@ func _flush_deco(art: Node3D, frame: Transform3D) -> void:
 		node.transform = frame
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		art.add_child(node)
+		out.append(node)
 	_deco_batches.clear()
+	return out
 
 
 ## A lamp hung from the roof at `roof`: a rod, a housing and a lit panel
@@ -2338,16 +2366,6 @@ func _lamp_at(art: Node3D, at: Vector3, color: Color, energy: float, reach: floa
 	var light := Look.lamp(color, energy, reach)
 	light.position = at
 	art.add_child(light)
-
-
-func _dress_listening_posts(art: Node3D) -> void:
-	for spot: Dictionary in LISTENING:
-		var at := rim_point(spot["z"], spot["side"])
-		var top := _ground(at) + Vector3(0, 3.8, 0)
-		var dish := Look.prop("Antenna_2.glb", 2.2, 0.5)
-		dish.position = top + Vector3(1.4, 0, 1.0)
-		dish.rotation.y = -float(spot["side"]) * PI / 2.0
-		art.add_child(dish)
 
 
 ## Past the valley's walls the Glacier's own land runs on to the horizon;

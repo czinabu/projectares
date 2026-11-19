@@ -97,6 +97,7 @@ var _last_since := -INF
 
 func _ready() -> void:
 	name = "Giants"
+	set_meta("walk_through", "scenery past the rim")
 	var hull := Look.trim("distant")
 	_build_colossus(hull)
 	_build_ship(hull)

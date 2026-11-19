@@ -1,6 +1,6 @@
 # Worlds and the war
 
-Rules for death rules per world, renown, the war director, weather, the planet kit, terrain, strongpoints, drops, world heat, shelling, world events, the life log and risk zones. These are part of the rules in `CLAUDE.md` that must not be
+Rules for death rules per world, renown, the war director, weather, the planet kit, terrain, collision, strongpoints, drops, world heat, shelling, world events, the life log and risk zones. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -87,6 +87,31 @@ date in the same PR.
   Rootways go down through them). Ashfront's map
   (`worlds/ashfront/map.gd`) works its ground and navigation mesh out once
   per run and shares them between copies (`_shared`), so a new copy is cheap.
+- Collision: nothing you can see standing in a world is a ghost you walk
+  (or a bot walks, unseen) through. Collision is gameplay, so it is built in
+  the map's gameplay pass on the server and the client alike, never by
+  `Look` and never from a dressing RNG. A prop model that must be solid is
+  placed with `SolidProp.place` (boxes cut to the model in
+  `SolidProp.SHAPES`, the model hung inside only where `Look` is on); a
+  piece the dressing draws gets its collision alone from `SolidProp.box` or
+  a shape of its own, at the same place, worked out by a helper both passes
+  share (Ashfront's `_wreck_engines`, Meridian's `_ramp_parts`,
+  `skyline.gd`'s `booster_parts` and `SEARCHLIGHTS`). Put it under the
+  map's navigation region before the bake, so bots path round it. Simple
+  shapes (boxes, cylinders, convex hulls), never a trimesh where one will
+  do. Litter you step over (a gas can, a backpack) stays decoration. Loot
+  crates and base stations are on `Actor.LAYER_WORLD` as well as the
+  interact layer; a dropped bag or scrip pile is not. People collide with
+  vehicles (`Actor.LAYER_VEHICLES`). A mesh that is meant to be walked
+  through (a zone's glow, a beam, plants, scenery past the rim, Meridian's
+  spectacle, which is decoration only) carries the meta `"walk_through"`
+  on itself or a parent, its value saying why. `tests/collision_tests.gd`
+  builds every world from `Worlds`, the arena and the home base with
+  `Look` on and flags every mesh big enough to block a person, standing
+  where one could walk, with no world collider through it; a new world is
+  covered the day it is added. A scatter drawn as a MultiMesh is not
+  judged (headless has no instance transforms), so a map whose scatter
+  should block builds that collision itself.
 - Strongpoints (`core/war/strongpoint.gd`, `Raid.strongpoints`): a map only
   marks where they are (Marker3D nodes in the group "strongpoint", see the
   map contract in `WorldDef`); the `Raid` runs them. A side is a string key
