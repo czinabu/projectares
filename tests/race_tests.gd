@@ -6,12 +6,13 @@ extends RefCounted
 
 
 static func run(t: Node) -> void:
-	print("Race world: Meridian time trials")
+	print("Race world: Meridian time trials and live races")
 	_test_world(t)
 	_test_track(t)
 	_test_formatting(t)
 	await _test_time_trial(t)
 	await _test_skyhook(t)
+	await _test_live_race(t)
 	_test_crowd(t)
 	_test_ghost_data(t)
 
@@ -213,6 +214,120 @@ static func _test_time_trial(t: Node) -> void:
 		t.check(results[0].brought_home.is_empty() and results[0].lost.is_empty() and results[0].kept_gear.is_empty(),
 				"riding a track machine out brings nothing home and loses nothing")
 	t.check(start_i >= 0, "the grid is on the track")
+	race.queue_free()
+	await t.frames(2)
+
+
+## A live race: asking to race forms one on the grid, AI racers fill every
+## empty slot at the start, everyone goes under one set of lights, the AI
+## drive clean laps on their own, places are kept, and once the winner is
+## home and the rest are out of time the results go up, people's laps only
+## on the board, and the AI leave with their machines.
+static func _test_live_race(t: Node) -> void:
+	var world := Worlds.get_world("meridian")
+	var race: Race = world.new_raid()
+	t.add_child(race)
+	race.start(world, 9, [Loadout.BARE] as Array[String])
+	await t.frames(5)
+	var me := race.player
+	var track := race.track
+	t.check(track.start_slots.size() >= Race.GRID_SIZE, "the grid has a slot for every racer")
+	var bike: Node3D = null
+	for v: Node3D in race.vehicles:
+		if v.get("item_id") == "bike_raider" and v.get("rider") == null and race.track_near(v.global_position) == track:
+			bike = v
+			break
+	if bike == null:
+		t.check(false, "a Raider waits in the pit bays")
+		race.queue_free()
+		return
+	t.check(not race.join_race(me).get("ok", false), "you race on a machine")
+	me.global_position = bike.global_position + Vector3(2.0, 0.2, 0.0)
+	await t.frames(2)
+	bike.call("mount", me)
+	await t.frames(2)
+	t.check(race.view_run().get("phase") == "grid" and str(race.view_run().get("heat")) == "",
+			"getting on a machine is a time trial until you ask to race")
+	race.ask("race")
+	await t.frames(2)
+	var view := race.view_run()
+	t.check(view.get("phase") == "waiting" and view.get("heat") == "forming" and bool(bike.get("held")),
+			"asking to race puts you on the grid of the next race, held")
+	t.check(Race.run_line(view).begins_with("Next race in"), "the watch says when it starts")
+	t.check(RaceView.heat_text(race.heat_view(track.id)).begins_with("NEXT RACE"),
+			"and so does the pit board")
+	var bays_before := race.vehicles.size()
+	# Let it go now rather than in half a minute.
+	(race.heats[track.id] as Race.Heat).starts_at = race.clock
+	await t.frames(3)
+	var heat: Race.Heat = race.heats.get(track.id)
+	t.check(heat != null and heat.phase == "racing" and heat.runs.size() == Race.GRID_SIZE,
+			"at the start AI racers fill the grid (%d racers)" % (heat.runs.size() if heat != null else 0))
+	if heat == null:
+		race.queue_free()
+		return
+	var ai := heat.runs.filter(func(r: Race.Run) -> bool: return r.ai)
+	var ai_machines: Array = ai.map(func(r: Race.Run) -> Node3D: return r.vehicle)
+	t.check(ai.size() == Race.GRID_SIZE - 1 and race.vehicles.size() == bays_before + ai.size(),
+			"each AI racer rides a machine of its own, not one from the bays")
+	var slots := {}
+	var names := {}
+	for run: Race.Run in heat.runs:
+		slots[run.slot] = true
+		names[run.actor.display_name] = true
+	t.check(slots.size() == Race.GRID_SIZE and names.size() == Race.GRID_SIZE,
+			"every racer has a slot and a name of their own")
+	var stock := true
+	for r: Race.Run in ai:
+		var profile: Dictionary = ItemDB.RACE_SCRAPPER if r.machine == "bike_scrapper" else ItemDB.RACE_RAIDER
+		stock = stock and is_equal_approx(float(r.vehicle.get("max_speed")), float(profile.max_speed)) \
+				and r.actor.vehicle == r.vehicle and r.go_at == heat.runs[0].go_at
+	t.check(stock, "the AI ride stock machines on their race profile, under the same lights")
+	await t.frames(int(Race.LIGHTS * Race.LIGHT_STEP * Engine.physics_ticks_per_second) + 5)
+	t.check(race.view_run().get("phase") == "racing" and int(race.view_run().get("place", 0)) > 0,
+			"at the go everyone races, and you have a place")
+	# One lap, so the test is short; you sit still on the line.
+	var laps := track.laps
+	track.laps = 1
+	await t.frames(5 * Engine.physics_ticks_per_second)
+	var moving := ai.filter(func(r: Race.Run) -> bool: return absf(float(r.vehicle.get("speed"))) > 8.0)
+	t.check(moving.size() == ai.size(), "the AI racers drive off on their own (%d of %d)" % [moving.size(), ai.size()])
+	var places := {}
+	for run: Race.Run in heat.runs:
+		places[run.place] = true
+	t.check(places.size() == Race.GRID_SIZE and not places.has(0), "every racer has a place of their own")
+	t.check(int(race.view_run().get("place", 0)) == Race.GRID_SIZE, "standing still, you are last")
+	var ai_laps := []
+	race.lap_finished.connect(func(a: Actor, time: float, counted: bool) -> void:
+		if race.is_ai_racer(a):
+			ai_laps.append([time, counted]))
+	var limit := 150 * Engine.physics_ticks_per_second
+	for k in limit:
+		if heat.phase != "racing":
+			break
+		await t.frames(1)
+	track.laps = laps
+	t.check(heat.phase == "done", "once the winner is home and the rest are out of time, the race is over")
+	var clean := ai_laps.filter(func(l: Array) -> bool: return l[1])
+	t.check(ai_laps.size() >= 4 and clean.size() >= ai_laps.size() - 1,
+			"the AI drive the racing line, clean laps (%d of %d clean)" % [clean.size(), ai_laps.size()])
+	t.check(heat.results.size() == Race.GRID_SIZE and int(heat.results[0].place) == 1
+			and bool(heat.results[0].ai) and float(heat.results[0].time) > 0.0,
+			"the results go up, the winner first")
+	var last: Dictionary = heat.results[heat.results.size() - 1]
+	t.check(last.name == me.display_name and float(last.time) < 0.0, "a racer who never finished is last, not finished")
+	t.check(race.view_run().get("phase") == "done" and int(race.view_run().get("finish_place", 0)) == Race.GRID_SIZE,
+			"your run ends with your place")
+	t.check(race.board.all(func(e: Dictionary) -> bool: return e.name == me.display_name),
+			"AI laps never go on the board")
+	t.check(RaceView.heat_text(race.heat_view(track.id)).begins_with("RESULTS"), "the board shows the results")
+	await t.frames(int((Race.RESULTS_TIME + 0.5) * Engine.physics_ticks_per_second))
+	t.check(not race.heats.has(track.id) and race.drivers.is_empty()
+			and race.bots.filter(func(b: Actor) -> bool: return is_instance_valid(b)).is_empty(),
+			"then the AI racers leave")
+	await t.frames(2)
+	t.check(ai_machines.all(func(v: Variant) -> bool: return not is_instance_valid(v)), "with their machines")
+	t.check(str(race.view_run().get("heat", "x")) == "", "and your run is a time trial again")
 	race.queue_free()
 	await t.frames(2)
 

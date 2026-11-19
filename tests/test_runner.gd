@@ -415,7 +415,8 @@ func _test_racing() -> void:
 
 ## A time trial on a race server: the client gets its own run and the
 ## board from the server, is held for the lights like the server holds it,
-## and asks the server to stop the run.
+## joins a live race the server fills with AI racers, and asks the server
+## to stop the run.
 func _test_racing_online() -> void:
 	print("Racing online: a time trial on a race server")
 	var port := 24921
@@ -472,6 +473,21 @@ func _test_racing_online() -> void:
 	check(str(race.remote_run.get("phase", "")) == "racing" and me.vehicle != null
 			and absf(float(me.vehicle.get("speed"))) > 3.0, "at the go it races")
 	me.cmd.move = Vector2.ZERO
+	# A live race: the server forms it, fills it with AI racers and starts it.
+	race.ask("race")
+	await _wait_until(func() -> bool: return str(race.remote_run.get("phase", "")) == "waiting", 240)
+	check(str(race.remote_run.get("heat", "")) == "forming" and str(race.heat_view(race.track.id).get("phase", "")) == "forming",
+			"asking to race puts the client on the grid of the next race, and its board hears of it")
+	await _wait_until(func() -> bool: return str(race.remote_run.get("heat", "")) == "racing", int((Race.FORM_TIME + 5.0) * 60))
+	await _wait_until(func() -> bool:
+		return race.vehicles.filter(func(v: Node3D) -> bool:
+			return is_instance_valid(v) and v.get("rider") != null and v.get("rider") != me).size() >= Race.GRID_SIZE - 1, 240)
+	var riders := race.vehicles.filter(func(v: Node3D) -> bool:
+		return is_instance_valid(v) and v.get("rider") != null and v.get("rider") != me)
+	check(riders.size() == Race.GRID_SIZE - 1, "the client sees AI racers fill the grid (%d)" % riders.size())
+	await _wait_until(func() -> bool: return int(race.remote_run.get("place", 0)) > 0, 600)
+	check(int(race.remote_run.get("place", 0)) > 0 and Race.place_tag(race.remote_run).begins_with("P"),
+			"and is told its place")
 	race.ask("retire")
 	await _wait_until(func() -> bool: return race.remote_run.is_empty() and me.vehicle == null, 240)
 	check(race.remote_run.is_empty() and me.vehicle == null, "asking to stop ends the run on the server and gets off")

@@ -883,10 +883,10 @@ static func contract_slot(held: Array[Dictionary], tally: Dictionary) -> Diction
 	return _slot("contract", str(held.size()), line, [], best_share, false, best_share >= 1.0)
 
 
-## What the race icon offers, in order: back to the grid, the ghost on or
-## off, and stopping the run. `PlayerController.race_actions` turns a pick
-## into one of these.
-const RACE_ACTIONS := ["restart", "ghost", "retire"]
+## What the race icon offers, in order: a live race (join the next start),
+## back to the grid for a time trial, the ghost on or off, and stopping the
+## run. `PlayerController.race_actions` turns a pick into one of these.
+const RACE_ACTIONS := ["race", "restart", "ghost", "retire"]
 
 
 ## The race icon, in the contract's place on a race track (drawn as a flag,
@@ -897,19 +897,31 @@ static func race_slot(view: Dictionary, picked: int, opened: bool, ghost_on: boo
 	var line := Race.run_line(view)
 	if opened:
 		match RACE_ACTIONS[at]:
+			"race":
+				match str(view.get("heat", "")):
+					"forming":
+						line = "In the next race · " + Race.run_line(view)
+					"racing":
+						line = "Racing · " + Race.place_tag(view)
+					_:
+						line = "Race · join the next start, AI fill the grid"
 			"restart":
-				line = "Back to the grid" if not view.is_empty() else "Start a run on this machine"
+				line = "Time trial · back to the grid" if not view.is_empty() else "Time trial on this machine"
 			"ghost":
 				line = "Ghost on · best lap" if ghost_on else "Ghost off"
 			"retire":
 				line = "Stop the run and get off"
 	elif line == "":
-		line = "Time trial · take a machine from the pit bays"
+		line = "Race or time trial · take a machine from the pit bays"
 	var value := ""
 	if not view.is_empty():
 		value = "%d/%d" % [int(view.get("lap", 1)), int(view.get("laps", 1))] if str(view.get("phase")) != "done" else "✓"
+		if Race.place_tag(view) != "":
+			value = "P%d" % int(view.place)
+		elif str(view.get("phase")) == "waiting":
+			value = Race.format_countdown(Race.run_starts_in(view))
 	var slot := _slot("contract", value, line, ["wheel", "click"] if opened else ["click"], Race.run_progress(view),
-			false, str(view.get("phase", "")) == "grid", RACE_ACTIONS.size(), at)
+			false, str(view.get("phase", "")) in ["grid", "waiting"], RACE_ACTIONS.size(), at)
 	slot["glyph"] = "race"
 	return slot
 
