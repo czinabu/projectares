@@ -1157,6 +1157,8 @@ func _man_lines(faction: String, army: Array, on_line: Dictionary) -> void:
 		if manned.size() < count and _line_of.has(bot) and not manned.has(_line_of[bot]):
 			manned[_line_of[bot]] = bot
 	for bot: Variant in _line_of.keys():
+		if str(_line_of[bot].get_meta("faction", "")) != faction:
+			continue
 		if not manned.has(_line_of[bot]) or manned[_line_of[bot]] != bot:
 			_line_of.erase(bot)
 	for post: Node3D in posts:
