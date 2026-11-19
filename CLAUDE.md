@@ -775,7 +775,11 @@ without Caleb, and update the gap list when a PR closes a row.
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never
   added to the starter list. Bots use `Human.sanitize` and can wear anything.
-- Only CC0 or similarly permissive assets, each recorded in `assets/LICENSES.md`.
+- Only assets that are free, may be used in a game that makes money, and need
+  no credit (Caleb's call): CC0, or a royalty-free license like Sonniss's
+  GDC bundles (shipped inside the game, never as loose files). Nothing that
+  needs attribution (CC BY) or forbids selling. Each one recorded in
+  `assets/LICENSES.md`.
 - Load assets that need importing (models, textures, fonts) with `load()` at
   runtime, not `preload`: a preload fails to parse on a fresh checkout before
   Godot has imported the file.
@@ -1932,7 +1936,14 @@ without Caleb, and update the gap list when a PR closes a row.
   `Vehicle.held`, gates by `RaceTrack.cross`, laps, the off-track rule, the
   board); a client gets its own run (`NetSession._race_run`,
   `Race.remote_run`) and the board, holds its machine for the lights from
-  that, and asks with `NetSession.race_request`. Where a road runs over
+  that, and asks with `NetSession.race_request`. Live races are the
+  track's `Race.heats` (authority only; clients get `heat_view` through
+  `NetSession._race_heats`): asked for with the race icon's "race" pick,
+  formed for `FORM_TIME`, then AI racers fill the grid to `GRID_SIZE`.
+  An AI racer is a bot (meta "race_ai") on a machine of its own, driven
+  only through its `ActorCommand` by a `RaceDriver`, which is also the
+  bench's driver; never give one speed, grip or a rule a player lacks, and
+  never put its laps on the board. Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
   (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration

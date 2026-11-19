@@ -1,7 +1,8 @@
 extends Node
 ## Autoload `Sfx`: placeholder sounds synthesized in code, so the game has audio
 ## feedback before any real sound assets exist. Does nothing on a headless
-## server. Swap `_streams` entries for recorded sounds later.
+## server. A recorded sound in `RECORDED_DIR` replaces its synthesized one
+## when the file is there (`recorded`); without it the synth plays.
 
 const RATE := 22050
 
@@ -9,6 +10,18 @@ const RATE := 22050
 ## far from its shooter it must be (your own shots never whizz).
 const PASS_RADIUS := 2.5
 const PASS_CLEAR := 4.0
+
+## Recorded sounds (Sonniss GDC bundle clips, see `assets/LICENSES.md`).
+## They are kept out of the public repository, so each one is optional: a
+## checkout without the files keeps the synthesized voice. Several takes of
+## one sound are played in turn at random.
+const RECORDED_DIR := "res://assets/sounds/"
+const RECORDED := {
+	"wind": ["wind_storm"],
+	"war_rumble": ["war_rumble"],
+	"far_boom": ["far_boom_1", "far_boom_2", "far_boom_3"],
+}
+const RECORDED_LOOPS := ["wind", "war_rumble"]
 
 var _streams := {}
 var _enabled := false
@@ -74,8 +87,18 @@ func _ready() -> void:
 	_streams["ice_break"] = _noise_burst(1.1, 3.5, 0.95, 36.0)
 	# A linked faction's call for help: two quick rising chirps.
 	_streams["grid_call"] = _sweep(700.0, 2600.0, 0.32, 0.4)
+	# The war you cannot see (`Soundscape`): a deep, constant roll under
+	# everything, a far gun's thump with its echo rolling back off the rim,
+	# and a muffled burst of far gunfire.
+	_streams["war_rumble"] = _rumble_loop(4.0)
+	_streams["far_boom"] = _far_boom(2.6)
+	_streams["far_fire"] = _far_fire(9)
 	# An army's push on a strongpoint: a long low war horn, heard far off.
 	_streams["war_horn"] = _tones([98.0, 147.0, 196.0], 1.8, 1.4, 0.6)
+	for sound: String in RECORDED:
+		var stream := recorded(sound)
+		if stream != null:
+			_streams[sound] = stream
 
 
 ## Plays a sound. With a position it is 3D and fades with distance; without
@@ -142,6 +165,31 @@ static func near_miss(from: Vector3, to: Vector3, ear: Vector3) -> Vector3:
 ## The raw stream, for callers that manage their own looping player.
 func get_stream(sound: String) -> AudioStream:
 	return _streams.get(sound)
+
+
+## The recorded stream for `sound`, or null when none of its files are here:
+## one take as it is, several in a randomizer, a loop set to loop.
+static func recorded(sound: String) -> AudioStream:
+	var takes: Array[AudioStream] = []
+	for take: String in RECORDED.get(sound, []):
+		var path := RECORDED_DIR + take + ".ogg"
+		if ResourceLoader.exists(path):
+			var stream := load(path) as AudioStream
+			if stream != null:
+				takes.append(stream)
+	if takes.is_empty():
+		return null
+	if sound in RECORDED_LOOPS:
+		for stream in takes:
+			if stream is AudioStreamOggVorbis:
+				(stream as AudioStreamOggVorbis).loop = true
+	if takes.size() == 1:
+		return takes[0]
+	var pick := AudioStreamRandomizer.new()
+	pick.random_pitch = 1.06
+	for stream in takes:
+		pick.add_stream(-1, stream)
+	return pick
 
 
 func _noise_burst(duration: float, decay: float, noise_mix: float, thump_hz: float) -> AudioStreamWAV:
@@ -245,6 +293,63 @@ func _wind_loop(duration: float) -> AudioStreamWAV:
 		samples[i] = samples[i] * k + samples[count - fade + i] * (1.0 - k)
 	samples.resize(count - fade)
 	return _to_stream(samples, true)
+
+
+func _rumble_loop(duration: float) -> AudioStreamWAV:
+	var samples := PackedFloat32Array()
+	var count := int(duration * RATE)
+	var deep := 0.0
+	var deeper := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		deep = lerpf(deep, _rng.randf_range(-1.0, 1.0), 0.006)
+		deeper = lerpf(deeper, deep, 0.02)
+		# It swells and eases, like a battle beyond the hills.
+		var swell := 0.7 + 0.3 * sin(TAU * t / duration * 3.0)
+		samples.append(deeper * 9.0 * swell)
+	var fade := int(0.3 * RATE)
+	for i in fade:
+		var k := float(i) / fade
+		samples[i] = samples[i] * k + samples[count - fade + i] * (1.0 - k)
+	samples.resize(count - fade)
+	return _to_stream(samples, true)
+
+
+func _far_boom(duration: float) -> AudioStreamWAV:
+	var count := int(duration * RATE)
+	var body := PackedFloat32Array()
+	body.resize(count)
+	var low := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		low = lerpf(low, _rng.randf_range(-1.0, 1.0), 0.03)
+		body[i] = (low * 3.0 + sin(TAU * (40.0 - 12.0 * t) * t) * 0.7) * exp(-t * 3.2)
+	# The echo off the rim: the same blast again, later and softer.
+	var samples := body.duplicate()
+	for echo: Vector2 in [Vector2(0.38, 0.45), Vector2(0.9, 0.28), Vector2(1.5, 0.15)]:
+		var at := int(echo.x * RATE)
+		for i in count - at:
+			samples[at + i] += body[i] * echo.y
+	return _to_stream(samples, false)
+
+
+func _far_fire(rounds: int) -> AudioStreamWAV:
+	var gap := 0.085
+	var count := int((rounds * gap + 0.4) * RATE)
+	var samples := PackedFloat32Array()
+	samples.resize(count)
+	var low := 0.0
+	for n in rounds:
+		var start := int((n * gap + _rng.randf_range(0.0, 0.02)) * RATE)
+		var loud := _rng.randf_range(0.6, 1.0)
+		for i in int(0.12 * RATE):
+			if start + i >= count:
+				break
+			var t := float(i) / RATE
+			# Far away only the low crack is left.
+			low = lerpf(low, _rng.randf_range(-1.0, 1.0), 0.12)
+			samples[start + i] += (low * 1.8 + sin(TAU * 130.0 * t) * 0.4) * exp(-t * 38.0) * loud
+	return _to_stream(samples, false)
 
 
 func _to_stream(samples: PackedFloat32Array, loop: bool) -> AudioStreamWAV:
