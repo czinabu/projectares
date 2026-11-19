@@ -212,6 +212,11 @@ var weather_pushes := false
 ## How far from the map's middle storms cross (metres), for the default
 ## `weather_path`.
 var weather_field := 280.0
+## The war's artillery (DESIGN.md "Shelling", `core/war/shelling.gd`): how
+## often salvos come down near the fighting, as a rate on `Shelling.every`
+## (sooner the hotter the war). Each spot is marked before its shell lands,
+## and the shells hurt. 0 keeps the world unshelled.
+var shelling := 0.0
 ## Thin ice (DESIGN.md "Frostline"): with `thin_ice` on, the ground where
 ## `thin_ice_at` says so bears a ground vehicle up to `ice_holds` tonnes
 ## (its "weight" stat). A heavier one strains it by its weight over that a

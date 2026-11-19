@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 53
+const PROTOCOL := 54
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -122,6 +122,8 @@ const PROTOCOL := 53
 ## rover seats four).
 ## 50: a lift powered or run down (`_lift`).
 ## 51: a keeper's phase (`_keeper`) and its purge lanes (`_purge`).
+## 54: the war's artillery: a salvo called, with where and when each shell
+## lands (`_shells`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -608,6 +610,9 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_ice_holes.rpc_id(peer, holes))
 	raid.grid_called.connect(_on_server_grid_called)
+	raid.shells_called.connect(func(points: PackedVector3Array, lands_in: PackedFloat32Array) -> void:
+		for peer in _joined_peers:
+			_shells.rpc_id(peer, points, lands_in))
 	raid.lift_changed.connect(func(id: String, left: float) -> void:
 		for peer in _joined_peers:
 			_lift.rpc_id(peer, id, left))
@@ -3418,6 +3423,16 @@ func _grid_call(id: int) -> void:
 	var actor: Actor = _actors.get(id)
 	if raid != null and actor != null and is_instance_valid(actor):
 		raid.grid_called.emit(actor, null)
+
+
+## A salvo of the war's artillery was called (`Raid.shells_called`): where
+## each shell lands and in how many seconds, for the view to mark and show.
+## The server alone hurts anyone (`Shelling.land`).
+@rpc("authority", "call_remote", "reliable")
+func _shells(points: PackedVector3Array, lands_in: PackedFloat32Array) -> void:
+	if raid != null and raid.world != null and raid.world.shelling > 0.0 \
+			and points.size() == lands_in.size() and points.size() <= 16:
+		raid.shells_called.emit(points, lands_in)
 
 
 ## Thin ice cracking (stages 1 and 2) or giving way (3) at `at`, for the

@@ -338,6 +338,19 @@ without Caleb, and update the gap list when a PR closes a row.
 - A player's bounty pays its killer in scrip (`Economy.bounty_scrip`, one
   for one, Caleb's call) into the life's carried scrip, so it is at stake
   until banked or carried out, like the kill's own pay.
+- Shelling (DESIGN.md "Shelling", Caleb's call): a world with
+  `WorldDef.shelling` over 0 has the war's artillery, `Raid.shelling`
+  (`core/war/shelling.gd`), run by the authority only and where
+  `Raid.zone_rules` hold. A salvo is a line of shells near an army soldier
+  near `war.centre`, sooner the hotter the war; each spot is marked first
+  (`Raid.shells_called`, sent to every client by `NetSession._shells`), a
+  `Shelling.Marker` in `Gun.live_rounds` so bots run from it, then lands
+  through `Gun.splash` with no source (kind "shell", only that raid's
+  actors). Never near a gate outpost, a player spawn or a protected
+  arrival (`Shelling.clear`). What it looks and sounds like is `ShellView`
+  (view only, added by the `Raid` only where `Look` is on), timed from what
+  it was told; the jolt is `PlayerController.feel_blast`. Check by eye with
+  `visual_check.tscn -- <dir> --shells-only` (with `--fixed-fps 60`).
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary

@@ -626,6 +626,31 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   visor glass (`VisorHud._draw_ash`, the glass only, like frost): grains in
   clumps from the rim inward, darkest in the corners, the middle always
   clear, more the deeper in the storm, and it blows off slowly after.
+- **The battle around you (Caleb's go-ahead, concepts in `ares/epic-battle/`
+  in the project files).** The war should happen *to* you, as in Helldivers
+  or Planet Doom, not only behind you. Three parts, built in this order:
+  shelling (below), a scenery army fighting in the mid distance, and a busy
+  low sky (gunships strafing, return fire, a dropship going down burning).
+  The scenery army is view only and cannot be shot (Caleb's call), so it
+  costs about what one real bot does. To keep the illusion it wears the
+  same soldier bodies and armor as the real bots, keeps 50 m or more from
+  every player (closer in, every soldier is a real bot), and a round that
+  reaches one drops it, on that screen only, for nothing.
+- **Shelling (Caleb's call: real, and marked before it lands).** Every so
+  often, sooner the hotter the war (`Shelling.every`, over
+  `WorldDef.shelling`), a salvo is called down near the fighting: a line of
+  three to six shells walking across the ground past an army soldier near
+  the war's centre. Each spot is marked for 4 s with a red column of light
+  and a ring round where it hurts, pulsing faster as it comes, and a
+  falling whistle gives the last second away. A shell hurts everyone within
+  9 m with nothing between (95 at the heart, a third at the edge, through
+  `Combat.deal`), roof or ground, whoever they are; nobody owns it, so it
+  pays no kill, renown or bounty. Bots who see a mark run from it. Never at
+  a gate outpost, a player spawn or beside someone still under drop-in
+  protection. The server decides it all and tells every client where and
+  when; the blast is a flash that lights the ground, a fireball throwing a
+  fan of dirt and a column of smoke left drifting, heard and felt (the view
+  jolts) once its sound arrives. Ashfront only for now.
 - Full loot on death.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).
