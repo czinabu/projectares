@@ -299,6 +299,8 @@ static func reload_prompt(p: Actor) -> String:
 	var gun := p.get_active_weapon() as Gun if p != null else null
 	if gun == null or gun.is_reloading() or gun.is_power() or p.weapons_locked:
 		return ""
+	if gun.jammed:
+		return "%s  Clear the jam" % PhoneScript.key_name("reload")
 	if gun.ammo_in_mag <= 0 and gun.reserve_ammo <= 0:
 		return "Out of ammo"
 	if gun.reserve_ammo > 0 and gun.ammo_in_mag <= floori(gun.mag_size * RELOAD_PROMPT_SHARE):
