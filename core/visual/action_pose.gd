@@ -941,13 +941,19 @@ static func hold_local(gun: Gun) -> Variant:
 ## sight then never sees the tick's resting hand or a frame's lag behind the
 ## body (both showed as a stutter while aiming).
 static func sight_shown(gun: Gun) -> Vector3:
+	return shown_global(gun, Transform3D(Basis.IDENTITY, gun.visual.global_transform * sight_local(gun))).origin
+
+
+## Where something carried on `gun` (given by its global transform as the
+## node stands) is drawn this frame, read the same way as the sight: from
+## the hand as it was posed, never where a physics tick parked it.
+static func shown_global(gun: Gun, global: Transform3D) -> Transform3D:
 	var hand := gun.visual.get_parent() as Node3D
-	var at := gun.visual.global_transform * sight_local(gun)
 	if hand == null or not hand.has_meta("shown_local"):
-		return at
+		return global
 	var holder := hand.get_parent() as Node3D
 	var shown: Transform3D = holder.global_transform * (hand.get_meta("shown_local") as Transform3D)
-	return shown * (hand.global_transform.affine_inverse() * at)
+	return shown * (hand.global_transform.affine_inverse() * global)
 
 
 ## The hand offset the current melee state asks for, or null when the
