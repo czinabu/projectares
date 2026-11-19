@@ -1,0 +1,55 @@
+# Updates and dev mode
+
+Rules for the self-updater, the installer and the temporary dev mode. These are part of the rules in `CLAUDE.md` that must not be
+broken: read this file before changing anything it covers, and keep it up to
+date in the same PR.
+
+- The game updates itself (`core/update/updater.gd`, the `Updater`
+  autoload, second after `Boot` and, like it, free of project classes). The
+  Windows client keeps its pack beside the exe (`embed_pck` off); the
+  release workflow stamps each build's number into `ares/build/number` and
+  publishes the pack and `update.json` (build, engine, size, SHA-256) on the
+  rolling "latest" release. An exported, stamped game reads it at launch,
+  downloads a newer pack to `user://updates`, checks it and swaps it in
+  beside the exe (on Windows a batch script does it once the game has
+  closed, since an open pack cannot be replaced; release builds refuse
+  `--main-pack`), then restarts. It never runs in the editor, a test, a
+  server or headless, and anything that changes the engine or a native
+  library needs a fresh install. Release builds also refuse `--path`, so a
+  game starts its own server with `Main.server_process_args`, which leaves
+  it out of an exported game. Its state shows on the start screen's
+  corner and the phone's Servers app (online too, with a restart that
+  leaves the server first, `Main._restart_for_update`). An update waiting
+  on the player (`Phone.update_waiting`: downloaded, or needing a fresh
+  install) is told (Caleb's feedback): the phone buzzes with a pop-up and
+  the Servers app wears a badge, held back out in a world, the arena or a
+  race (`Phone.update_hold`) until the player is home or in the plaza,
+  and told again each time they get home (`Phone.remind_update`). The installer
+  (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
+  `ProjectAres-Setup.exe`) installs per user into
+  `%LOCALAPPDATA%\Programs\Project Ares`, never Program Files, so the game
+  can write its own pack, and adds desktop and Start menu shortcuts. The
+  logo is a placeholder in `assets/branding` (the window, exe and installer
+  icon and the boot splash), made by its `make_logo.py`.
+- Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
+  along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
+  only in a debug or editor run (`DevMode.available`), never in an exported
+  game. Solo, it puts `Profile` on a separate save
+  (`Profile.DEV_SAVE_PATH`) kept topped up with all gear and max scrip, and
+  hands a solo `Raid` its cheats (`Raid.dev_cheats`: god mode, endless heat
+  and ammo, no cooldowns); a server or client raid ignores them. Online, only
+  a server hosted from the editor in dev mode (`main.gd host_and_join`
+  passes `--dev-host`) tops up one account: the one that claims the handed
+  profile with the host's secret (`StashService.dev_host`, `dev_accounts`),
+  never anyone just using the host's name. Such a server keeps its accounts
+  in `Main.DEV_ACCOUNTS`, apart from real ones, and its snapshots only go
+  back into the save it was hosted from (`Main._hosted_save`), so dev gear
+  never leaks into the real profile; the save never swaps while online.
+  Free test gear is never handed to every player (`Profile.GEAR_CRATES`
+  stays empty): new gear to try comes from dev mode. `Profile.FRESH_START`
+  sets an older real save back to a fresh player once, keeping who you
+  are. No cheats online. Every line
+  it touches is marked "DEV MODE". Never build a feature on it; to remove it,
+  delete `core/dev/` and every "DEV MODE" line or block, plus
+  `tests/dev_mode_tests.gd`. Dev mode also knows every blueprint
+  (`DevMode.top_up_blueprints`).

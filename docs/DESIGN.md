@@ -8,9 +8,10 @@ How to use it:
 
 - Before building a feature, read its section here. If the code and this doc
   disagree, the code describes today and this doc describes the target.
-- The rules in `CLAUDE.md` still apply to how anything is built. When a
-  feature here changes one of those rules (for example power weapons becoming
-  storable), update the rule in `CLAUDE.md` in the same PR that builds it.
+- The rules in `CLAUDE.md` and `docs/systems/` still apply to how anything
+  is built. When a feature here changes one of those rules (for example
+  power weapons becoming storable), update the rule where it lives in the
+  same PR that builds it.
 - When Caleb makes a design call, record it here in the same PR.
 - Section 13 lists the decisions still open. Do not settle them silently.
 
