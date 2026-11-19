@@ -1,0 +1,291 @@
+extends Node3D
+## __NAME__'s map, made by `tools/new_world` (from its template): open
+## ground on a `Terrain` with every marker the map contract asks for
+## (core/world/world_def.gd). Players land at the south edge beside a gate
+## outpost and two depots; strongpoints hold the middle; a warlord guards
+## the core in the north. Change the layout constants, then replace the
+## greybox with the world's own places. Gameplay shapes are plain boxes
+## that `Look` dresses; decoration uses `_art_rng`, never `_rng`, so it
+## cannot move the layout.
+
+## Seeds the layout. Change it and every spot moves.
+const LAYOUT_SEED := __SEED__
+## The ground: `SIDE` samples `CELL` metres apart, (SIDE - 1) * CELL across.
+const CELL := 4.0
+const SIDE := 121
+## Half the playable square; hills rise past it to the walls.
+const FIELD := 200.0
+const HILLS := 40.0
+## Where the zones change (the world's `zone_at`): south is outer.
+const MIDDLE_FROM_Z := 80.0
+const CORE_FROM_Z := -80.0
+## Where players land.
+const LANDING_Z := 175.0
+## The strongpoints across the middle: name and where.
+const SITES := [
+	{"name": "West Works", "at": Vector2(-110.0, 20.0)},
+	{"name": "The Crossing", "at": Vector2(0.0, -10.0)},
+	{"name": "East Yard", "at": Vector2(110.0, 20.0)},
+]
+## The warlord's ground in the core.
+const BOSS_AT := Vector2(0.0, -160.0)
+
+## The ground every copy of the map shares, worked out once per run.
+static var _ground_lock := Mutex.new()
+static var _ground_shared := {}
+static var _shared := {}
+
+var planet: PlanetType
+var terrain: Terrain
+var nav_region: NavigationRegion3D
+var _rng := RandomNumberGenerator.new()
+var _art_rng := RandomNumberGenerator.new()
+var _noise := FastNoiseLite.new()
+
+@onready var WALL := Look.surface("concrete", {"tint": Color(0.5, 0.5, 0.48), "grime": 0.5, "scale": 0.25})
+@onready var METAL := Look.surface("metal", {"tint": Color(0.42, 0.44, 0.45), "grime": 0.7, "scale": 0.3})
+
+
+func _ready() -> void:
+	if planet == null:
+		planet = PlanetTypes.get_type("__PLANET__")
+	_seed_layout()
+	Planet.atmosphere(self, planet)
+	nav_region = NavigationRegion3D.new()
+	nav_region.name = "Geometry"
+	add_child(nav_region)
+	_build_ground()
+	_build_landing()
+	_build_sites()
+	_build_caches()
+	_build_core()
+	_art_rng.seed = LAYOUT_SEED + 1
+	_dress()
+
+
+func _seed_layout() -> void:
+	_rng.seed = LAYOUT_SEED
+	_noise.seed = LAYOUT_SEED
+	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_noise.frequency = 0.008
+
+
+## Works out the shared ground on a map never added to the tree (the
+## world's `prepare_map`, off the main thread): plain data only.
+func prepare_shared() -> void:
+	_ground_lock.lock()
+	if not _ground_shared.has("heights"):
+		_seed_layout()
+		var ground := Terrain.new()
+		ground.cell = CELL
+		ground.side = SIDE
+		ground.shape(_height)
+		_ground_shared["collision"] = ground.collision_data()
+		_ground_shared["heights"] = ground.heights
+		ground.free()
+	_ground_lock.unlock()
+
+
+func bake_navigation() -> void:
+	if not _shared.has("navmesh"):
+		var navmesh := NavigationMesh.new()
+		navmesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+		navmesh.geometry_collision_mask = Actor.LAYER_WORLD
+		navmesh.cell_size = 0.5
+		navmesh.cell_height = 0.25
+		navmesh.agent_radius = 0.5
+		navmesh.agent_height = 1.75
+		navmesh.agent_max_climb = 0.5
+		navmesh.agent_max_slope = 42.0
+		nav_region.navigation_mesh = navmesh
+		nav_region.bake_navigation_mesh(false)
+		_shared["navmesh"] = navmesh
+	nav_region.navigation_mesh = _shared["navmesh"]
+
+
+func ground_height(x: float, z: float) -> float:
+	return terrain.height_at(x, z)
+
+
+# --- The shape of the ground -------------------------------------------------
+
+## Rolling ground, flattened round the landing and the sites, rising to
+## hills past the field.
+func _height(x: float, z: float) -> float:
+	var h := _noise.get_noise_2d(x, z) * 6.0
+	var flat := 1.0 - smoothstep(20.0, 45.0, Vector2(x, z).distance_to(Vector2(0.0, LANDING_Z)))
+	for site: Dictionary in SITES:
+		flat = maxf(flat, 1.0 - smoothstep(26.0, 42.0, Vector2(x, z).distance_to(site["at"])))
+	h = lerpf(h, 0.0, flat)
+	var out := maxf(absf(x), absf(z)) - FIELD
+	if out > 0.0:
+		h += smoothstep(0.0, HILLS, out) * 30.0
+	return h
+
+
+func _build_ground() -> void:
+	terrain = Terrain.new()
+	terrain.name = "Ground"
+	terrain.cell = CELL
+	terrain.side = SIDE
+	_ground_lock.lock()
+	if not _ground_shared.has("heights"):
+		terrain.shape(_height)
+		_ground_shared["collision"] = terrain.collision_data()
+		_ground_shared["heights"] = terrain.heights
+	var collision: PackedFloat32Array = _ground_shared["collision"]
+	terrain.heights = _ground_shared["heights"]
+	_ground_lock.unlock()
+	terrain.build(Planet.ground_material(planet), collision)
+	nav_region.add_child(terrain)
+	# Nobody leaves over the hills.
+	var edge := terrain.extent() * 0.5 - 6.0
+	for side: Vector3 in [Vector3(0, 0, -edge), Vector3(0, 0, edge), Vector3(-edge, 0, 0), Vector3(edge, 0, 0)]:
+		var wall := StaticBody3D.new()
+		wall.collision_layer = Actor.LAYER_WORLD
+		wall.collision_mask = 0
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(edge * 2.0 + 2.0, 600.0, 2.0) if side.x == 0.0 else Vector3(2.0, 600.0, edge * 2.0 + 2.0)
+		var col := CollisionShape3D.new()
+		col.shape = shape
+		wall.add_child(col)
+		wall.position = side + Vector3(0, 250.0, 0)
+		wall.add_to_group("map_edge")
+		add_child(wall)
+
+
+# --- Places ------------------------------------------------------------------
+
+## The landing at the south edge: player spawns inside a gate outpost, a
+## depot either side and a couple of vehicles.
+func _build_landing() -> void:
+	var outpost := _add_marker("outpost", _ground(Vector2(0.0, LANDING_Z)))
+	outpost.set_meta("name", "__NAME__ Gate")
+	outpost.set_meta("radius", 16.0)
+	for i in 6:
+		_add_marker("spawn_player", _ground(Vector2((i - 2.5) * 5.0, LANDING_Z + 4.0 + (i % 2) * 3.0)))
+	for side: float in [-1.0, 1.0]:
+		_add_depot(_ground(Vector2(side * 12.0, LANDING_Z - 6.0)))
+		var bike := _add_marker("spawn_vehicle", _ground(Vector2(side * 24.0, LANDING_Z - 2.0)) + Vector3(0, 0.5, 0))
+		bike.rotation.y = PI
+	_box(Vector3(18.0, 0.4, 10.0), _ground(Vector2(0.0, LANDING_Z + 4.0)) + Vector3(0, 0.2, 0), METAL)
+
+
+## The strongpoints across the middle: a low walled yard each, a depot by
+## it, a cache inside and the faction's soldiers posted round it.
+func _build_sites() -> void:
+	for site: Dictionary in SITES:
+		var at: Vector2 = site["at"]
+		var point := _add_marker("strongpoint", _ground(at))
+		point.set_meta("name", site["name"])
+		point.set_meta("radius", 14.0)
+		for side in 4:
+			var along := Vector2.from_angle(side * PI * 0.5)
+			var across := Vector2(-along.y, along.x)
+			for half: float in [-1.0, 1.0]:
+				var spot := at + along * 16.0 + across * half * 9.0
+				# Sunk a little into the ground, so no gap opens under it.
+				_box(Vector3(10.0 if absf(along.x) < 0.5 else 1.2, 1.8, 1.2 if absf(along.x) < 0.5 else 10.0),
+						_ground(spot) + Vector3(0, 0.6, 0), WALL)
+		_add_depot(_ground(at + Vector2(24.0, 0.0)))
+		_add_marker("spawn_cache", _ground(at + Vector2(-5.0, 5.0)) + Vector3(0, 0.1, 0))
+		for i in 3:
+			_add_marker("spawn_bot", _ground(at + Vector2.from_angle(i * TAU / 3.0) * 8.0)).set_meta("faction", "__ID__")
+
+
+## Caches scattered over the field, more of them further in, and a few
+## soldiers by every other one.
+func _build_caches() -> void:
+	var placed := 0
+	var tries := 0
+	while placed < 14 and tries < 400:
+		tries += 1
+		var at := Vector2(_rng.randf_range(-FIELD + 20.0, FIELD - 20.0), _rng.randf_range(-FIELD + 20.0, LANDING_Z - 40.0))
+		if _near_site(at, 30.0):
+			continue
+		_add_marker("spawn_cache", _ground(at) + Vector3(0, 0.1, 0))
+		_box(Vector3(3.0, 1.6, 0.8), _ground(at + Vector2(0.0, 2.0)) + Vector3(0, 0.8, 0), WALL)
+		if placed % 2 == 0:
+			_add_marker("spawn_bot", _ground(at + Vector2(6.0, 0.0))).set_meta("faction", "__ID__")
+		placed += 1
+
+
+## The core: the warlord's ground with the best caches.
+func _build_core() -> void:
+	var boss := _add_marker("spawn_boss", _ground(BOSS_AT))
+	boss.set_meta("faction", "__ID__")
+	boss.set_meta("radius", 25.0)
+	for i in 3:
+		_add_marker("spawn_cache", _ground(BOSS_AT + Vector2.from_angle(i * TAU / 3.0 + 0.4) * 12.0) + Vector3(0, 0.1, 0))
+	for i in 4:
+		var at := BOSS_AT + Vector2.from_angle(i * PI * 0.5 + PI * 0.25) * 20.0
+		_box(Vector3(4.0, 3.0, 4.0), _ground(at) + Vector3(0, 1.5, 0), WALL)
+
+
+## View only: scattered rocks so the ground reads at a distance. Its own
+## RNG, so it never moves the layout.
+func _dress() -> void:
+	if not Look.enabled:
+		return
+	for i in 60:
+		var at := Vector2(_art_rng.randf_range(-FIELD, FIELD), _art_rng.randf_range(-FIELD, FIELD))
+		if _near_site(at, 25.0) or at.distance_to(Vector2(0.0, LANDING_Z)) < 30.0:
+			continue
+		var size := _art_rng.randf_range(0.6, 2.2)
+		var mesh := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(size, size * 0.7, size * 1.2)
+		box.material = WALL
+		mesh.mesh = box
+		mesh.position = _ground(at) + Vector3(0, size * 0.25, 0)
+		mesh.rotation = Vector3(_art_rng.randf() * 0.4, _art_rng.randf() * TAU, 0.0)
+		add_child(mesh)
+
+
+# --- Helpers -----------------------------------------------------------------
+
+func _ground(at: Vector2) -> Vector3:
+	return terrain.on_ground(at.x, at.y)
+
+
+func _near_site(at: Vector2, margin: float) -> bool:
+	for site: Dictionary in SITES:
+		if at.distance_to(site["at"]) < margin:
+			return true
+	return at.distance_to(BOSS_AT) < margin
+
+
+func _add_depot(at: Vector3) -> void:
+	var zone := Depot.new()
+	zone.add_to_group("depot")
+	zone.position = at + Vector3(0, 2.0, 0)
+	add_child(zone)
+
+
+func _add_marker(group: String, at: Vector3) -> Marker3D:
+	var marker := Marker3D.new()
+	marker.add_to_group(group)
+	marker.position = at
+	add_child(marker)
+	return marker
+
+
+## A solid greybox block (collision and a mesh `Look` dresses).
+func _box(size: Vector3, at: Vector3, material: Material) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.collision_layer = Actor.LAYER_WORLD
+	body.collision_mask = 0
+	body.position = at
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	body.add_child(col)
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mesh.material = material
+	var mesh_node := MeshInstance3D.new()
+	mesh_node.mesh = mesh
+	body.add_child(mesh_node)
+	nav_region.add_child(body)
+	return body

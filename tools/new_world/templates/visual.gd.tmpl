@@ -1,0 +1,58 @@
+extends RefCounted
+## `--__ID__-only`, a mode `visual_check.gd` finds by itself, made by
+## `tools/new_world`: `-- <output_dir> --__ID__-only` shoots __NAME__ from
+## the landing, over a strongpoint and over the core, and the roster's
+## kinds side by side.
+
+
+static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
+	var raid := Raid.new()
+	v.add_child(raid)
+	raid.start(Worlds.get_world("__ID__"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	var player := raid.player
+	player.set_physics_process(false)
+	player.visible = false
+	var ground := func(x: float, z: float) -> Vector3:
+		return Vector3(x, raid.map.call("ground_height", x, z), z)
+	var map: Node3D = raid.map
+	var cam := Camera3D.new()
+	cam.fov = 65.0
+	cam.far = 1500.0
+	raid.add_child(cam)
+	cam.current = true
+	await v._settle(40)
+	var landing: Vector3 = ground.call(0.0, map.LANDING_Z)
+	cam.look_at_from_position(landing + Vector3(0, 2.0, 8.0), ground.call(0.0, 0.0) + Vector3(0, 4.0, 0))
+	await v._settle(4)
+	await v._shot(out_dir.path_join("__ID___landing.png"))
+	var site: Vector2 = map.SITES[1]["at"]
+	cam.look_at_from_position(ground.call(site.x + 40.0, site.y + 50.0) + Vector3(0, 30.0, 0),
+			ground.call(site.x, site.y))
+	await v._settle(4)
+	await v._shot(out_dir.path_join("__ID___site.png"))
+	cam.look_at_from_position(ground.call(map.BOSS_AT.x, map.BOSS_AT.y + 70.0) + Vector3(0, 40.0, 0),
+			ground.call(map.BOSS_AT.x, map.BOSS_AT.y))
+	await v._settle(4)
+	await v._shot(out_dir.path_join("__ID___core.png"))
+	# The roster side by side, facing the camera.
+	var origin: Vector3 = ground.call(0.0, map.LANDING_Z - 20.0)
+	var kinds: Array = raid.world.ROSTER.keys()
+	var line: Array[Actor] = []
+	for i in 40:
+		if line.size() == kinds.size():
+			break
+		var bot := raid.spawn_bot("Kind%d" % i, origin, 1000 + i, false, "__ID__", 0)
+		if line.any(func(b: Actor) -> bool: return b.get_meta("kind", "") == bot.get_meta("kind", "")):
+			raid._remove_actor(bot)
+			continue
+		line.append(bot)
+	for i in line.size():
+		line[i].global_position = ground.call((i - (line.size() - 1) * 0.5) * 3.0, origin.z)
+		line[i].set_physics_process(false)
+		line[i].rotation.y = PI
+	cam.look_at_from_position(origin + Vector3(0, 1.8, 8.0), origin + Vector3(0, 1.1, 0))
+	await v._settle(6)
+	await v._shot(out_dir.path_join("__ID___roster.png"))
