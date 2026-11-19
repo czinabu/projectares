@@ -147,9 +147,11 @@ var timed_window := 0.4
 var timed_block_cost := 0.15
 var hold_drain := 5.0
 var hold_drain_ramp := 0.6
-## Every light shows this long more windup than its weapon's own, so a
-## defender can see it coming and time a guard (counted from the press, the
-## hold of the tap included).
+## Blade against blade, every light shows this long more windup than its
+## weapon's own, so a defender can see it coming and time a guard (counted
+## from the press, the hold of the tap included). Against anyone without a
+## blade drawn the cut stays quick, so a blade still beats a gun in reach
+## (`facing_blade`).
 var light_tell := 0.2
 ## A blade only turns aside part of a bullet.
 var bullet_block_fraction := 0.5
@@ -271,6 +273,10 @@ var _parry_ready := true
 var _guard_paid := false
 ## The aim (guard) button was down last tick: a press is its edge.
 var _aim_was := false
+## Whether a blade faces this guard (`facing_blade`), looked at every
+## quarter second while it is held.
+var _blade_near := false
+var _blade_check := 0.0
 ## The command asked to sprint this tick: a heavy now is a dash-strike.
 var _sprinting := false
 ## The lunge in progress is a dash-strike (status and tests).
@@ -423,6 +429,7 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 	var wants_block := cmd.secondary and not _slamming and _windup_left <= 0.0 and actor.stamina > 0.0
 	if wants_block and not _blocking:
 		_block_time = 0.0
+		_blade_check = 0.0
 		_guard_paid = false
 		guard_dir = _guard_toward() as Dir
 		_parry_ready = _since_guard >= guard_rearm
@@ -544,6 +551,21 @@ func _try_feint() -> void:
 	swung.emit("feint")
 
 
+## True when the nearest foe in reach has a blade drawn: a duel of blades,
+## where cuts are measured (`light_tell`).
+func facing_blade() -> bool:
+	var nearest := INF
+	var blade := false
+	var seen := Combat.positions_seen_by(actor)
+	for other in _other_actors():
+		var at: Vector3 = seen.get(other, other.global_position)
+		var dist := at.distance_to(actor.global_position)
+		if dist < nearest and dist <= reach * 2.0:
+			nearest = dist
+			blade = other.get_active_weapon() is MeleeWeapon
+	return blade
+
+
 ## The side the next swing goes toward: a combo runs left, right, then
 ## overhead (each swing starting on the other side, `swing_from`).
 func next_stance() -> int:
@@ -570,6 +592,14 @@ func _guard_toward() -> int:
 ## up, more the longer it is held; once the stamina is gone the guard drops.
 func _drain_held_guard(delta: float) -> void:
 	if _block_time <= timed_window or hold_drain <= 0.0:
+		return
+	# Only blade against blade: a guard held up against gunfire is still the
+	# shield it was (each round it turns aside costs on its own).
+	_blade_check -= delta
+	if _blade_check <= 0.0:
+		_blade_check = 0.25
+		_blade_near = facing_blade()
+	if not _blade_near:
 		return
 	var held := _block_time - timed_window
 	actor.stamina = maxf(0.0, actor.stamina - hold_drain * (1.0 + hold_drain_ramp * held) * delta)
@@ -757,7 +787,8 @@ func _light_attack(held: float) -> void:
 	combo_step = combo_step % 3 + 1
 	var finisher := combo_step == 3
 	# The hold before the release was already part of the windup.
-	var windup := maxf(light_windup + light_tell - held, light_windup * light_windup_floor)
+	var tell := light_tell if facing_blade() else 0.0
+	var windup := maxf(light_windup + tell - held, light_windup * light_windup_floor)
 	_combo_timer = combo_window + windup
 	_cooldown = windup + light_recover * (1.6 if finisher else 1.0)
 	_begin_windup("light", light_damage * (combo_finisher_mult if finisher else 1.0), windup)
