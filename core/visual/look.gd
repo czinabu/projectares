@@ -1115,7 +1115,7 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
 ## "scorch" (charred ground), "track" (a packed gravel road), "rut" (a dark wheel rut), "hazard" (orange and black stripes),
 ## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
-## "beam" (a searchlight), "distant" (skyline silhouettes) and
+## "beam" (a searchlight), "lance" (an orbital strike's column), "distant" (skyline silhouettes) and
 ## "horizon_glow" (fires past the rim, on a ring). Cached, so every piece
 ## shares one material.
 func trim(kind: String) -> Material:
@@ -1196,6 +1196,15 @@ func trim(kind: String) -> Material:
 			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 			mat.vertex_color_use_as_albedo = true
 			mat.albedo_color = Color(1.0, 0.55, 0.22)
+			mat.disable_fog = true
+		"lance":
+			# An orbital lance: a white-hot column from the sky that the haze
+			# never hides. Fade it with the instance's transparency.
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat.albedo_color = Color(0.82, 0.9, 1.0, 0.85)
 			mat.disable_fog = true
 		"flak_smoke":
 			# The puff a flak shell leaves hanging, lit by the fires below: haze softens it like

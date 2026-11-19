@@ -393,6 +393,27 @@ static func _skyline(t: Node, raid: Raid) -> void:
 	var from := Vector3(-800, 360, 0)
 	var over := Vector3(20, 150, 30)
 	var to := Vector3(700, 400, 50)
+	# The orbital lance, the war's shared moment, on the same clock: the
+	# Colossus walks, is struck, falls where it stood, lies burning, fades
+	# into the smoke, and the next walks out of it.
+	var every: float = giants.LANCE_EVERY
+	var strike: float = every * 3.0 + giants.LANCE_AT
+	t.check(is_equal_approx(giants.since_lance(strike), 0.0) and giants.since_lance(strike - 5.0) < 0.0,
+			"the lance strikes once a round, at the same moment on every machine")
+	t.check(giants.downed(-1.0) == 0.0 and giants.downed(0.5) == 0.0 and giants.downed(giants.FALL_TIME * 0.5) > 0.2
+			and giants.downed(giants.FALL_TIME) == 1.0, "struck, the Colossus holds a moment, then goes down")
+	var struck: Transform3D = giants.colossus_at(strike)
+	t.check(giants.colossus_at(strike + 200.0).origin.is_equal_approx(struck.origin),
+			"a fallen Colossus lies where the lance caught it")
+	t.check(giants.shown(100.0) == 1.0 and giants.shown(giants.WRECK_GONE) == 0.0
+			and giants.shown(giants.WRECK_GONE - giants.FADE_TIME * 0.5) > 0.0 and giants.shown(giants.WRECK_GONE - giants.FADE_TIME * 0.5) < 1.0,
+			"the wreck fades into the smoke instead of vanishing")
+	t.check(giants.shown(-giants.LANCE_AT) == 0.0 and giants.shown(-giants.LANCE_AT + giants.FADE_TIME) == 1.0 and giants.shown(-1.0) == 1.0,
+			"the next Colossus walks out of the smoke, and stands whole until the strike")
+	t.check(not giants.colossus_at(strike + every - giants.LANCE_AT + 30.0).origin.is_equal_approx(struck.origin),
+			"the next Colossus walks its round again")
+	var lance_mat := Look.trim("lance") as BaseMaterial3D
+	t.check(lance_mat != null and lance_mat.disable_fog, "the lance burns through the haze")
 	t.check(giants.flight_point(from, over, to, 0.0).is_equal_approx(from) and giants.flight_point(from, over, to, 0.5).is_equal_approx(over)
 			and giants.flight_point(from, over, to, 1.0).is_equal_approx(to),
 			"a dropship wing flies from the capital ship down over the fighting and away")

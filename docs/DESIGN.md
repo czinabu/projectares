@@ -617,9 +617,12 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   timed by the wall clock): a few great soft shafts slanting down along
   the sun, each opening where the smoke parts, standing a minute or so and
   closing again somewhere else, dimmer the hotter the war and hidden by a
-  storm. Planned, in this order:
-  a shared moment (the orbital lance brings the Colossus down), and ash on
-  the visor glass.
+  storm. The war's shared moment comes round on the same clock, once every
+  25 minutes (`giants.gd`, `since_lance`): a red targeting line finds the
+  Colossus, an orbital lance comes down on it out of the sky with a blinding
+  flash, and it buckles and falls where it stood, its eye and searchlight
+  dying; it lies burning for about nine minutes, fades into the smoke, and
+  the next one walks out of it. Planned: ash on the visor glass.
 - Full loot on death.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).
