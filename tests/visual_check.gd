@@ -1104,6 +1104,7 @@ func _hub_shots(out_dir: String) -> void:
 		["look_up", Vector3(60, 1.7, -60), Vector3(300, 380, -500)],
 		["rail", Vector3(-200, 1.7, 120), Vector3(-420, -120, 260)],
 		["monorail", Vector3(150, 1.7, 150), Vector3(260, 60, 250)],
+		["tower_foot", Vector3(37, 1.7, -93), Vector3(46, 9, -111)],
 		["overview", Vector3(260, 220, 260), Vector3(0, 0, 0)],
 	]
 	for v: Array in views:

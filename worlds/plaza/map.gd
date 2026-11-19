@@ -216,6 +216,8 @@ var _flushed := false
 ## Where the street lamps and shop lights hang; `_dress` lights each.
 var _lamps: Array[Vector3] = []
 var _shop_lights: Array[Array] = []
+## Where a lamp washes up each near tower's foot (`_dress`).
+var _foot_lights: Array[Vector3] = []
 ## The near towers' glass, lit floor by floor like the megacity's.
 var _tower_glass: Material
 ## Each cart's customers, for the locals: see `locals_layout`'s "stops".
@@ -239,6 +241,9 @@ var _stops: Array[Dictionary] = []
 ## not so metallic that they turn into black holes against the floor.
 @onready var DARK := Look.surface("metal", {"tint": Color(0.4, 0.44, 0.52), "grime": 0.2, "scale": 0.3,
 		"metal": 0.4, "rough_mult": 1.2})
+## The near towers' feet: sci-fi plate, dark, so the lit glass above reads.
+@onready var CLADDING := Look.surface("panels", {"tint": Color(0.62, 0.66, 0.8), "grime": 0.15, "scale": 0.16,
+		"metal": 0.55, "rough_mult": 1.0})
 ## Inside a shop: warm pale panels, so the lights carry the room.
 @onready var INSIDE := Look.surface("metal", {"tint": Color(0.78, 0.76, 0.74), "grime": 0.1, "scale": 0.25,
 		"metal": 0.2, "rough_mult": 1.4})
@@ -277,9 +282,10 @@ func _build_environment() -> void:
 	Look.atmosphere(self, {
 		# A deep dusk over the megacity, warm where the canyon's light comes
 		# up into the haze, so the windows and the traffic carry the sky.
-		"sky_tint": Color(0.55, 0.42, 0.85),
-		"sky_saturation": 0.55,
-		"sky_energy": 0.26,
+		"sky": "qwantani_dusk_1_puresky_2k.hdr",
+		"sky_tint": Color(0.68, 0.6, 1.0),
+		"sky_saturation": 0.9,
+		"sky_energy": 0.24,
 		"fog_color": Color(0.42, 0.24, 0.32),
 		"fog_density": 0.0022,
 		"haze_height": 0.36,
@@ -406,6 +412,15 @@ func _build_towers() -> void:
 		var tiers := [[TOWER_SIZE, 0.0, tall * 0.55], [TOWER_SIZE * 0.75, tall * 0.55, tall * 0.85],
 				[TOWER_SIZE * 0.5, tall * 0.85, tall]]
 		var color: Color = [CYAN, MAGENTA][i % 2]
+		# The foot, up to the landing deck, is clad in plate where people
+		# walk past it; the glass starts above.
+		var foot := DECK_HEIGHT - 0.5
+		_solid(Vector3(TOWER_SIZE, foot, TOWER_SIZE), at + Vector3(0, foot * 0.5, 0), CLADDING, yaw)
+		tiers[0][1] = foot
+		# A light strip at the foot and a lamp washing up the plate from the
+		# deck side, so the cladding reads at night.
+		_part(self, Vector3(TOWER_SIZE + 0.1, 0.12, TOWER_SIZE + 0.1), at + Vector3(0, 0.3, 0), color, true, yaw)
+		_foot_lights.append(at - at.normalized() * (TOWER_SIZE * 0.5 + 5.0) + Vector3(0, 2.5, 0))
 		for tier: Array in tiers:
 			var w: float = tier[0]
 			var size := Vector3(w, tier[2] - tier[1], w)
@@ -472,8 +487,11 @@ func _deck_brackets(at: Vector3, yaw: float) -> void:
 			var corner := at + turn * Vector3(cx * (half - 0.6), DECK_HEIGHT - 0.6, cz * (half - 0.6))
 			var root := at + turn * Vector3(cx * TOWER_SIZE * 0.45, DECK_HEIGHT - 7.0, cz * TOWER_SIZE * 0.45)
 			_strut(corner, root, 0.5, STEEL)
-	_part(self, Vector3(TOWER_SIZE + 8.2, 0.12, TOWER_SIZE + 8.2), at + Vector3(0, DECK_HEIGHT - 0.56, 0), CYAN.darkened(0.3),
-			true, yaw)
+	# A lit edge round the deck's underside, so its outline reads from below.
+	for i in 4:
+		var side := turn * Basis(Vector3.UP, TAU * i / 4.0)
+		_part(self, Vector3(half * 2.0, 0.1, 0.12), at + side * Vector3(0, DECK_HEIGHT - 0.56, half - 0.1), CYAN.darkened(0.3),
+				true, yaw + TAU * i / 4.0)
 
 
 ## A bar from `a` to `b`, `thick` square, drawn with the solid parts but
@@ -1560,6 +1578,10 @@ func _dress() -> void:
 		var pool := Look.lamp(Color(0.8, 0.9, 1.0).lerp(WARM, 0.4), 5.0, 18.0)
 		pool.position = at
 		art.add_child(pool)
+	for at in _foot_lights:
+		var wash := Look.lamp(Color(0.75, 0.85, 1.0), 3.0, 18.0)
+		wash.position = at
+		art.add_child(wash)
 	for gate in _gates:
 		var glow := Look.lamp(Color(1.0, 0.5, 0.2), 5.0, 16.0)
 		glow.position = gate["at"] + Vector3(0, 5.0, 2.0)
