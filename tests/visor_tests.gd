@@ -355,6 +355,7 @@ static func _zoom(t: Node) -> void:
 	print("Visors: Spotter binoculars")
 	var raid: Raid = await t._kit_raid(320, _kit("helm_spotter"))
 	var p := raid.player
+	p._draw_weapon(p.weapon_for_key(1))  # players arrive unarmed
 	_out_in_the_open(raid, p)
 	var v := p.visor
 	t.check(v.enabled and v.mode == "zoom" and v.zoom_levels == [4.0, 8.0], "Spotter stats come from the item")

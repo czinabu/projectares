@@ -411,6 +411,7 @@ func _ready() -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	var controller := PlayerController.new()
 	controller.setup(raid.player)
 	raid.add_child(controller)
@@ -706,6 +707,7 @@ func _tour_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("frostline"), 42, ["rifle_scrap", "helm_seeker"] as Array[String])
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 	var raider := PlayerController.new()
@@ -861,6 +863,7 @@ func _flight_shots(out_dir: String) -> void:
 		var raid := Raid.new()
 		add_child(raid)
 		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", pose[1], "frame_trooper"])
+		_armed(raid)
 		for bot in raid.bots:
 			bot.get_node("Brain").set_physics_process(false)
 			bot.global_position += Vector3(0, -200, 0)
@@ -914,6 +917,7 @@ func _takeoff_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "jetpack_mk2", "frame_trooper"])
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -200, 0)
@@ -951,6 +955,7 @@ func _rig_shots(out_dir: String) -> void:
 		var raid := Raid.new()
 		add_child(raid)
 		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", id, "frame_trooper"])
+		_armed(raid)
 		for bot in raid.bots:
 			bot.get_node("Brain").set_physics_process(false)
 			bot.global_position += Vector3(0, -200, 0)
@@ -1664,6 +1669,7 @@ func _aim_shots(out_dir: String) -> void:
 		var raid := Raid.new()
 		add_child(raid)
 		raid.start(Worlds.get_world("ashfront"), 42, kit)
+		_armed(raid)
 		for bot in raid.bots:
 			bot.queue_free()
 		var controller := PlayerController.new()
@@ -1687,6 +1693,7 @@ func _artifact_shots(out_dir: String) -> void:
 		add_child(raid)
 		var kit: Array[String] = ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", relic]
 		raid.start(Worlds.get_world("ashfront"), 42, kit)
+		_armed(raid)
 		for bot in raid.bots:
 			bot.get_node("Brain").set_physics_process(false)
 			bot.global_position += Vector3(0, 0, 400)
@@ -1755,6 +1762,7 @@ func _visor_shots(out_dir: String) -> void:
 		var kit := scrap.duplicate()
 		kit.append(helmet)
 		raid.start(Worlds.get_world("ashfront"), 42, kit)
+		_armed(raid)
 		for bot in raid.bots:
 			bot.get_node("Brain").set_physics_process(false)
 		var p := raid.player
@@ -1790,10 +1798,14 @@ func _visor_shots(out_dir: String) -> void:
 		hud.objective = "Bank your loot at a depot"
 		p.flight.heat = p.flight.max_heat * 0.45
 		p.tally["kills"] = 2
-		# A low mag, so the weapon readout bottom right wakes up.
+		# Out of the gate outpost's lock, gun drawn, mag empty: the readout
+		# bottom right wakes up and asks for the reload.
+		p.weapons_locked = false
+		_armed(raid)
+		await _settle(2)
 		var held_gun := p.get_active_weapon() as Gun
 		if held_gun != null:
-			held_gun.ammo_in_mag = 4
+			held_gun.ammo_in_mag = 0
 		await _settle(20)
 		await _shot(out_dir.path_join("visor_%s.png" % helmet))
 		if helmet == "helm_spotter":
@@ -1943,6 +1955,7 @@ func _helmet_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -200, 0)
@@ -2038,6 +2051,7 @@ func _armor_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42, [Loadout.BARE])
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -200, 0)
@@ -2101,6 +2115,7 @@ func _storm_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	raid.war.cooling = 0.0
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
@@ -2169,6 +2184,7 @@ func _weather_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
@@ -2244,6 +2260,7 @@ func _heavy_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -400, 0)
@@ -2395,6 +2412,7 @@ func _war_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	raid.war.cooling = 0.0
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
@@ -2418,6 +2436,7 @@ func _ashfront_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 	raid.player.visible = false
@@ -2494,6 +2513,7 @@ func _track_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("frostline"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
@@ -2542,6 +2562,7 @@ func _ice_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("frostline"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
@@ -2574,6 +2595,7 @@ func _whiteout_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("frostline"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
@@ -2842,6 +2864,7 @@ func _grid_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("frostline"), 42)
+	_armed(raid)
 	var boss: Actor = null
 	var warden: Actor = null
 	for bot in raid.bots:
@@ -2890,6 +2913,7 @@ func _zone_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 	var camera := Camera3D.new()
@@ -2924,6 +2948,7 @@ func _melee_shots(out_dir: String, only := "") -> void:
 		var raid := Raid.new()
 		add_child(raid)
 		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", ids[row], "jetpack_mk1", "plate_light"])
+		_armed(raid)
 		for bot in raid.bots:
 			bot.queue_free()
 		var player := raid.player
@@ -2997,6 +3022,7 @@ func _film_swings(path: String, moves: Array, view: String) -> void:
 		var raid := Raid.new()
 		add_child(raid)
 		raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", id, "jetpack_mk1", "plate_light"])
+		_armed(raid)
 		for bot in raid.bots:
 			bot.queue_free()
 		var player := raid.player
@@ -3093,6 +3119,7 @@ func _gait_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.queue_free()
 	var player := raid.player
@@ -3151,6 +3178,7 @@ func _idle_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.queue_free()
 	var player := raid.player
@@ -3207,6 +3235,7 @@ func _shell_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
@@ -3358,6 +3387,7 @@ func _hands_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42, ["blade_scrap", "plate_light"])
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -3468,6 +3498,7 @@ func _power_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.queue_free()
 	var player := raid.player
@@ -3511,6 +3542,7 @@ func _holster_shots(out_dir: String, melee_id := "") -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.queue_free()
 	var player := raid.player
@@ -3644,6 +3676,7 @@ func _ride_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.queue_free()
 	raid.bots.clear()
@@ -3870,6 +3903,7 @@ func _view_shots(out_dir: String, only := "") -> void:
 	if OS.has_environment("VIEW_OPTIC"):
 		kit.append(OS.get_environment("VIEW_OPTIC"))
 	raid.start(Worlds.get_world("ashfront"), 42, kit)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -3992,6 +4026,7 @@ func _inspect_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service"])
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -4083,6 +4118,7 @@ func _carry_shots(out_dir: String) -> void:
 			"blade_scrap", OS.get_environment("VIEW_SIDEARM") if OS.has_environment("VIEW_SIDEARM") else "pistol_service",
 			"plate_light"]
 	raid.start(Worlds.get_world("ashfront"), 42, kit)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -4172,6 +4208,7 @@ func _phone_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	var controller := PlayerController.new()
 	controller.setup(raid.player)
 	raid.add_child(controller)
@@ -4458,6 +4495,7 @@ func _technique_sheet(out_dir: String, id: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_scrap", id, "plate_light"])
+	_armed(raid)
 	for bot in raid.bots:
 		bot.queue_free()
 	var player := raid.player
@@ -4579,6 +4617,7 @@ func _graphics_shots(out_dir: String, args: PackedStringArray) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	raid.war.cooling = 0.0
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
@@ -4656,6 +4695,7 @@ func _vehicle_shots(out_dir: String) -> void:
 	var raid := Raid.new()
 	add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42)
+	_armed(raid)
 	for bot in raid.bots:
 		bot.queue_free()
 	raid.bots.clear()
@@ -4811,3 +4851,10 @@ func _arsenal_shots(out_dir: String) -> void:
 	sheet.save_png(out_dir.path_join("arsenal.png"))
 	print("saved arsenal.png")
 	stage.queue_free()
+
+
+## Players arrive unarmed (`Loadout.arrive_unarmed`); the shots here show
+## the weapon in hand, so it is drawn as a player would.
+func _armed(raid: Raid) -> void:
+	if raid.player != null and raid.player.get_active_weapon() == null:
+		raid.player._draw_weapon(raid.player.weapon_for_key(1))

@@ -81,7 +81,7 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Primary with attachments | Built | Four attachment slots, fitted at the gunsmith bench: one gun on the bench, the wheel turns through guns and each slot's attachments. |
-| Sidearm | Built | Key 2, drawn automatically when the primary runs dry. |
+| Sidearm | Built | Key 2. A dry primary stays in hand and asks for a reload (R, or a fresh pull); the sidearm is one press away. |
 | Melee weapon | Built | Six types, block and parry. |
 | Melee duels: timing, not sides | Built | DESIGN.md "Melee duels". Guards meet any side; parry, timed block and a held guard that drains (`timed_window`, `hold_drain`, `guard_rearm`); interrupts, clashes, the V kick, heavy feints, light-to-heavy strings; the dodge on Alt by rig (`Actor.dodge_style`, `evade_left`); the bind, reel and footwork in the view (`ActionPose.bind`, `reel`, `footwork`). Bots time their guard and kick, feint and dodge (`RING_KICK`, `RING_HEAVY_FEINT`, `RING_DODGE`). Still to come: bands for the melee bench once it is played. |
 | Melee against guns: dash-strike, back strike, timed bullet deflect, armor-piercing blades, silent kills, one/two-handed classes | Built | `MeleeWeapon` (`dash_range`, `back_strike_mult`, `deflect_window`, `guard_rearm`, `armor_pierce`, the hold tags), `Combat.noise`. Still to come: interiors that favour blades, more gun ammo pressure. |
