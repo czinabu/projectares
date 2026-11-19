@@ -26,6 +26,9 @@ static func surface_path(folder: String, map: String) -> String:
 ## mood, if it has one (it keeps the planet's sky and only changes the light).
 static func atmosphere(parent: Node3D, type: PlanetType, war := {}) -> void:
 	Look.atmosphere(parent, type.calm, war, type.storm)
+	# The far land ring (`horizon`) and its peaks are drawn whole: the
+	# player's view reaches past it (`PlayerController._view_far`).
+	parent.set_meta("horizon_far", horizon_far(type))
 	if not Look.enabled:
 		return
 	var env_node := parent.get_node_or_null("Atmosphere") as WorldEnvironment
@@ -46,6 +49,11 @@ static func atmosphere(parent: Node3D, type: PlanetType, war := {}) -> void:
 	if sun != null:
 		sun.directional_shadow_fade_start = 0.85
 		Look.GameSettings.fit_sun(sun, 200.0)
+
+
+## How far a view must reach to see a planet type's far land ring whole.
+static func horizon_far(type: PlanetType) -> float:
+	return float(type.horizon.get("reach", 2600.0)) * 1.05 + float(type.horizon.get("peaks", 120.0))
 
 
 static func sky_material(type: PlanetType) -> ShaderMaterial:
