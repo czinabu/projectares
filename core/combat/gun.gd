@@ -803,6 +803,7 @@ static func heat_target(shooter: Actor, dir: Vector3, cone_deg: float, reach: fl
 ## Bursts at `at`: damage to every actor in `radius`, full at the centre and
 ## a third at the edge, for anyone not sheltered by a wall. Goes through
 ## `Combat.deal` like every hit, so world rules and guards still apply.
+## With no `source` (a shell, `Shelling`) only `space_owner`'s raid is hurt.
 static func splash(source: Actor, at: Vector3, radius: float, amount: float, kind: String,
 		space_owner: Node3D) -> int:
 	var hurt := 0
@@ -813,7 +814,10 @@ static func splash(source: Actor, at: Vector3, radius: float, amount: float, kin
 		var other := node as Actor
 		if other == null or other.is_dead:
 			continue
-		if source != null and is_instance_valid(source) and not Raid.together(source, other):
+		if source != null and is_instance_valid(source):
+			if not Raid.together(source, other):
+				continue
+		elif not Raid.together(space_owner, other):
 			continue
 		var chest := other.global_position + Vector3(0.0, other.body_height() * 0.5, 0.0)
 		var dist := at.distance_to(chest)

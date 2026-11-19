@@ -291,6 +291,9 @@ func _init() -> void:
 	weather_name = "Ash storm"
 	weather_pushes = true
 	weather_field = 276.0
+	# The war's artillery (DESIGN.md "Shelling"): salvos walk across the
+	# field near the fighting, marked in red before they land.
+	shelling = 1.0
 
 
 func faction_title(faction: String) -> String:
