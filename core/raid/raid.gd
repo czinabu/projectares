@@ -1266,6 +1266,7 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		at += Vector3(rng.randf_range(-2.5, 2.5), 0, rng.randf_range(-2.5, 2.5))
 	actor.global_position = _stand(at)
 	Loadout.equip(actor, state.kit)
+	Loadout.arrive_unarmed(actor)
 	actor.weapons_locked = world.safe_zone or not world.weapons_free
 	state.actor = actor
 	state.owner = p_owner if p_owner != "" else "#%d" % actor.get_instance_id()

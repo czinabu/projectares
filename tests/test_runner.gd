@@ -3623,6 +3623,7 @@ func _test_mastery() -> void:
 	var tracker := raid.mastery
 	check(tracker.earned.get("blink", 0.0) >= tracker.xp_per_ability_use, "using an ability trains it")
 	check(tracker.earned.get("frame_light", 0.0) > 0.0, "taking hits trains your frame")
+	p._draw_weapon(p.weapon_for_key(1))
 	Combat.deal(bot, DamageInfo.make(30.0, p, "bullet"))
 	check(is_equal_approx(tracker.earned.get("rifle", 0.0), 30.0 * tracker.xp_per_damage),
 			"hitting with a rifle trains rifle mastery")
@@ -6349,7 +6350,7 @@ func _test_plaza() -> void:
 	a.cmd.switch_weapon = 1
 	await frames(2)
 	a.cmd.switch_weapon = -1
-	check(a.active_weapon_index == 1, "weapons can still be drawn to show them")
+	check(a.active_weapon_index == -1, "weapons stay away in a safe zone: arriving unarmed, nothing can be drawn")
 	var hit := Combat.deal(b, DamageInfo.make(50.0, a, "bullet", b.global_position))
 	check(not hit and b.health.health == b.health.max_health, "Combat refuses every hit in a safe zone")
 
@@ -8114,6 +8115,10 @@ func _test_garage_and_range(base: HomeBase) -> void:
 	await frames(2)
 	check(base.in_range(base.to_local(p.global_position)), "you can walk down the corridor into the range")
 	check(not p.weapons_locked, "past the line your weapons are free")
+	check(p.get_active_weapon() == null, "but stay away until you draw one")
+	p.cmd.switch_weapon = p.weapon_for_key(1)
+	await frames(2)
+	p.cmd.switch_weapon = -1
 	var gun := p.get_active_weapon() as Gun
 	check(gun != null and gun.reserve_ammo >= gun.mag_size * 4, "and never run dry")
 	# Shoot the nearest plate.

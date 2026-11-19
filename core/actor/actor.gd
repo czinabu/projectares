@@ -69,6 +69,10 @@ var sprint_speed := 9.5
 var sprint_out_time := 0.2
 ## Seconds left before a gun can fire after a sprint.
 var sprint_recover := 0.0
+## How long a reload press is kept when the gun in hand cannot take it yet
+## (drawing, healing, staggered), so the key never goes unanswered.
+var reload_buffer := 0.4
+var _reload_ask := 0.0
 var jump_velocity := 7.0
 var gravity := 20.0
 var ground_accel := 60.0
@@ -1175,6 +1179,7 @@ func _fit_body() -> void:
 
 func _simulate_weapons(delta: float) -> void:
 	sprint_recover = maxf(0.0, sprint_recover - delta)
+	_reload_ask = reload_buffer if cmd.reload_pressed else maxf(0.0, _reload_ask - delta)
 	for w in weapons:
 		w.tick(delta)
 	if flight.glide_sidearm_only and flight.is_gliding:
@@ -1182,9 +1187,23 @@ func _simulate_weapons(delta: float) -> void:
 	else:
 		_wing_stow = maxf(0.0, _wing_stow - delta)
 	_tick_store(delta)
+	var drew_on_pull := false
 	var switch_to := cmd.switch_weapon
 	if switch_to == ActorCommand.HOLSTER:
 		switch_to = -1 if active_weapon_index >= 0 else -2
+	# Weapons come out only where they are free (Caleb's call): while locked
+	# (a safe zone, a gate outpost, the base off the range) a weapon in hand
+	# is put away and nothing can be drawn.
+	if weapons_locked:
+		if active_weapon_index >= 0 and _storing == null:
+			_draw_weapon(-1)
+		switch_to = -2
+	elif cmd.primary and cmd.switch_weapon == -1 and active_weapon_index < 0 and _storing == null \
+			and last_drawn >= 0 and last_drawn < weapons.size() and toy_in_hand == "":
+		# Empty hands and a pull of the trigger: the weapon last held comes
+		# out. That pull only draws it.
+		_draw_weapon(last_drawn)
+		drew_on_pull = true
 	if guns_locked and switch_to >= 0 and switch_to < weapons.size() and weapons[switch_to] is Gun:
 		switch_to = -2
 	if cmd.switch_weapon != -1 and switch_to >= -1 and switch_to < weapons.size() \
@@ -1195,17 +1214,15 @@ func _simulate_weapons(delta: float) -> void:
 	_swap_primary_and_heavy()
 	materialize_left = maxf(0.0, materialize_left - delta)
 	var weapon := get_active_weapon()
-	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked \
+	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked and not drew_on_pull \
 			and not visor.is_zoomed() and materialize_left <= 0.0 and _storing == null and not dodging():
-		# Run dry with the trigger held: draw the sidearm instead of reloading.
-		# That pull only draws it; the next shot comes from the sidearm.
+		# A gun run dry stays in hand (the visor prompts a reload,
+		# `Hud.reload_prompt`); only the player switches weapons. A reload press made while the gun
+		# could not take it (drawing, healing, staggered) is kept a moment.
 		var gun := weapon as Gun
-		if gun and not gun.is_sidearm and not gun.is_power() and cmd.primary and gun.is_empty():
-			var sidearm := loaded_sidearm_index()
-			if sidearm >= 0:
-				_draw_weapon(sidearm)
-				notice.emit("Sidearm")
-				return
+		if gun and _reload_ask > 0.0:
+			gun.start_reload()
+			_reload_ask = 0.0
 		if not wings_block(weapon):
 			weapon.handle_input(cmd, delta)
 		else:
@@ -1236,15 +1253,6 @@ func _swap_primary_and_heavy() -> void:
 func blade_index() -> int:
 	for i in weapons.size():
 		if weapons[i] is MeleeWeapon:
-			return i
-	return -1
-
-
-## Index of a sidearm with rounds in its magazine, or -1.
-func loaded_sidearm_index() -> int:
-	for i in weapons.size():
-		var gun := weapons[i] as Gun
-		if gun and gun.is_sidearm and gun.ammo_in_mag > 0:
 			return i
 	return -1
 

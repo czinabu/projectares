@@ -142,8 +142,8 @@ static func _bouts(t: Node) -> void:
 	t.check(ira.get_active_weapon() is Gun, "before the bout a gun can be drawn")
 	await _phase(t, arena, Arena.Phase.COUNTDOWN, 60)
 	await t.frames(2)
-	t.check(ira.guns_locked and ira.get_active_weapon() is MeleeWeapon and jun.get_active_weapon() is MeleeWeapon,
-			"in a blade bout the gun is put away and the blade comes out")
+	t.check(ira.guns_locked and ira.get_active_weapon() is MeleeWeapon and not jun.get_active_weapon() is Gun,
+			"in a blade bout a gun in hand is put away and the blade comes out")
 	t.check(arena.board_for(ira).bout.rules == "blades", "the board names the bout's rules")
 	await _phase(t, arena, Arena.Phase.FIGHT)
 	ira.cmd.switch_weapon = ira.slot_order()[0]

@@ -75,6 +75,7 @@ static func _heavy_weapon(t: Node) -> void:
 	controller.setup(p)
 	raid.add_child(controller)
 	await t.frames(3)
+	p._draw_weapon(p.weapon_for_key(1))
 	Loadout.set_power(p, "power_rail_lance", -1, -1, false)
 	var heavy := Loadout.power_index(p)
 	var before := p.active_weapon_index

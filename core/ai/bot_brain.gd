@@ -445,6 +445,10 @@ func _physics_process(delta: float) -> void:
 			_move_toward(cmd, errand, delta, true)
 	else:
 		_patrol(cmd, delta)
+	# A gun never reloads itself: a bot presses the key like a player.
+	var dry := actor.get_active_weapon() as Gun
+	if dry != null and dry.ammo_in_mag <= 0 and dry.reserve_ammo > 0 and not dry.is_reloading():
+		cmd.reload_pressed = true
 	if uses_kit:
 		_tend_kit(cmd)
 
@@ -466,6 +470,13 @@ func _tend_kit(cmd: ActorCommand) -> void:
 	var held := actor.get_active_weapon()
 	var gun := held as Gun
 	if state == State.ATTACK:
+		# A primary run dry mid-fight: the sidearm, as a player would press 2
+		# (a gun never switches itself).
+		if gun != null and not gun.is_sidearm and not gun.is_power() and gun.ammo_in_mag <= 0:
+			var sidearm := _loaded_sidearm()
+			if sidearm >= 0:
+				cmd.switch_weapon = sidearm
+				return
 		# Dry with nothing to reload from: the other gun if it has rounds,
 		# else the blade.
 		if held == null or (gun != null and gun.is_spent()):
@@ -488,6 +499,15 @@ func _primary_index() -> int:
 	for i in actor.weapons.size():
 		var gun := actor.weapons[i] as Gun
 		if gun != null and not gun.is_sidearm and not gun.is_power():
+			return i
+	return -1
+
+
+## A sidearm with rounds in its magazine, or -1.
+func _loaded_sidearm() -> int:
+	for i in actor.weapons.size():
+		var gun := actor.weapons[i] as Gun
+		if gun != null and gun.is_sidearm and gun.ammo_in_mag > 0:
 			return i
 	return -1
 
