@@ -24,6 +24,13 @@ extends RefCounted
 ## `best_lap`, `note_best`), whose ghost the bank keeps beside it: any lap
 ## counts, a time trial's or a race's.
 ##
+## And it keeps the racer's tuning (DESIGN.md section 9, "Tuning"): a kit
+## per machine ("tunes", `kit_of`, `set_kit`) from `KITS`, each league
+## unlocking more (Caleb's call). A kit is a sidegrade on the machine's race
+## profile (`tuned`): it trades one strength for another and keeps the
+## machine inside its class on the time-trial bench (`race_bench.tscn --
+## --tunes`), so a kit never buys speed, and it counts in league races.
+##
 ## Load with `const RaceLeague := preload("res://core/race/race_league.gd")`.
 
 ## The leagues, lowest first: the rating that reaches each and how good its
@@ -51,6 +58,27 @@ const RECENT := 5
 const HUMBLED_AFTER := 3
 ## The most best laps kept (track and machine pairs).
 const MAX_BESTS := 48
+
+## The most machines a racer keeps a kit for.
+const MAX_TUNES := 16
+## The tuning kits, multipliers on a machine's race profile, and the league
+## that unlocks each. Every one stays within the bench's 3% of its class.
+const KITS := {
+	"stock": {"name": "Stock", "league": 0, "about": "As it left the works", "mult": {}},
+	"short": {"name": "Short gearing", "league": 1, "about": "Snaps out of the corners, a touch less top speed",
+			"mult": {"accel": 1.2, "max_speed": 0.997, "boost_speed": 0.997}},
+	"tall": {"name": "Tall gearing", "league": 1, "about": "A touch more top speed, slow to pick it up",
+			"mult": {"accel": 0.85, "max_speed": 1.003, "boost_speed": 1.003}},
+	"grip": {"name": "Grip tyres", "league": 2, "about": "Turns tighter, scrubs speed off the throttle",
+			"mult": {"turn_rate": 1.06, "full_turn_speed": 1.15, "coast_decel": 1.3, "max_speed": 0.998,
+					"boost_speed": 0.998}},
+	"bite": {"name": "Bite brakes", "league": 3, "about": "Brakes later, slower to get going",
+			"mult": {"brake_decel": 1.3, "accel": 0.92}},
+	"light": {"name": "Light frame", "league": 4, "about": "Quick to get going, soft brakes, twitchy at low speed",
+			"mult": {"accel": 1.08, "brake_decel": 0.85, "full_turn_speed": 0.9}},
+}
+## The order kits are offered in.
+const KIT_ORDER: Array[String] = ["stock", "short", "tall", "grip", "bite", "light"]
 
 ## The named rivals: league, skill above the league's own, manner and the
 ## machine they favour ("wheels" or "hover"). The last of each league is
@@ -132,7 +160,7 @@ const LINES := {
 ## A fresh racer: rookie, no rating, no races.
 static func fresh() -> Dictionary:
 	return {"rating": 0, "league": 0, "top_beaten": false, "races": 0, "wins": 0, "podiums": 0,
-			"rivals": {}, "recent": [], "day": 0, "paid": 0, "bests": {}}
+			"rivals": {}, "recent": [], "day": 0, "paid": 0, "bests": {}, "tunes": {}}
 
 
 ## A saved state, made safe: anything missing or out of range is fixed.
@@ -168,7 +196,71 @@ static func clean(raw: Variant) -> Dictionary:
 			if str(key).length() <= 64 and str(key).contains("|") and time > 0.0 and time < 3600.0 \
 					and out.bests.size() < MAX_BESTS:
 				out.bests[str(key)] = time
+	var tunes: Variant = d.get("tunes", {})
+	if typeof(tunes) == TYPE_DICTIONARY:
+		for machine: Variant in tunes:
+			var kit := str(tunes[machine])
+			if KITS.has(kit) and kit != "stock" and str(machine).length() <= 31 and out.tunes.size() < MAX_TUNES:
+				out.tunes[str(machine)] = kit
 	return out
+
+
+## Whether a racer's league has unlocked `kit`.
+static func kit_unlocked(state: Dictionary, kit: String) -> bool:
+	return KITS.has(kit) and int(state.get("league", 0)) >= int(KITS[kit].league)
+
+
+## The kits a racer may fit, in order.
+static func kits_for(state: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	for kit in KIT_ORDER:
+		if kit_unlocked(state, kit):
+			out.append(kit)
+	return out
+
+
+## The kit on a racer's `machine` ("stock" with none, or one no longer theirs).
+static func kit_of(state: Dictionary, machine: String) -> String:
+	var tunes: Variant = state.get("tunes", {})
+	var kit := str((tunes as Dictionary).get(machine, "stock")) if typeof(tunes) == TYPE_DICTIONARY else "stock"
+	return kit if kit_unlocked(state, kit) else "stock"
+
+
+## Fits `kit` to the racer's `machine`: false (and `state` untouched) when
+## it is not theirs to fit.
+static func set_kit(state: Dictionary, machine: String, kit: String) -> bool:
+	if not kit_unlocked(state, kit) or machine == "" or machine.length() > 31:
+		return false
+	if not state.has("tunes") or typeof(state.tunes) != TYPE_DICTIONARY:
+		state["tunes"] = {}
+	if kit == "stock":
+		state.tunes.erase(machine)
+	elif state.tunes.has(machine) or state.tunes.size() < MAX_TUNES:
+		state.tunes[machine] = kit
+	else:
+		return false
+	return true
+
+
+## The next kit after the one on `machine`, round the racer's unlocked kits.
+static func next_kit(state: Dictionary, machine: String) -> String:
+	var kits := kits_for(state)
+	return kits[(kits.find(kit_of(state, machine)) + 1) % kits.size()]
+
+
+## A race profile with `kit` fitted.
+static func tuned(profile: Dictionary, kit: String) -> Dictionary:
+	var out := profile.duplicate()
+	var mult: Dictionary = KITS.get(kit, KITS.stock).mult
+	for stat: String in mult:
+		if out.has(stat):
+			out[stat] = float(out[stat]) * float(mult[stat])
+	return out
+
+
+## A kit's name ("Stock" for none).
+static func kit_name(kit: String) -> String:
+	return str(KITS.get(kit, KITS.stock).name)
 
 
 ## The key a best lap and its ghost are kept under.

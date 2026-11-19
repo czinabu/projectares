@@ -107,7 +107,7 @@ const RADIO_QUIET := 4.0
 const PIT_RADIUS := 9.0
 ## ...or this long after their finish, wherever they are (seconds).
 const PIT_TIME := 40.0
-## How near a race control desk a person must stand to use it (metres).
+## How near a race control desk or a pit bench a person must stand to use it (metres).
 const DESK_REACH := 3.0
 
 ## What the race icon's ghost pick turns through, in order.
@@ -173,6 +173,9 @@ var send_ghost_ask: Callable
 var ghosts := {}
 ## The local racer's friends' best laps: [{"name", "track", "machine",
 ## "time"}], fastest first (online only; solo has no friends).
+## Kits fitted this session, ahead of the bank catching up (authority):
+## owner key -> machine -> kit.
+var _tunes := {}
 var friend_bests: Array = []
 var _leaders := {}
 
@@ -228,6 +231,8 @@ class Run:
 	var done_at := 0.0
 	## The machine was made for this run at a desk (`sign_up`).
 	var desk_made := false
+	## The tuning kit fitted for this run (`RaceLeague.KITS`; people only).
+	var kit := "stock"
 
 
 ## One track's live race.
@@ -278,6 +283,10 @@ class LeagueBank:
 	func ghost_of(_keys: Array, _track_id: String, _machine: String) -> Dictionary:
 		return {"ok": false}
 
+	## Fits `kit` to the racer's `machine` (`RaceLeague.set_kit`, checked first).
+	func tune(_key: String, _machine: String, _kit: String) -> void:
+		pass
+
 
 ## Solo: the local profile, and its ghosts in `GHOST_PATH`.
 class ProfileLeagueBank:
@@ -292,6 +301,9 @@ class ProfileLeagueBank:
 
 	func record(_key: String, result: Dictionary) -> void:
 		Profile.record_race(result)
+
+	func tune(_key: String, machine: String, kit: String) -> void:
+		Profile.tune_race(machine, kit)
 
 	func best(_key: String, track_id: String, machine: String) -> float:
 		load_kept()
@@ -362,6 +374,9 @@ class StashLeagueBank:
 
 	func record(key: String, result: Dictionary) -> void:
 		service.record_race(key, result)
+
+	func tune(key: String, machine: String, kit: String) -> void:
+		service.tune_race(key, machine, kit)
 
 	func keep_ghost(key: String, track_id: String, machine: String, ghost: RaceGhost) -> void:
 		service.keep_ghost(key, track_id, machine, ghost.lap_time, ghost.to_packed())
@@ -475,6 +490,8 @@ func start_run(actor: Actor, vehicle: Node3D) -> void:
 		run.best_lap = old.best_lap
 		run.best_splits = old.best_splits
 	runs[actor] = run
+	run.kit = kit_for(run.key, run.machine)
+	fit(vehicle, run.kit)
 	var heat: Heat = heats.get(run.track.id)
 	if heat != null and heat.phase == "forming" and heat.runs.size() < GRID_SIZE:
 		_join(run, heat)
@@ -669,6 +686,8 @@ func retire(actor: Actor) -> void:
 		heat_changed.emit()
 	if is_instance_valid(run.vehicle):
 		run.vehicle.set("held", false)
+		if run.kit != "stock":
+			fit(run.vehicle, "stock")
 	if is_instance_valid(actor):
 		run_changed.emit(actor)
 
@@ -682,6 +701,8 @@ func request(actor: Actor, action: String) -> Dictionary:
 			send_request.call(action)
 		return {"ok": true}
 	var run: Run = runs.get(actor)
+	if action.begins_with("tune:"):
+		return tune(actor, action.substr(5))
 	if action.begins_with("signup:"):
 		var parts := action.split(":")
 		if parts.size() != 3:
@@ -852,6 +873,80 @@ func join_race(actor: Actor) -> Dictionary:
 		heats[run.track.id] = heat
 	_join(run, heat)
 	return {"ok": true}
+
+
+# --- Tuning ---------------------------------------------------------------------
+
+## Sets `vehicle` to its race profile with `kit` fitted (`RaceLeague.tuned`).
+## Every machine reads as stock unless a person's run fits a kit.
+static func fit(vehicle: Node3D, kit: String) -> void:
+	if not is_instance_valid(vehicle):
+		return
+	vehicle.call("apply_race_profile")
+	if kit == "stock" or not RaceLeague.KITS.has(kit):
+		return
+	var profile := RaceLeague.tuned(vehicle.get("race"), kit)
+	for stat: String in profile:
+		if stat in vehicle:
+			vehicle.set(stat, profile[stat])
+
+
+## A racer's league state with this session's fitted kits over the bank's.
+func tune_state(key: String) -> Dictionary:
+	var state := league_bank.state(key) if league_bank != null else RaceLeague.fresh()
+	var fitted: Dictionary = _tunes.get(key, {})
+	for machine: String in fitted:
+		RaceLeague.set_kit(state, machine, fitted[machine])
+	return state
+
+
+## The kit on a racer's machine (no AI or nameless racer has one).
+func kit_for(key: String, machine: String) -> String:
+	if key == "" or league_bank == null:
+		return "stock"
+	return RaceLeague.kit_of(tune_state(key), machine)
+
+
+## The pit bench for `machine` that `actor` stands at, or null.
+func bench_near(actor: Actor, machine: String) -> Node3D:
+	if map == null:
+		return null
+	for node: Node in _map_nodes("race_tune"):
+		var bench := node as Node3D
+		if bench != null and str(bench.get_meta("machine", "")) == machine \
+				and Vector2(bench.global_position.x - actor.global_position.x,
+						bench.global_position.z - actor.global_position.z).length() <= DESK_REACH:
+			return bench
+	return null
+
+
+## The pit bench: fits the next kit the racer's league has unlocked to
+## their `machine` (round to stock), kept on their account. A machine on
+## the grid takes it at once; one racing keeps its kit to the flag.
+func tune(actor: Actor, machine: String) -> Dictionary:
+	var state := state_for(actor)
+	if state == null or league_bank == null:
+		return {"ok": false, "error": "No tuning here"}
+	if bench_near(actor, machine) == null:
+		return {"ok": false, "error": "Tune a machine at its bench in the pits"}
+	var key: String = state.owner
+	var league := tune_state(key)
+	var kits := RaceLeague.kits_for(league)
+	if kits.size() < 2:
+		return {"ok": false, "error": "Tuning kits open from the %s league" % RaceLeague.league_name(1)}
+	var kit := RaceLeague.next_kit(league, machine)
+	if not _tunes.has(key):
+		_tunes[key] = {}
+	_tunes[key][machine] = kit
+	league_bank.tune(key, machine, kit)
+	var run: Run = runs.get(actor)
+	if run != null and run.machine == machine and run.phase in ["grid", "waiting"]:
+		run.kit = kit
+		fit(run.vehicle, kit)
+		run_changed.emit(actor)
+	actor.notice.emit("%s · %s · %s" % [ItemDB.item_name(machine), RaceLeague.kit_name(kit),
+			str(RaceLeague.KITS[kit].about)])
+	return {"ok": true, "kit": kit}
 
 
 ## The race control desk for a track and machine `actor` stands at, or null.
@@ -1527,6 +1622,7 @@ func run_view(actor: Actor) -> Dictionary:
 	return {
 		"phase": run.phase,
 		"machine": run.machine,
+		"kit": run.kit,
 		"track": run.track.id,
 		"lap": run.lap,
 		"laps": run.track.laps,
@@ -1671,6 +1767,11 @@ static func format_delta(delta: float) -> String:
 func set_remote_run(view: Dictionary) -> void:
 	var was := remote_run
 	remote_run = view.duplicate()
+	# The machine under you runs with the kit the server fitted, so it
+	# predicts the same.
+	if player != null and is_instance_valid(player) and player.vehicle != null \
+			and str(view.get("kit", "stock")) != str(was.get("kit", "stock")):
+		fit(player.vehicle, str(view.get("kit", "stock")))
 	if not remote_run.is_empty():
 		remote_run["made"] = Time.get_ticks_msec()
 	if player != null and is_instance_valid(player):

@@ -548,6 +548,10 @@ func _test_racing_online() -> void:
 	await _wait_until(func() -> bool: return not notices.is_empty(), 240)
 	check(notices.has("Sign up at race control's desk") and me.vehicle == null,
 			"a desk sign-up is the server's to decide (%s)" % str(notices))
+	notices.clear()
+	race.ask("tune:bike_raider")
+	await _wait_until(func() -> bool: return not notices.is_empty(), 240)
+	check(notices.has("Tune a machine at its bench in the pits"), "and so is tuning at a pit bench (%s)" % str(notices))
 	await _leave(rhea)
 	OS.kill(pid)
 

@@ -25,6 +25,11 @@ class MemoryBank:
 	## "key|track|machine" -> RaceGhost.
 	var kept := {}
 
+	func tune(key: String, machine: String, kit: String) -> void:
+		var s := state(key)
+		if RaceLeague.set_kit(s, machine, kit):
+			states[key] = s
+
 	func keep_ghost(key: String, track_id: String, machine: String, ghost: RaceGhost) -> void:
 		var s := state(key)
 		if RaceLeague.note_best(s, track_id, machine, ghost.lap_time):
@@ -53,6 +58,8 @@ static func run(t: Node) -> void:
 	await _test_skyhook(t)
 	await _test_live_race(t)
 	await _test_desks_and_pits(t)
+	_test_tuning_rules(t)
+	await _test_tuning(t)
 	_test_crowd(t)
 	_test_ghost_data(t)
 
@@ -552,6 +559,111 @@ static func _test_desks_and_pits(t: Node) -> void:
 					"then, out on the track, you are set down on pit row anyway")
 		else:
 			t.check(false, "getting on a bay machine starts a time trial")
+	race.queue_free()
+	await t.frames(2)
+
+
+## Tuning kits (`RaceLeague.KITS`): each league opens more, a kit is a
+## multiplier on the race profile, and a saved choice is made safe.
+static func _test_tuning_rules(t: Node) -> void:
+	var rookie := RaceLeague.fresh()
+	t.check(RaceLeague.kits_for(rookie) == (["stock"] as Array[String]), "a rookie has only the stock setup")
+	t.check(not RaceLeague.set_kit(rookie, "bike_raider", "short") and RaceLeague.kit_of(rookie, "bike_raider") == "stock",
+			"and cannot fit a kit their league has not opened")
+	var club := RaceLeague.fresh()
+	club.league = 1
+	t.check(RaceLeague.kits_for(club) == (["stock", "short", "tall"] as Array[String]), "the Club league opens the gearing kits")
+	t.check(RaceLeague.set_kit(club, "bike_raider", "tall") and RaceLeague.kit_of(club, "bike_raider") == "tall"
+			and RaceLeague.kit_of(club, "bike_scrapper") == "stock", "a kit is fitted per machine")
+	t.check(RaceLeague.next_kit(club, "bike_raider") == "stock" and RaceLeague.next_kit(club, "bike_scrapper") == "short",
+			"the bench turns round the opened kits")
+	t.check(not RaceLeague.set_kit(club, "bike_raider", "grip"), "a higher league's kit stays shut")
+	var kept := RaceLeague.clean({"league": 1, "tunes": {"bike_raider": "tall", "bike_scrapper": "nitro", "x": "stock"}})
+	t.check(kept.tunes == {"bike_raider": "tall"}, "a saved setup keeps only real kits (%s)" % str(kept.tunes))
+	var demoted := RaceLeague.clean({"league": 0, "tunes": {"bike_raider": "grip"}})
+	t.check(RaceLeague.kit_of(demoted, "bike_raider") == "stock", "a kit the league has not opened runs as stock")
+	var tall := RaceLeague.tuned(ItemDB.RACE_RAIDER, "tall")
+	t.check(is_equal_approx(float(tall.max_speed), ItemDB.RACE_RAIDER.max_speed * 1.003)
+			and is_equal_approx(float(tall.accel), ItemDB.RACE_RAIDER.accel * 0.85)
+			and is_equal_approx(float(tall.turn_rate), ItemDB.RACE_RAIDER.turn_rate), "a kit trades one stat for another")
+	var sidegrades := true
+	for kit: String in RaceLeague.KITS:
+		var mult: Dictionary = RaceLeague.KITS[kit].mult
+		if kit == "stock":
+			continue
+		sidegrades = sidegrades and mult.values().any(func(m: float) -> bool: return m > 1.0) \
+				and mult.values().any(func(m: float) -> bool: return m < 1.0)
+	t.check(sidegrades, "every kit gives something up for what it gains")
+	t.check(RaceView.bench_text("bike_raider", club).contains("▶ Tall gearing")
+			and RaceView.bench_text("bike_raider", club).contains("Grip tyres · Pro"),
+			"a pit bench shows the fitted kit and where the rest open")
+	t.check(RaceView.bench_prompt("bike_raider", rookie).contains("Club")
+			and RaceView.bench_prompt("bike_scrapper", club).begins_with("E  Fit Short gearing"), "and what pressing E fits")
+	# On the account, only the server's own call fits one.
+	var service := StashService.new()
+	service.persist = false
+	var account: String = service.sign_in("Tuner", StashService.new_secret()).account_id
+	t.check(not service.tune_race(account, "bike_raider", "tall").ok, "an account fits no kit before its league opens it")
+	service.load_account(account).racing.league = 1
+	t.check(service.tune_race(account, "bike_raider", "tall").ok
+			and RaceLeague.kit_of(RaceLeague.clean(service.snapshot(account).racing), "bike_raider") == "tall",
+			"then keeps the kit fitted, in its snapshot")
+
+
+## The pit bench in a race: a kit fitted there goes on the racer's machine
+## for their runs (and a machine on the grid at once), and off it again
+## when the run ends, so the bays stay stock.
+static func _test_tuning(t: Node) -> void:
+	var world := Worlds.get_world("meridian")
+	var race: Race = world.new_raid()
+	t.add_child(race)
+	race.start(world, 13, [Loadout.BARE] as Array[String])
+	var bank := MemoryBank.new()
+	race.league_bank = bank
+	await t.frames(5)
+	var me := race.player
+	var key: String = race.state_for(me).owner
+	var bench: Node3D = null
+	for node: Node in race.map.find_children("*", "", true, false):
+		if node.is_in_group("race_tune") and node.get_meta("machine") == "bike_raider" \
+				and node.get_meta("track") == race.track.id:
+			bench = node
+	t.check(bench != null, "the pits have a tuning bench for each machine")
+	if bench == null:
+		race.queue_free()
+		return
+	t.check(not race.request(me, "tune:bike_raider").get("ok", false), "a bench is used standing at it")
+	me.global_position = bench.global_position + Vector3(0.5, 0.2, 0.0)
+	await t.frames(2)
+	var refused := race.request(me, "tune:bike_raider")
+	t.check(not refused.get("ok", false) and str(refused.get("error", "")).contains("Club"), "a rookie is told when kits open")
+	var club := RaceLeague.fresh()
+	club.league = 2
+	bank.states[key] = club
+	t.check(race.request(me, "tune:bike_raider").get("kit", "") == "short"
+			and race.request(me, "tune:bike_raider").get("kit", "") == "tall", "each use fits the next kit")
+	t.check(RaceLeague.kit_of(bank.state(key), "bike_raider") == "tall", "kept with the racer's league")
+	var bay: Node3D = null
+	for v: Node3D in race.vehicles:
+		if v.get("item_id") == "bike_raider" and v.get("rider") == null and race.track_near(v.global_position) == race.track:
+			bay = v
+			break
+	if bay == null:
+		t.check(false, "a Raider waits in the bays")
+		race.queue_free()
+		return
+	me.global_position = bay.global_position + Vector3(2.0, 0.2, 0.0)
+	await t.frames(2)
+	bay.call("mount", me)
+	await t.frames(2)
+	t.check(race.view_run().get("kit") == "tall" and is_equal_approx(float(bay.get("max_speed")),
+			ItemDB.RACE_RAIDER.max_speed * 1.003) and is_equal_approx(float(bay.get("accel")), ItemDB.RACE_RAIDER.accel * 0.85),
+			"getting on, the machine runs with the racer's kit")
+	bay.call("dismount")
+	await t.frames(2)
+	t.check(is_equal_approx(float(bay.get("max_speed")), ItemDB.RACE_RAIDER.max_speed)
+			and is_equal_approx(float(bay.get("accel")), ItemDB.RACE_RAIDER.accel), "getting off, it is stock again")
+	t.check(race.kit_for("", "bike_raider") == "stock", "AI racers and the nameless run stock")
 	race.queue_free()
 	await t.frames(2)
 

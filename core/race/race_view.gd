@@ -56,6 +56,10 @@ var _ghost_machine := ""
 ## The track being watched from a watch desk, or "".
 var watching := ""
 var _desks: Array[Node3D] = []
+var _benches: Array[Node3D] = []
+## Online: the account's racing state (`RaceLeague`), for the pit benches'
+## words; `Main` sets it. Solo the race's own is read.
+var league_source := Callable()
 var _desk_in := 0.0
 var _hud: CanvasLayer
 var _prompt: Label
@@ -92,6 +96,8 @@ func _ready() -> void:
 			_boards.append(node)
 		elif node.is_in_group("race_desk") and node is Node3D:
 			_desks.append(node)
+		elif node.is_in_group("race_tune") and node is Node3D:
+			_benches.append(node)
 	_lights.sort_custom(func(a: MeshInstance3D, b: MeshInstance3D) -> bool:
 		return int(a.get_meta("index", 0)) < int(b.get_meta("index", 0)))
 	for light in _lights:
@@ -193,6 +199,51 @@ func desk_here() -> Node3D:
 	return null
 
 
+## The pit bench the local player stands at, or null.
+func bench_here() -> Node3D:
+	var me := race.player
+	if me == null or not is_instance_valid(me) or me.is_dead:
+		return null
+	for bench in _benches:
+		if Vector2(bench.global_position.x - me.global_position.x,
+				bench.global_position.z - me.global_position.z).length() <= Race.DESK_REACH:
+			return bench
+	return null
+
+
+## The local racer's league state: the race's own solo, the account's online.
+func my_league() -> Dictionary:
+	if race.mode != Raid.Mode.CLIENT and race.player != null and is_instance_valid(race.player):
+		var state := race.state_for(race.player)
+		if state != null:
+			return race.tune_state(state.owner)
+	if league_source.is_valid():
+		return RaceLeague.clean(league_source.call())
+	return RaceLeague.fresh()
+
+
+## A pit bench's words: the machine, its kits (the fitted one marked) and
+## the league each locked one opens in.
+static func bench_text(machine: String, league: Dictionary) -> String:
+	var text := "%s TUNING" % ("SCRAPPER" if machine == "bike_scrapper" else _machine_tag(machine))
+	var fitted := RaceLeague.kit_of(league, machine)
+	for kit in RaceLeague.KIT_ORDER:
+		if RaceLeague.kit_unlocked(league, kit):
+			text += "\n%s %s" % ["▶" if kit == fitted else "  ", RaceLeague.kit_name(kit)]
+		else:
+			text += "\n   %s · %s" % [RaceLeague.kit_name(kit),
+					RaceLeague.league_name(int(RaceLeague.KITS[kit].league))]
+	return text
+
+
+## The prompt at a pit bench.
+static func bench_prompt(machine: String, league: Dictionary) -> String:
+	if RaceLeague.kits_for(league).size() < 2:
+		return "Tuning kits open in the %s league" % RaceLeague.league_name(1)
+	var next := RaceLeague.next_kit(league, machine)
+	return "E  Fit %s: %s" % [RaceLeague.kit_name(next), str(RaceLeague.KITS[next].about).to_lower()]
+
+
 ## What a desk says now: its own words and the next race there.
 static func desk_text(title: String, heat: Dictionary) -> String:
 	match str(heat.get("phase", "")):
@@ -229,12 +280,26 @@ func _update_desks(delta: float) -> void:
 			var heat := race.heat_view(str(desk.get_meta("track", "")))
 			label.text = desk_text(str(desk.get_meta("title")), heat) if str(desk.get_meta("machine", "")) != "" \
 					else str(desk.get_meta("title"))
+		var league := my_league()
+		for bench in _benches:
+			var label := bench.get_node_or_null("Status") as Label3D
+			if label != null:
+				label.text = bench_text(str(bench.get_meta("machine", "")), league)
 	var desk := desk_here() if watching == "" else null
-	_prompt.text = desk_prompt(str(desk.get_meta("machine", "")), race.heat_view(str(desk.get_meta("track", "")))) \
-			if desk != null else ""
-	if desk != null and Input.is_action_just_pressed("interact") and not get_viewport().gui_get_focus_owner() \
-			and Engine.get_process_frames() != _stopped_frame:
-		use_desk(desk)
+	var bench := bench_here() if watching == "" and desk == null else null
+	if desk != null:
+		_prompt.text = desk_prompt(str(desk.get_meta("machine", "")), race.heat_view(str(desk.get_meta("track", ""))))
+	elif bench != null:
+		_prompt.text = bench_prompt(str(bench.get_meta("machine", "")), my_league())
+	else:
+		_prompt.text = ""
+	if (desk != null or bench != null) and Input.is_action_just_pressed("interact") \
+			and not get_viewport().gui_get_focus_owner() and Engine.get_process_frames() != _stopped_frame:
+		if desk != null:
+			use_desk(desk)
+		else:
+			race.ask("tune:%s" % str(bench.get_meta("machine", "")))
+			_desk_in = 0.3
 
 
 ## Uses a desk: signs up for its race, or watches its track.

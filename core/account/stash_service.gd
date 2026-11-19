@@ -945,6 +945,19 @@ func record_race(account_id: String, result: Dictionary) -> Dictionary:
 	return {"ok": true, "points": applied.points, "scrip": applied.scrip, "promoted": applied.promoted}
 
 
+## Fits a tuning kit to a machine on the account (`RaceLeague.set_kit`:
+## only a kit the account's league has unlocked). Only a `Race` on the
+## authority sends one, from its pit bench.
+func tune_race(account_id: String, machine: String, kit: String) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if not RaceLeague.set_kit(account.racing, machine, kit):
+		return _fail("That kit is not yours to fit.")
+	_save(account)
+	return {"ok": true}
+
+
 ## Keeps a lap's ghost (`RaceGhost.to_packed`) on the account when it is
 ## its best on that track and machine (`RaceLeague.note_best`): the best
 ## time goes in the account's racing state, the ghost beside the account in

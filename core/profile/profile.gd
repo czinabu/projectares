@@ -188,6 +188,14 @@ func record_race(result: Dictionary) -> Dictionary:
 
 ## Notes a lap on a track and machine (`RaceLeague.note_best`): true when it
 ## is a new best, which is saved. Its ghost is kept by the race's bank.
+## Solo: fits a tuning kit to a machine (`RaceLeague.set_kit`).
+func tune_race(machine: String, kit: String) -> bool:
+	if not RaceLeague.set_kit(racing, machine, kit):
+		return false
+	save()
+	return true
+
+
 func keep_race_best(track_id: String, machine: String, lap: float) -> bool:
 	if not RaceLeague.note_best(racing, track_id, machine, lap):
 		return false

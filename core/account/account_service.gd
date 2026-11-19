@@ -113,6 +113,7 @@ const CALLS := {
 	"record_arena": [TYPE_STRING, TYPE_BOOL],
 	"record_race": [TYPE_STRING, TYPE_DICTIONARY],
 	"keep_ghost": [TYPE_STRING, TYPE_STRING, TYPE_STRING, TYPE_FLOAT, TYPE_STRING],
+	"tune_race": [TYPE_STRING, TYPE_STRING, TYPE_STRING],
 	"race_ghost": [TYPE_ARRAY, TYPE_STRING, TYPE_STRING],
 	"race_bests": [TYPE_ARRAY],
 	"market": [TYPE_STRING, TYPE_STRING, TYPE_STRING, TYPE_INT, TYPE_INT],
@@ -124,7 +125,7 @@ const CALLS := {
 }
 const HELD: Array[String] = ["equip", "unequip", "pick_mastery", "buy", "sell", "buy_upgrade", "place_room", "contract",
 		"craft", "insure", "deploy", "undo_deploy", "bank", "settle", "cancel_deploy", "release_deploys", "change_scrip",
-		"record_arena", "record_race", "keep_ghost"]
+		"record_arena", "record_race", "keep_ghost", "tune_race"]
 
 ## The accounts. Set its `save_dir` or `persist` before `start`.
 var stash := StashService.new()
@@ -459,6 +460,8 @@ func _run(link: Link, id: String, what: String, args: Array) -> Variant:
 			return stash.record_race(args[0], args[1])
 		"keep_ghost":
 			return stash.keep_ghost(args[0], args[1], args[2], args[3], args[4])
+		"tune_race":
+			return stash.tune_race(args[0], args[1], args[2])
 		"race_ghost":
 			return stash.race_ghost(args[0], args[1], args[2])
 		"race_bests":
