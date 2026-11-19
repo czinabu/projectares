@@ -102,6 +102,10 @@ func _ready() -> void:
 	_streams["far_fire"] = _far_fire(9)
 	# An army's push on a strongpoint: a long low war horn, heard far off.
 	_streams["war_horn"] = _tones([98.0, 147.0, 196.0], 1.8, 1.4, 0.6)
+	# The war's artillery (`ShellView`): a falling whistle as a shell comes
+	# in, and its blast, a deep crack with a long roll after it.
+	_streams["shell_whistle"] = _sweep(2300.0, 700.0, 1.1, 0.3)
+	_streams["shell_blast"] = _noise_burst(1.6, 3.2, 0.95, 38.0)
 	# The race radio: a short burst of static as a rival keys up.
 	_streams["radio"] = _noise_burst(0.14, 26.0, 0.7, 1300.0)
 	for sound: String in RECORDED:

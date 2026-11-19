@@ -10,6 +10,7 @@ extends RefCounted
 ## runner calls `run`).
 
 const StashService := preload("res://core/account/stash_service.gd")
+const Economy := preload("res://core/economy/economy.gd")
 
 ## A recipe whose blueprint and parts can all be found in a cache.
 const CRAFT := "shotgun_breacher"
@@ -118,7 +119,10 @@ static func _loop(t: Node, world_id: String) -> void:
 		else:
 			t.check(CRAFT not in after.stash and after.loadout.get("primary", "") != CRAFT,
 					"%s is full loot: the crafted gun is lost and the slot falls back" % tag)
-			t.check(_bag_holding(raid, CRAFT), "%s: the gun lies in the dead player's bag" % tag)
+			if world.death_drops_scrip:
+				t.check(_pile_paying(raid, CRAFT), "%s: the gun is sold into the dead player's scrip pile" % tag)
+			else:
+				t.check(_bag_holding(raid, CRAFT), "%s: the gun lies in the dead player's bag" % tag)
 	raid.queue_free()
 	await t.frames(2)
 
@@ -141,6 +145,16 @@ static func _deploy(t: Node, service: StashService, id: String, raid: Raid) -> A
 static func _bag_holding(raid: Raid, item: String) -> bool:
 	for node in raid.get_children():
 		if node is LootContainer and (node as LootContainer).is_bag and item in (node as LootContainer).items:
+			return true
+	return false
+
+
+## A scrip pile (DESIGN.md "Scrip piles") worth at least what a trader pays
+## for `item`, with the item itself not in it.
+static func _pile_paying(raid: Raid, item: String) -> bool:
+	for node: Variant in raid.piles:
+		if is_instance_valid(node) and item not in (node as LootContainer).items \
+				and (node as LootContainer).scrip >= Economy.sell_price(item):
 			return true
 	return false
 
