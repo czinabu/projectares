@@ -580,13 +580,25 @@ the rest of the game's own work, are not under those terms (see License).
 
 ## Add a world
 
-1. Copy `worlds/frostline` (the smaller example) to `worlds/<your_world>`.
-2. In `world.gd`, change the id, name, loot tables and rules.
-3. Items that only exist in your world go in `register_items()`. Prefix their
+One command starts it:
+
+```
+godot --headless --path . res://tools/new_world/new_world.tscn -- --id ember --name "Ember Reach" --planet basalt
+```
+
+It writes `worlds/<id>/world.gd` (planet, rules, an enemy roster as data,
+loot tables, zones, contracts), `worlds/<id>/map.gd` (open ground with every
+marker the map contract asks for), `tests/<id>_tests.gd`,
+`tests/visual/<id>.gd` (`--<id>-only`) and `docs/systems/<id>.md`, adds that
+file to CLAUDE.md's index, and prints what is left to do by hand. It never
+overwrites anything; `--dry` lists what it would write. Then:
+
+1. In `world.gd`, change the description, roster, loot tables and rules.
+2. Items that only exist in your world go in `register_items()`. Prefix their
    ids with the world id. Once stashed they work in every world.
-4. Build a map that provides the markers listed at the top of
-   `core/world/world_def.gd`. Give it a mood with `Look.atmosphere` and
-   surfaces from `Look.surface`.
+3. Replace the map's greybox with the world's own places, keeping the
+   markers listed at the top of `core/world/world_def.gd`. Give it a mood
+   with its planet type and surfaces from `Look.surface`.
 
 The watch's portal icon finds it automatically and offers it, and the
 "Every world plugs in" tests run a raid in it. No core code changes.

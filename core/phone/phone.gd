@@ -61,6 +61,9 @@ signal update_restart_requested
 ## The Report app asks `Main` to send a bug report of what the player
 ## wrote (`BugReport`); `Main` answers with `set_report_status`.
 signal report_requested(text: String)
+## DEV MODE: the Console app asks `Main` to run a typed command
+## (`DevConsole`); `Main` answers with `add_console_lines`.
+signal console_command(line: String)
 
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
@@ -73,14 +76,15 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 
-const APPS := ["contacts", "messages", "invites", "news", "racing", "servers", "mirror", "controls", "settings", "report"]
+const APPS := ["contacts", "messages", "invites", "news", "racing", "servers", "mirror", "controls", "settings", "report",
+		"console"]  # DEV MODE: "console"
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
 		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror", "controls": "Controls",
-		"settings": "Settings", "report": "Report a bug"}
+		"settings": "Settings", "report": "Report a bug", "console": "Dev console"}
 ## The names under the home screen's icons.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
 		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror", "controls": "Keys",
-		"settings": "Settings", "report": "Report"}
+		"settings": "Settings", "report": "Report", "console": "Console"}
 ## The screen's colours: the dark glass, the panels on it, and the dimmer
 ## ink for secondary text. The device's body is gunmetal.
 const SCREEN_BG := Color(0.035, 0.04, 0.047)
@@ -340,6 +344,16 @@ var _address_edit: LineEdit
 var _address_draft := ""
 ## The Report app: what is being written, and how the last report went.
 var _report_draft := ""
+## DEV MODE: the Console app's draft, what it has printed and the commands
+## typed, newest last.
+var _console_draft := ""
+var console_lines: Array[String] = []
+var console_history: Array[String] = []
+var _console_back := 0
+const CONSOLE_KEPT := 60
+## DEV MODE: one tap runs these on the Console app.
+const CONSOLE_QUICK := ["help", "where", "bots 5", "clear", "war 1", "war 0", "storm here", "storm stop",
+		"event warlord", "event end", "shells", "skip all", "heal"]
 var report_status := ""
 var report_sending := false
 var _link_focus := ""
@@ -1409,6 +1423,7 @@ func refresh(redraw := true) -> void:
 			"news": badge = unseen_news()
 			"servers": badge = 1 if update_waiting() else 0
 		_icons[app_name].badge = badge
+	_icons["console"].visible = DevMode.active()  # DEV MODE
 	_update_readouts()
 	if not is_open or not redraw:
 		return
@@ -1437,6 +1452,7 @@ func refresh(redraw := true) -> void:
 		"controls": _draw_controls()
 		"settings": _draw_settings()
 		"report": _draw_report()
+		"console": _draw_console()  # DEV MODE
 	fit_to_glass(_body)
 	if had_focus and _compose != null:
 		_compose.grab_focus()
@@ -1854,6 +1870,93 @@ func send_report() -> void:
 	if app == "report":
 		refresh()
 	report_requested.emit(_report_draft.strip_edges())
+
+
+## DEV MODE: the Console app: what it printed, a line to type a command
+## (Enter runs it, up and down step through the ones typed before) and a
+## row of the common ones to tap.
+func _draw_console() -> void:
+	if not DevMode.active():
+		_body.add_child(_label("Turn dev mode on (Settings, Dev tab) to use the console.", 15, DIM_INK))
+		return
+	var edit := LineEdit.new()
+	edit.name = "ConsoleEdit"
+	edit.max_length = 200
+	edit.placeholder_text = "Command (help)"
+	edit.text = _console_draft
+	edit.text_changed.connect(func(text: String) -> void: _console_draft = text)
+	edit.text_submitted.connect(func(text: String) -> void: run_console(text))
+	edit.gui_input.connect(_console_keys.bind(edit))
+	_body.add_child(edit)
+	var quick := GridContainer.new()
+	quick.columns = 3
+	quick.add_theme_constant_override("h_separation", 6)
+	quick.add_theme_constant_override("v_separation", 6)
+	for command: String in CONSOLE_QUICK:
+		var button := _button(command, run_console.bind(command))
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		quick.add_child(button)
+	_body.add_child(quick)
+	# What it printed, the newest command and its answer first.
+	var log := _card()
+	var lines: VBoxContainer = log.get_child(0)
+	var blocks: Array = []
+	for line: String in console_lines:
+		if line.begins_with("> ") or blocks.is_empty():
+			blocks.append([])
+		blocks[blocks.size() - 1].append(line)
+	blocks.reverse()
+	if blocks.is_empty():
+		blocks = [["Solo worlds only. Type help, or tap a command above."]]
+	for block: Array in blocks.slice(0, 6):
+		for line: String in block:
+			var label := _label(line, 13, UiTheme.INK if line.begins_with("> ") else DIM_INK)
+			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			lines.add_child(label)
+	_body.add_child(log)
+	if _console_draft != "" or console_history.size() > 0:
+		edit.grab_focus.call_deferred()
+
+
+## DEV MODE: up and down step back through the commands typed before.
+func _console_keys(event: InputEvent, edit: LineEdit) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or console_history.is_empty():
+		return
+	if key.keycode == KEY_UP:
+		_console_back = mini(_console_back + 1, console_history.size())
+	elif key.keycode == KEY_DOWN:
+		_console_back = maxi(_console_back - 1, 0)
+	else:
+		return
+	edit.accept_event()
+	edit.text = "" if _console_back == 0 else console_history[console_history.size() - _console_back]
+	edit.caret_column = edit.text.length()
+	_console_draft = edit.text
+
+
+## DEV MODE: runs a command (Enter or a tap) through `Main`.
+func run_console(line: String) -> void:
+	line = line.strip_edges()
+	if line == "":
+		return
+	_console_draft = ""
+	_console_back = 0
+	if console_history.is_empty() or console_history[console_history.size() - 1] != line:
+		console_history.append(line)
+	add_console_lines(["> " + line])
+	console_command.emit(line)
+
+
+## DEV MODE: what a command printed (`Main`, from `DevConsole.run`).
+func add_console_lines(lines: Array) -> void:
+	for line: Variant in lines:
+		console_lines.append(str(line))
+	while console_lines.size() > CONSOLE_KEPT:
+		console_lines.pop_front()
+	if app == "console":
+		# Deferred: the button or line that ran it goes with the redraw.
+		refresh.call_deferred()
 
 
 ## How the last report went (`Main`, from `BugReport.finished`). A sent one
@@ -2295,6 +2398,8 @@ func _draw_dev_mode() -> void:
 		return
 	DevMode.ensure_loaded()
 	_body.add_child(_section("TESTING ONLY, NEVER IN A RELEASE"))
+	_body.add_child(_label("F9 records 30 s of performance, F10 saves a bug snapshot (screenshot, place, logs). "
+			+ "Both go to %s." % ProjectSettings.globalize_path("user://dev"), 13, DIM_INK))
 	var main := CheckButton.new()
 	main.text = "Dev mode: everything unlocked"
 	main.button_pressed = DevMode.enabled
@@ -2523,6 +2628,12 @@ class AppIcon extends Control:
 					for col in 4:
 						draw_rect(Rect2(c + Vector2(-21 + col * 11, -14 + row * 11) * k, Vector2(8, 8) * k), ink, false, 2.0 * k)
 				draw_rect(Rect2(c + Vector2(-13, 9) * k, Vector2(26, 7) * k), ink, false, 2.0 * k)
+			"console":
+				# DEV MODE: a terminal's prompt.
+				draw_rect(Rect2(c + Vector2(-21, -16) * k, Vector2(42, 32) * k), ink, false, w)
+				draw_polyline(PackedVector2Array([c + Vector2(-13, -6) * k, c + Vector2(-5, 0) * k,
+						c + Vector2(-13, 6) * k]), ink, w, true)
+				draw_line(c + Vector2(-1, 7) * k, c + Vector2(12, 7) * k, ink, w, true)
 			"report":
 				# A bug: a round body, a head and three legs a side.
 				draw_arc(c + Vector2(0, 4) * k, 11.0 * k, 0.0, TAU, 20, ink, w, true)
