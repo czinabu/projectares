@@ -244,6 +244,19 @@ var helmet_swing_ahead := 0.4
 ## reach bows out on its way up.
 var helmet_hand_rest := Vector3(0.21, 1.06, -0.06)
 var helmet_reach_ahead := 0.18
+## The lamp on a worn helmet (`Actor.lamp_lit`, its own key): a small barrel
+## on the right of the brow, `lamp_at` from the helmet's middle (its frame,
+## front toward -Z), on the one model, so it rides to the hip with it. Lit,
+## its lens glows and a beam shines from it along the aim: `lamp_range`
+## metres, `lamp_angle` degrees out from its middle, fading out for viewers
+## past `lamp_fade` metres. One model in every view; first person leaves the
+## barrel out with the head, never the beam.
+var lamp_at := Vector3(0.15, 0.04, -0.07)
+var lamp_color := Color(1.0, 0.95, 0.84)
+var lamp_energy := 4.0
+var lamp_range := 30.0
+var lamp_angle := 22.0
+var lamp_fade := 60.0
 ## A worn armor frame is plates over the chest (on the "Chest" bone, front
 ## toward -Z), and from medium up a belly plate and shoulder pads (on the
 ## upper arm bones); heavy adds a collar. One model in every view.
@@ -357,6 +370,11 @@ var _street := {}
 var _appearance := {}
 ## The helmet `_helmet` was built for; "" while bare-headed.
 var _helmet_id := ""
+## The helmet lamp's lens (on the model, its own material to light) and its
+## beam, kept apart from the skeleton so first person never leaves it out.
+var _lamp_lens: MeshInstance3D
+var _lamp_beam: SpotLight3D
+var _lamp_shown := false
 ## A walker's tracking beam (`_update_beam`) and how long it has held its aim.
 var _beam: MeshInstance3D
 var _beam_mat: StandardMaterial3D
@@ -786,6 +804,7 @@ func _update(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_helmet()
+	_update_lamp()
 	_update_shadow_body()
 	_update_frame()
 	_update_vitals()
@@ -1519,6 +1538,8 @@ func _update_helmet() -> void:
 	_helmet_clip = null
 	_helmet_carry = null
 	_helmet_model = null
+	_lamp_lens = null
+	_lamp_shown = false
 	_helmet_at = ""
 	_show_head(id == "")
 	if id == "":
@@ -1536,6 +1557,8 @@ func _update_helmet() -> void:
 				else _helmet.get_child(0) as Node3D
 	_helmet_at = "head"
 	if own == "":
+		_lamp_lens = _build_lamp(_helmet_model)
+		_lamp_shown = false
 		# Somewhere to clip it and something to carry it in, made with it.
 		var clip := Node3D.new()
 		clip.name = "Clip"
@@ -1551,6 +1574,69 @@ func _update_helmet() -> void:
 		_place_helmet(true)
 	if _detail_every > 1:
 		_gear_shadows(false)
+
+
+## Puts the lamp on a helmet `model` (`lamp_at`): a dark barrel, its front
+## a lens that `_update_lamp` lights. Returns the lens. Added after the
+## model's pieces are merged, as two pieces of its own.
+func _build_lamp(model: Node3D) -> MeshInstance3D:
+	var lamp := Node3D.new()
+	lamp.name = "Lamp"
+	lamp.position = lamp_at
+	model.add_child(lamp)
+	var barrel := CylinderMesh.new()
+	barrel.radial_segments = 10
+	barrel.rings = 1
+	var housing := _piece(lamp, "Barrel", barrel, _solid(Color(0.13, 0.13, 0.14), 0.0), Vector3.ZERO,
+			Vector3(0.042, 0.075, 0.042))
+	housing.rotation.x = PI * 0.5
+	# The beam starts at the lens: the lamp must not shade its own light.
+	housing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var lens_mat := _solid(lamp_color, 0.0)
+	lens_mat.emission_enabled = true
+	lens_mat.emission = lamp_color
+	lens_mat.emission_energy_multiplier = 0.0
+	var lens := _piece(lamp, "Lens", barrel, lens_mat, Vector3(0.0, 0.0, -0.039), Vector3(0.034, 0.006, 0.034))
+	lens.rotation.x = PI * 0.5
+	lens.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return lens
+
+
+## Lights the helmet lamp while `Actor.lamp_lit` says so: the lens glows
+## and the beam shines from it along the aim, so everyone sees where the
+## wearer looks. Dark with the helmet off the head. View only.
+func _update_lamp() -> void:
+	var lit := actor.lamp_lit() and _lamp_lens != null and is_instance_valid(_lamp_lens)
+	if lit != _lamp_shown:
+		_lamp_shown = lit
+		if _lamp_lens != null and is_instance_valid(_lamp_lens):
+			((_lamp_lens.mesh as PrimitiveMesh).material as StandardMaterial3D).emission_energy_multiplier = 6.0 if lit else 0.0
+	if not lit:
+		if _lamp_beam != null:
+			_lamp_beam.visible = false
+		return
+	if _lamp_beam == null:
+		_lamp_beam = SpotLight3D.new()
+		_lamp_beam.name = "LampBeam"
+		_lamp_beam.top_level = true
+		_lamp_beam.light_color = lamp_color
+		_lamp_beam.light_energy = lamp_energy
+		_lamp_beam.spot_range = lamp_range
+		_lamp_beam.spot_angle = lamp_angle
+		_lamp_beam.spot_attenuation = 0.8
+		_lamp_beam.spot_angle_attenuation = 1.6
+		_lamp_beam.shadow_enabled = true
+		_lamp_beam.distance_fade_enabled = true
+		_lamp_beam.distance_fade_begin = lamp_fade
+		_lamp_beam.distance_fade_shadow = lamp_fade * 0.5
+		_lamp_beam.distance_fade_length = 10.0
+		add_child(_lamp_beam)
+	_lamp_beam.visible = true
+	var aim := actor.get_aim_dir()
+	# Just ahead of the lens, clear of the helmet's own shell.
+	var from := _lamp_lens.global_position + aim * 0.05
+	var up := Vector3.UP if absf(aim.y) < 0.98 else Vector3.BACK
+	_lamp_beam.global_transform = Transform3D(Basis.looking_at(aim, up), from)
 
 
 ## Shows the head's own meshes (the face, the hair), or hides them under a
