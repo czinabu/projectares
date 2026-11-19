@@ -44,6 +44,9 @@ signal tour_requested(action: String)
 signal host_requested
 signal join_requested(address: String)
 signal leave_server_requested
+## The Servers app asks `Main` to restart into a downloaded update. Online
+## that means leaving the server first, which `Main` refuses out in a world.
+signal update_restart_requested
 
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
@@ -183,6 +186,8 @@ var text_scale := 1.8
 var glass_inset := Vector4(22, 44, 22, 104)
 ## Seconds a pop-up stays on screen.
 var notice_seconds := 4.5
+## Seconds the pop-up that an update is waiting stays up.
+var update_notice_seconds := 9.0
 
 ## The online session, or null when playing solo.
 var net: NetSession
@@ -267,7 +272,14 @@ var link_where := ""
 ## The Servers app: a server turned this game away as out of date, so the
 ## app offers the latest build (`NetSession.UPDATE_URL`).
 var update_needed := false
-var _told_update_ready := false
+## Whether to keep the update's news for later: `Main` answers true while
+## the player is out in a world where a pop-up could cost them a fight. Unset,
+## nothing holds it back.
+var update_hold := Callable()
+## The state an update was last told in ("" none), and whether its news is
+## held back until the player is somewhere quiet (`remind_update`).
+var _told_update := ""
+var _update_owed := false
 ## The Servers app: a friend's server showed a different certificate from
 ## the one this game remembered (`NetSession.identity_changed`, plus the
 ## "address" to join again). The app warns and lets the player trust it.
@@ -292,14 +304,49 @@ func _ready() -> void:
 	Updater.changed.connect(_on_update_changed)
 
 
-## The game's updater moved on: the Servers app shows it, and a build that
-## finished downloading during play is told once.
+## The game's updater moved on: the Servers app shows it, and an update
+## that is now waiting on the player (downloaded, or needing a fresh install)
+## buzzes the phone, or is kept for later while `update_hold` says so.
 func _on_update_changed() -> void:
-	if Updater.state == "ready" and not _told_update_ready:
-		_told_update_ready = true
-		show_notice("A game update is downloaded. It goes in next time you start, or restart from the Servers app.")
-	if is_open and app == "servers":
-		refresh()
+	if update_waiting() and Updater.state != _told_update:
+		_told_update = Updater.state
+		_update_owed = true
+		remind_update()
+	refresh(is_open and app == "servers")
+
+
+## Whether an update waits on the player: downloaded and ready to go in, or
+## one this install cannot take on its own.
+static func update_waiting() -> bool:
+	return Updater.state in ["ready", "reinstall", "stuck"]
+
+
+## Tells the player an update is waiting, with a buzz and a pop-up, unless
+## `update_hold` says not now. `Main` calls it whenever the player gets home
+## or into a safe zone, so the news comes again until they act on it.
+func remind_update() -> void:
+	if not update_waiting():
+		_update_owed = false
+		return
+	if update_hold.is_valid() and update_hold.call():
+		_update_owed = true
+		return
+	_update_owed = false
+	Sfx.play("phone_buzz")
+	show_notice(update_notice(), update_notice_seconds)
+
+
+## Whether the update's news is being kept until the player is somewhere quiet.
+func update_owed() -> bool:
+	return _update_owed
+
+
+## The pop-up's words for the update that is waiting.
+static func update_notice() -> String:
+	var newest := int(Updater.latest.get("build", 0))
+	if Updater.state == "ready":
+		return "Build %d is downloaded. Restart from the phone's Servers app to put it in." % newest
+	return "Build %d is out and needs a fresh install. Get it from the phone's Servers app." % newest
 
 
 ## While the phone is out it has the mouse: a click on its screen lands on the
@@ -710,9 +757,9 @@ func change_contact(action: String, other: String) -> void:
 
 
 ## A short pop-up at the top of the screen, shown even while the phone is away.
-func show_notice(text: String) -> void:
+func show_notice(text: String, seconds := -1.0) -> void:
 	_notice_label.text = text
-	_notice_left = notice_seconds
+	_notice_left = seconds if seconds > 0.0 else notice_seconds
 	_notice_panel.visible = true
 	_notice_panel.modulate.a = 1.0
 	refresh(false)
@@ -1164,6 +1211,7 @@ func refresh(redraw := true) -> void:
 			"messages": badge = unread_count()
 			"invites": badge = invites().size()
 			"news": badge = unseen_news()
+			"servers": badge = 1 if update_waiting() else 0
 		_icons[app_name].badge = badge
 	_update_readouts()
 	if not is_open or not redraw:
@@ -1394,10 +1442,13 @@ func get_update() -> void:
 			Updater.check()
 
 
-## Restarts the game into the downloaded build, saving first. Only offered
-## while offline, so nothing is in flight.
+## Restarts the game into the downloaded build, saving first. Online it
+## asks `Main`, which leaves the server first (never from out in a world).
 func restart_for_update() -> void:
-	if linked() or Updater.state != "ready":
+	if Updater.state != "ready":
+		return
+	if linked():
+		update_restart_requested.emit()
 		return
 	Profile.save()
 	Updater.restart_now()
@@ -1469,6 +1520,8 @@ func _draw_servers() -> void:
 		_body.add_child(card)
 		if link_status != "":
 			_body.add_child(_label(link_status, 14, UiTheme.ACCENT))
+		if Updater.state != "off":
+			_draw_game_updates()
 		_body.add_child(_button("Leave the server", leave_server))
 		return
 

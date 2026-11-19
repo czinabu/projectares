@@ -79,6 +79,8 @@ func _ready() -> void:
 	_streams["store"] = _sweep(1600.0, 340.0, 0.3, 0.3)
 	_streams["watch_ready"] = _tones([1320.0, 1980.0], 0.25, 12.0, 0.25)
 	_streams["watch_refused"] = _tones([150.0, 157.0], 0.2, 14.0, 0.45)
+	# The phone buzzing in its holster: a short low rattle, twice.
+	_streams["phone_buzz"] = _tones([172.0, 181.0], 0.38, 7.0, 0.35)
 	# Airborne sign-out: a rising tone played from the beacon column.
 	_streams["beacon"] = _tones([520.0, 780.0, 1040.0], 0.55, 3.5, 0.5)
 	# Thin ice: a sharp crack with a low groan under it as it strains, and a

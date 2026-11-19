@@ -560,7 +560,13 @@ without Caleb, and update the gap list when a PR closes a row.
   library needs a fresh install. Release builds also refuse `--path`, so a
   game starts its own server with `Main.server_process_args`, which leaves
   it out of an exported game. Its state shows on the start screen's
-  corner and the phone's Servers app, nowhere else. The installer
+  corner and the phone's Servers app (online too, with a restart that
+  leaves the server first, `Main._restart_for_update`). An update waiting
+  on the player (`Phone.update_waiting`: downloaded, or needing a fresh
+  install) is told (Caleb's feedback): the phone buzzes with a pop-up and
+  the Servers app wears a badge, held back out in a world, the arena or a
+  race (`Phone.update_hold`) until the player is home or in the plaza,
+  and told again each time they get home (`Phone.remind_update`). The installer
   (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
   `ProjectAres-Setup.exe`) installs per user into
   `%LOCALAPPDATA%\Programs\Project Ares`, never Program Files, so the game

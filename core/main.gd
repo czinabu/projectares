@@ -364,6 +364,9 @@ func go_home(result := {}) -> void:
 	_update_door()
 	if not result.is_empty() and base_hud and hub.result_text() != "":
 		base_hud.show_notice(hub.result_text(), 8.0)
+	# Home again: an update still waiting is told once more.
+	if phone != null:
+		phone.remind_update()
 
 
 ## Opens your own base. Kept for callers that want the base by name.
@@ -558,6 +561,30 @@ func _leave_from_phone() -> void:
 		_leave_raid()
 	_plaza_port = -1
 	leave_server()
+
+
+## The phone's Servers app asked to restart into a downloaded update while
+## online: off the server first (as leaving it from the phone would be,
+## never from out in a world), then the game restarts into the new build.
+func _restart_for_update() -> void:
+	if Updater.state != "ready":
+		return
+	if net != null:
+		if _away_from_quiet():
+			phone.show_notice("Leave this place first (sign out from your watch out in a world), then restart for the update.")
+			return
+		_leave_from_phone()
+		if net != null:
+			return
+	Profile.save()
+	Updater.restart_now()
+
+
+## Out in a world, the arena or a race, where a pop-up about an update could
+## cost a fight: the phone keeps the news until the player is home or in the
+## plaza (`Phone.update_hold`, `remind_update`).
+func _away_from_quiet() -> bool:
+	return raid != null and is_instance_valid(raid) and not raid.world.safe_zone
 
 
 ## The gunsmith bench (or with `target` "plan", the plan table) was taken
@@ -1155,6 +1182,8 @@ func _setup_phone() -> void:
 	phone.host_requested.connect(_go_online_from_phone.bind(""))
 	phone.join_requested.connect(_go_online_from_phone)
 	phone.leave_server_requested.connect(_leave_from_phone)
+	phone.update_restart_requested.connect(_restart_for_update)
+	phone.update_hold = _away_from_quiet
 	hub.online_status_changed.connect(phone.set_link_status)
 
 
@@ -2208,6 +2237,9 @@ func _on_online_joined(p_raid: Raid) -> void:
 		hud.notify(_back_notice)
 	_back_notice = ""
 	_tour_check()
+	# Somewhere quiet: news of an update held back out in a world is told now.
+	if raid.world.safe_zone and phone != null and phone.update_owed():
+		phone.remind_update()
 
 
 ## A player in the plaza stepped into a portal and asked to go.
