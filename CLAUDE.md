@@ -2101,7 +2101,15 @@ without Caleb, and update the gap list when a PR closes a row.
   that, and asks with `NetSession.race_request`. Live races are the
   track's `Race.heats` (authority only; clients get `heat_view` through
   `NetSession._race_heats`): asked for with the race icon's "race" pick,
-  formed for `FORM_TIME`, then AI racers fill the grid to `GRID_SIZE`.
+  formed for `FORM_TIME` (`ALL_IN_FORM` once everyone here is on it) with
+  AI racers on the grid from the start (`_fill_grid`, a person who joins
+  takes one's place, `_bump_ai`), filled to `GRID_SIZE`. While anyone is
+  in the world a track nobody rides runs an AI-only race (`Heat.ambient`,
+  `_tick_ambient`, `AMBIENT_FIELD`; Caleb's ask, so the world is never
+  dead), which moves no league; asking to race there calls its field to
+  the grid (`_call_to_grid`), and an empty world runs none. A person who
+  gets off out on the track is set down on pit row (`_off_machine`).
+  Prompts name the interact key from the `InputMap` (`RaceView.key`).
   An AI racer is a bot (meta "race_ai") on a machine of its own, driven
   only through its `ActorCommand` by a `RaceDriver`, which is also the
   bench's driver; never give one speed, grip or a rule a player lacks, and
