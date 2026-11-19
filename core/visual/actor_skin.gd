@@ -292,6 +292,12 @@ var eye_ahead := 0.12
 ## head bobbed several centimetres a stride).
 var aim_steady_time := 0.3
 var eye_steady := 0.9
+## The most the steadied eyes may trail the head (metres): enough to take
+## out a stride's bob, never so much that a big move of the head (a hard
+## landing's squat, a dive pulled out of, a flight pose) leaves the eyes
+## behind inside the neck, the collar or the chest (Caleb's first-person
+## clipping: the camera saw the inside of the armor's gorget).
+var eye_steady_reach := 0.05
 var _steady_head := Vector3.INF
 ## The raised watch's glow on the left wrist, and how far it is up (0..1).
 var _watch_glow: Node3D
@@ -838,13 +844,28 @@ func hide_head(on: bool) -> void:
 					_head_hidden.append(visual)
 
 
+## Emitted each time the skeleton is posed, with how far (world) the eyes
+## (`eye_point`, steadied) moved with the head since it was last posed. The first-person camera was placed from the
+## head as last posed, before this frame's pose, so it follows by as much
+## (`PlayerController._on_head_posed`): a quick move of the head (a landing's
+## squat and spring) otherwise left the eyes a frame behind, in the neck.
+signal head_posed(by: Vector3)
+
+
 ## Keeps the head bone as posed, which is only final inside the skeleton's
 ## update (see `eye_point`).
 func _note_head() -> void:
 	if _head_bone == -2:
 		_head_bone = _skeleton.find_bone("Head") if _skeleton else -1
 	if _head_bone >= 0:
+		var before := _posed_head
 		_posed_head = _skeleton.get_bone_global_pose(_head_bone).origin
+		if before.is_finite():
+			# The eyes as `eye_point` places them, steadied, before and after.
+			var moved := _posed_head - before
+			if _steady_head.is_finite():
+				moved += _steady_offset(_posed_head) - _steady_offset(before)
+			head_posed.emit(_skeleton.global_basis * moved)
 
 
 ## Where the model's eyes are, for a first-person camera: in front of the
@@ -859,9 +880,8 @@ func eye_point(look: Basis) -> Variant:
 	if _head_bone < 0:
 		return null
 	var local := _head_local()
-	var steady := lerpf(eye_steady, 1.0, ActionPose.of(actor).ads) if _steady_head.is_finite() else 0.0
-	if steady > 0.0:
-		local = local.lerp(_steady_head, steady)
+	if _steady_head.is_finite():
+		local += _steady_offset(local)
 	var head: Vector3 = _skeleton.global_transform * local
 	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
 
@@ -874,9 +894,16 @@ func eye_point(look: Basis) -> Variant:
 func eye_steadying() -> Vector3:
 	if _skeleton == null or _head_bone < 0 or not _steady_head.is_finite():
 		return Vector3.ZERO
-	var steady := lerpf(eye_steady, 1.0, ActionPose.of(actor).ads)
 	var head := _skeleton.get_bone_global_pose(_head_bone).origin
-	return _skeleton.global_basis * ((_steady_head - head) * steady)
+	return _skeleton.global_basis * _steady_offset(head)
+
+
+## How far the steadied eyes stand off `head` (skeleton space): the share of
+## the lag the view takes (`eye_steady`, all of it while aimed), never more
+## than `eye_steady_reach`, so the eyes stay in the drawn head.
+func _steady_offset(head: Vector3) -> Vector3:
+	var steady := lerpf(eye_steady, 1.0, ActionPose.of(actor).ads)
+	return ((_steady_head - head) * steady).limit_length(eye_steady_reach)
 
 
 ## Follows the head (`_head_local`) with a lag of `aim_steady_time`, which
@@ -888,7 +915,7 @@ func _steady_eyes(delta: float) -> void:
 	# stance and every other turn in. Read outside the skeleton's update the
 	# bone is only the clip's, and the arm (which reaches inside it) and the
 	# camera would follow two different heads.
-	var local := _posed_head if _posed_head.is_finite() else _head_local()
+	var local := _head_local()
 	if not _steady_head.is_finite() or _steady_head.distance_to(local) > 0.5:
 		# First frame, or a jump (a teleport, getting on a bike): no lag.
 		_steady_head = local
@@ -896,23 +923,16 @@ func _steady_eyes(delta: float) -> void:
 	_steady_head = _steady_head.lerp(local, 1.0 - exp(-delta / maxf(aim_steady_time, 0.01)))
 
 
-## The head, in the skeleton's space, as the body is posed.
+## The head, in the skeleton's space, as the body is posed: as it was last
+## drawn (`_note_head`). Outside the skeleton's update the bone is only the
+## clip's, and much of what moves the head happens only in the posed
+## skeleton (riding, crouching, sliding, a landing's squat, the air and
+## flight poses, the head on the aim), so eyes on the clip's head stood in
+## the body's neck or collar whenever those moved it.
 func _head_local() -> Vector3:
-	var local := _skeleton.get_bone_global_pose(_head_bone).origin
-	if actor.vehicle != null and _posed_head.is_finite():
-		# Seated, the ride pose moves the whole body onto the seat, and that
-		# only shows in the posed skeleton: outside its update the bone still
-		# stands at the actor's feet, which put the eyes in a seated rider's
-		# neck, looking out through their own collar and pack.
-		local = _posed_head
-	elif _posed_head.is_finite():
-		# Crouched or sliding, the body sinks only in the posed skeleton too
-		# (`Locomotion._crouch_pose`, `_slide_pose`): follow it in as the
-		# body goes down, so first person crouches with the body.
-		var low := smoothstep(0.0, 1.0, maxf(actor.crouch, actor.slide_low))
-		if low > 0.0:
-			local = local.lerp(_posed_head, low)
-	return local
+	if _posed_head.is_finite():
+		return _posed_head
+	return _skeleton.get_bone_global_pose(_head_bone).origin
 
 
 ## True while the actor holds their phone up (`ActorCommand.phone`, which

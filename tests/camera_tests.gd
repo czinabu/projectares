@@ -12,6 +12,7 @@ static func run(t: Node) -> void:
 	await _check_steady_on_the_run(t)
 	await _check_hip_after_aim_tap(t)
 	await _check_head_out_of_station_views(t)
+	await _check_eyes_stay_in_the_head(t)
 
 
 ## The face turns to the aim, up and down, and never further round than
@@ -394,3 +395,64 @@ static func _check_hip_after_aim_tap(t: Node) -> void:
 		raid.queue_free()
 		await t.frames(3)
 	Look.enabled = false
+
+
+## First person looks out of the drawn head in every pose, never from where
+## the head was a moment ago: a hard landing's squat and spring, a glide's
+## laid-out pose and coming out of it move the head fast, and a camera that
+## trailed it sat in the neck and saw the inside of the armor's collar
+## (Caleb's clipping screenshots). Read as drawn, inside the skeleton's update.
+static func _check_eyes_stay_in_the_head(t: Node) -> void:
+	Look.enabled = true
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42, ["dmr_longshot", "blade_scrap", "wings_glide", "frame_bulwark", "helm_seeker_mk2"])
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -500, 0)
+	await t.frames(3)
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	controller.set_physics_process(false)
+	controller.view_mode = PlayerController.ViewMode.FIRST
+	await t.frames(30)
+	p.set_physics_process(false)
+	var skel := p.find_child("*Skeleton*", true, false) as Skeleton3D
+	var head := skel.find_bone("Head")
+	var cam := controller.camera
+	var worst := [0.0, ""]
+	var phase := [""]
+	var read := func() -> void:
+		var at := skel.global_transform * skel.get_bone_global_pose(head).origin
+		var off := cam.global_position.distance_to(at)
+		if off > worst[0]:
+			worst[0] = off
+			worst[1] = phase[0]
+	skel.skeleton_updated.connect(read)
+	for pitch: float in [-0.05, -0.4, -0.9]:
+		controller.pitch = pitch
+		p.cmd.pitch = pitch
+		p.cmd.aim_dir = Basis.from_euler(Vector3(pitch, controller.yaw, 0.0)) * Vector3.FORWARD
+		phase[0] = "a hard landing looking %.1f" % pitch
+		p.landed.emit(14.0)
+		await t.frames(50)
+	phase[0] = "into a glide"
+	p.airborne_time = 1.0
+	p.flight.is_gliding = true
+	for i in 60:
+		p.velocity = -p.global_basis.z * 18.0 + Vector3(0, -2.0, 0)
+		await t.get_tree().process_frame
+	phase[0] = "out of a glide"
+	p.flight.is_gliding = false
+	p.airborne_time = 0.0
+	p.velocity = Vector3.ZERO
+	await t.frames(60)
+	skel.skeleton_updated.disconnect(read)
+	# The eyes stand eye_up over and eye_ahead in front of the head bone.
+	t.check(worst[0] < 0.2, "first person stays at the drawn head's eyes through landings and glides (%.2f m off at worst, %s)" % worst)
+	controller.queue_free()
+	raid.queue_free()
+	Look.enabled = false
+	await t.frames(3)
