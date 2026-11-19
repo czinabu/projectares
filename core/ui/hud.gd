@@ -951,9 +951,10 @@ static func mission_entries(held: Array[Dictionary], objective := "") -> Array[D
 
 ## The contract icon as the mission log: closed, the job nearest done
 ## (`contract_slot`) or the tour's step; opened with a click, the wheel turns
-## through every mission (`mission_entries`) and a click takes the picked one
-## off the visor's objective block or puts it back (`GameSettings.untracked`).
-## With only one mission a click toggles it straight away.
+## through every mission (`mission_entries`) and a click turns the picked one
+## from on the visor's objective block to the main one (first and lit) to
+## off it and back (`GameSettings.cycle_mission`). With only one mission a
+## click turns it straight away.
 static func mission_slot(entries: Array[Dictionary], tally: Dictionary, picked := 0, opened := false) -> Dictionary:
 	if entries.is_empty():
 		return _slot("contract", "", "No missions", [], -1.0, true, false)
@@ -975,8 +976,13 @@ static func mission_slot(entries: Array[Dictionary], tally: Dictionary, picked :
 			var now := Contracts.live(str(entry.stat), tally)
 			if now > 0:
 				line += " +%d" % now
-		line += " · on visor" if GameSettings.is_tracked(str(entry.key)) else " · off visor"
+		line += {"main": " · main", "on": " · on visor", "off": " · off visor"}[GameSettings.mission_state(str(entry.key))]
 		slot["detail"] = line
+	elif not opened:
+		# Closed, the main mission is the line, if one is pinned.
+		for entry in entries:
+			if GameSettings.mission_state(str(entry.key)) == "main":
+				slot["detail"] = "Main · " + str(entry.title)
 	slot["hints"] = ["wheel", "click"] if opened else ["click"]
 	return slot
 

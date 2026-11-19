@@ -84,6 +84,9 @@ static var ground_smoke := true
 ## mission is tracked until it is picked off. View only.
 static var untracked: Array[String] = []
 const TOUR_KEY := "tour"
+## The one mission pinned as the main one (a key as in `untracked`, "" for
+## none): listed first and lit on the visor. View only.
+static var main_mission := ""
 static var _loaded := false
 
 
@@ -119,6 +122,7 @@ static func reset() -> void:
 	ambient_occlusion = true
 	ground_smoke = true
 	untracked.clear()
+	main_mission = ""
 
 
 static func set_value(key: String, value: Variant) -> void:
@@ -159,6 +163,8 @@ static func set_value(key: String, value: Variant) -> void:
 				for each: Variant in value:
 					if str(each) != "" and str(each) not in untracked:
 						untracked.append(str(each))
+		"main_mission":
+			main_mission = str(value)
 		_:
 			return
 	apply()
@@ -172,7 +178,7 @@ static func to_dict() -> Dictionary:
 			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates,
 			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink, "shadows": shadows,
 			"render_scale": render_scale, "ambient_occlusion": ambient_occlusion, "ground_smoke": ground_smoke,
-			"untracked": untracked.duplicate()}
+			"untracked": untracked.duplicate(), "main_mission": main_mission}
 
 
 ## Pushes the settings that live outside the game's own nodes: volume, the
@@ -271,15 +277,39 @@ static func is_tracked(key: String) -> bool:
 
 
 ## Tracks mission `key` again, or takes it off the visor (the watch's
-## mission log). Returns whether it is tracked now.
+## mission log). Returns whether it is tracked now. A mission taken off is
+## no longer the main one.
 static func toggle_tracked(key: String) -> bool:
 	var keys := untracked.duplicate()
 	if key in keys:
 		keys.erase(key)
 	else:
 		keys.append(key)
+		if main_mission == key:
+			set_value("main_mission", "")
 	set_value("untracked", keys)
 	return is_tracked(key)
+
+
+## Where mission `key` stands on the visor: "main", "on" or "off".
+static func mission_state(key: String) -> String:
+	if not is_tracked(key):
+		return "off"
+	return "main" if key == main_mission else "on"
+
+
+## A click on a mission in the watch's mission log: on the visor, it becomes
+## the main one; the main one is taken off the visor; one off it goes back
+## on. Returns the new state.
+static func cycle_mission(key: String) -> String:
+	match mission_state(key):
+		"on":
+			set_value("main_mission", key)
+		"main":
+			toggle_tracked(key)
+		_:
+			toggle_tracked(key)
+	return mission_state(key)
 
 
 static func ink_shown() -> bool:

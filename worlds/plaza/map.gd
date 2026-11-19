@@ -913,34 +913,58 @@ func _build_contract_board() -> void:
 	var yaw := PI
 	var facing := Basis(Vector3.UP, yaw)
 	var amber := Color(1.0, 0.75, 0.3)
-	var tall := 10.6
+	# The board grows to fit the day's cards (each world adds jobs of its
+	# own): two columns, a card's room `step`, above the terminal's top.
+	var rows := contract_rows()
+	var per_column := maxi(ceili(rows.size() / 2.0), 1)
+	var step := 1.5
+	var top := maxf(2.45 + per_column * step, 8.35)
+	var tall := top + 2.25
 	var wide := 14.0
 	_solid(Vector3(wide, tall, 0.8), at + facing * Vector3(0, tall * 0.5, -0.4), WALL, yaw)
 	for side: float in [-1.0, 1.0]:
 		_part(self, Vector3(0.1, tall, 0.1), at + facing * Vector3(side * (wide * 0.5 + 0.02), tall * 0.5, 0.02), amber, true, yaw)
 	# The cards stand above the terminal in front, so it never hides one.
-	_part(self, Vector3(wide - 1.0, 6.9, 0.05), at + facing * Vector3(0, 5.75, 0.02), Color(0.06, 0.05, 0.03), true, yaw)
-	for y: float in [2.25, 9.25]:
+	var panel := tall - 1.35 - 2.25
+	_part(self, Vector3(wide - 1.0, panel + 0.1, 0.05), at + facing * Vector3(0, 2.25 + panel * 0.5, 0.02),
+			Color(0.06, 0.05, 0.03), true, yaw)
+	for y: float in [2.25, tall - 1.35]:
 		_part(self, Vector3(wide - 0.8, 0.1, 0.08), at + facing * Vector3(0, y, 0.05), amber, true, yaw)
-	_sign("CONTRACTS", at + facing * Vector3(0, 9.95, 0.1), yaw, 1.0, amber)
-	_sign(BOARD_NOTE, at + facing * Vector3(0, 8.85, 0.1), yaw, 0.3, Color(1.0, 0.92, 0.8, 0.85))
-	var rows := contract_rows()
-	var per_column := maxi(ceili(rows.size() / 2.0), 1)
-	var step := minf(6.1 / per_column, 1.8)
+	_sign("CONTRACTS", at + facing * Vector3(0, tall - 0.65, 0.1), yaw, 1.0, amber)
+	_sign(BOARD_NOTE, at + facing * Vector3(0, tall - 1.75, 0.1), yaw, 0.3, Color(1.0, 0.92, 0.8, 0.85))
 	for i in rows.size():
 		var column := floori(float(i) / per_column)
 		var x := -6.2 + column * 6.6
-		var y := 8.35 - (i % per_column) * step
-		# A short amber tick down the card's left edge, its kind and pay over
-		# its title (a long title wraps down into the gap below).
+		var y := top - (i % per_column) * step
+		# A short amber tick down the card's left edge, the title on top and
+		# its kind and pay under it, wrapped like the title where the card
+		# has room, else set smaller to stay on one line.
 		_part(self, Vector3(0.08, step * 0.75, 0.04), at + facing * Vector3(x - 0.2, y - step * 0.36, 0.06),
 				amber, true, yaw)
-		# The pay stays on one line: a long one is set smaller (glyphs run
-		# a little under half their size wide).
+		var title := str(rows[i].title)
+		_sign_left(title, at + facing * Vector3(x, y, 0.1), yaw, 0.42, Color(1.0, 0.95, 0.86), CARD_WIDTH)
+		var below := y - card_lines(title, 0.42) * 0.5 - 0.06
 		var pay := "%s  ·  %s" % [rows[i].kind, rows[i].reward]
-		_sign_left(pay, at + facing * Vector3(x, y, 0.1), yaw, minf(0.3, 5.6 / (pay.length() * 0.45)), amber, 0.0)
-		_sign_left(str(rows[i].title), at + facing * Vector3(x, y - 0.4, 0.1), yaw, 0.42, Color(1.0, 0.95, 0.86), 5.9)
-	# The terminal in front of the board, its screen facing the square.
+		var size := 0.3
+		if (y - below) + card_lines(pay, size) * 0.36 > step - 0.1:
+			size = minf(size, CARD_WIDTH / (pay.length() * GLYPH_WIDTH))
+		_sign_left(pay, at + facing * Vector3(x, below, 0.1), yaw, size, amber, CARD_WIDTH)
+	_build_contract_board_terminal(at, facing, yaw, amber)
+
+
+## How wide a card's text runs on the contract board, in metres, and how
+## wide a glyph is for its size, a little under half.
+const CARD_WIDTH := 5.9
+const GLYPH_WIDTH := 0.47
+
+
+## About how many lines `text` takes on a card at glyphs of `size` metres.
+static func card_lines(text: String, size: float) -> int:
+	return maxi(1, ceili(text.length() * size * GLYPH_WIDTH / CARD_WIDTH))
+
+
+## The terminal in front of the contract board, its screen facing the square.
+func _build_contract_board_terminal(at: Vector3, facing: Basis, yaw: float, amber: Color) -> void:
 	_solid(Vector3(1.2, 1.1, 0.6), at + facing * Vector3(0, 0.55, 1.4), STEEL, yaw)
 	var portal := _add_portal("contracts", "Use the contract board", at + facing * Vector3(0, 0, 3.4), 2.2)
 	var screen := Node3D.new()

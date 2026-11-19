@@ -372,6 +372,13 @@ static func _mission_log(t: Node, held: Array[Dictionary]) -> void:
 	t.check(lines.size() == 1 and lines[0].title == "Ride 2 vehicles", "and the visor lists only what is tracked")
 	t.check(settings.toggle_tracked("cull") and visor.objective_lines(held, {}, "").size() == 2,
 			"picking it again puts it back")
+	t.check(settings.cycle_mission("ride") == "main" and visor.objective_lines(held, {"kills": 7}, "")[0].main
+				and visor.objective_lines(held, {"kills": 7}, "")[0].title == "Ride 2 vehicles"
+				and Hud.mission_slot(missions, {}, 0, false).detail == "Main · Ride 2 vehicles",
+			"a click on a tracked mission makes it the main one: first on the visor, and the icon's line")
+	t.check(settings.cycle_mission("ride") == "off" and settings.main_mission == ""
+				and settings.cycle_mission("ride") == "on",
+			"the next click takes it off the visor, and the one after puts it back")
 	visor.free()
 	settings.untracked.clear()
 	settings.persist = was

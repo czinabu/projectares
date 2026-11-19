@@ -484,6 +484,26 @@ static func _warden_back(root: Node3D, m: Kit, r: Vector3, edge: Callable) -> vo
 	var lamp := Vector3(skin.x + 0.03, r.y * 0.3, -r.z * 0.2)
 	G.box(root, "Lamp", Vector3(0.024, 0.026, 0.05), m.plate2, lamp, 0.005)
 	G.cyl(root, "Part", 0.01, 0.006, m.dim, lamp + Vector3(0, 0, -0.026), Basis(Vector3.RIGHT, PI * 0.5), 12)
+	# A raised rear plate over the back of the dome, bolted at its corners,
+	# ending above the vitals strip.
+	G.add(root, "RearPlate", hc(skin, G.const_of(G.pol(0.62)), G.const_of(G.pol(0.1)), PI - 0.75, PI + 0.75,
+			0.012, 10, 4, true), m.plate2)
+	for a: float in [PI - 0.6, PI + 0.6]:
+		for y: float in [0.52, 0.18]:
+			var dir := Vector3(sin(a) * sqrt(1.0 - y * y), y, -cos(a) * sqrt(1.0 - y * y))
+			G.cyl(root, "Bolt", 0.006, 0.006, m.metal, dir * (skin + Vector3.ONE * 0.012),
+					Basis.looking_at(dir) * Basis(Vector3.RIGHT, PI * 0.5), 8)
+	# Battery cells low on the back either side of the vitals strip, wired
+	# into the rear plate.
+	for side: float in [-1.0, 1.0]:
+		var a := PI + side * 1.1
+		var cell := Vector3(sin(a) * (skin.x + 0.012), -r.y * 0.28, -cos(a) * (skin.z + 0.012))
+		var turn := Basis(Vector3.UP, -a)
+		G.box(root, "Battery", Vector3(0.034, 0.056, 0.024), m.plate2, cell, 0.005, turn)
+		G.box(root, "Part", Vector3(0.026, 0.006, 0.026), m.metal, cell + Vector3(0, 0.03, 0), 0.001, turn)
+		G.box(root, "Part", Vector3(0.004, 0.03, 0.004), m.dim, cell + turn * Vector3(0, 0, 0.013), 0.001, turn)
+		G.cyl(root, "Part", 0.003, 0.05, m.rubber, cell + Vector3(-side * 0.012, 0.045, 0.004),
+				Basis(Vector3.BACK, side * 0.6), 6)
 	# A loop patch high on the back, and an IFF strobe on the crown behind the crest.
 	G.add(root, "Patch", hc(skin, G.const_of(G.pol(0.86)), G.const_of(G.pol(0.66)), PI - 0.42, PI + 0.42, 0.005, 6, 2),
 			m.fabric)

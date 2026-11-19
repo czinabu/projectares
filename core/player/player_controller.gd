@@ -269,8 +269,9 @@ var pack_pick := 0
 var race_pick := 0
 var ghost_pick := "mine"
 ## The mission log on the contract icon: what it holds (`Hud.mission_entries`,
-## kept up to date by the HUD) and which one is picked out. A click tracks
-## the picked one on the visor or takes it off (`GameSettings.untracked`).
+## kept up to date by the HUD) and which one is picked out. A click turns
+## the picked one from on the visor to the main one to off it and back
+## (`GameSettings.cycle_mission`).
 ## View only.
 var missions: Array[Dictionary] = []
 var mission_pick := 0
@@ -541,7 +542,7 @@ func click_watch() -> bool:
 		return true
 	if is_on_missions() and _is_open("contract"):
 		var at := clampi(mission_pick if watch_open == "contract" else 0, 0, missions.size() - 1)
-		GameSettings.toggle_tracked(str(missions[at].key))
+		GameSettings.cycle_mission(str(missions[at].key))
 		return true
 	if is_watch_on("portal") and not portal_choices().is_empty() and _is_open("portal"):
 		var choices := portal_choices()
