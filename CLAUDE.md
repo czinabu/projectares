@@ -41,7 +41,12 @@ without Caleb, and update the gap list when a PR closes a row.
   and the aim stay put, and the view zooms in on it like aiming down sights
   until the phone stands `phone_zoom` of the view's height, whatever the
   field of view setting, with all of it kept in frame (`phone_fit_fov`,
-  Caleb's pick so the screen reads; not with the mirror up).
+  Caleb's pick so the screen reads; not with the mirror up). While a
+  view setting's slider is dragged on the phone (`Phone.PREVIEW_KEYS`)
+  all of that lets go (`PlayerController.phone_preview`) so the change is
+  seen live, and the slider follows the mouse's motion. The Mirror app
+  lowers the phone (`Phone.mirror_lowered`, `held`, Caleb's call) so the
+  mirror shows the whole kit; a click, right click or Esc brings it up.
   The third-person camera stands over the right shoulder
   (`PlayerController.shoulder`) and, aiming, moves in and further out
   over it (`shoulder_aim`), so the head never sits on the sight line;
