@@ -39,7 +39,7 @@ static func _rules(t: Node) -> void:
 	t.check(builds.size() == 12 and build_price == 26600,
 			"twelve build upgrades cost 26,600 scrip together")
 	var designs := BaseUpgrades.ids().filter(func(id: String) -> bool: return BaseUpgrades.is_design(id))
-	t.check(Array(designs) == Array(BasePlan.unlocks()) and designs.size() == 19,
+	t.check(Array(designs) == Array(BasePlan.unlocks()) and designs.size() == 21,
 			"every other hub shape, room style and finish has one design unlock, and nothing else is a design")
 	t.check(BaseUpgrades.blocked(["hub_ring", "hub_spine", "style_ops_bridge", "style_stores_cargo"], "finish") != "",
 			"design unlocks never count toward the finish")
@@ -67,8 +67,8 @@ static func _rules(t: Node) -> void:
 		if not BaseUpgrades.is_ready(id):
 			waiting.append(id)
 	t.check(BaseUpgrades.blocked(["armory_alcove"], "heavy_wall") == ""
-			and BaseUpgrades.blocked([], "lounge") == "Not open yet." and waiting == ["lounge"],
-			"the heavy weapon wall can be bought once the alcove is open, and a room that is not built stays shut")
+			and BaseUpgrades.blocked([], "lounge") == "" and waiting.is_empty(),
+			"the heavy weapon wall can be bought once the alcove is open, and every room is built and on sale")
 	var all: Array[String] = []
 	var in_order := true
 	for id in BaseUpgrades.full():
@@ -316,7 +316,7 @@ static func _bunker(t: Node) -> void:
 		shown.append(gate.id)
 	shown.sort()
 	var expected: Array[String] = ["armory_alcove", "bay_second", "bench_workshop", "finish", "firing_range",
-			"garage_full", "gear_hall", "ops_consoles", "trophy_hall"]
+			"garage_full", "gear_hall", "lounge", "ops_consoles", "trophy_hall"]
 	t.check(shown == expected, "every upgrade still to buy is on show in the room (%s)" % [shown])
 	var priced := true
 	for gate in base.bulkheads:
@@ -367,7 +367,8 @@ static func _bunker(t: Node) -> void:
 	gate.interact(p)
 	t.check(asked.is_empty() and "Not enough scrip" in gate.get_prompt() and "Not enough scrip" in gate.status.text,
 			"without the scrip a bulkhead cannot be bought, and says so")
-	t.check(base.bulkhead("lounge") == null, "an upgrade that is not built yet has no panel in the base")
+	t.check(base.bulkhead("lounge") != null and base.room_at(base.to_local(base.bulkhead("lounge").global_position)) == "lounge",
+			"the lounge's upgrade is sold at a post in its own small form")
 	base.queue_free()
 	await t.frames(2)
 	# Someone else's bunker: sealed, with nothing for sale.
@@ -528,7 +529,7 @@ static func _plan_rules(t: Node) -> void:
 	t.check(moved["E1"] == "armory" and moved["W1"] == BasePlan.DEFAULT["E1"] and BasePlan.DEFAULT["W1"] == "armory",
 			"moving a room swaps it with the room that stood there, and never changes the plan given")
 	t.check(BasePlan.place(BasePlan.DEFAULT, "X9", "armory") == BasePlan.DEFAULT
-			and BasePlan.place(BasePlan.DEFAULT, "E1", "lounge") == BasePlan.DEFAULT,
+			and BasePlan.place(BasePlan.DEFAULT, "E1", "no_such") == BasePlan.DEFAULT,
 			"an unknown socket or room changes nothing")
 	Profile.reset()
 	t.check(Profile.place_room("N1", "garage").ok and Profile.base_plan["N1"] == "garage"
@@ -548,7 +549,7 @@ static func _plan_rules(t: Node) -> void:
 	t.check(service.place_room(id, "W1", "ops").ok and service.snapshot(id).base_plan["W1"] == "ops",
 			"online, the account keeps the plan, and it may be changed while out in a world: it moves nothing")
 	service.cancel_deploy(id)
-	t.check(not service.place_room(id, "W1", "lounge").ok and not service.place_room(id, "Z1", "ops").ok
+	t.check(not service.place_room(id, "W1", "no_such").ok and not service.place_room(id, "Z1", "ops").ok
 			and not service.place_room("nobody", "W1", "ops").ok, "the server refuses unknown rooms, sockets and accounts")
 	var saved := service.load_account(id).to_dict()
 	var loaded := Accounts.Account.new()
@@ -631,7 +632,7 @@ static func _design_rules(t: Node) -> void:
 			"an unlocked style goes on its room and keeps the rest")
 	t.check(not BasePlan.change(BasePlan.DEFAULT, ["style_gear_ring"], "style:armory", "ring").ok
 			and not BasePlan.change(BasePlan.DEFAULT, [], "shape", "dome").ok
-			and not BasePlan.change(BasePlan.DEFAULT, [], "style:lounge", "rack").ok
+			and not BasePlan.change(BasePlan.DEFAULT, [], "style:no_such", "rack").ok
 			and not BasePlan.change(BasePlan.DEFAULT, [], "colour", "red").ok,
 			"a style of another room, an unknown shape, room or change is refused")
 	t.check(BasePlan.change(styled.plan, [], "shape", "hall").ok, "going back to a free choice needs nothing")
@@ -679,8 +680,12 @@ static func _shapes(t: Node) -> void:
 			var xf := base.socket_transform(socket)
 			var room: String = base.base_plan[socket]
 			# Just inside the doorway is the room; just outside it the hub.
+			# The lounge's socket opens off the corridor in the spine and the ring.
+			var off_corridor := socket == "F1" and HomeBase.corridor_socket(shape)
+			var outside := xf * Vector3(0, 0.1, 1.2)
 			sockets_ok = sockets_ok and base.room_at(xf * Vector3(0, 0.1, -1.0)) == room \
-					and base.in_hub(xf * Vector3(0, 0.1, 1.2)) and not base.in_corridor(xf * Vector3(0, 0.1, -1.0))
+					and (base.in_corridor(outside) if off_corridor else base.in_hub(outside)) \
+					and not base.in_corridor(xf * Vector3(0, 0.1, -1.0))
 			for other: String in BasePlan.SOCKETS:
 				if other != socket:
 					var far := base.socket_transform(other)
@@ -789,8 +794,8 @@ static func _styles(t: Node) -> void:
 static func _finish_rules(t: Node) -> void:
 	print("Home base finishes")
 	var plan := BasePlan.clean(null)
-	t.check(plan["finishes"].size() == 7 and plan["finishes"].values().all(func(f: String) -> bool: return f == "steel")
-			and plan["finishes"] == BasePlan.DEFAULT["finishes"], "a new base is steel everywhere: the hub and all six rooms")
+	t.check(plan["finishes"].size() == 8 and plan["finishes"].values().all(func(f: String) -> bool: return f == "steel")
+			and plan["finishes"] == BasePlan.DEFAULT["finishes"], "a new base is steel everywhere: the hub and all seven rooms")
 	t.check(BasePlan.unlock_for("finish:hub", "steel") == "" and BasePlan.unlock_for("finish:garage", "brass") == "finish_brass"
 			and BasePlan.unlock_for("finish:armory", "brass") == "finish_brass", "steel is free; one unlock per finish, whatever it goes on")
 	for finish: String in BasePlan.FINISHES:
@@ -803,7 +808,7 @@ static func _finish_rules(t: Node) -> void:
 	t.check(one.ok and two.ok and two.plan["finishes"]["garage"] == "brass" and two.plan["finishes"]["hub"] == "brass"
 			and two.plan["finishes"]["armory"] == "steel" and plan["finishes"]["garage"] == "steel",
 			"once bought it goes on any room and the hub, leaving the rest as they were")
-	t.check(not BasePlan.change(plan, ["finish_brass"], "finish:lounge", "brass").ok
+	t.check(not BasePlan.change(plan, ["finish_brass"], "finish:no_such", "brass").ok
 			and not BasePlan.change(plan, [], "finish:hub", "gold").ok, "an unknown room or finish is refused")
 	var odd := BasePlan.clean({"finishes": {"hub": "gold", "ops": "ceramic"}})
 	t.check(odd["finishes"]["hub"] == "steel" and odd["finishes"]["ops"] == "ceramic" and odd["finishes"]["gear"] == "steel",
