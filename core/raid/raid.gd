@@ -68,6 +68,12 @@ signal ice_changed
 ## its faction to a fight. On every machine near enough (a client hears it
 ## from `NetSession`, with no `source`), for the view.
 signal grid_called(bot: Actor, source: Actor)
+## The war's artillery (`shelling`): shells will land at `points`, each
+## `lands_in` seconds from now, and are marked until then. Every client is
+## sent it (`NetSession._shells`); `ShellView` shows it where `Look` is on.
+signal shells_called(points: PackedVector3Array, lands_in: PackedFloat32Array)
+## A shell landed at `at` (authority; clients time it from `shells_called`).
+signal shell_landed(at: Vector3)
 ## An army set off for a strongpoint (`Raid.pushes`, DESIGN.md "Challenge
 ## and balance data": danger warns first). `loud` is a new push worth a
 ## horn and a war feed line; a quiet one only moves the watch map's arrow.
@@ -200,6 +206,9 @@ const STORM_COVER := 0.5
 ## Where power weapons turn up (racks at strongpoints, pods, caches). Runs on
 ## the authority only.
 var armory := PowerArmory.new()
+## The war's artillery (DESIGN.md "Shelling"), where `WorldDef.shelling` is
+## on. Authority only.
+var shelling := Shelling.new()
 ## The weather (DESIGN.md "Weather: ash storms"): at most one storm crossing
 ## the map, on `WorldDef.weather_kind`. Only the authority runs it; a client's
 ## copy comes from `NetSession` and is only carried on between updates.
@@ -451,6 +460,11 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		var view := TrackView.new()
 		view.raid = self
 		add_child(view)
+	shelling.reset(int(rng.seed) + 4231)
+	if world.shelling > 0.0 and not world.safe_zone and Look.enabled:
+		var shells := ShellView.new()
+		shells.raid = self
+		add_child(shells)
 	ice_holes.clear()
 	_ice_strain.clear()
 	if world.thin_ice and Look.enabled:
@@ -510,6 +524,8 @@ func _physics_process(delta: float) -> void:
 		return
 	_tick_outposts()
 	_tick_hazards(delta)
+	if world.shelling > 0.0 and zone_rules:
+		shelling.tick(self, delta)
 	_tick_cold(delta)
 	if world.thin_ice:
 		_tick_ice(delta)
