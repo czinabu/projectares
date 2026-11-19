@@ -853,6 +853,9 @@ func _attach_player_view() -> void:
 		arena_hud.booth_changed.connect(_on_booth_changed)
 		raid.add_child(arena_hud)
 	if raid is Race:
+		# Solo, the league is the local profile's (online it is the server's).
+		if raid.mode == Raid.Mode.SOLO and (raid as Race).league_bank == null:
+			(raid as Race).league_bank = Race.ProfileLeagueBank.new()
 		race_view = RaceView.new()
 		race_view.setup(raid)
 		raid.add_child(race_view)

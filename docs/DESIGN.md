@@ -2079,9 +2079,30 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   and how often it makes a mistake; the best drives exactly like the
   bench, so none ever beats a perfect run (`race_bench.tscn -- --ai`
   checks it). Their laps never go on the board.
-- **Rewards are cosmetic.** For now only the board's times. Scrip, parts
-  and cosmetic rewards come with the league (DESIGN.md "Racing depth"
-  plan: ranks and named rivals, friends' ghosts, then tuning parts).
+- **League and rivals (Caleb's go-ahead).** Every account has a racing
+  rating that only live races move (`RaceLeague`, kept on the account
+  beside renown, never per name): each racer you beat to the line is +3,
+  each who beats you -1, and not finishing counts last. It sets your
+  league: Rookie, Club (60), Pro (160), Elite (300) and Champion (480),
+  with no relegation. Each league has three named rivals with a manner of
+  their own (cocky, clean, a hard blocker who stays inside the rules, a
+  veteran, a joker) and a machine they favour; they fill the grid of a race
+  whose best rider is in their league, ahead of nameless AI racers at that
+  league's skill. The last of each is the league's top rival: to move up,
+  your rating must reach the next league and you must have beaten them in
+  a race, or it waits at the gate; one league at a time.
+- **The race radio.** Rivals talk to each person racing them: at the
+  lights, when you pass them or they pass you, when you leave the track,
+  and at the finish (the one you beat, or the winner). It is the visor's
+  radio lines under the objectives, with a burst of static, or a line on
+  the watch with no helmet. A rival you are three wins up on changes their
+  tune. Never more than a line every 5 s, or from one rival every 20 s.
+- **Rewards are small.** A race pays 30, 20 and 12 scrip for the podium
+  and 5 for any other finish, at most 120 a day, so racing never out-earns
+  the warzone. The phone's Racing app shows your league, rating and what
+  stands between you and the next, your record against each rival, the
+  day's pay and your last five races. Friends' ghosts and tuning parts
+  come next (the "Racing depth" plan).
 
 The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the

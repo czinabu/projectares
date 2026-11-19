@@ -4,12 +4,32 @@ extends RefCounted
 ## board, the stock race profiles, and that racing never risks or grants
 ## gear. Run from the main test runner. Nothing here starts a server.
 
+const RaceLeague := preload("res://core/race/race_league.gd")
+const StashRules := preload("res://core/account/stash_rules.gd")
+const StashService := preload("res://core/account/stash_service.gd")
+
+
+## A league kept in memory, for a race to read and record into.
+class MemoryBank:
+	extends Race.LeagueBank
+	var states := {}
+	var recorded: Array = []
+
+	func state(key: String) -> Dictionary:
+		return RaceLeague.clean(states.get(key, {}))
+
+	func record(key: String, result: Dictionary) -> void:
+		recorded.append([key, result])
+		states[key] = RaceLeague.apply(state(key), result, 100).state
+
 
 static func run(t: Node) -> void:
-	print("Race world: Meridian time trials and live races")
+	print("Race world: Meridian time trials, live races and the league")
 	_test_world(t)
 	_test_track(t)
 	_test_formatting(t)
+	_test_league_rules(t)
+	_test_league_on_account(t)
 	await _test_time_trial(t)
 	await _test_skyhook(t)
 	await _test_live_race(t)
@@ -242,6 +262,10 @@ static func _test_live_race(t: Node) -> void:
 		race.queue_free()
 		return
 	t.check(not race.join_race(me).get("ok", false), "you race on a machine")
+	var bank := MemoryBank.new()
+	race.league_bank = bank
+	var heard: Array = []
+	race.radio.connect(func(a: Actor, from: String, text: String) -> void: heard.append([a, from, text]))
 	me.global_position = bike.global_position + Vector3(2.0, 0.2, 0.0)
 	await t.frames(2)
 	bike.call("mount", me)
@@ -283,6 +307,23 @@ static func _test_live_race(t: Node) -> void:
 		stock = stock and is_equal_approx(float(r.vehicle.get("max_speed")), float(profile.max_speed)) \
 				and r.actor.vehicle == r.vehicle and r.go_at == heat.runs[0].go_at
 	t.check(stock, "the AI ride stock machines on their race profile, under the same lights")
+	var rookies := RaceLeague.rivals_in(0)
+	var on_grid: Array[String] = []
+	var top_run: Race.Run = null
+	for r: Race.Run in ai:
+		if r.rival != "":
+			on_grid.append(r.rival)
+		if r.rival == RaceLeague.top_rival(0):
+			top_run = r
+	var all_there := on_grid.size() == rookies.size()
+	for id in rookies:
+		all_there = all_there and id in on_grid and names.has(RaceLeague.rival_name(id))
+	t.check(heat.league == 0 and all_there, "a rookie's grid holds the Rookie league's named rivals, by name")
+	t.check(top_run != null and is_equal_approx((race.drivers[top_run.actor] as RaceDriver).skill,
+			RaceLeague.rival_skill(top_run.rival)), "each rival drives at their own skill")
+	var rival_names: Array = RaceLeague.RIVALS.values().map(func(r: Dictionary) -> String: return r.name)
+	t.check(heard.size() == 1 and heard[0][0] == me and str(heard[0][2]) != "" and heard[0][1] in rival_names,
+			"at the lights a rival says something on your race radio")
 	await t.frames(int(Race.LIGHTS * Race.LIGHT_STEP * Engine.physics_ticks_per_second) + 5)
 	t.check(race.view_run().get("phase") == "racing" and int(race.view_run().get("place", 0)) > 0,
 			"at the go everyone races, and you have a place")
@@ -320,6 +361,13 @@ static func _test_live_race(t: Node) -> void:
 			"your run ends with your place")
 	t.check(race.board.all(func(e: Dictionary) -> bool: return e.name == me.display_name),
 			"AI laps never go on the board")
+	t.check(bank.recorded.size() == 1, "your finish goes to the league")
+	if bank.recorded.size() == 1:
+		var result: Dictionary = bank.recorded[0][1]
+		t.check(int(result.place) == Race.GRID_SIZE and int(result.field) == Race.GRID_SIZE
+				and not bool(result.finished) and (result.ahead as Array).size() == rookies.size(),
+				"as last, not finished, behind every rival")
+	t.check(heard.size() >= 2 and heard[heard.size() - 1][0] == me, "and a rival has a word at the finish")
 	t.check(RaceView.heat_text(race.heat_view(track.id)).begins_with("RESULTS"), "the board shows the results")
 	await t.frames(int((Race.RESULTS_TIME + 0.5) * Engine.physics_ticks_per_second))
 	t.check(not race.heats.has(track.id) and race.drivers.is_empty()
@@ -330,6 +378,110 @@ static func _test_live_race(t: Node) -> void:
 	t.check(str(race.view_run().get("heat", "x")) == "", "and your run is a time trial again")
 	race.queue_free()
 	await t.frames(2)
+
+
+## The league's rules (`RaceLeague`): points by place, no relegation, the
+## top rival's gate, one league at a time, the day's pay cap, the radio's
+## lines and a saved state made safe.
+static func _test_league_rules(t: Node) -> void:
+	t.check(RaceLeague.points_for(1, 8) == 21 and RaceLeague.points_for(8, 8) == -7
+			and RaceLeague.points_for(3, 8, false) == -7 and RaceLeague.points_for(4, 8) > 0,
+			"beating racers gains more than losing to them costs; not finishing counts last")
+	var leagues_rise := true
+	for i in range(1, RaceLeague.LEAGUES.size()):
+		leagues_rise = leagues_rise and RaceLeague.floor_of(i) > RaceLeague.floor_of(i - 1) \
+				and RaceLeague.ai_skill(i) > RaceLeague.ai_skill(i - 1)
+	t.check(leagues_rise and RaceLeague.ai_skill(RaceLeague.LEAGUES.size() - 1) <= 1.0,
+			"each league is harder to reach and its AI better")
+	var cast := true
+	for i in RaceLeague.LEAGUES.size():
+		var rivals := RaceLeague.rivals_in(i)
+		cast = cast and rivals.size() == 3 and RaceLeague.top_rival(i) == rivals[2]
+		for id in rivals:
+			var skill := RaceLeague.rival_skill(id)
+			cast = cast and skill <= 1.0 and skill > RaceLeague.ai_skill(i) \
+					and RaceLeague.rival_skill(RaceLeague.top_rival(i)) >= skill
+	t.check(cast, "every league has three named rivals, the top one the best of them")
+	var lines := true
+	for id: String in RaceLeague.RIVALS:
+		for event: String in RaceLeague.EVENTS:
+			lines = lines and RaceLeague.line(id, event, "Ash", RaceLeague.fresh(), 0) != ""
+	t.check(lines, "every rival has something to say at every moment")
+	var s := RaceLeague.fresh()
+	var lose := {"track": "coilrun", "place": 8, "field": 8, "finished": true, "ahead": ["pip", "haro", "moss"],
+			"behind": []}
+	var applied := RaceLeague.apply(s, lose, 10)
+	t.check(int(applied.state.rating) == 0 and int(applied.points) == -7 and int(applied.scrip) == RaceLeague.FINISH_SCRIP,
+			"a rookie's rating never drops below the league's floor")
+	t.check(s.races == 0 and int(applied.state.races) == 1, "the state passed in is left alone")
+	var win := {"track": "coilrun", "place": 1, "field": 8, "finished": true, "ahead": [], "behind": ["pip", "haro"]}
+	s = RaceLeague.fresh()
+	for k in 4:
+		s = RaceLeague.apply(s, win, 10).state
+	t.check(int(s.league) == 0 and int(s.rating) == RaceLeague.next_from(0) and RaceLeague.at_gate(s),
+			"without beating the top rival the rating waits at the next league")
+	t.check(RaceLeague.standing_line(s).contains(RaceLeague.rival_name("moss")), "and says who to beat")
+	var paid := 0
+	var day := RaceLeague.fresh()
+	for k in 10:
+		var a := RaceLeague.apply(day, win, 10)
+		paid += int(a.scrip)
+		day = a.state
+	t.check(paid == RaceLeague.DAILY_CAP, "race pay stops at the day's cap (%d)" % paid)
+	t.check(int(RaceLeague.apply(day, win, 11).scrip) == RaceLeague.PLACE_SCRIP[0], "and starts again the next day")
+	var beat_top := {"track": "coilrun", "place": 1, "field": 8, "finished": true, "ahead": [], "behind": ["moss"]}
+	applied = RaceLeague.apply(s, beat_top, 10)
+	t.check(bool(applied.promoted) and int(applied.state.league) == 1 and not bool(applied.state.top_beaten),
+			"beating the top rival at the gate moves you up a league")
+	var flying := RaceLeague.fresh()
+	flying.rating = 10000
+	flying.top_beaten = true
+	applied = RaceLeague.apply(flying, win, 10)
+	t.check(int(applied.state.league) == 1 and int(applied.state.rating) <= RaceLeague.next_from(1),
+			"one league at a time")
+	s = RaceLeague.fresh()
+	for k in RaceLeague.HUMBLED_AFTER:
+		s = RaceLeague.apply(s, win, 10).state
+	t.check(RaceLeague.record_against(s, "pip") == [RaceLeague.HUMBLED_AFTER, 0] and RaceLeague.humbled(s, "pip")
+			and RaceLeague.line("pip", "lights", "Ash", s, 0) in RaceLeague.LINES.joker.humbled,
+			"a rival you keep beating changes their tune")
+	t.check(s.recent.size() == RaceLeague.HUMBLED_AFTER and int(s.recent[0].place) == 1, "recent races are kept")
+	for k in 10:
+		s = RaceLeague.apply(s, win, 10).state
+	t.check(s.recent.size() == RaceLeague.RECENT, "only the last few")
+	var junk := RaceLeague.clean({"league": 99, "rating": -5, "rivals": {"nobody": [1, 2], "pip": "x"},
+			"recent": "no"})
+	t.check(int(junk.league) == RaceLeague.LEAGUES.size() - 1 and int(junk.rating) == RaceLeague.floor_of(junk.league)
+			and junk.rivals.is_empty() and junk.recent.is_empty(), "a saved state is made safe")
+	t.check(RaceLeague.clean_result({"place": 9, "field": 8}).is_empty()
+			and RaceLeague.clean_result({"place": 1, "field": 8, "ahead": ["nobody", "pip"]}).ahead == ["pip"],
+			"so is a result")
+	t.check(RaceLeague.line("pip", "lights", "Ash", RaceLeague.fresh(), 0).find("{you}") < 0,
+			"the radio uses your name")
+
+
+## The league lives on the account: recorded there by the server, carried
+## in its snapshot and saved with it, and its scrip paid into it.
+static func _test_league_on_account(t: Node) -> void:
+	var service := StashService.new()
+	service.persist = false
+	var id: String = service.sign_in("League Tester", StashService.new_secret()).account_id
+	var scrip := int(service.snapshot(id).scrip)
+	var answer := service.record_race(id, {"track": "coilrun", "place": 1, "field": 8, "finished": true,
+			"ahead": [], "behind": ["pip"]})
+	var snap := service.snapshot(id)
+	t.check(bool(answer.ok) and int(answer.points) == 21 and int(snap.scrip) == scrip + RaceLeague.PLACE_SCRIP[0],
+			"the server records a race on the account and pays its scrip")
+	t.check(int(snap.racing.rating) == 21 and int(snap.racing.wins) == 1 and RaceLeague.record_against(snap.racing,
+			"pip") == [1, 0], "the snapshot carries the league")
+	t.check("racing" in StashRules.CARRIED, "and your own server hands it home")
+	var account := service.load_account(id)
+	var copy := StashService.Account.new()
+	copy.load_dict(account.to_dict())
+	t.check(int(copy.racing.rating) == 21, "it is saved with the account")
+	t.check(not bool(service.record_race("nobody", {}).get("ok", true)), "nobody else's account is touched")
+	var bank := Race.StashLeagueBank.new(service)
+	t.check(int(bank.state(id).rating) == 21, "a race reads the league from the accounts")
 
 
 ## Skyhook, the second track: its own bays, a run on it judged on its own

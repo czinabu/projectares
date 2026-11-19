@@ -25,6 +25,8 @@ const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const Human := preload("res://core/visual/human.gd")
 ## The new player's tour (the handler on the phone).
 const Onboarding := preload("res://core/progression/onboarding.gd")
+const RaceLeague := preload("res://core/race/race_league.gd")
+const Contracts := preload("res://core/economy/contracts.gd")
 ## Given once to every new player: a first gun, a frame, some healing and the
 ## starter motorbike (DESIGN.md section 8).
 const WELCOME_CRATE: Array[String] = ["rifle_carbine", "frame_trooper", "medkit", "medkit", "bike_scrapper"]
@@ -85,6 +87,9 @@ var base_plan: Dictionary = BasePlan.clean(null)
 var blueprints: Array[String] = []
 ## The insurance policy (`SafetyNets`): {"item", "ready_at"}.
 var insurance := SafetyNets.fresh()
+## The racing league (`RaceLeague`): rating, league, rivals beaten and
+## recent results. Only live races in Meridian move it.
+var racing := RaceLeague.fresh()
 ## How far through the new player's tour this player is (`Onboarding`). A
 ## view of their own progress, kept only here: a server never reads it.
 var onboarding := Onboarding.fresh()
@@ -155,6 +160,7 @@ func reset() -> void:
 	scrip = Economy.STARTING_SCRIP
 	arena_wins = 0
 	arena_losses = 0
+	racing = RaceLeague.fresh()
 	base_upgrades.clear()
 	base_plan = BasePlan.clean(null)
 	blueprints.clear()
@@ -168,6 +174,16 @@ func record_arena(won: bool) -> void:
 	else:
 		arena_losses += 1
 	save()
+
+
+## A live race's result for this racer (`RaceLeague.clean_result`): moves
+## the league standing and pays its scrip.
+func record_race(result: Dictionary) -> Dictionary:
+	var applied := RaceLeague.apply(racing, result, Contracts.today())
+	racing = applied.state
+	scrip = Economy.add(scrip, int(applied.scrip))
+	save()
+	return applied
 
 
 func grant_welcome_crate() -> void:
@@ -403,6 +419,7 @@ func to_dict() -> Dictionary:
 		"scrip": scrip,
 		"arena_wins": arena_wins,
 		"arena_losses": arena_losses,
+		"racing": racing,
 		"base_upgrades": base_upgrades,
 		"base_plan": base_plan,
 		"blueprints": blueprints,
@@ -473,6 +490,7 @@ func load_dict(data: Dictionary) -> void:
 	scrip = Economy.read_saved(data)
 	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
+	racing = RaceLeague.clean(data.get("racing"))
 	base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
 	base_plan = BasePlan.clean(data.get("base_plan"))
 	blueprints = Crafting.clean(data.get("blueprints"))

@@ -4135,6 +4135,19 @@ func _phone_shots(out_dir: String) -> void:
 	phone.open_app("news")
 	await _settle(10)
 	await _shot(out_dir.path_join("phone_news.png"))
+	# The Racing app with a few races run (a copy: the profile is put back).
+	var racing_before: Dictionary = Profile.racing.duplicate(true)
+	var league := preload("res://core/race/race_league.gd")
+	var state: Dictionary = league.fresh()
+	for result: Dictionary in [{"track": "coilrun", "place": 2, "field": 8, "behind": ["pip", "moss"]},
+			{"track": "skyhook", "place": 5, "field": 8, "ahead": ["moss"], "behind": ["haro"]},
+			{"track": "coilrun", "place": 1, "field": 8, "behind": ["pip", "haro"]}]:
+		state = league.apply(state, result, 1).state
+	Profile.racing = state
+	phone.open_app("racing")
+	await _settle(10)
+	phone._screen.get_texture().get_image().save_png(out_dir.path_join("phone_racing_screen.png"))
+	Profile.racing = racing_before
 	phone.open_app("settings")
 	await _settle(10)
 	await _shot(out_dir.path_join("phone_settings.png"))

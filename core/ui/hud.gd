@@ -61,6 +61,10 @@ var objective := ""
 ## On a race track, the run in one line (`Race.run_line`): the watch card
 ## and the visor's objective block show it in the tour's place.
 var race_line := ""
+## The race radio: what rivals said to you lately, oldest first
+## ({"from", "text", "left"}). The visor draws it under its objectives;
+## with no helmet each line goes on the wrist like a notice.
+var comms: Array[Dictionary] = []
 ## The wrist display.
 var wrist: Wrist
 ## What the helmet draws on its glass in first person, and what its visor
@@ -150,6 +154,8 @@ func _ready() -> void:
 	raid.war_feed.connect(_on_war_feed)
 	raid.player.hit_confirmed.connect(_on_hit_confirmed)
 	raid.player.health.damaged.connect(_on_player_damaged)
+	if raid is Race:
+		(raid as Race).radio.connect(_on_radio)
 
 
 func _exit_tree() -> void:
@@ -204,6 +210,9 @@ func _process(delta: float) -> void:
 	for m in _messages:
 		m.time -= delta
 	_messages = _messages.filter(func(m: Dictionary) -> bool: return m.time > 0.0)
+	for line in comms:
+		line.left -= delta
+	comms = comms.filter(func(line: Dictionary) -> bool: return line.left > 0.0)
 	var log_lines: Array[String] = []
 	for m in _messages:
 		log_lines.append(m.text)
@@ -1438,6 +1447,23 @@ func ping_spots() -> Array[Vector3]:
 
 func pings_shown() -> int:
 	return _pings.size()
+
+
+## How long a line on the race radio stays up, and how many at once.
+const COMMS_TIME := 6.0
+const COMMS_KEPT := 3
+
+
+## A rival said something to you on the race radio (`Race.radio`).
+func _on_radio(actor: Actor, from: String, text: String) -> void:
+	if raid == null or actor != raid.player:
+		return
+	comms.append({"from": from, "text": text, "left": COMMS_TIME})
+	while comms.size() > COMMS_KEPT:
+		comms.pop_front()
+	Sfx.play("radio")
+	if visor == null or not (visor.glass_shown() or visor.flat_shown()):
+		_log("%s: %s" % [from, text], COMMS_TIME)
 
 
 func _on_notice(text: String) -> void:

@@ -207,7 +207,8 @@ static func heat_text(heat: Dictionary) -> String:
 					Race.format_countdown(float(heat.get("starts_in", 0.0)) - since), int(heat.get("people", 0)),
 					Race.GRID_SIZE]
 		"racing":
-			return "RACE ON · %d on the grid\n" % int(heat.get("field", 0))
+			return "RACE ON · %s league · %d on the grid\n" % [str(heat.get("league", "Rookie")),
+					int(heat.get("field", 0))]
 		"done":
 			var text := "RESULTS\n"
 			for row: Dictionary in heat.get("results", []):

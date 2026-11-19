@@ -22,7 +22,8 @@ extends Node
 ## while the service cannot be reached, returns {"ok": false, "error",
 ## "unanswered": true} so nothing ever waits on the service for long.
 ##
-## Sure. `bank`, `settle`, `cancel_deploy`, `change_scrip`, `record_arena`
+## Sure. `bank`, `settle`, `cancel_deploy`, `change_scrip`, `record_arena`,
+## `record_race`
 ## and `cancel_all_deploys` carry a result the server alone knows (a life
 ## that ended, loot handed in), so they are never dropped: each stays
 ## queued, in order, and is sent again after every reconnect until the
@@ -386,6 +387,10 @@ func change_scrip(account_id: String, delta: int) -> bool:
 
 func record_arena(account_id: String, won: bool) -> void:
 	_ask("record_arena", [account_id, won], true)
+
+
+func record_race(account_id: String, result: Dictionary) -> void:
+	_ask("record_race", [account_id, result], true)
 
 
 # --- What a server still keeps itself ----------------------------------------
