@@ -1348,7 +1348,14 @@ without Caleb, and update the gap list when a PR closes a row.
   answer that stops the resending. The client corrects its own
   actor by comparing the server's position with its remembered prediction for
   that input (`NetSession._history`), never with its current position, and
-  blends every correction over several ticks. Keep `Actor` movement
+  blends every correction over several ticks. Everyone else is corrected
+  the same way: the view runs on the client's own clock
+  (`NetSession._advance_view`), never on when updates arrive, and an update
+  is compared with where the client showed that body at the update's
+  server tick (`NetSession.Trail`, `_note_shown`), never with where it is
+  now, so a late update moves nobody (that was the uneven stepping on a
+  jittery connection; feel it with `--jitter`). Nothing is held back to
+  smooth them either. Keep `Actor` movement
   deterministic from its `ActorCommand` so prediction keeps matching.
 - Lag compensation: each input also carries the server tick the client's view
   had reached, and the server keeps half a second of past positions. Attacks

@@ -5169,22 +5169,41 @@ func _test_online_movement() -> void:
 	# Other players glide between updates instead of stepping.
 	me.cmd.move = Vector2(1, 0)
 	await frames(30)
-	var biggest := 0.0
-	var smallest := 99.0
-	var prev := seen.global_position
-	for i in 60:
-		await frames(1)
-		var moved := seen.global_position.distance_to(prev)
-		prev = seen.global_position
-		biggest = maxf(biggest, moved)
-		smallest = minf(smallest, moved)
+	var even := await _step_spread(seen, 60)
+	check(even.x > 0.0 and even.y < even.x * 2.5 + 0.02,
+			"another player's movement is even from tick to tick (%.3f to %.3f m)" % [even.x, even.y])
+	# And when updates come unevenly, late and then several at once (a bad
+	# connection, or a busy machine): a late update is about an earlier
+	# moment, so it must not pull the body back to it.
+	eli.simulated_jitter = 0.08
+	await frames(30)
+	var uneven := await _step_spread(seen, 180)
+	eli.simulated_jitter = 0.0
 	me.cmd.move = Vector2.ZERO
-	check(smallest > 0.0 and biggest < smallest * 2.5 + 0.02,
-			"another player's movement is even from tick to tick (%.3f to %.3f m)" % [smallest, biggest])
+	check(uneven.x > 0.0 and uneven.y < uneven.x * 2.0 + 0.02,
+			"another player's movement stays even when updates arrive unevenly (%.3f to %.3f m)" % [uneven.x, uneven.y])
+	await frames(90)
+	var settled := seen.global_position.distance_to(me.global_position) if is_instance_valid(seen) else 99.0
+	check(settled < 0.5, "and they still end up where they are (%.2f m apart)" % settled)
 	await _leave(eli)
 	await _leave(dana)
 	OS.kill(pid)
 	await frames(30)
+
+
+## The least and most `actor` moves in one tick, over `ticks` ticks, as
+## (least, most).
+func _step_spread(actor: Actor, ticks: int) -> Vector2:
+	var least := 99.0
+	var most := 0.0
+	var prev := actor.global_position
+	for i in ticks:
+		await frames(1)
+		var moved := actor.global_position.distance_to(prev)
+		prev = actor.global_position
+		least = minf(least, moved)
+		most = maxf(most, moved)
+	return Vector2(least, most)
 
 
 ## The yaw that turns an actor to look along `dir`.
