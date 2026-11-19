@@ -337,8 +337,8 @@ static func marsh() -> PlanetType:
 	}
 	t.calm = {
 		"sky_tint": Color(0.85, 0.95, 0.9), "sky_energy": 0.75, "sky_saturation": 1.0,
-		"fog_color": Color(0.16, 0.25, 0.22), "fog_density": 0.86,
-		"fog_depth_begin": 12.0, "fog_depth_end": 300.0, "fog_depth_curve": 0.9,
+		"fog_color": Color(0.27, 0.31, 0.25), "fog_density": 0.88,
+		"fog_depth_begin": 8.0, "fog_depth_end": 190.0, "fog_depth_curve": 0.85,
 		"fog_height": 1.5, "fog_height_density": 0.3, "haze_height": 0.35,
 		"sun_color": Color(1.0, 0.72, 0.5), "sun_energy": 1.0, "sun_angles": Vector3(-10, -60, 0),
 		"ambient_color": Color(0.26, 0.4, 0.36), "ambient_energy": 1.15,
@@ -350,6 +350,16 @@ static func marsh() -> PlanetType:
 		"fog_depth_begin": 8.0, "fog_depth_end": 90.0, "fog_depth_curve": 0.9, "haze_height": 0.8,
 		"sun_energy": 0.35, "ambient_color": Color(0.4, 0.5, 0.5), "ambient_energy": 1.1,
 		"saturation": 0.8, "contrast": 1.0, "glow": 1.1,
+	}
+	# Under the fungal caps the mist shuts in and the light goes: close
+	# quarters, gone by about 40 m (Caleb's call), a deep blue-green dark
+	# the gills glow through. Out on the water the haze is warm and wide.
+	t.close = {
+		"fog_color": Color(0.14, 0.21, 0.24), "fog_density": 0.97,
+		"fog_depth_begin": 2.0, "fog_depth_end": 45.0, "fog_depth_curve": 0.6,
+		"fog_height": 2.5, "fog_height_density": 0.45,
+		"sun_energy": 0.45, "ambient_color": Color(0.2, 0.3, 0.34), "ambient_energy": 1.0,
+		"exposure": 1.05, "contrast": 1.1, "glow": 1.6,
 	}
 	t.terrain = {
 		"base_amp": 5.0, "base_freq": 0.008, "octaves": 4, "warp": 30.0,
@@ -377,6 +387,10 @@ static func marsh() -> PlanetType:
 		{"kind": "crystal", "per_ha": 0.8, "size": Vector2(0.6, 1.6), "max_slope": 0.5, "high": -0.8},
 	]
 	# Mist lying low over the black water, thicker in the rain.
-	t.smoke = {"density": 0.05, "colour": Color(0.5, 0.62, 0.56), "depth": 7.0, "war": 0.0, "storm": 1.2}
+	# Mist lying low over the black water, thicker in the rain, drifting in
+	# banks someone can step out of right in front of you.
+	t.smoke = {"density": 0.07, "colour": Color(0.5, 0.62, 0.56), "depth": 7.0, "war": 0.0, "storm": 1.2,
+		"banks": {"count": 5, "cell": 55.0, "size": Vector3(30.0, 7.0, 20.0), "density": 0.35,
+			"drift": 0.8, "wind": 0.6}}
 	t.rules = {"cold": 0.0, "surface_grip": 0.8, "shot_carry": 0.85}
 	return t

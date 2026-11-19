@@ -1353,8 +1353,9 @@ built in this order, cheapest and most connected first:
    artifacts (Caleb's call), plus trophies, melee blueprints (new options,
    never a higher Mk) and marsh cosmetics.
    Part one is built (below, "The Spore Marsh"): the world, its map, three
-   of the five kinds of wildlife, fouling, spore clouds and its loot. The
-   lurkers, the brood keepers and their hives, and the Rootways come next.
+   of the five kinds of wildlife, fouling, spore clouds and its loot. Part
+   two is built too: the lurkers, the brood keepers and their hives, and
+   the forests' close air. The Rootways come next.
 3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
    map several times Ashfront's width, salvage crates too big for a pack
    that ride in a vehicle's cargo space, sandstorms that bury and uncover
@@ -1431,9 +1432,40 @@ and a fight is short. The planet's mist lies low over everything (its
 - **Contracts.** Its own, tagged "marsh": hollows, caps, stalkers,
   shellbacks and Spore Sacs as dailies; the Matriarch twice and three
   Glowcaps as weeklies, which pay a blueprint like every weekly.
-- **Still to come.** Lurkers under the black water, brood keepers and the
-  hives they guard, the Rootways and their keepers, the rain storms the
-  planet already has a look for, and wading.
+
+### The Spore Marsh (part two, built)
+
+- **Lurkers.** Seven lie at the deepest spots of the pools, well apart and
+  out of the forests (found by a fixed sweep of the map, no dice), each a
+  "spawn_guard" that never leaves its pool (meta "leash", 5 m). A lurker
+  lies low (the bot's "lies_low" meta: it sits crouched at its post until
+  it sees someone), and the skin sinks a lying body under the water by its
+  skin's "lurks" share, so all that shows is the faint glow of its lure.
+  It sees only 8 m, but all round, and lunges with a dash and heavy jaws
+  (30 a bite, 20 armor, 130 health). A pool is a place to cross quickly,
+  or round.
+- **Brood keepers and hives.** Each forest but the Matriarch's has a hive
+  on dry ground near its heart, and a brood keeper (2.4 m, 520 health,
+  40 armor, hooked arms) posted beside it. While the keeper lives the hive
+  is sealed (`LootContainer.sealed`: it opens for nobody and says why) and
+  spills broodlings, small quick biters, every 7 s while a player is near,
+  up to four at a time (the guard marker's "brood" metas, run by
+  `Raid._tick_brood`). Keepers and broodlings are one kind (the world's
+  `KIN`), so they never fight each other. Kill the keeper and the hive
+  opens; it pays the marsh's goods and now and then an artifact. The
+  keeper comes back after the guard respawn time and seals it again.
+- **Close air** (Caleb's call: close quarters read smoky). Under a
+  forest's caps the mist shuts in to about 40 m and the light goes a deep
+  blue-green dark the gills glow through; out on the water the haze is
+  warm and wide (the planet's `close` mood, blended by how far under the
+  caps the camera is, the map's "close_here"). The low mist drifts in
+  banks someone can step out of in front of you (`PlanetType.smoke`'s
+  "banks", Forward+ only, like all volumetric fog). Bots see no further
+  than the mist lets a player (`WorldDef.sight_at`: 38 m deep in a
+  forest), so it is fair both ways.
+- **Still to come.** The Rootways and their keepers, the rain storms the
+  planet already has a look for, giant shapes far off in the haze, the
+  forest floor's flora, and a pass on the beasts' bodies.
 
 ## 3. The watch
 
@@ -1759,8 +1791,9 @@ of the shots and their whizz.
 A worn helmet can come off and be clipped to the hip, so faces show where
 people meet (the Concourse, a base) and a helmet is still to hand.
 
-- **From the watch.** The Summon tab's helmet icon takes it off or puts it
-  back on with a click. The watch goes down, since the off hand does it.
+- **From the watch or its key.** The Summon tab's helmet icon takes it off
+  or puts it back on with a click, and so does its own key, K (Caleb's
+  ask). The watch goes down, since the off hand does it.
 - **Shown, not swapped.** Both hands lift the helmet off (Caleb's call),
   so a weapon in hand is put away first. The weapon hand lets go as it
   comes down, and the off hand carries it round the body and clips it to the back of the left hip

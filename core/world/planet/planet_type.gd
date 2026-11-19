@@ -21,6 +21,9 @@ var sky := {}
 ## (tint, energy, saturation, haze) grade the planet's own sky.
 var calm := {}
 var storm := {}
+## Close air, a mood for where a map says the air shuts in (the marsh's
+## forests), blended by the map's "close_here" meta, or empty for none.
+var close := {}
 ## `PlanetTerrain`'s recipe.
 var terrain := {}
 ## `planet_ground.gdshader`'s uniforms.
@@ -41,7 +44,10 @@ var weather := {"air": "", "storm": ""}
 ## `GameSettings.ground_smoke`), or empty for clear air: "density" in calm,
 ## "colour", "depth" (metres it stands over the ground), "war" and "storm"
 ## (how much thicker it is at full war and in the thick of a storm, as
-## shares of the calm density).
+## shares of the calm density). With "banks" it also drifts in banks
+## (`Planet.GroundSmoke`): "count" round the camera, "cell" metres apart,
+## "size" (an ellipsoid), "density", "drift" (metres a second) and "wind"
+## (its heading, radians).
 var smoke := {}
 ## What is scattered on the ground (`PlanetProps`): kind, how many per
 ## hectare, size range, and where (slope, height).
