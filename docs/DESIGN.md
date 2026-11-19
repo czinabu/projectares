@@ -917,6 +917,20 @@ Raider fights run longer than the others because both sides wear plates and
 stop to use a medkit. A warlord's loss, when the player does win, takes
 about 6-7 s and leaves the player around a third health.
 
+**Outer ring retune (19 Nov, 60 duels on each of seeds 1 to 3).** The
+first enemies a new player meets had drifted to the hard edge: the outer
+heavy won 30% at 12 m (the reference 70%, under its band), and the outer
+soldier averaged 84% at 25 m, just under. The outer heavy now has 225
+health (was 250) and the outer soldier 115 (was 125); middle and core are
+unchanged. Spread, aim skill and range falloff were tried first and barely
+moved the 25 m number, since the reference's own misses at that range
+decide it.
+
+| Enemy | 12 m before | 12 m after | 25 m before | 25 m after |
+| --- | --- | --- | --- | --- |
+| Outer soldier | 93% | 95% | 84% | 86% |
+| Outer heavy | 70% (seed 1) | 81% | 83% (seed 1) | 87% |
+
 ### Group fights (Caleb's call)
 
 One soldier is a fair fight; five that all open up at once is a wall of
