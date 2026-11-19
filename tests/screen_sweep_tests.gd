@@ -94,6 +94,9 @@ static func _leave(main: Node) -> void:
 ## raised and every icon on its card brought up, opened where it opens and
 ## closed again. Nothing is clicked, so nothing is used.
 static func _sweep_hand(t: Node, main: Node, where: String) -> void:
+	var context: Dictionary = main.report_context()
+	t.check(str(context.get("place", "")) != "" and context.has("fps"),
+			"%s: a bug report says where the player is (%s)" % [where, context.get("place", "")])
 	var phone: CanvasLayer = main.phone
 	if phone != null:
 		if not phone.is_open:

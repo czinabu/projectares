@@ -55,6 +55,9 @@ signal leave_server_requested
 ## The Servers app asks `Main` to restart into a downloaded update. Online
 ## that means leaving the server first, which `Main` refuses out in a world.
 signal update_restart_requested
+## The Report app asks `Main` to send a bug report of what the player
+## wrote (`BugReport`); `Main` answers with `set_report_status`.
+signal report_requested(text: String)
 
 const SocialService := preload("res://core/social/social_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
@@ -67,14 +70,14 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 
-const APPS := ["contacts", "messages", "invites", "news", "racing", "servers", "mirror", "controls", "settings"]
+const APPS := ["contacts", "messages", "invites", "news", "racing", "servers", "mirror", "controls", "settings", "report"]
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
 		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror", "controls": "Controls",
-		"settings": "Settings"}
+		"settings": "Settings", "report": "Report a bug"}
 ## The names under the home screen's icons.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
 		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror", "controls": "Keys",
-		"settings": "Settings"}
+		"settings": "Settings", "report": "Report"}
 ## The screen's colours: the dark glass, the panels on it, and the dimmer
 ## ink for secondary text. The device's body is gunmetal.
 const SCREEN_BG := Color(0.035, 0.04, 0.047)
@@ -323,6 +326,10 @@ var server_changed := {}
 ## a redraw keeps your typing.
 var _address_edit: LineEdit
 var _address_draft := ""
+## The Report app: what is being written, and how the last report went.
+var _report_draft := ""
+var report_status := ""
+var report_sending := false
 var _link_focus := ""
 
 
@@ -1367,6 +1374,7 @@ func refresh(redraw := true) -> void:
 		"mirror": _draw_mirror()
 		"controls": _draw_controls()
 		"settings": _draw_settings()
+		"report": _draw_report()
 	fit_to_glass(_body)
 	if had_focus and _compose != null:
 		_compose.grab_focus()
@@ -1689,6 +1697,52 @@ func forget_home_server() -> void:
 ## The Servers app. Offline: your name, hosting here, joining a friend by
 ## address, and where the base's door leads. Linked: who you are there, which
 ## server it is, and leaving it.
+## The Report app: a line about what went wrong, sent with the game's log,
+## the build and where you are (`Main`, `BugReport`).
+func _draw_report() -> void:
+	_body.add_child(_label("Something broke or felt wrong? Say what happened and what you expected. "
+			+ "The game's log, its build and where you are go with it.", 15, Color(0.75, 0.75, 0.75)))
+	var card := _card()
+	var box: VBoxContainer = card.get_child(0)
+	var edit := LineEdit.new()
+	edit.name = "ReportEdit"
+	edit.max_length = 600
+	edit.placeholder_text = "What happened?"
+	edit.text = _report_draft
+	edit.text_changed.connect(func(text: String) -> void: _report_draft = text)
+	edit.text_submitted.connect(func(_text: String) -> void: send_report())
+	box.add_child(edit)
+	box.add_child(_button("Sending..." if report_sending else "Send report", send_report))
+	_body.add_child(card)
+	if report_status != "":
+		_body.add_child(_label(report_status, 14, UiTheme.ACCENT))
+
+
+## Sends what the Report app holds (its Send button and Enter).
+func send_report() -> void:
+	if report_sending:
+		return
+	if _report_draft.strip_edges() == "":
+		set_report_status("Write what happened first.", false)
+		return
+	report_sending = true
+	report_status = "Sending..."
+	if app == "report":
+		refresh()
+	report_requested.emit(_report_draft.strip_edges())
+
+
+## How the last report went (`Main`, from `BugReport.finished`). A sent one
+## clears the draft.
+func set_report_status(text: String, sent: bool) -> void:
+	report_sending = false
+	report_status = text
+	if sent:
+		_report_draft = ""
+	if app == "report":
+		refresh()
+
+
 func _draw_servers() -> void:
 	_address_edit = null
 	if linked():
@@ -2353,6 +2407,15 @@ class AppIcon extends Control:
 					for col in 4:
 						draw_rect(Rect2(c + Vector2(-21 + col * 11, -14 + row * 11) * k, Vector2(8, 8) * k), ink, false, 2.0 * k)
 				draw_rect(Rect2(c + Vector2(-13, 9) * k, Vector2(26, 7) * k), ink, false, 2.0 * k)
+			"report":
+				# A bug: a round body, a head and three legs a side.
+				draw_arc(c + Vector2(0, 4) * k, 11.0 * k, 0.0, TAU, 20, ink, w, true)
+				draw_arc(c + Vector2(0, -12) * k, 5.5 * k, 0.0, TAU, 14, ink, w, true)
+				draw_line(c + Vector2(0, -6) * k, c + Vector2(0, 15) * k, Color(ink, 0.6), 2.0 * k, true)
+				for i in 3:
+					var y := -2.0 + i * 7.0
+					draw_line(c + Vector2(-10, y) * k, c + Vector2(-20, y - 4.0 + i * 4.0) * k, ink, 2.0 * k, true)
+					draw_line(c + Vector2(10, y) * k, c + Vector2(20, y - 4.0 + i * 4.0) * k, ink, 2.0 * k, true)
 			"settings":
 				var gear := PackedVector2Array()
 				var teeth := 8

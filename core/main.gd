@@ -67,6 +67,7 @@ const ServerTrust := preload("res://core/net/server_trust.gd")
 const NameplatesScript := preload("res://core/ui/nameplates.gd")
 const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const BugReportScript := preload("res://core/report/bug_report.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const BaseHudScript := preload("res://core/ui/base_hud.gd")
@@ -126,6 +127,8 @@ var bench_view: Node3D
 var plaza_view: CanvasLayer
 ## The shop screen while trading at a plaza storefront, else null.
 var shop_view: ShopView
+## Sends what the phone's Report app writes (`BugReport`).
+var bug_report: Node
 ## The storefront terminal's live screen showing `shop_view`, else null.
 var shop_screen: WorldScreen
 var _shop_viewport: SubViewport
@@ -1201,6 +1204,53 @@ func _setup_phone() -> void:
 	phone.update_restart_requested.connect(_restart_for_update)
 	phone.update_hold = _away_from_quiet
 	hub.online_status_changed.connect(phone.set_link_status)
+	bug_report = BugReportScript.new()
+	bug_report.name = "BugReport"
+	add_child(bug_report)
+	bug_report.finished.connect(func(ok: bool, note: String) -> void: phone.set_report_status(note, ok))
+	phone.report_requested.connect(func(text: String) -> void: bug_report.send(text, report_context()))
+
+
+## What a bug report says about where the player is and what they were
+## doing (`BugReport`): plain values, never anything secret.
+func report_context() -> Dictionary:
+	var context := {}
+	if raid != null and raid.world != null:
+		context["place"] = "%s (%s)" % [raid.world.display_name, raid.world.id]
+	elif base != null:
+		context["place"] = "someone else's base" if base.read_only else "home base"
+	else:
+		context["place"] = "travelling"
+	context["online"] = ("on " + phone.link_where) if net != null and phone.link_where != "" \
+			else ("online" if net != null else "solo")
+	var body: Actor = controller.actor if controller != null and is_instance_valid(controller) else null
+	if body != null and is_instance_valid(body):
+		var at := body.global_position
+		context["position"] = "%.1f, %.1f, %.1f" % [at.x, at.y, at.z]
+		context["view"] = "third person" if controller.is_third_person() else "first person"
+		context["health"] = "%d / %d" % [int(body.health.health), int(body.health.max_health)]
+	context["fps"] = "%d" % int(Engine.get_frames_per_second())
+	var life := _last_life_line()
+	if life != "":
+		context["last_life"] = life
+	return context
+
+
+## The newest line the life log wrote here (solo lives only: online the
+## server keeps them), or "".
+func _last_life_line() -> String:
+	var dir := LifeLog.directory
+	if dir == "" or not DirAccess.dir_exists_absolute(dir):
+		return ""
+	var newest := ""
+	for name in DirAccess.get_files_at(dir):
+		var path := dir.path_join(name)
+		if newest == "" or FileAccess.get_modified_time(path) > FileAccess.get_modified_time(newest):
+			newest = path
+	if newest == "":
+		return ""
+	var lines := FileAccess.get_file_as_string(newest).strip_edges().split("\n")
+	return lines[lines.size() - 1] if not lines.is_empty() else ""
 
 
 ## Hands on the phone: the character stops, raises it (everyone sees) and the

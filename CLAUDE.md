@@ -1423,6 +1423,19 @@ without Caleb, and update the gap list when a PR closes a row.
   switches live only on the Dev tab.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
+- Bug reports (the must-work checklist's "Bug reporting with logs"): the
+  phone's Report app (`Phone.report_requested`) hands `Main` a line of
+  text, and `core/report/bug_report.gd` (`Main.bug_report`, view and
+  client only) bundles it with the build, the machine, where the player is
+  (`Main.report_context`, plain values, never a secret) and the game's
+  log from this run and the run before (a crashed run's log is found on
+  the next launch). It posts that to a Discord webhook as a message with
+  the logs attached, at most one every `report_every`, and always keeps a
+  copy under `BugReport.SAVE_DIR`. The webhook is never in the code: the
+  Windows build of main stamps it into `ares/report/webhook` from the
+  repository secret `BUG_REPORT_WEBHOOK` (`windows-client.yml`), and any
+  other build only keeps the copy. A new fact worth having in a report is
+  a key in `report_context`.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
   along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
   only in a debug or editor run (`DevMode.available`), never in an exported
