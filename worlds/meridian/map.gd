@@ -24,6 +24,8 @@ extends Node3D
 ## views, Label3D boards in group "race_board", the line's lights in group
 ## "race_light" (meta "index", 0 first), and one node per gate in group
 ## "race_gate" (meta "gate", the gate's index) with a Label3D child "Split".
+## Pit tuning benches are Marker3D nodes in group "race_tune" (metas
+## "track" and "machine") with a "Status" label; `Race.tune` fits there.
 ## Race control's desks are Marker3D nodes in group "race_desk" (metas
 ## "track" and "machine", an empty machine for the watch desk) with a
 ## Label3D child "Status" for `RaceView` to write on; each track's `pit` is
@@ -405,6 +407,9 @@ func _build_pits() -> void:
 		tag.position = Vector3(x, 0.05, PIT_Z + 7.4)
 		tag.rotation = Vector3(-PI / 2.0, 0, 0)
 		add_child(tag)
+	# The tuning benches, behind each machine's bays.
+	_tune_bench(Vector3(-126.5, 0, PIT_Z - 3.0), TRACK_ID, "bike_scrapper", AMBER)
+	_tune_bench(Vector3(-90.5, 0, PIT_Z - 3.0), TRACK_ID, "bike_raider", CYAN)
 	# Where a racer arrives: by the pit building's door.
 	var spawn := Marker3D.new()
 	spawn.add_to_group("spawn_player")
@@ -590,6 +595,31 @@ func _desk(at: Vector3, track_id: String, machine: String, color: Color) -> void
 	label.position = Vector3(0, 1.9, -0.6)
 	label.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	label.text = desk_title(track_id, machine)
+	marker.add_child(label)
+
+
+## A pit tuning bench for one machine: a tool counter and the marker the
+## `Race` and `RaceView` read (group "race_tune", metas "track" and
+## "machine"), its words on the "Status" label. `back` is the side of the
+## marker the counter stands on (-1 toward -z).
+func _tune_bench(at: Vector3, track_id: String, machine: String, color: Color, back := -1.0) -> void:
+	var marker := Marker3D.new()
+	marker.add_to_group("race_tune")
+	marker.set_meta("track", track_id)
+	marker.set_meta("machine", machine)
+	marker.position = at
+	add_child(marker)
+	_box(Vector3(2.4, 0.95, 0.8), at + Vector3(0, 0.475, 0.7 * back), _metal(Color(0.2, 0.2, 0.22), 0.4))
+	_box(Vector3(2.3, 0.05, 0.7), at + Vector3(0, 0.98, 0.7 * back), _glow(color, 1.2, 0.6), 0.0, false)
+	_box(Vector3(2.4, 1.4, 0.1), at + Vector3(0, 1.65, 1.1 * back), _metal(Color(0.1, 0.1, 0.12), 0.3))
+	var label := Label3D.new()
+	label.name = "Status"
+	label.font_size = 40
+	label.pixel_size = 0.005
+	label.modulate = color
+	label.position = Vector3(0, 1.7, 1.0 * back)
+	label.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	label.text = "%s TUNING" % ("SCRAPPER" if machine == "bike_scrapper" else "RAIDER")
 	marker.add_child(label)
 
 

@@ -1734,7 +1734,7 @@ func _arena_request(action: String, args: Dictionary) -> void:
 
 
 ## Race: a racer asks to race, signs up at a race control desk
-## ("signup:<track>:<machine>"), asks for a restart or to stop their run. The server's own
+## ("signup:<track>:<machine>"), tunes at a pit bench ("tune:<machine>"), asks for a restart or to stop their run. The server's own
 ## `Race.request` decides, for the sender's own actor.
 @rpc("any_peer", "call_remote", "reliable")
 func _race_request(action: String) -> void:
@@ -1743,7 +1743,8 @@ func _race_request(action: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	var race := raid as Race
 	if not is_server or race == null or not _peer_actor.has(peer) or action.length() > 80 \
-			or not (action in ["race", "restart", "retire"] or action.begins_with("signup:")):
+			or not (action in ["race", "restart", "retire"] or action.begins_with("signup:") \
+					or action.begins_with("tune:")):
 		return
 	var result := race.request(_peer_actor[peer], action)
 	if not result.ok and peer in _api.get_peers():

@@ -2063,8 +2063,9 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   in the pit bays, never the rider's own (toys stay on the watch here). Each
   vehicle item carries a race profile (`ItemDB.RACE_*`, its `race` stat)
   that replaces its combat tuning on the track, so changing a bike for the
-  warzone never moves a lap time. Ranked racing will use these same stock
-  machines, so a race is decided by the rider.
+  warzone never moves a lap time. League races use these same machines,
+  with the rider's tuning kit fitted (below): kits are sidegrades held to
+  the bench, so a race is still decided by the rider.
 - **Balance is measured.** The time-trial bench (`tests/race_bench.tscn`)
   drives every machine of a class round every track at its limits and
   flags any whose best lap is more than 3% off the class average. Each
@@ -2120,8 +2121,7 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   and 5 for any other finish, at most 120 a day, so racing never out-earns
   the warzone. The phone's Racing app shows your league, rating and what
   stands between you and the next, your record against each rival, the
-  day's pay and your last five races. Tuning parts come next (the
-  "Racing depth" plan).
+  day's pay and your last five races.
 - **Ghosts on the server, and friends'.** The server records every
   person's lap as it is driven, and a clean lap faster than your best on
   that track and machine is kept with your account (a few KB, beside the
@@ -2131,6 +2131,17 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   leader's best lap, and none. The pit board lists your friends' best
   times on that track under its own. Solo, the ghosts stay on this
   computer.
+- **Tuning (Caleb's calls: allowed in league races, unlocked by league).**
+  Each machine's pit bench (one per machine, behind its bays) fits a
+  tuning kit to that machine for you, kept on your account; pressing E
+  turns to the next kit you have unlocked, and a machine waiting on the
+  grid takes it at once. Club opens Short and Tall gearing, Pro Grip
+  tyres, Elite Bite brakes and Champion the Light frame. Every kit trades
+  one feel for another (out of corners against top speed, turn against
+  drag, braking against getting going) and the time-trial bench drives
+  every kit on every machine and track, holding each inside the class's
+  3% (`race_bench.tscn -- --tunes`, `--sweep` for what one stat is
+  worth), so a kit never buys speed. AI racers run stock.
 - **Easy in, easy out (Caleb's ask).** Race control has a desk for each
   track and machine ("Coilrun · Raider") that shows the next race's
   countdown and how many riders are on its grid; using one puts you on a

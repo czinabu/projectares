@@ -886,6 +886,7 @@ func _attach_player_view() -> void:
 		race_view = RaceView.new()
 		race_view.setup(raid)
 		race_view.watching_changed.connect(_on_race_watching)
+		race_view.league_source = phone.racing
 		raid.add_child(race_view)
 
 
