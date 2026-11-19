@@ -74,6 +74,8 @@ var terrain: Terrain
 var _rng := RandomNumberGenerator.new()
 ## Dressing has its own generator so art never shifts the gameplay layout.
 var _art_rng := RandomNumberGenerator.new()
+## How awake each stalk's gills are (0 to 1), by `_stalks` index; view only.
+var _gill_glow: Array[float] = []
 var _noise := FastNoiseLite.new()
 var _pools := FastNoiseLite.new()
 ## Every stalk placed: { at (its foot), radius, height, cap (cap radius) }.
@@ -543,6 +545,8 @@ func _dress_stalks(art: Node3D) -> void:
 	art.add_child(node)
 	_dress_gill_lights(art)
 	_dress_glowcaps(art)
+	_dress_moss(art)
+	_dress_reeds(art)
 
 
 const FUNGUS_SIDES := 14
@@ -558,6 +562,12 @@ func _fungus(flesh: SurfaceTool, gills: SurfaceTool, stalk: Dictionary) -> void:
 	var big: float = stalk.cap
 	var lean := Vector2(_art_rng.randf_range(-1.0, 1.0), _art_rng.randf_range(-1.0, 1.0)) * r * 0.35
 	var twist := _art_rng.randf() * TAU
+	# Each cap's own gills (`fungus.gdshader` reads the vertex colour): how
+	# bright (most dim, a few awake), which way the hue leans and how fine
+	# the ribs run. Small caps glow less.
+	var awake := pow(_art_rng.randf(), 1.3) * lerpf(0.5, 1.0, smoothstep(6.0, 18.0, h))
+	var tone := Color(0.3 + 0.7 * awake, _art_rng.randf(), _art_rng.randf(), 1.0)
+	_gill_glow.append(awake)
 	var centre := func(t: float) -> Vector3:
 		return foot + Vector3(lean.x * t * t, -0.8 + t * (h + 0.9), lean.y * t * t)
 	var trunk_r := func(t: float) -> float:
@@ -588,11 +598,11 @@ func _fungus(flesh: SurfaceTool, gills: SurfaceTool, stalk: Dictionary) -> void:
 			var wob := 1.0 + 0.05 * sin(a * 3.0 + twist * 2.0) * s
 			ring.append(Vector3(middle.x + cos(a) * big * s * wob, top_y.call(s), middle.z + sin(a) * big * s * wob))
 		cap.append(ring)
-	_lathe(flesh, rings, vs, false)
+	_lathe(flesh, rings, vs, false, tone)
 	var cap_v: Array[float] = []
 	for ri in CAP_RINGS + 1:
 		cap_v.append(1.0)
-	_lathe(flesh, cap, cap_v, true)
+	_lathe(flesh, cap, cap_v, true, tone)
 	# The gills: from the rim (just under its edge) back in to the trunk.
 	var under: Array[PackedVector3Array] = []
 	var stem := float(trunk_r.call(1.0)) / big
@@ -605,12 +615,13 @@ func _fungus(flesh: SurfaceTool, gills: SurfaceTool, stalk: Dictionary) -> void:
 			var y: float = top_y.call(s) - 0.18 - (1.0 - s) * big * 0.1
 			ring.append(Vector3(middle.x + cos(a) * big * s * wob, y, middle.z + sin(a) * big * s * wob))
 		under.append(ring)
-	_lathe(gills, under, cap_v, true)
+	_lathe(gills, under, cap_v, true, tone)
 
 
 ## Joins rings of points into a band of quads facing out (or up, for a cap
-## whose rings run outward); `v` is each ring's UV.y.
-func _lathe(st: SurfaceTool, rings: Array[PackedVector3Array], v: Array[float], outward: bool) -> void:
+## whose rings run outward); `v` is each ring's UV.y, `tone` every vertex's
+## colour.
+func _lathe(st: SurfaceTool, rings: Array[PackedVector3Array], v: Array[float], outward: bool, tone := Color.WHITE) -> void:
 	for ri in rings.size() - 1:
 		var a_ring := rings[ri]
 		var b_ring := rings[ri + 1]
@@ -623,6 +634,7 @@ func _lathe(st: SurfaceTool, rings: Array[PackedVector3Array], v: Array[float], 
 			var uv := [Vector2(u0, v[ri]), Vector2(u1, v[ri]), Vector2(u0, v[ri + 1]), Vector2(u1, v[ri + 1])]
 			var order := [0, 2, 1, 1, 2, 3] if outward else [0, 1, 2, 1, 3, 2]
 			for k: int in order:
+				st.set_color(tone)
 				st.set_uv(uv[k])
 				st.add_vertex(quad[k])
 
@@ -630,13 +642,14 @@ func _lathe(st: SurfaceTool, rings: Array[PackedVector3Array], v: Array[float], 
 ## A few warm lights under the biggest caps, so the forests glow at dusk.
 func _dress_gill_lights(art: Node3D) -> void:
 	var lit := 0
-	for stalk: Dictionary in _stalks:
-		if float(stalk.height) < 14.0 or lit >= 24:
+	for i in _stalks.size():
+		var stalk: Dictionary = _stalks[i]
+		if float(stalk.height) < 14.0 or _gill_glow[i] < 0.35 or lit >= 24:
 			continue
 		lit += 1
 		var light := OmniLight3D.new()
 		light.light_color = Color(0.45, 1.0, 0.75)
-		light.light_energy = 1.2
+		light.light_energy = 0.4 + 0.8 * _gill_glow[i]
 		light.omni_range = float(stalk.cap) * 2.2
 		light.shadow_enabled = false
 		light.position = stalk.at + Vector3(0, float(stalk.height) - 1.0, 0)
@@ -701,6 +714,132 @@ func _dress_glowcaps(art: Node3D) -> void:
 
 
 const GLOWCAPS := 1400
+const MOSS := 3200
+const REEDS := 2600
+
+
+## Moss hummocks: low soft mounds round each stalk's foot and over the
+## forests' floors, thinning out to the bare mud between them.
+func _dress_moss(art: Node3D) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var dome: Array[PackedVector3Array] = []
+	var v: Array[float] = []
+	for ri in 4:
+		var s := float(ri) / 3.0
+		var ring := PackedVector3Array()
+		for si in 9:
+			var a := TAU * si / 9.0
+			var wob := 1.0 + 0.18 * sin(a * 3.0)
+			ring.append(Vector3(cos(a) * s * wob, 0.2 * (1.0 - s * s) - 0.04, sin(a) * s * wob))
+		dome.append(ring)
+		v.append(s)
+	_lathe(st, dome, v, true)
+	st.generate_normals()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color(0.36, 0.5, 0.2)
+	mat.albedo_texture = load(Planet.surface_path(String(planet.surfaces["base"]), "Color"))
+	mat.uv1_triplanar = true
+	mat.uv1_world_triplanar = true
+	mat.uv1_scale = Vector3.ONE * 0.6
+	mat.roughness = 1.0
+	st.set_material(mat)
+	var moss := MultiMesh.new()
+	moss.transform_format = MultiMesh.TRANSFORM_3D
+	moss.use_colors = true
+	moss.mesh = st.commit()
+	var spots: Array[Transform3D] = []
+	var tints: Array[Color] = []
+	var tries := 0
+	while spots.size() < MOSS and tries < MOSS * 4:
+		tries += 1
+		var at: Vector2
+		if tries % 3 == 0:
+			var forest: Dictionary = FORESTS[_art_rng.randi() % FORESTS.size()]
+			at = forest["at"] + Vector2.from_angle(_art_rng.randf() * TAU) * sqrt(_art_rng.randf()) * float(forest["radius"])
+		else:
+			var stalk: Dictionary = _stalks[_art_rng.randi() % _stalks.size()]
+			var foot: Vector3 = stalk.at
+			at = Vector2(foot.x, foot.z) + Vector2.from_angle(_art_rng.randf() * TAU) * (float(stalk.radius) * 1.6 + _art_rng.randf() * 4.0)
+		var ground := ground_height(at.x, at.y)
+		if ground < WATER_Y - 0.1:
+			continue
+		var size := _art_rng.randf_range(0.4, 1.4)
+		var basis := Basis(Vector3.UP, _art_rng.randf() * TAU).scaled(Vector3(size * _art_rng.randf_range(0.8, 1.6), size * 0.6, size))
+		spots.append(Transform3D(basis, Vector3(at.x, ground, at.y)))
+		tints.append(Color(0.9, 1.0, 0.9).lerp(Color(0.55, 0.62, 0.4), _art_rng.randf()))
+	moss.instance_count = spots.size()
+	for i in spots.size():
+		moss.set_instance_transform(i, spots[i])
+		moss.set_instance_color(i, tints[i])
+	var node := MultiMeshInstance3D.new()
+	node.name = "Moss"
+	node.multimesh = moss
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(node)
+
+
+## Reeds where the black water meets the mud: clumps of thin blades, a few
+## with seed heads, along every bank.
+func _dress_reeds(art: Node3D) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = LAYOUT_SEED + 11
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for b in 11:
+		var a := TAU * b / 11.0 + rng.randf() * 0.5
+		var lean := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.08, 0.35)
+		var tall := rng.randf_range(0.9, 1.9)
+		var foot := Vector3(cos(a), 0, sin(a)) * rng.randf() * 0.18 - Vector3(0, 0.15, 0)
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.022
+		var top := foot + Vector3(0, tall, 0) + lean
+		var mid := foot + Vector3(0, tall * 0.55, 0) + lean * 0.3
+		# A blade: two quads narrowing to a point, darker at the foot.
+		var dark := Color(0.55, 0.6, 0.5)
+		for tri in [[foot - side, foot + side, mid + side * 0.7], [foot - side, mid + side * 0.7, mid - side * 0.7], [mid - side * 0.7, mid + side * 0.7, top]]:
+			for p: Vector3 in tri:
+				st.set_color(dark.lerp(Color.WHITE, clampf((p.y + 0.15) / tall, 0.0, 1.0)))
+				st.add_vertex(p)
+		if b % 4 == 0:
+			# A seed head: a dark spindle near the top.
+			var head := foot + Vector3(0, tall * 0.85, 0) + lean * 0.7
+			var w := Vector3(-sin(a), 0, cos(a)) * 0.05
+			var up := Vector3(0, 0.16, 0)
+			for tri in [[head - w, head + w, head + up], [head - w, head - up, head + w]]:
+				for p: Vector3 in tri:
+					st.set_color(Color(0.35, 0.22, 0.14))
+					st.add_vertex(p)
+	st.generate_normals()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color(0.26, 0.3, 0.14)
+	mat.roughness = 0.8
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	st.set_material(mat)
+	var reeds := MultiMesh.new()
+	reeds.transform_format = MultiMesh.TRANSFORM_3D
+	reeds.mesh = st.commit()
+	var spots: Array[Transform3D] = []
+	var tries := 0
+	while spots.size() < REEDS and tries < REEDS * 30:
+		tries += 1
+		var at := Vector2(_art_rng.randf_range(-BASIN, BASIN), _art_rng.randf_range(-BASIN, BASIN))
+		var ground := ground_height(at.x, at.y)
+		# Only the edge: just under the water to just over it.
+		if ground < WATER_Y - 0.4 or ground > WATER_Y + 0.3:
+			continue
+		var size := _art_rng.randf_range(0.7, 1.4)
+		var basis := Basis(Vector3.UP, _art_rng.randf() * TAU).scaled(Vector3(size, size * _art_rng.randf_range(0.8, 1.3), size))
+		spots.append(Transform3D(basis, Vector3(at.x, ground, at.y)))
+	reeds.instance_count = spots.size()
+	for i in spots.size():
+		reeds.set_instance_transform(i, spots[i])
+	var node := MultiMeshInstance3D.new()
+	node.name = "Reeds"
+	node.multimesh = reeds
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(node)
 
 
 func _dress_horizon(art: Node3D) -> void:
