@@ -305,6 +305,10 @@ var _rig_holders: Array[Node3D] = []
 var _rig_back: Node3D
 var _vitals: Node3D
 var _helmet: Node3D
+## The body's sun shadow, drawn in one piece (`_update_shadow_body`), and
+## what it was made from.
+var _shadow_body: MeshInstance3D
+var _shadow_parts := 0
 var _frame_parts: Array[Node3D] = []
 ## The frame `_frame_parts` were built for; "" for none.
 var _frame_id := ""
@@ -488,6 +492,59 @@ func _ready() -> void:
 	actor.flight.burst_fired.connect(_on_burst)
 	actor.landed.connect(_on_landed)
 	_mark_storm()
+
+
+## A body is several skinned parts (head, body, legs, feet), each of a few
+## materials, and every part's every surface used to cost a draw in every
+## sun shadow split. The shadow is drawn instead by one shadow-only copy
+## of the parts showing, merged into a single surface on the same skeleton
+## and bones, so it has exactly the body's shape and pose; the parts
+## themselves cast none. Rebuilt whenever a part comes or goes (a helmet
+## hides the head). A part that is not skinned, or is drawn on another
+## layer, keeps its own shadow. View only.
+func _update_shadow_body() -> void:
+	if _skeleton == null:
+		return
+	var parts: Array[MeshInstance3D] = []
+	var key := 17
+	for node in _skeleton.get_children():
+		var part := node as MeshInstance3D
+		if part == null or part == _shadow_body or part.skin == null or part.mesh == null:
+			continue
+		if part.has_meta("shadow_merged") or (part.visible and part.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON):
+			key = hash([key, part.get_instance_id(), part.visible, part.mesh.get_rid().get_id()])
+			if part.visible:
+				parts.append(part)
+	if key == _shadow_parts and (_shadow_body == null or is_instance_valid(_shadow_body)):
+		return
+	_shadow_parts = key
+	if _shadow_body != null and is_instance_valid(_shadow_body):
+		_shadow_body.queue_free()
+	_shadow_body = null
+	var shaped: Array = look.shadow_body(parts) if not parts.is_empty() else []
+	for part in parts:
+		if part.has_meta("shadow_merged") and (shaped.is_empty() or not (shaped[2] as Array).has(part)):
+			part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			part.remove_meta("shadow_merged")
+	if shaped.is_empty():
+		return
+	var body := MeshInstance3D.new()
+	body.name = "ShadowBody"
+	body.mesh = shaped[0]
+	body.skin = shaped[1]
+	body.transform = (shaped[2][0] as MeshInstance3D).transform
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	_skeleton.add_child(body)
+	body.skeleton = body.get_path_to(_skeleton)
+	_shadow_body = body
+	for part: MeshInstance3D in shaped[2]:
+		part.set_meta("shadow_merged", true)
+		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## The body's one-piece shadow (for checks), or null.
+func shadow_body() -> MeshInstance3D:
+	return _shadow_body if _shadow_body != null and is_instance_valid(_shadow_body) else null
 
 
 ## Faction rim and a lighter fog on this body, its gear and its weapons.
@@ -677,6 +734,7 @@ func _update(delta: float) -> void:
 	_update_stowed()
 	_update_switch(delta)
 	_update_helmet()
+	_update_shadow_body()
 	_update_frame()
 	_update_vitals()
 	_update_phone()

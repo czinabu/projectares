@@ -337,92 +337,33 @@ func _probe() -> void:
 	for node in raid.find_children("*", "DirectionalLight3D", true, false):
 		sun = node
 	await _probe_line("everything")
-	var per_body := {}
-	var total := 0
-	var casting := 0
+	# Where the bodies' draws come from: shapes showing, by what holds them.
+	var per_holder := {}
+	var shapes := 0
 	for skin in skins:
-		for g in skin.find_children("*", "GeometryInstance3D", true, false):
-			var gi := g as GeometryInstance3D
-			if not gi.is_visible_in_tree():
+		for node in skin.find_children("*", "GeometryInstance3D", true, false):
+			var shape := node as GeometryInstance3D
+			if not shape.is_visible_in_tree():
 				continue
-			total += 1
-			var surf := 1
-			if gi is MeshInstance3D and (gi as MeshInstance3D).mesh:
-				surf = (gi as MeshInstance3D).mesh.get_surface_count()
-			if gi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
-				casting += surf
-			var key := "%s:%s" % [gi.get_class(), gi.get_parent().name]
-			per_body[key] = per_body.get(key, 0) + surf
-	print("  bodies: %d visible geometry nodes, %d surfaces casting shadows, per body %.1f" % [total, casting, float(total) / max(1, skins.size())])
-	var keys := per_body.keys()
-	keys.sort_custom(func(a, b): return per_body[a] > per_body[b])
-	for k in keys.slice(0, 25):
-		print("    %5d  %s" % [per_body[k], k])
-	var mapcount := {}
-	for g in raid.map.find_children("*", "GeometryInstance3D", true, false):
-		var gi := g as GeometryInstance3D
-		if not gi.is_visible_in_tree():
-			continue
-		var key := "%s:%s" % [gi.get_class(), gi.get_parent().name]
-		mapcount[key] = mapcount.get(key, 0) + 1
-	var mk := mapcount.keys()
-	mk.sort_custom(func(a, b): return mapcount[a] > mapcount[b])
-	if "--dump" in OS.get_cmdline_user_args():
-		var near_skin: Node3D = null
-		var best := INF
-		for skin in skins:
-			var d: float = skin.global_position.distance_to(raid.player.global_position)
-			if d < best:
-				best = d
-				near_skin = skin
-		for target in [near_skin, skins[skins.size() / 2]]:
-			print("  one body at %.0f m:" % target.global_position.distance_to(raid.player.global_position))
-			for g in target.find_children("*", "GeometryInstance3D", true, false):
-				var gi := g as GeometryInstance3D
-				var sz := (gi.global_transform * gi.get_aabb()).size
-				print("    %s vis=%s shadow=%d size=%.3f range=%.0f  %s" % [gi.get_class(), gi.is_visible_in_tree(), gi.cast_shadow, maxf(sz.x, maxf(sz.y, sz.z)), gi.visibility_range_end, target.get_path_to(gi)])
-	var kinds := {}
+			shapes += 1
+			var key := "%s under %s" % [shape.get_class(), shape.get_parent().name.rstrip("0123456789@")]
+			per_holder[key] = per_holder.get(key, 0) + 1
+	print("  bodies: %d shapes showing, %.1f a body" % [shapes, float(shapes) / maxf(1.0, skins.size())])
+	var holders := per_holder.keys()
+	holders.sort_custom(func(a: String, b: String) -> bool: return per_holder[a] > per_holder[b])
+	for key: String in holders.slice(0, 8):
+		print("    %5d  %s" % [per_holder[key], key])
+	var shadowed := {}
 	for skin in skins:
-		var sk := skin.find_child("Skeleton3D", true, false)
-		if sk == null:
-			continue
-		var names := []
-		for c in sk.get_children():
-			if c is MeshInstance3D and c.visible:
-				names.append(c.name)
-		var k := "%s/%s: %d %s" % [skin.get_meta("kind", "?"), skin.find_child("Skin", false, false).get_child(0).name if skin.find_child("Skin", false, false) and skin.find_child("Skin", false, false).get_child_count() > 0 else "?", names.size(), ",".join(names)]
-		kinds[k] = kinds.get(k, 0) + 1
-	for k in kinds:
-		print("    skin x%d  %s" % [kinds[k], k])
-	var buckets := {}
-	for g in raid.map.find_children("*", "GeometryInstance3D", true, false):
-		var gi := g as GeometryInstance3D
-		if not gi.is_visible_in_tree() or gi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
-			continue
-		var sz := (gi.global_transform * gi.get_aabb()).size
-		var big := maxf(sz.x, maxf(sz.y, sz.z))
-		var dist := gi.global_position.distance_to(raid.player.global_position)
-		var key := "%s size<%s dist<%s range=%s %s" % [gi.get_class(), "0.5" if big < 0.5 else ("2" if big < 2 else ("8" if big < 8 else "big")),
-				"50" if dist < 50 else ("200" if dist < 200 else "far"), gi.visibility_range_end > 0, gi.name.rstrip("0123456789")]
-		buckets[key] = buckets.get(key, 0) + 1
-	var bk := buckets.keys()
-	bk.sort_custom(func(a, b): return buckets[a] > buckets[b])
-	print("  map shadow casters:")
-	for k in bk.slice(0, 30):
-		print("    %5d  %s" % [buckets[k], k])
-	print("  map geometry by parent:")
-	for k in mk.slice(0, 25):
-		print("    %5d  %s" % [mapcount[k], k])
-	var shadowed: Array = []
-	for skin in skins:
-		for g in skin.find_children("*", "GeometryInstance3D", true, false):
-			if g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
-				shadowed.append(g)
-				g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		for node in skin.find_children("*", "GeometryInstance3D", true, false):
+			var shape := node as GeometryInstance3D
+			if shape.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+				shadowed[shape] = shape.cast_shadow
+				shape.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	await _probe_line("bodies cast no shadow")
-	for g in shadowed:
-		if is_instance_valid(g):
-			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	for shape: Variant in shadowed:
+		if is_instance_valid(shape):
+			(shape as GeometryInstance3D).cast_shadow = shadowed[shape]
 	for skin in skins:
 		if is_instance_valid(skin):
 			skin.visible = false
@@ -437,6 +378,23 @@ func _probe() -> void:
 	raid.map.visible = false
 	await _probe_line("map hidden")
 	raid.map.visible = true
+	# What each big part of the map costs, hidden one at a time (the battle
+	# moves on meanwhile, so read these against each other roughly).
+	var parts: Array[Node] = []
+	for child in raid.map.get_children():
+		if child is Node3D and not child is DirectionalLight3D and not child is WorldEnvironment:
+			parts.append(child)
+			if child.name == "Dressing":
+				for sub in child.get_children():
+					if sub is Node3D and sub.find_children("*", "GeometryInstance3D", true, false).size() >= 20:
+						parts.append(sub)
+	for part: Node3D in parts:
+		var geometry := part.find_children("*", "GeometryInstance3D", true, false).size() + (1 if part is GeometryInstance3D else 0)
+		if geometry < 10 or not part.visible:
+			continue
+		part.visible = false
+		await _probe_line("  without %s (%d)" % [part.name, geometry])
+		part.visible = true
 
 
 func _probe_line(what: String) -> void:

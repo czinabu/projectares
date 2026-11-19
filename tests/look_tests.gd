@@ -136,6 +136,7 @@ static func run(t: Node) -> void:
 		await _check_carry(t, tag, raid.player, skin)
 		_check_holster(t, tag, raid.player, skin)
 		_check_detail(t, tag, raid.player, skin)
+		_check_shadow_body(t, tag, skin)
 		var dressed := 0
 		var skins := {}
 		for bot in raid.bots:
@@ -416,6 +417,45 @@ static func _check_merged_pieces(t: Node) -> void:
 		t.check(turning.get_parent() == model and turning.get_child_count() == 1,
 				tag + "a part that moves on its own is left as it is")
 		model.free()
+
+
+## A body's sun shadow is one shadow-only copy of its showing parts, on
+## the same skeleton (`ActorSkin._update_shadow_body`): the same vertices,
+## so the same shape, and the parts cast none of their own. It follows a
+## part hidden or shown.
+static func _check_shadow_body(t: Node, tag: String, skin: Node) -> void:
+	skin._update_shadow_body()
+	var body: MeshInstance3D = skin.shadow_body()
+	var skeleton: Skeleton3D = skin._skeleton
+	var parts: Array[MeshInstance3D] = []
+	var count := func(list: Array[MeshInstance3D]) -> int:
+		var total := 0
+		for part in list:
+			for i in part.mesh.get_surface_count():
+				total += (part.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+		return total
+	for node in skeleton.get_children():
+		if node is MeshInstance3D and node != body and node.skin != null and node.visible:
+			parts.append(node)
+	t.check(body != null and body.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+			and body.mesh.get_surface_count() == 1 and body.get_node(body.skeleton) == skeleton,
+			tag + "a body's shadow is drawn in one piece, on its own skeleton")
+	if body == null:
+		return
+	var verts: int = (body.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	t.check(verts == count.call(parts) and parts.all(func(p: MeshInstance3D) -> bool:
+			return p.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF),
+			tag + "with every showing part's shape (%d vertices), and the parts cast none" % verts)
+	var hidden := parts[0]
+	hidden.visible = false
+	skin._update_shadow_body()
+	var fewer: MeshInstance3D = skin.shadow_body()
+	var fewer_verts: int = (fewer.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() if fewer else 0
+	hidden.visible = true
+	skin._update_shadow_body()
+	t.check(fewer != null and fewer_verts == verts - count.call([hidden] as Array[MeshInstance3D])
+			and (skin.shadow_body().mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() == verts,
+			tag + "a part hidden leaves the shadow, and comes back with it")
 
 
 static func _check_detail(t: Node, tag: String, player: Actor, skin: Node) -> void:

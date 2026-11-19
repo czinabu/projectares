@@ -401,6 +401,107 @@ static func merge_pieces(root: Node3D) -> void:
 			piece.free()
 
 
+## Skinned parts on one skeleton merged into one surface with one skin, for
+## a body's shadow (`ActorSkin._update_shadow_body`): [mesh, skin, the parts
+## used], or [] when fewer than two surfaces would be saved. Only positions,
+## normals, bones and weights are kept: a shadow needs nothing else. Made
+## once for each set of part meshes and shared by every body wearing them.
+var _shadow_bodies := {}
+
+
+func shadow_body(parts: Array[MeshInstance3D]) -> Array:
+	var used: Array[MeshInstance3D] = []
+	var surfaces := 0
+	for part in parts:
+		if part.skin != null and part.transform.is_equal_approx(parts[0].transform):
+			used.append(part)
+			surfaces += part.mesh.get_surface_count()
+	if surfaces < 2:
+		return []
+	var skeleton := used[0].get_node_or_null(used[0].skeleton) as Skeleton3D
+	if skeleton == null:
+		return []
+	var key := []
+	for part in used:
+		key.append_array([part.mesh.get_rid().get_id(), part.skin.get_instance_id()])
+	key.append(skeleton.get_bone_count())
+	var cached: Variant = _shadow_bodies.get(hash(key))
+	if cached != null:
+		return [cached[0], cached[1], used]
+	var skin := Skin.new()
+	var binds := {}
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var bones := PackedInt32Array()
+	var weights := PackedFloat32Array()
+	var indices := PackedInt32Array()
+	var eight := false
+	for part in used:
+		for i in part.mesh.get_surface_count():
+			if part.mesh.surface_get_format(i) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS:
+				eight = true
+	var per := 8 if eight else 4
+	for part in used:
+		var own := part.skin
+		var remap := PackedInt32Array()
+		for b in own.get_bind_count():
+			var bind_name := own.get_bind_name(b)
+			var bone := own.get_bind_bone(b)
+			var pose := own.get_bind_pose(b)
+			var bind_key := "%s|%d|%s" % [bind_name, bone, pose]
+			if not binds.has(bind_key):
+				binds[bind_key] = skin.get_bind_count()
+				if bind_name != &"":
+					skin.add_named_bind(bind_name, pose)
+				else:
+					skin.add_bind(bone, pose)
+			remap.append(binds[bind_key])
+		for i in part.mesh.get_surface_count():
+			var arrays := part.mesh.surface_get_arrays(i)
+			var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			if arrays[Mesh.ARRAY_BONES] == null or arrays[Mesh.ARRAY_WEIGHTS] == null or points.is_empty():
+				continue
+			var base := verts.size()
+			verts.append_array(points)
+			if arrays[Mesh.ARRAY_NORMAL] != null:
+				normals.append_array(arrays[Mesh.ARRAY_NORMAL])
+			else:
+				normals.resize(verts.size())
+			var own_bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+			var own_weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+			var own_per := own_bones.size() / points.size()
+			for v in points.size():
+				for k in per:
+					if k < own_per:
+						var bind := own_bones[v * own_per + k]
+						bones.append(remap[bind] if bind < remap.size() else 0)
+						weights.append(own_weights[v * own_per + k])
+					else:
+						bones.append(0)
+						weights.append(0.0)
+			var own_index: Variant = arrays[Mesh.ARRAY_INDEX]
+			if own_index == null:
+				for v in points.size():
+					indices.append(base + v)
+			else:
+				for v: int in own_index:
+					indices.append(base + v)
+	if verts.is_empty():
+		return []
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = verts
+	out[Mesh.ARRAY_NORMAL] = normals
+	out[Mesh.ARRAY_BONES] = bones
+	out[Mesh.ARRAY_WEIGHTS] = weights
+	out[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out, [], {},
+			Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS if eight else 0)
+	_shadow_bodies[hash(key)] = [mesh, skin]
+	return [mesh, skin, used]
+
+
 ## One mesh of `pieces` (one surface each, the same format), each placed by
 ## its transform under the shared parent: positions moved, normals by the
 ## inverse transpose (so a stretched cylinder stays lit as it was) and
