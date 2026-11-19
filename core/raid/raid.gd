@@ -218,6 +218,9 @@ var armory := PowerArmory.new()
 ## The war's artillery (DESIGN.md "Shelling"), where `WorldDef.shelling` is
 ## on. Authority only.
 var shelling := Shelling.new()
+## Smoke that hides people from bots as it hides them from eyes (`Smoke`):
+## authority only, aged every tick, added where a cloud rises (a shell).
+var smoke := Smoke.new()
 ## The weather (DESIGN.md "Weather: ash storms"): at most one storm crossing
 ## the map, on `WorldDef.weather_kind`. Only the authority runs it; a client's
 ## copy comes from `NetSession` and is only carried on between updates.
@@ -545,6 +548,7 @@ func _physics_process(delta: float) -> void:
 		_tick_clouds(delta)
 	if world.shelling > 0.0 and zone_rules:
 		shelling.tick(self, delta)
+	smoke.tick(delta)
 	_tick_cold(delta)
 	if world.thin_ice:
 		_tick_ice(delta)

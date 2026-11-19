@@ -331,6 +331,19 @@ func _ready() -> void:
 	if actor.has_meta("air_error"):
 		air_error_deg = float(actor.get_meta("air_error"))
 	lock_time = float(actor.get_meta("lock_time", 0.0))
+	# A world may give a kind its own senses (the enemy AI pass): how far it
+	# sees ("sight", metres), how wide ("fov", degrees), how far it fights
+	# from ("reach", metres) and how much slower it notices someone at the
+	# edge of its sight ("far_notice"). A long eye still notices slowly out
+	# there, so a scope keeps the first shot.
+	if actor.has_meta("sight"):
+		sight_range = float(actor.get_meta("sight"))
+	if actor.has_meta("fov"):
+		fov_deg = float(actor.get_meta("fov"))
+	if actor.has_meta("reach"):
+		attack_range = float(actor.get_meta("reach"))
+	if actor.has_meta("far_notice"):
+		far_notice_mult = float(actor.get_meta("far_notice"))
 	var ring := int(actor.get_meta("zone", 1))
 	attack_slots = RING_SLOTS[clampi(ring, 0, RING_SLOTS.size() - 1)]
 	max_hunters = RING_HUNTERS[clampi(ring, 0, RING_HUNTERS.size() - 1)]
@@ -1248,6 +1261,9 @@ func _find_target() -> Actor:
 		if dist >= sight_range or score >= best_score:
 			continue
 		if weather != null and dist >= sight_range * weather.sight_between(eye, chest):
+			continue
+		# Smoke hides a body from a bot as it does from a player's eyes.
+		if raid != null and raid.smoke.blocks(eye, chest):
 			continue
 		# A Phase Cloak hides all but someone right beside the bot.
 		if other.is_cloaked() and dist > other.artifact.cloak_sense_range:

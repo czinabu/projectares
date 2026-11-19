@@ -77,6 +77,7 @@ const PlanetKitTests := preload("res://tests/planet_kit_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
 const MarshTests := preload("res://tests/marsh_tests.gd")
 const ShellingTests := preload("res://tests/shelling_tests.gd")
+const EnemyAiTests := preload("res://tests/enemy_ai_tests.gd")
 const BattleTests := preload("res://tests/battle_tests.gd")
 const WhiteoutTests := preload("res://tests/whiteout_tests.gd")
 const EngineTests := preload("res://tests/engine_tests.gd")
@@ -401,6 +402,7 @@ func _run() -> void:
 	await _test_grid()
 	await MarshTests.run(self)
 	await _test_shelling()
+	await _test_enemy_ai()
 	await _test_battle()
 	await _test_whiteout()
 	await _test_engine()
@@ -719,6 +721,10 @@ func _test_grid() -> void:
 
 func _test_shelling() -> void:
 	await ShellingTests.run(self)
+
+
+func _test_enemy_ai() -> void:
+	await EnemyAiTests.run(self)
 
 
 func _test_battle() -> void:
@@ -7363,6 +7369,46 @@ func _test_game_settings() -> void:
 	GameSettings.set_value("anti_aliasing", 3)
 	check(ink_smaa and not GameSettings.ink_shown() and GameSettings.to_dict().has("edge_ink"),
 			"the far-shape outline is saved, and left out with MSAA, which gives it no depth to read")
+	# Slower graphics cards: shadows, render scale and ambient occlusion,
+	# each reaching a world that is already standing. High is the world as
+	# it was made.
+	var sun := DirectionalLight3D.new()
+	sun.add_to_group(GameSettings.SUN_GROUP)
+	add_child(sun)
+	GameSettings.set_value("shadows", 0)
+	GameSettings.fit_sun(sun, 200.0)
+	var high := sun.shadow_enabled and sun.directional_shadow_mode == DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS \
+			and is_equal_approx(sun.directional_shadow_max_distance, 200.0)
+	GameSettings.set_value("shadows", 2)
+	GameSettings.apply_graphics()
+	var low := sun.shadow_enabled and sun.directional_shadow_mode == DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS \
+			and sun.directional_shadow_max_distance < 200.0
+	GameSettings.set_value("shadows", 99)
+	GameSettings.apply_graphics()
+	check(high and low and not sun.shadow_enabled and GameSettings.to_dict().has("shadows"),
+			"the shadow setting reaches a standing world's sun, and High is the world's own")
+	GameSettings.set_value("shadows", 0)
+	GameSettings.apply_graphics()
+	check(sun.shadow_enabled and is_equal_approx(sun.directional_shadow_max_distance, 200.0),
+			"and back to High, the world's own shadows again")
+	sun.free()
+	var atmosphere := WorldEnvironment.new()
+	atmosphere.environment = Environment.new()
+	atmosphere.environment.ssao_enabled = true
+	atmosphere.add_to_group(GameSettings.ATMOSPHERE_GROUP)
+	add_child(atmosphere)
+	GameSettings.set_value("ambient_occlusion", false)
+	GameSettings.apply_graphics()
+	check(not atmosphere.environment.ssao_enabled and GameSettings.to_dict().has("ambient_occlusion"),
+			"ambient occlusion can be switched off")
+	atmosphere.free()
+	GameSettings.set_value("render_scale", 2)
+	GameSettings.apply_graphics()
+	var scaled := root.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR and root.scaling_3d_scale < 1.0
+	GameSettings.set_value("render_scale", 0)
+	GameSettings.apply_graphics()
+	check(scaled and is_equal_approx(root.scaling_3d_scale, 1.0) and GameSettings.to_dict().has("render_scale"),
+			"the render scale reaches the main view, full size by default")
 	# Battle smoke (PlanetType.smoke): a setting that switches the volume and
 	# the volumetric fog it needs, thicker with the war and in a storm.
 	var smoke_env := Environment.new()
@@ -7506,8 +7552,8 @@ func _test_phone_view() -> void:
 	await frames(1)
 	var first_toggle: CheckButton = phone._body.find_children("*", "CheckButton", true, false)[0]
 	check(first_toggle.text == "Fullscreen" and phone._body.get_child(1) == first_toggle
-			and phone._body.find_children("*", "OptionButton", true, false).size() == 1
-			and phone._body.find_children("*", "OptionButton", true, false)[0].get_index() < 6,
+			and phone._body.find_children("*", "OptionButton", true, false)[0].get_index() < 6
+			and phone._body.find_children("*", "OptionButton", true, false)[0].get_item_text(0) == GameSettings.ANTI_ALIASING[0][0],
 			"fullscreen and smooth edges sit at the top of Settings (Caleb's call)")
 	check(first_toggle.button_pressed == GameSettings.window_is_full(),
 			"the fullscreen switch shows whether the window really is fullscreen")

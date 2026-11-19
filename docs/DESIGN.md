@@ -1045,6 +1045,63 @@ now react together after a callout, kill about a second faster at 25 m,
 which is still "three or more need cover or a plan". The battle bench is
 7% cheaper (12.1 ms a tick against 13.0), since fewer bots run about.
 
+### The enemy AI pass: each world fights its own way (Caleb's call)
+
+Audit (19 Nov): the AI is smart but every world ran the same bot with
+different numbers. Every kind saw 38 m whatever it was, the Legion and the
+Tide were mirror images, Frostline's enemies ignored the snow, smoke hid
+nobody from bots, and armies never remembered a player. Caleb approved a
+plan in five steps (the plan doc, "Enemy AI pass: a plan per world"):
+
+1. **Foundations (built).** A world gives a kind its own senses through
+   metas `equip_bot` sets and `BotBrain` reads: "sight" (metres), "fov"
+   (degrees), "reach" (how far it fights from) and "far_notice" (how much
+   slower it notices someone at the edge of its sight), so a long eye still
+   gives a scope the first shot. Smoke hides people from bots as it hides
+   them from eyes: `Smoke` (`Raid.smoke`, authority only) keeps every cloud
+   a player cannot see through as a column of air, and a line of sight
+   through one sees nothing past it unless the two are within
+   `see_through` (5 m). A shell leaves one (`Shelling.smoke_*`, timed to
+   `ShellView`'s column); new smoke is one more `Smoke.add`. The battle
+   bench counts stuck bots (pressing to move for five seconds and getting
+   nowhere) and prints where; the duel bench measures Frostline's Wardens
+   and Ferals (`WORLD_TARGETS`, bands proposed, `--world frostline`).
+2. **Frostline's enemies.** Wardens are the machine you sneak past: long
+   sight with a slow, visible sweep and a short lock before the first shot,
+   lone sentries at the mouth rising to grid posts of three at the glacier
+   head. Ferals hunt in packs of 3 to 5 that follow tracks, grow bolder
+   against someone shivering or alone, and never enter a heater's or a
+   beacon's ring. About 18 to 24 bots, packs a little bigger against a group.
+3. **Ashfront's armies fight differently.** The Legion holds ground
+   (rifles from cover at 30 to 60 m, a marksman per fireteam, more exos);
+   the Tide swarms (blades and runners, closes to 10 to 25 m, pincers,
+   breaks off when it loses a third). Two new kinds: the Legion marksman
+   and the Tide runner. Both stay inside the existing bands.
+4. **Ashfront's battles follow the ground.** Quiet patrols at the rim,
+   fireteams meeting in the open field, standing skirmish lines along the
+   front lines, sieges at the landmarks, close quarters in the Works, and
+   both armies' elites at the Foundry only when the war runs hot.
+5. **Players and the armies.** Each army keeps a grudge against each
+   player for one life: damage to it raises it, time lets it fade, death
+   clears it. A high grudge sends that army's hunters (inside the existing
+   hunter, slot and leash limits) and names you in its callouts; the other
+   army does not change. A small visor tag says when an army is after you.
+
+**Baseline before the pass (19 Nov, 30 duels a row).** 16 of 20 Ashfront
+rows in their bands, the other four on the edge (outer soldier 100% at
+12 m and 83% at 25 m, outer exo 90% at 12 m, core walker 10% at 25 m). The
+battle bench: 12.7 ms a tick of 16.7 with 150 bots and 32 players (12.8 with
+step 1's smoke and senses). The first stuck count: 38 bot-windows in 30 s,
+all in the middle ring, most at the Breach (9).
+
+**Frostline before step 2 (40 duels, 30 for groups).** One Warden or Feral
+alone is no fight: the reference won every duel, at the mouth and the
+glacier head alike, with 80-98% health left. Groups are where it bites, and
+unevenly: a glacier-head pack of three wins 43-60%, of five 23-33%; two or
+three Wardens still lose to one player, five win 73-87% of the time after
+25 s or more. So step 2 makes the single enemy matter and the grid less of
+a wall of health.
+
 ### Army commanders
 
 Each army in a world where `bots_contest_sites` is on has a commander
@@ -2483,6 +2540,20 @@ sticks and jump as a racer goes past. Round it all, eroded mesas, the dead
 launch works on the skyline (leaning launch towers with holo-ads, gantry
 cranes, a crashed booster stage, power pylons), searchlights sweeping the
 haze and camera drones pacing the racers.
+
+**No bare salt (Caleb's call: too much open space).** The works fill the
+pan between the tracks and the dunes, which close in to about 900 m out
+(`works.gd`). A belt of districts runs all round, each a slice of the
+ring: tank farm, hangar row, container port, cooling plant and launch
+field. Each district has one landmark to steer by (fuel spheres, the
+vehicle assembly hall, a portal crane, twin cooling towers, a rocket still
+on its pad). Buildings stand low near the road and grow taller toward the
+dunes, so every view from the track ends on a skyline. Lit service roads
+run out into the works. Fans' car parks and tent camps sit just outside
+the tracks, and the infield holds a festival with a stage, a big wheel and
+a street of food stalls. Catch fences, hoardings and tyre walls line both
+roads. It is all decoration, merged into a block of meshes per material,
+and nothing stands on a road (`race_tests.gd`, `_test_works`).
 
 ## 10. Economy and progression
 

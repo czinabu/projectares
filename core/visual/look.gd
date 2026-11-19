@@ -301,6 +301,10 @@ var _gun_mounts := {}
 var draw_distance_per_metre := 70.0
 var draw_distance_min := 40.0
 var draw_distance_cap := 380.0
+## Iron sights (`_iron_sights`) are drawn out to this many metres: further
+## the widest of them is about two pixels at 1080p, so on someone else's gun
+## they are not drawn at all (your own are always within reach).
+var iron_sight_reach := 15.0
 
 
 func _ready() -> void:
@@ -373,6 +377,252 @@ func _limit_draw_distance(map: Node3D) -> void:
 		mesh.visibility_range_end = maxf(reach, draw_distance_min)
 		mesh.visibility_range_end_margin = mesh.visibility_range_end * 0.15
 		mesh.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+
+
+## Merges the plain pieces standing right under `root` (a model built from
+## boxes and shells that never move apart: a helmet, armor plates, a cooling
+## pack, iron sights) into one mesh per material, so a model of thirty
+## pieces costs a handful of draws in every pass, shadows included, and
+## looks exactly the same. Only a piece with no children, no skin, no
+## override or overlay, default layers and nothing faded or hidden is
+## taken; anything else, and any node under a child that is not a piece
+## (a cannon that turns), is left as it is. Pieces that differ in shadow
+## casting or vertex format never share a mesh. View only.
+static func merge_pieces(root: Node3D) -> void:
+	if root == null:
+		return
+	var groups := {}
+	var order: Array[String] = []
+	for child in root.get_children():
+		var piece := child as MeshInstance3D
+		if piece == null or not _mergeable(piece):
+			continue
+		var mat := _piece_material(piece)
+		var layout := _layout(piece.mesh.surface_get_arrays(0))
+		if mat == null or layout == "":
+			continue
+		var key := "%d:%d:%s" % [mat.get_instance_id(), piece.cast_shadow, layout]
+		if not groups.has(key):
+			groups[key] = []
+			order.append(key)
+		(groups[key] as Array).append(piece)
+	for key in order:
+		var pieces: Array = groups[key]
+		if pieces.size() < 2:
+			continue
+		var first: MeshInstance3D = pieces[0]
+		var mesh := _merged_mesh(pieces, _piece_material(first))
+		if mesh == null:
+			continue
+		var merged := MeshInstance3D.new()
+		merged.name = "Merged%d" % order.find(key)
+		merged.mesh = mesh
+		merged.cast_shadow = first.cast_shadow
+		root.add_child(merged)
+		for piece: MeshInstance3D in pieces:
+			root.remove_child(piece)
+			piece.free()
+
+
+## Skinned parts on one skeleton merged into one surface with one skin, for
+## a body's shadow (`ActorSkin._update_shadow_body`): [mesh, skin, the parts
+## used], or [] when fewer than two surfaces would be saved. Only positions,
+## normals, bones and weights are kept: a shadow needs nothing else. Made
+## once for each set of part meshes and shared by every body wearing them.
+var _shadow_bodies := {}
+
+
+func shadow_body(parts: Array[MeshInstance3D]) -> Array:
+	var used: Array[MeshInstance3D] = []
+	var surfaces := 0
+	for part in parts:
+		if part.skin != null and part.transform.is_equal_approx(parts[0].transform):
+			used.append(part)
+			surfaces += part.mesh.get_surface_count()
+	if surfaces < 2:
+		return []
+	var skeleton := used[0].get_node_or_null(used[0].skeleton) as Skeleton3D
+	if skeleton == null:
+		return []
+	var key := []
+	for part in used:
+		key.append_array([part.mesh.get_rid().get_id(), part.skin.get_instance_id()])
+	key.append(skeleton.get_bone_count())
+	var cached: Variant = _shadow_bodies.get(hash(key))
+	if cached != null:
+		return [cached[0], cached[1], used]
+	var skin := Skin.new()
+	var binds := {}
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var bones := PackedInt32Array()
+	var weights := PackedFloat32Array()
+	var indices := PackedInt32Array()
+	var eight := false
+	for part in used:
+		for i in part.mesh.get_surface_count():
+			if part.mesh.surface_get_format(i) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS:
+				eight = true
+	var per := 8 if eight else 4
+	for part in used:
+		var own := part.skin
+		var remap := PackedInt32Array()
+		for b in own.get_bind_count():
+			var bind_name := own.get_bind_name(b)
+			var bone := own.get_bind_bone(b)
+			var pose := own.get_bind_pose(b)
+			var bind_key := "%s|%d|%s" % [bind_name, bone, pose]
+			if not binds.has(bind_key):
+				binds[bind_key] = skin.get_bind_count()
+				if bind_name != &"":
+					skin.add_named_bind(bind_name, pose)
+				else:
+					skin.add_bind(bone, pose)
+			remap.append(binds[bind_key])
+		for i in part.mesh.get_surface_count():
+			var arrays := part.mesh.surface_get_arrays(i)
+			var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			if arrays[Mesh.ARRAY_BONES] == null or arrays[Mesh.ARRAY_WEIGHTS] == null or points.is_empty():
+				continue
+			var base := verts.size()
+			verts.append_array(points)
+			if arrays[Mesh.ARRAY_NORMAL] != null:
+				normals.append_array(arrays[Mesh.ARRAY_NORMAL])
+			else:
+				normals.resize(verts.size())
+			var own_bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+			var own_weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+			var own_per := own_bones.size() / points.size()
+			for v in points.size():
+				for k in per:
+					if k < own_per:
+						var bind := own_bones[v * own_per + k]
+						bones.append(remap[bind] if bind < remap.size() else 0)
+						weights.append(own_weights[v * own_per + k])
+					else:
+						bones.append(0)
+						weights.append(0.0)
+			var own_index: Variant = arrays[Mesh.ARRAY_INDEX]
+			if own_index == null:
+				for v in points.size():
+					indices.append(base + v)
+			else:
+				for v: int in own_index:
+					indices.append(base + v)
+	if verts.is_empty():
+		return []
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = verts
+	out[Mesh.ARRAY_NORMAL] = normals
+	out[Mesh.ARRAY_BONES] = bones
+	out[Mesh.ARRAY_WEIGHTS] = weights
+	out[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out, [], {},
+			Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS if eight else 0)
+	_shadow_bodies[hash(key)] = [mesh, skin]
+	return [mesh, skin, used]
+
+
+## One mesh of `pieces` (one surface each, the same format), each placed by
+## its transform under the shared parent: positions moved, normals by the
+## inverse transpose (so a stretched cylinder stays lit as it was) and
+## tangents turned with the piece.
+static func _merged_mesh(pieces: Array, mat: Material) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var tangents := PackedFloat32Array()
+	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	var first: Array = (pieces[0] as MeshInstance3D).mesh.surface_get_arrays(0)
+	var has_normal: bool = first[Mesh.ARRAY_NORMAL] != null
+	var has_tangent: bool = first[Mesh.ARRAY_TANGENT] != null
+	var has_uv: bool = first[Mesh.ARRAY_TEX_UV] != null
+	var has_uv2: bool = first[Mesh.ARRAY_TEX_UV2] != null
+	var has_color: bool = first[Mesh.ARRAY_COLOR] != null
+	for piece: MeshInstance3D in pieces:
+		var arrays: Array = piece.mesh.surface_get_arrays(0)
+		var xform := piece.transform
+		var turn := xform.basis.inverse().transposed()
+		var base := verts.size()
+		var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for v in points:
+			verts.append(xform * v)
+		if has_normal:
+			for n: Vector3 in arrays[Mesh.ARRAY_NORMAL]:
+				normals.append((turn * n).normalized())
+		if has_tangent:
+			var t: PackedFloat32Array = arrays[Mesh.ARRAY_TANGENT]
+			for i in range(0, t.size(), 4):
+				var along := (xform.basis * Vector3(t[i], t[i + 1], t[i + 2])).normalized()
+				tangents.append_array(PackedFloat32Array([along.x, along.y, along.z, t[i + 3]]))
+		if has_uv:
+			uvs.append_array(arrays[Mesh.ARRAY_TEX_UV])
+		if has_uv2:
+			uv2s.append_array(arrays[Mesh.ARRAY_TEX_UV2])
+		if has_color:
+			colors.append_array(arrays[Mesh.ARRAY_COLOR])
+		var own: Variant = arrays[Mesh.ARRAY_INDEX]
+		if own == null:
+			for i in points.size():
+				indices.append(base + i)
+		else:
+			for i: int in own:
+				indices.append(base + i)
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = verts
+	out[Mesh.ARRAY_INDEX] = indices
+	if has_normal:
+		out[Mesh.ARRAY_NORMAL] = normals
+	if has_tangent:
+		out[Mesh.ARRAY_TANGENT] = tangents
+	if has_uv:
+		out[Mesh.ARRAY_TEX_UV] = uvs
+	if has_uv2:
+		out[Mesh.ARRAY_TEX_UV2] = uv2s
+	if has_color:
+		out[Mesh.ARRAY_COLOR] = colors
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out)
+	mesh.surface_set_material(0, mat)
+	return mesh
+
+
+## What a one-surface piece is drawn in: its override, else its surface's.
+static func _piece_material(piece: MeshInstance3D) -> Material:
+	if piece.material_override != null:
+		return piece.material_override
+	var mat := piece.get_surface_override_material(0)
+	return mat if mat != null else piece.mesh.surface_get_material(0)
+
+
+## Which arrays a surface carries, as a key; "" for one that cannot be
+## merged (skinned, or with custom channels `_merged_mesh` does not carry).
+static func _layout(arrays: Array) -> String:
+	for skip in [Mesh.ARRAY_BONES, Mesh.ARRAY_WEIGHTS, Mesh.ARRAY_CUSTOM0, Mesh.ARRAY_CUSTOM1,
+			Mesh.ARRAY_CUSTOM2, Mesh.ARRAY_CUSTOM3]:
+		if arrays[skip] != null:
+			return ""
+	var key := ""
+	for kind in [Mesh.ARRAY_NORMAL, Mesh.ARRAY_TANGENT, Mesh.ARRAY_TEX_UV, Mesh.ARRAY_TEX_UV2, Mesh.ARRAY_COLOR]:
+		key += "1" if arrays[kind] != null else "0"
+	return key
+
+
+static func _mergeable(piece: MeshInstance3D) -> bool:
+	return piece.mesh != null and piece.mesh.get_surface_count() == 1 \
+			and (piece.mesh is PrimitiveMesh or (piece.mesh is ArrayMesh
+				and (piece.mesh as ArrayMesh).surface_get_primitive_type(0) == Mesh.PRIMITIVE_TRIANGLES)) \
+			and piece.transform.basis.determinant() > 0.0 \
+			and piece.visible and piece.get_child_count() == 0 and piece.skin == null \
+			and piece.material_overlay == null \
+			and piece.transparency == 0.0 and piece.layers == 1 and piece.visibility_range_end == 0.0 \
+			and (not piece.mesh is ArrayMesh or (piece.mesh as ArrayMesh).get_blend_shape_count() == 0) \
+			and piece.get_script() == null
 
 
 # --- Surfaces -----------------------------------------------------------------
@@ -483,6 +733,8 @@ func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}) -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_max_distance = 140.0
+	sun.add_to_group(GameSettings.SUN_GROUP)
+	GameSettings.fit_sun(sun, 140.0)
 	sun.shadow_blur = 1.5
 	parent.add_child(sun)
 	if not enabled:
@@ -523,6 +775,8 @@ func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}) -> void:
 	var world_env := WorldEnvironment.new()
 	world_env.name = "Atmosphere"
 	world_env.environment = env
+	world_env.add_to_group(GameSettings.ATMOSPHERE_GROUP)
+	GameSettings.fit_atmosphere(world_env)
 	parent.add_child(world_env)
 	parent.add_child(edge_ink())
 	var calm := mood_values(p)
@@ -1126,6 +1380,8 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 	var world_env := WorldEnvironment.new()
 	world_env.name = "Interior"
 	world_env.environment = env
+	world_env.add_to_group(GameSettings.ATMOSPHERE_GROUP)
+	GameSettings.fit_atmosphere(world_env)
 	parent.add_child(world_env)
 	# An interior has no storm. Characters must not keep the last raid's fog.
 	_clear_storm_fog()
@@ -1745,17 +2001,30 @@ func _iron_sights(visual: Node3D, shown: bool, rear: Vector3, muzzle: Vector3) -
 	sights.name = "IronSights"
 	visual.add_child(sights)
 	var dark := Color(0.08, 0.09, 0.1)
+	var parts: Array[MeshInstance3D] = []
 	# The rear: two ears either side of the sight line over a base.
 	for side in [-1.0, 1.0]:
-		sights.add_child(Weapon.make_part(Vector3(0.006, 0.02, 0.01), rear + Vector3(side * 0.0095, -0.004, 0.0), dark))
-	sights.add_child(Weapon.make_part(Vector3(0.026, 0.008, 0.012), rear + Vector3(0.0, -0.016, 0.0), dark))
+		parts.append(Weapon.make_part(Vector3(0.006, 0.02, 0.01), rear + Vector3(side * 0.0095, -0.004, 0.0), dark))
+	parts.append(Weapon.make_part(Vector3(0.026, 0.008, 0.012), rear + Vector3(0.0, -0.016, 0.0), dark))
 	# The front post, a little behind the muzzle, from the barrel up to the
 	# line, with its dot just under the top.
 	var front_z := lerpf(muzzle.z, rear.z, 0.08)
 	var low := minf(muzzle.y, rear.y - 0.03)
 	var height := rear.y - low
-	sights.add_child(Weapon.make_part(Vector3(0.004, height, 0.008), Vector3(0.0, low + height * 0.5, front_z), dark))
-	sights.add_child(Weapon.make_part(Vector3(0.004, 0.004, 0.004), Vector3(0.0, rear.y - 0.003, front_z - 0.005), GUN_GLOW[GUN_GLOW.size() - 1][1], true))
+	parts.append(Weapon.make_part(Vector3(0.004, height, 0.008), Vector3(0.0, low + height * 0.5, front_z), dark))
+	# The dark parts share one material, so they draw as one mesh.
+	var shared: Material = (parts[0].mesh as PrimitiveMesh).material
+	for part in parts:
+		(part.mesh as PrimitiveMesh).material = shared
+	parts.append(Weapon.make_part(Vector3(0.004, 0.004, 0.004), Vector3(0.0, rear.y - 0.003, front_z - 0.005), GUN_GLOW[GUN_GLOW.size() - 1][1], true))
+	for part in parts:
+		sights.add_child(part)
+	merge_pieces(sights)
+	# A few millimetres of metal: past `iron_sight_reach` they are not drawn.
+	for node in sights.get_children():
+		var shape := node as GeometryInstance3D
+		if shape != null:
+			shape.visibility_range_end = iron_sight_reach
 
 
 func _marker(visual: Node3D, marker_name: String) -> Marker3D:

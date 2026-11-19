@@ -450,6 +450,12 @@ without Caleb, and update the gap list when a PR closes a row.
   `BotBrain.noise_of`), a hit and a squadmate's callout (`_call_out`, a
   snapshot when the spotter raises its gun). What they learn is a place,
   never live tracking: a lost contact is searched for (`_lost`) and let go.
+  A world gives a kind its own senses with metas set in `equip_bot`
+  ("sight", "fov", "reach", "far_notice"; DESIGN.md "The enemy AI pass"),
+  never a second brain. Smoke hides people from bots as it hides them from
+  eyes: anything a player cannot see through is a cloud in `Raid.smoke`
+  (`Smoke.add`, authority only; a shell leaves one), and bot sight asks
+  `Smoke.blocks`, never a view.
   Only a few act on it, through `SquadBoard` claims (static, with an
   expiry, like the slots): `noise_lookers` go to look at one person's
   noise, `RING_HUNTERS` army bots may leave their ground to hunt one person
@@ -501,8 +507,15 @@ without Caleb, and update the gap list when a PR closes a row.
   (`ActorSkin.detail_step`, scaled by the camera's zoom, which steps its
   animation and skeleton by hand while it is far), a body out of frame
   every `offscreen_step` frames (posed at once when it comes into view),
-  its arm placed only with its poses (`WeaponArm.step`), and its weapons
-  cast no shadow; open ground is drawn in tiles (`Terrain.tile_cells`) so only the
+  its arm placed only with its poses (`WeaponArm.step`), and its weapons,
+  helmet and plates cast no shadow; a body's sun shadow is one
+  shadow-only copy of its showing parts on the same skeleton
+  (`ActorSkin._update_shadow_body`, `Look.shadow_body`), never a draw per
+  part and surface; worn models built of still pieces (a helmet, plates,
+  exo parts, iron sights) are merged one mesh per material as they are
+  hung (`Look.merge_pieces`), so a new worn model built from boxes costs a
+  few draws, and a piece that must move on its own goes under a child
+  node, which is left alone; open ground is drawn in tiles (`Terrain.tile_cells`) so only the
   ones in view and in shadow range are drawn; small map props fade out
   with distance by their size (`Look._limit_draw_distance`); a parked
   vehicle nobody rides rests instead of moving every tick. Every ENet
@@ -845,7 +858,11 @@ without Caleb, and update the gap list when a PR closes a row.
   off in those modes (`GameSettings.ink_shown`). Both are on the phone's
   Settings, View tab. Compare by eye with `visual_check.tscn -- <dir>
   --graphics-only [--aa 0-4] [--ink 0|1]` and measure with the frame bench's
-  `--aa` and `--ink`.
+  `--aa` and `--ink`. For a slower graphics card the same tab offers
+  Shadows (`GameSettings.SHADOWS`: High is the world as made), Render
+  scale (FSR 1) and Ambient occlusion; a world's sun and atmosphere take
+  them through `GameSettings.fit_sun(sun, reach)` and `fit_atmosphere`,
+  so set a sun's shadow reach only through `fit_sun`.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
@@ -2184,9 +2201,13 @@ without Caleb, and update the gap list when a PR closes a row.
   (`race_bench.tscn -- --tunes`). Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
-  (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration
-  (`worlds/meridian/stands.gd`, `skyline.gd`), merged into one mesh per
-  material. The lights, splits, board
+  (`Crowd`, `assets/shaders/crowd.gdshader`), skyline and works are
+  decoration (`worlds/meridian/stands.gd`, `skyline.gd`, `works.gd`),
+  merged into one mesh per material (the works per material per block,
+  every lit and painted shape in one vertex-coloured material each). The
+  works fill the salt out to the dunes (`GROUND_HALF`) and keep off the
+  roads and what `WORKS_KEEP_OUT` lists; a new stand or set piece goes
+  in that list. The lights, splits, board
   text and the ghost being chased are `RaceView`, a view. In a race world the
   watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).
   Every machine in a class stays within 3% of the class average round
