@@ -3491,8 +3491,10 @@ func _sky_shots(out_dir: String) -> void:
 					var toward := (Vector3(wreck.to.x, 0, wreck.to.z) - Vector3(wreck.from.x, 0, wreck.from.z)).normalized()
 					from = look + Vector3(-toward.z, 0, toward.x) * 160.0 - Vector3(0, 40, 0)
 				"crash":
-					look = (wreck.to as Vector3) + Vector3(0, 25, 0)
-					from = (wreck.to as Vector3) * 0.6 + Vector3(0, 90, 0)
+					# From the field, out over the rim, as a player sees it.
+					var out := Vector3(wreck.to.x, 0, wreck.to.z).normalized()
+					from = raid._stand(out * float(sky.field) * 0.35) + Vector3(0, 8, 0)
+					look = (wreck.to as Vector3) + Vector3(0, 40, 0)
 					fov = 60.0
 			if look.is_finite():
 				cam.fov = fov

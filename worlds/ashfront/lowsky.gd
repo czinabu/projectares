@@ -49,7 +49,7 @@ const WINGMAN := Vector3(28.0, 5.0, 34.0)
 const WRECK_FROM := Vector2(180.0, 360.0)
 const WRECK_HEIGHT := Vector2(200.0, 300.0)
 const WRECK_FALL := Vector2(13.0, 19.0)
-const WRECK_PAST_RIM := Vector2(60.0, 280.0)
+const WRECK_PAST_RIM := Vector2(25.0, 140.0)
 const WRECK_BURNS := 40.0
 ## A tracer's speed, the most kept, the streak's size and its brightness.
 const TRACER_SPEED := 320.0
@@ -354,7 +354,7 @@ func drop_wreck() -> Dictionary:
 	from.y = floor_y + _rng.randf_range(WRECK_HEIGHT.x, WRECK_HEIGHT.y)
 	var wreck := {"from": from, "to": lands, "t": 0.0, "time": _rng.randf_range(WRECK_FALL.x, WRECK_FALL.y),
 			"spin": _rng.randf_range(0.5, 1.4) * (1.0 if _rng.randf() < 0.5 else -1.0),
-			"down": false, "burning": WRECK_BURNS, "node": null, "plume": null}
+			"down": false, "burning": WRECK_BURNS, "node": null, "plume": null, "glow": null}
 	if Look.enabled:
 		wreck.node = _build_dropship()
 		_flash(from, 50.0, 0.5)
@@ -404,11 +404,18 @@ func _tick_wrecks(delta: float) -> void:
 				_crash(wreck)
 			continue
 		wreck.burning = float(wreck.burning) - delta
+		var glow: Variant = wreck.get("glow")
+		if is_instance_valid(glow):
+			var left := clampf(float(wreck.burning) / WRECK_BURNS, 0.0, 1.0)
+			(glow as Node3D).scale = Vector3.ONE * 70.0 * _rng.randf_range(0.85, 1.1)
+			(glow as GeometryInstance3D).transparency = 1.0 - (0.35 + 0.4 * left) * (1.0 - Look.weather_cover)
 		if is_instance_valid(plume) and float(wreck.burning) < 12.0:
 			(plume as GPUParticles3D).emitting = false
 		if float(wreck.burning) <= 0.0:
 			if is_instance_valid(plume):
 				(plume as Node).queue_free()
+			if is_instance_valid(glow):
+				(glow as Node).queue_free()
 			_wrecks.remove_at(i)
 
 
@@ -418,9 +425,21 @@ func _crash(wreck: Dictionary) -> void:
 	if wreck.node != null:
 		(wreck.node as Node3D).queue_free()
 		wreck.node = null
-	_flash(at + Vector3(0, 10, 0), 120.0, 1.2)
+	# It comes down behind the rim's crest, so the fireball rises well over
+	# it and the wreck's fire glows on over the ridge while it burns.
+	_flash(at + Vector3(0, 35, 0), 170.0, 1.4)
 	for k in 3:
-		_flash(at + Vector3(_rng.randf_range(-30, 30), _rng.randf_range(6, 30), _rng.randf_range(-30, 30)), 60.0, 0.8 + 0.3 * k)
+		_flash(at + Vector3(_rng.randf_range(-35, 35), _rng.randf_range(20, 60), _rng.randf_range(-35, 35)), 80.0, 0.9 + 0.35 * k)
+	if Look.enabled:
+		var glow := MeshInstance3D.new()
+		var quad := QuadMesh.new()
+		quad.material = Look.trim("flash")
+		glow.mesh = quad
+		glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		glow.visibility_range_end = SKY_REACH
+		add_child(glow)
+		glow.global_position = at + Vector3(0, 30, 0)
+		wreck.glow = glow
 	if soundscape != null:
 		soundscape.call("boom", at)
 
