@@ -636,7 +636,8 @@ func _process(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
 	_steady_eyes(delta)
-	if _def.get("beam", false):
+	# A body whose gun holds a lock before it fires shows the beam it holds.
+	if _def.get("beam", false) or float(actor.get_meta("lock_time", 0.0)) > 0.0:
 		_update_beam(delta)
 		_aim_cannon()
 	_detail_delta += delta

@@ -218,6 +218,9 @@ var body_heat := 100.0
 ## Standing in warmth now (a heater, a vent, a running engine). Authority
 ## and owner only.
 var warming := false
+## The bot faction hunting this player for a grudge (`Raid.grudges`), or "".
+## Set by the authority and sent to the owner only, for the visor.
+var hunted_by := ""
 ## Cold enough to shiver: body heat under `CHILL_SHARE`. The authority sets
 ## it and every client gets it in the state (`ActorCommand.STATE_CHILLED`),
 ## so everyone sees the shivering.

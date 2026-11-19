@@ -50,6 +50,7 @@ const STANCE_CONTROL_HINTS := [
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
+const GameSettings := preload("res://core/settings/game_settings.gd")
 
 var actor: Actor
 var camera: Camera3D
@@ -1032,11 +1033,15 @@ func _use_toy_hand(cmd: ActorCommand) -> void:
 
 
 ## How far the view draws: a map with things to see past its rim (a
-## skyline, giants on the horizon) asks for more with its "view_far" meta.
+## skyline, giants on the horizon) asks for more with its "view_far" meta,
+## and a planet's far land ring with "horizon_far" (`Planet.atmosphere`);
+## the View distance setting takes its share of that
+## (`GameSettings.view_far_for`), never less than `view_far`.
 func _view_far() -> float:
 	var raid := Raid.of(actor)
 	if raid != null and is_instance_valid(raid.map):
-		return maxf(view_far, float(raid.map.get_meta("view_far", view_far)))
+		var world := maxf(float(raid.map.get_meta("view_far", 0.0)), float(raid.map.get_meta("horizon_far", 0.0)))
+		return GameSettings.view_far_for(world, view_far)
 	return view_far
 
 

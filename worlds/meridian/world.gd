@@ -6,6 +6,10 @@ extends WorldDef
 ## ghost (DESIGN.md section 9). Run by `Race`.
 
 const MapScript := preload("res://worlds/meridian/map.gd")
+const SkyhookScript := preload("res://worlds/meridian/skyhook.gd")
+
+
+var _feed_tracks: Array[RaceTrack] = []
 
 
 func _init() -> void:
@@ -42,6 +46,13 @@ func create_map() -> Node3D:
 
 func new_raid() -> Raid:
 	return Race.new()
+
+
+## Coilrun and Skyhook, for the War Room's track cam.
+func feed_tracks() -> Array[RaceTrack]:
+	if _feed_tracks.is_empty():
+		_feed_tracks = [MapScript.build_coilrun(), SkyhookScript.build_track()]
+	return _feed_tracks
 
 
 ## Each pit bay holds the stock machine its marker names.
