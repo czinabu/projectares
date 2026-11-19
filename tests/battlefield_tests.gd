@@ -358,7 +358,8 @@ static func _skyline(t: Node, raid: Raid) -> void:
 			"Ashfront asks the view to draw past the skyline on the far side of the field (%.0f m)" % float(map.get_meta("view_far", 0.0)))
 	var view := PlayerController.new()
 	view.actor = raid.player
-	t.check(is_equal_approx(view._view_far(), float(map.get_meta("view_far"))), "the player's view draws as far as the map asks")
+	t.check(view._view_far() >= float(map.get_meta("view_far")) - 0.01,
+			"the player's view draws at least as far as the map asks (out to its planet's horizon at High)")
 	view.actor = Actor.new()
 	t.check(is_equal_approx(view._view_far(), view.view_far), "away from a map the view keeps its own reach")
 	view.actor.free()
