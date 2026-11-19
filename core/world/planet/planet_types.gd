@@ -359,10 +359,11 @@ static func marsh() -> PlanetType:
 	}
 	t.surfaces = {"base": "Grass007", "rock": "Rock060", "cap": "Ground037", "patch": ""}
 	t.ground = {
-		"base_a": Color(0.2, 0.26, 0.15), "base_b": Color(0.12, 0.16, 0.12), "base_rough": 0.9,
-		"rock_a": Color(0.2, 0.2, 0.19), "rock_b": Color(0.1, 0.11, 0.1), "rock_rough": 0.55,
+		# Moss and mud on the flats, the hills dark peat and wet rock at dusk.
+		"base_a": Color(0.14, 0.19, 0.1), "base_b": Color(0.21, 0.14, 0.08), "base_rough": 0.85,
+		"rock_a": Color(0.13, 0.14, 0.13), "rock_b": Color(0.07, 0.08, 0.075), "rock_rough": 0.55,
 		"slope_range": Vector2(0.8, 0.62), "strata_every": 2.0, "strata": 0.3,
-		"cap_color": Color(0.32, 0.42, 0.24), "cap_range": Vector2(20.0, 30.0), "cap_on_slopes": 0.6,
+		"cap_color": Color(0.11, 0.14, 0.1), "cap_range": Vector2(20.0, 30.0), "cap_on_slopes": 0.6,
 		"patch_a": Color(0.03, 0.05, 0.05), "patch_b": Color(0.05, 0.08, 0.07), "patch_amount": 0.75,
 		"patch_edge": 0.03, "patch_low": 1.0, "patch_low_at": -0.6, "patch_wet": 1.0,
 		"bank": 0.8, "bank_width": 0.14, "bank_color": Color(0.28, 0.4, 0.13), "photo_chroma": 0.75,
