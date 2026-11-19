@@ -48,13 +48,17 @@ const PAINTS := {
 	# Earned, never sold (Caleb's call: a few only the hardest content
 	# hands out): Relic items, so no shop stocks them and the market never
 	# lists them. Ashfront's warlords carry the first, the Heart Warden's
-	# vault in Frostline's Engine holds the second.
+	# vault in Frostline's Engine holds the second, and the Spore Marsh's Grey
+	# Matriarch the third.
 	"warlord": {"name": "Warlord", "item": "paint_warlord", "earned": true,
 		"plate": Color(0.17, 0.16, 0.14), "plate2": Color(0.56, 0.445, 0.215), "fabric": Color(0.14, 0.13, 0.12),
 		"strap": Color(0.07, 0.065, 0.06), "suit": Color(0.05, 0.05, 0.045), "accent": Color(1.0, 0.8, 0.38)},
 	"warden": {"name": "Heart Warden", "item": "paint_warden", "earned": true,
 		"plate": Color(0.62, 0.67, 0.72), "plate2": Color(0.3, 0.38, 0.48), "fabric": Color(0.36, 0.41, 0.47),
 		"strap": Color(0.14, 0.16, 0.19), "suit": Color(0.085, 0.1, 0.13), "accent": Color(0.45, 0.95, 1.0)},
+	"spore": {"name": "Spore", "item": "paint_spore", "earned": true,
+		"plate": Color(0.3, 0.38, 0.26), "plate2": Color(0.2, 0.25, 0.2), "fabric": Color(0.24, 0.27, 0.22),
+		"strap": Color(0.1, 0.12, 0.1), "suit": Color(0.07, 0.085, 0.07), "accent": Color(0.5, 1.0, 0.7)},
 }
 
 ## The colour keys a paint sets, and the range each is held in: [lowest
