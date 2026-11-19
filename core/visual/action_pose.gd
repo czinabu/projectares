@@ -707,6 +707,8 @@ func advance(delta: float) -> void:
 
 ## Where the feet want the body this frame (see `footwork`).
 func footwork_wanted(melee: MeleeWeapon) -> float:
+	if melee.is_kicking():
+		return 0.0
 	if reel > 0.0:
 		return step_reel * reel
 	if melee.is_blocking():
@@ -1084,6 +1086,9 @@ func arm_reach(melee: MeleeWeapon) -> Variant:
 
 
 func _arm_reach(melee: MeleeWeapon) -> Variant:
+	if melee.is_kicking():
+		# A kick keeps the weapon held ready while the leg works.
+		return ready_reach(melee)
 	if melee._slamming:
 		return windup_reach(melee, MeleeWeapon.Dir.OVERHEAD)
 	if melee.showing_back_strike():
@@ -1161,6 +1166,8 @@ func ready_amount(melee: MeleeWeapon) -> float:
 		return 0.0
 	if melee._slamming or melee.showing_back_strike() or melee.swing_arc() >= 0.0:
 		return 0.0
+	if melee.is_kicking():
+		return 1.0
 	if melee.is_winding_up() or _follow_left > 0.0 or melee.is_blocking():
 		return 0.0
 	var charge := charge_amount(melee)
@@ -1186,6 +1193,8 @@ func body_turn(melee: MeleeWeapon) -> Vector2:
 
 
 func _body_turn(melee: MeleeWeapon) -> Vector2:
+	if melee.is_kicking():
+		return Vector2.ZERO
 	if melee._slamming:
 		return windup_turn(melee, MeleeWeapon.Dir.OVERHEAD)
 	if melee.showing_back_strike():
@@ -1345,7 +1354,7 @@ func keyed_reach(melee: MeleeWeapon, dir: int, done: float) -> Vector3:
 ## back strike its own). Both views turn the weapon hand by it
 ## (`WeaponArm._blade_turn`).
 func technique_blade(melee: MeleeWeapon) -> Variant:
-	if melee == null or actor.is_dead or melee.showing_back_strike():
+	if melee == null or actor.is_dead or melee.showing_back_strike() or melee.is_kicking() or rolling():
 		return null
 	if melee._slamming:
 		return _blade_at(melee, technique_key(melee, MeleeWeapon.Dir.OVERHEAD), 0.0)

@@ -42,6 +42,8 @@ var secondary := false
 var secondary_pressed := false
 ## A weapon's special action (heavy attack for melee).
 var tertiary_pressed := false
+## A kick (V, `MeleeWeapon.kick`): breaks a held guard, loses to a swing.
+var kick_pressed := false
 var reload_pressed := false
 ## Unused since melee became timing based (the blade picks its own sides,
 ## `MeleeWeapon.next_stance`); kept so the packet layout stays the same.
@@ -85,6 +87,7 @@ func clear_one_shots() -> void:
 	primary_pressed = false
 	secondary_pressed = false
 	tertiary_pressed = false
+	kick_pressed = false
 	reload_pressed = false
 	interact_pressed = false
 	heal_pressed = false
@@ -140,12 +143,14 @@ const FLAG_FREE_LOOK := 2097152
 const FLAG_ARTIFACT_PRESSED := 8388608
 const FLAG_INSPECT := 33554432
 const FLAG_CROUCH := 67108864
+const FLAG_KICK_PRESSED := 1 << 29
 ## Flags that describe a held key, and flags that last a single tick.
 const HELD_MASK := FLAG_SPRINT | FLAG_JUMP | FLAG_PRIMARY | FLAG_SECONDARY | VISOR_LEVEL_MASK \
 		| FLAG_DESCEND | FLAG_PHONE | FLAG_FREE_LOOK | FLAG_WATCH_UP | FLAG_INSPECT | FLAG_CROUCH
 const ONE_SHOT_MASK := FLAG_JUMP_PRESSED | FLAG_DASH | FLAG_PRIMARY_PRESSED | FLAG_SECONDARY_PRESSED \
 		| FLAG_TERTIARY_PRESSED | FLAG_RELOAD_PRESSED | FLAG_INTERACT_PRESSED | FLAG_HEAL_PRESSED \
-		| FLAG_ABILITY_PRESSED | FLAG_SLIDE | FLAG_VISOR_PRESSED | FLAG_SPRINT_PRESSED | FLAG_ARTIFACT_PRESSED
+		| FLAG_ABILITY_PRESSED | FLAG_SLIDE | FLAG_VISOR_PRESSED | FLAG_SPRINT_PRESSED | FLAG_ARTIFACT_PRESSED \
+		| FLAG_KICK_PRESSED
 
 
 ## Every button, held or pressed, packed into one integer.
@@ -174,6 +179,7 @@ func flags() -> int:
 	if watch_up: out |= FLAG_WATCH_UP
 	if inspect: out |= FLAG_INSPECT
 	if crouch: out |= FLAG_CROUCH
+	if kick_pressed: out |= FLAG_KICK_PRESSED
 	out |= clampi(visor_level, 0, 3) << VISOR_LEVEL_SHIFT
 	return out
 
@@ -220,6 +226,7 @@ func apply_array(data: Array) -> void:
 	watch_up = bits & FLAG_WATCH_UP != 0
 	inspect = bits & FLAG_INSPECT != 0
 	crouch = bits & FLAG_CROUCH != 0
+	kick_pressed = bits & FLAG_KICK_PRESSED != 0
 	visor_level = (bits & VISOR_LEVEL_MASK) >> VISOR_LEVEL_SHIFT
 	phone = bits & FLAG_PHONE != 0
 	stance = clampi(int(_number(data[STANCE_INDEX])), 0, 2)

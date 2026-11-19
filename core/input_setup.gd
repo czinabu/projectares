@@ -11,6 +11,7 @@ const KEY_ACTIONS := {
 	"sprint": KEY_SHIFT,
 	"dash": KEY_ALT,
 	"crouch": KEY_C,
+	"kick": KEY_V,
 	"interact": KEY_F,
 	"reload": KEY_R,
 	"heal": KEY_H,

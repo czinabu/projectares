@@ -151,6 +151,9 @@ const CONTROLS := [
 		["Parry", "{alt_fire} just before a hit"],
 		["Block cheaply", "{alt_fire} a moment before a hit"],
 		["Hold the guard (drains stamina)", "Hold {alt_fire}"],
+		["Feint a heavy (cancel it into a guard)", "{alt_fire} early in its windup"],
+		["Kick: breaks a held guard, loses to a swing", "{kick}"],
+		["Dodge: a roll, or your rig's own dodge; swings pass through", "{dash}"],
 	]],
 	["WATCH", [
 		["Raise or lower the watch", "{check_wrist}"],

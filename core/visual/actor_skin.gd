@@ -438,7 +438,7 @@ func _ready() -> void:
 			var found := _find_animation(def["anims"][key])
 			if found != "":
 				_anims[key] = found
-				if key != "death" and key != "attack" and key != "roll":
+				if key not in ["death", "attack", "roll", "kick"]:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
 		_play("idle")
 		_player.advance(0.0)
@@ -707,7 +707,14 @@ func _update(delta: float) -> void:
 			_play("roll", length / maxf(actor.roll_time, 0.05))
 			_player.seek(0.0, true)
 		return
-	if melee and melee.is_winding_up() and _attack_left <= 0.0:
+	if melee and melee.is_kicking() and _current != "kick" and _anims.has("kick"):
+		# The kick is the body's: the clip has the legs, timed to land with it.
+		var kick_time := melee.kick_windup + melee.kick_recover
+		_attack_left = kick_time
+		_current = ""
+		_play("kick", _player.get_animation(_anims["kick"]).length / maxf(kick_time, 0.05))
+		_player.seek(0.0, true)
+	if melee and melee.is_winding_up() and not melee.is_kicking() and _attack_left <= 0.0:
 		_attack_left = 0.6
 		_current = ""
 		_play("attack", 1.3)

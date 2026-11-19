@@ -2104,6 +2104,77 @@ func _test_directional_melee() -> void:
 	await frames(40)
 	check(not p.dodging(), "the weapon answers again once the roll is over")
 	p.flight.enabled = rig_on
+	p.global_position = from
+	p.velocity = Vector3.ZERO
+
+	# The kick breaks a held guard open and goes through it.
+	await frames(30)
+	p.stamina = p.max_stamina
+	foe.stagger_left = 0.0
+	foe.cmd.secondary = true
+	await frames(30)
+	p.cmd.kick_pressed = true
+	await frames(1)
+	p.cmd.kick_pressed = false
+	check(blade.is_kicking() and blade.is_winding_up(), "V starts a kick with a windup")
+	await frames(int(blade.kick_windup * 60.0) + 4)
+	check(foe.stagger_left > 0.0, "a kick breaks a held guard open")
+	foe.cmd.secondary = false
+	await frames(90)
+
+	# A swing beats a kick: a light thrown into a kick's windup lands first.
+	foe.stagger_left = 0.0
+	p.stagger_left = 0.0
+	foe_blade.kick_stamina = 0.0
+	foe.cmd.kick_pressed = true
+	await frames(1)
+	foe.cmd.kick_pressed = false
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(int((blade.light_windup + blade.light_tell) * 60.0) + 2)
+	check(foe.stagger_left > 0.0 and not foe_blade.is_winding_up(), "a swing into a kick's windup cuts it off")
+	await frames(90)
+
+	# A feint: aim early in a heavy's windup lets it go and raises the guard.
+	foe.stagger_left = 0.0
+	p.stagger_left = 0.0
+	p.stamina = p.max_stamina
+	p.cmd.tertiary_pressed = true
+	await frames(1)
+	p.cmd.tertiary_pressed = false
+	await frames(3)
+	check(blade.is_winding_up(), "a heavy winds up")
+	var feint_from := p.stamina
+	p.cmd.secondary = true
+	await frames(3)
+	check(not blade.is_winding_up() and blade.is_blocking() and p.stamina < feint_from,
+			"aim early in a heavy feints it into a guard, for stamina")
+	p.cmd.secondary = false
+	await frames(60)
+
+	# A heavy straight off a light is quicker, and comes from the side.
+	p.stamina = p.max_stamina
+	p.cmd.primary_pressed = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	await frames(int((blade.light_windup + blade.light_tell + blade.light_recover) * 60.0) + 2)
+	p.cmd.tertiary_pressed = true
+	await frames(1)
+	p.cmd.tertiary_pressed = false
+	await frames(1)
+	check(blade._windup_kind == "heavy" and blade._windup_total < blade.heavy_windup * 0.9
+			and blade.attack_dir != MeleeWeapon.Dir.OVERHEAD, "a heavy off a light carries the string on")
+	await frames(90)
+
+	# Two strikes about to land together clash.
+	foe_blade._windup_kind = "light"
+	foe_blade._windup_left = blade.clash_window * 0.5
+	check(blade.clashes_with(foe_blade) and blade.guess_outcome(foe) == "clash", "strikes landing together clash")
+	foe_blade._windup_left = 0.3
+	check(not blade.clashes_with(foe_blade), "a swing far from landing does not clash")
+	foe_blade._windup_left = 0.0
+	foe_blade._windup_kind = ""
 
 	# Bullets ignore sides: any guard turns part of one aside.
 	await frames(60)

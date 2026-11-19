@@ -843,6 +843,7 @@ func _physics_process(delta: float) -> void:
 	cmd.jump = Input.is_action_pressed("jump")
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
+	cmd.kick_pressed = Input.is_action_just_pressed("kick")
 	cmd.descend = Input.is_action_pressed("crouch")
 	crouch_key(Input.is_action_just_pressed("crouch"))
 	cmd.free_look = Input.is_action_pressed("free_look")

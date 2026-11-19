@@ -170,6 +170,29 @@ var parry_stagger := 1.1
 ## and holds them this long: the quicker blade wins a trade. A guard or a
 ## body at rest is never held, so a landed light never locks anyone up.
 var interrupt_stagger := 0.3
+## Two strikes meeting: a blow that arrives while the foe's own swing is
+## within `clash_window` of landing is a clash; neither cuts, both are
+## knocked back for `clash_stagger` and the blades meet.
+var clash_window := 0.08
+var clash_stagger := 0.35
+## A heavy cancelled early in its windup (aim pressed before its last
+## `SWING_LEAD`) is a feint: it costs `feint_stamina` and the guard comes up.
+var feint_stamina := 12.0
+## A heavy thrown straight after a light, inside the combo window, comes
+## `combo_heavy_speed` of the time and from the side the next light would,
+## so lights and a heavy flow as one string.
+var combo_heavy_speed := 0.8
+## The kick (V): breaks a held guard (`kick_guard_stagger`, through any
+## guard, unblockable), costs `kick_stamina`, shows a slow windup a swing
+## beats (`kick_windup`, longer than a light's) and leaves its kicker open
+## after (`kick_recover`). Reaches `kick_reach` within `kick_arc_deg`.
+var kick_windup := 0.38
+var kick_recover := 0.4
+var kick_reach := 2.0
+var kick_arc_deg := 80.0
+var kick_damage := 6.0
+var kick_stamina := 15.0
+var kick_guard_stagger := 0.85
 var guard_break_stagger := 0.9
 var riposte_window := 1.6
 var riposte_mult := 1.5
@@ -246,6 +269,8 @@ var _since_guard := 99.0
 var _parry_ready := true
 ## The guard up now met a hit with a parry or timed block.
 var _guard_paid := false
+## The aim (guard) button was down last tick: a press is its edge.
+var _aim_was := false
 ## The command asked to sprint this tick: a heavy now is a dash-strike.
 var _sprinting := false
 ## The lunge in progress is a dash-strike (status and tests).
@@ -375,7 +400,10 @@ func tick(delta: float) -> void:
 	elif _windup_left > 0.0:
 		_windup_left -= delta
 		if _windup_left <= 0.0:
-			_strike(_windup_damage, _windup_kind)
+			if _windup_kind == "kick":
+				_kick_lands()
+			else:
+				_strike(_windup_damage, _windup_kind)
 			_windup_kind = ""
 	_carry_lunge(delta)
 	_animate(delta)
@@ -389,6 +417,9 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		stance = next_stance() as Dir
 	_sprinting = cmd.sprint
 	_backing = cmd.move.y < -0.5
+	if cmd.secondary and not _aim_was:
+		_try_feint()
+	_aim_was = cmd.secondary
 	var wants_block := cmd.secondary and not _slamming and _windup_left <= 0.0 and actor.stamina > 0.0
 	if wants_block and not _blocking:
 		_block_time = 0.0
@@ -410,6 +441,11 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 	if is_busy():
 		_charge = -1.0
 		_queue_press(cmd, delta)
+		return
+	if cmd.kick_pressed:
+		_charge = -1.0
+		_queued = false
+		kick()
 		return
 	if cmd.tertiary_pressed:
 		# A heavy asked for outright (bots, or a bound key).
@@ -439,6 +475,73 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 	if _charge >= hold_time:
 		_charge = -1.0
 		_heavy_or_slam()
+
+
+## A kick (`ActorCommand.kick_pressed`): on the ground only, with a windup
+## a swing can beat.
+func kick() -> void:
+	if not actor.is_on_floor() or not actor.spend_stamina(kick_stamina):
+		return
+	_windup_kind = "kick"
+	_windup_damage = kick_damage
+	_windup_left = kick_windup
+	_windup_total = kick_windup
+	_shown_kind = "kick"
+	_swing_lead = 0.0
+	_cooldown = kick_windup + kick_recover
+	_recover_total = 0.0
+	swung.emit("kick_windup")
+
+
+## True while a kick is winding up or just landed.
+func is_kicking() -> bool:
+	return _shown_kind == "kick" and (_windup_left > 0.0 or _cooldown > 0.0)
+
+
+## The kick lands: on a raised guard it breaks it open, and it only scuffs
+## anyone else. It goes through any guard; a dodge slips it.
+func _kick_lands() -> void:
+	swung.emit("kick")
+	Sfx.play("block", null if actor.is_player else actor.global_position, -6.0)
+	var forward := actor.get_aim_dir()
+	forward.y = 0.0
+	forward = forward.normalized()
+	var seen := Combat.positions_seen_by(actor)
+	for other in _other_actors():
+		var at: Vector3 = seen.get(other, other.global_position)
+		var to := at - actor.global_position
+		if absf(to.y) > 1.2:
+			continue
+		to.y = 0.0
+		if to.length() - HIT_ALLOWANCE > kick_reach:
+			continue
+		if to.length() > 0.6 and forward.angle_to(to.normalized()) > deg_to_rad(kick_arc_deg) * 0.5:
+			continue
+		var blade := other.get_active_weapon() as MeleeWeapon
+		var guarding := blade != null and blade.is_blocking()
+		var info := DamageInfo.make(kick_damage, actor, "kick", at)
+		if not Combat.deal(other, info) or info.amount <= 0.0 or other.is_dead:
+			continue
+		if guarding:
+			other.stagger(kick_guard_stagger)
+			other.notice.emit("Guard kicked open")
+
+
+## Aim pressed early in a heavy's windup feints it: the heavy is let go
+## (it never lands) and the guard comes up from the same press.
+func _try_feint() -> void:
+	if _windup_kind != "heavy" or _windup_left <= _swing_lead or _windup_left <= 0.0:
+		return
+	if not actor.spend_stamina(feint_stamina):
+		return
+	_windup_left = 0.0
+	_windup_kind = ""
+	_lunge_left = 0.0
+	_dashing = false
+	_cooldown = 0.0
+	_shown_kind = "light"
+	actor.notice.emit("Feint")
+	swung.emit("feint")
 
 
 ## The side the next swing goes toward: a combo runs left, right, then
@@ -672,10 +775,16 @@ func _light_attack(held: float) -> void:
 func _heavy_attack() -> void:
 	if not actor.spend_stamina(heavy_stamina):
 		return
+	# Straight off a light, the heavy carries the string on: quicker, from
+	# the side the next cut would come.
+	var chained := combo_step > 0 and _combo_timer > 0.0
+	var windup := heavy_windup * (combo_heavy_speed if chained else 1.0)
 	combo_step = 0
-	_cooldown = heavy_windup + heavy_recover
-	_begin_windup("heavy", heavy_damage, heavy_windup)
-	var time := maxf(heavy_windup, 0.05)
+	_cooldown = windup + heavy_recover
+	_begin_windup("heavy", heavy_damage, windup)
+	if chained:
+		attack_dir = swing_from(stance) as Dir
+	var time := maxf(windup, 0.05)
 	var most := heavy_lunge * time
 	var dash := dash_range if _sprinting and dash_range > most else most
 	var foe := _lunge_target(reach + dash)
@@ -894,6 +1003,14 @@ func _strike(amount: float, kind: String) -> void:
 		var stagger := heavy_stagger_now()
 		var foe_blade := other.get_active_weapon() as MeleeWeapon
 		var swinging := foe_blade != null and (foe_blade.is_winding_up() or foe_blade.is_charging())
+		if clashes_with(foe_blade):
+			# Two strikes meet: neither cuts, both are knocked back.
+			if Combat.authoritative:
+				actor.stagger(clash_stagger)
+				other.stagger(clash_stagger)
+				actor.notice.emit("Clash")
+				other.notice.emit("Clash")
+			continue
 		if not Combat.deal(other, info) or info.blocked or info.parried or other.is_dead:
 			continue
 		if kind == "heavy" and stagger > 0.0:
@@ -918,11 +1035,20 @@ func _contact(other: Actor, at: Vector3) -> void:
 		Fx.burst(actor.get_parent(), chest, 0.35, Color(1.0, 0.45, 0.35))
 
 
+## True when `foe_blade`'s own strike is about to land as this one does, so
+## the two meet in a clash.
+func clashes_with(foe_blade: MeleeWeapon) -> bool:
+	return foe_blade != null and foe_blade._windup_kind in ["light", "heavy"] \
+			and foe_blade._windup_left > 0.0 and foe_blade._windup_left <= clash_window
+
+
 ## What `other`'s guard would do with a strike from this blade right now:
 ## "parry", "block" or "hit". The server's `modify_incoming` decides for real;
 ## this only lets the attacker's view answer straight away.
 func guess_outcome(other: Actor) -> String:
 	var blade := other.get_active_weapon() as MeleeWeapon
+	if clashes_with(blade):
+		return "clash"
 	if blade == null or not blade.is_blocking() or other.stagger_left > 0.0:
 		return "hit"
 	var facing := other.get_aim_dir()
