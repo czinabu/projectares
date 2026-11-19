@@ -40,6 +40,10 @@ var mag_size := 30
 var ammo_in_mag := 30
 var reserve_ammo := 120
 var reload_time := 1.7
+## A gun that runs dry in hand starts its reload by itself as the last shot
+## cycles, and stays in hand (Caleb's call: never a switch to another weapon
+## on its own). With nothing left to load, a pull only clicks.
+var auto_reload := true
 var max_range := 150.0
 var spread_deg := 1.2
 var ads_spread_mult := 0.3
@@ -449,11 +453,12 @@ func tick(delta: float) -> void:
 			var need := mini(mag_size - ammo_in_mag, reserve_ammo)
 			ammo_in_mag += need
 			reserve_ammo -= need
+			_reload_sound("reload_in")
 
 
 func handle_input(cmd: ActorCommand, delta: float) -> void:
 	_aiming = cmd.secondary and _reload_left <= 0.0 and spin_up <= 0.0
-	if cmd.reload_pressed:
+	if cmd.reload_pressed or (auto_reload and ammo_in_mag <= 0 and _cooldown <= 0.0):
 		start_reload()
 	if spin_up > 0.0:
 		var spinning := (cmd.primary or cmd.secondary) and _reload_left <= 0.0
@@ -481,6 +486,10 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 			_fire()
 		else:
 			start_reload()
+	if cmd.primary_pressed and ammo_in_mag <= 0 and reserve_ammo <= 0 and _reload_left <= 0.0:
+		_reload_sound("dry_fire")
+		if actor:
+			actor.notice.emit("Out of ammo")
 
 
 func drop_aim() -> void:
@@ -541,6 +550,15 @@ func reload_left() -> float:
 func start_reload() -> void:
 	if _reload_left <= 0.0 and ammo_in_mag < mag_size and reserve_ammo > 0:
 		_reload_left = reload_time
+		_reload_sound("reload_out")
+
+
+## The reload's clacks and the dry click: flat for the player's own gun, from
+## the gun for anyone else's. `Sfx` is a no-op on a server.
+func _reload_sound(sound: String) -> void:
+	if actor == null or not actor.is_inside_tree():
+		return
+	Sfx.play(sound, null if actor.is_player else actor.global_position + Vector3.UP * 1.2, -6.0, 25.0)
 
 
 func current_spread_deg() -> float:

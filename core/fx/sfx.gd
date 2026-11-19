@@ -53,6 +53,11 @@ func _ready() -> void:
 	_streams["headshot"] = _tones([2250.0, 3380.0], 0.13, 24.0, 0.4)
 	_streams["armor_hit"] = _tones([1050.0, 1580.0], 0.06, 55.0, 0.3)
 	_streams["armor_break"] = _tones([2900.0, 3720.0, 4610.0], 0.32, 10.0, 0.42)
+	# A reload: the mag dropping out with a dull clack, and seating with a
+	# sharper one; a pull on a gun with nothing left is a thin dry click.
+	_streams["reload_out"] = _noise_burst(0.09, 45.0, 0.6, 260.0)
+	_streams["reload_in"] = _tones([1700.0, 2550.0], 0.07, 50.0, 0.3)
+	_streams["dry_fire"] = _tones([3200.0], 0.03, 90.0, 0.25)
 	_streams["slam"] = _noise_burst(0.4, 9.0, 0.9, 55.0)
 	_streams["block"] = _noise_burst(0.1, 40.0, 0.5, 220.0)
 	_streams["hurt"] = _noise_burst(0.14, 22.0, 0.25, 85.0)

@@ -1,5 +1,5 @@
 extends RefCounted
-## Checks for sidearms: the loadout slot, quick-draw when the primary runs dry,
+## Checks for sidearms: the loadout slot, a dry primary staying in hand to reload,
 ## and how each sidearm fires. Called from the test runner
 ## (`-- --only sidearms` runs just these).
 
@@ -12,7 +12,7 @@ static func run(t: Node) -> void:
 	print("Sidearms")
 	_slots(t)
 	await _kit(t)
-	await _quick_draw(t)
+	await _run_dry(t)
 	await _firing(t)
 
 
@@ -87,19 +87,45 @@ static func _shooter(t: Node, kit: Array) -> Array:
 	return [arena, shooter]
 
 
-static func _quick_draw(t: Node) -> void:
+static func _run_dry(t: Node) -> void:
 	var made := await _shooter(t, ["rifle_scrap", "blade_scrap", "pistol_service"])
 	var shooter: Actor = made[1]
 	var rifle := shooter.weapons[0] as Gun
 	var pistol := shooter.weapons[2] as Gun
 	rifle.ammo_in_mag = 1
 	shooter.cmd.primary = true
-	await t.frames(4)
-	t.check(shooter.active_weapon_index == 2 and not rifle.is_reloading(),
-			"running the primary dry with the trigger held draws the sidearm")
-	var before := pistol.ammo_in_mag
+	await t.frames(14)
 	shooter.cmd.primary = false
+	t.check(shooter.active_weapon_index == 0 and rifle.is_reloading(),
+			"running the primary dry with the trigger held keeps it in hand and reloads it at once (%d, %d/%d, %s)"
+			% [shooter.active_weapon_index, rifle.ammo_in_mag, rifle.reserve_ammo, rifle.is_reloading()])
+	rifle._reload_left = 0.0
+	rifle.ammo_in_mag = 0
+	rifle.reserve_ammo = 30
+	await t.frames(2)
+	t.check(rifle.is_reloading(), "a dry gun in hand starts its reload with no pull at all")
+
+	# Nothing left to load: a pull clicks, and the gun stays in hand.
+	rifle._reload_left = 0.0
+	rifle.ammo_in_mag = 0
+	rifle.reserve_ammo = 0
+	var heard := [""]
+	shooter.notice.connect(func(text: String) -> void: heard[0] = text)
+	shooter.cmd.primary = true
+	shooter.cmd.primary_pressed = true
 	await t.frames(1)
+	shooter.cmd.primary_pressed = false
+	await t.frames(4)
+	shooter.cmd.primary = false
+	t.check(shooter.active_weapon_index == 0 and not rifle.is_reloading() and heard[0] == "Out of ammo",
+			"an empty gun with nothing to load clicks and stays in hand ('%s')" % heard[0])
+
+	# The sidearm is one key away, and fires once per pull.
+	shooter.cmd.switch_weapon = 2
+	await t.frames(1)
+	shooter.cmd.switch_weapon = -1
+	await t.frames(2)
+	var before := pistol.ammo_in_mag
 	shooter.cmd.primary = true
 	shooter.cmd.primary_pressed = true
 	await t.frames(1)
@@ -109,17 +135,15 @@ static func _quick_draw(t: Node) -> void:
 	t.check(pistol.ammo_in_mag == before - 1, "the service pistol fires once per pull (%d -> %d)"
 			% [before, pistol.ammo_in_mag])
 
-	# With an empty sidearm the primary reloads as before.
-	shooter.cmd.switch_weapon = 0
+	# A reload pressed while the gun cannot take it yet is kept, not lost.
+	pistol.ammo_in_mag = 3
+	shooter.materialize_left = 0.15
+	shooter.cmd.reload_pressed = true
 	await t.frames(1)
-	shooter.cmd.switch_weapon = -1
-	pistol.ammo_in_mag = 0
-	rifle.ammo_in_mag = 0
-	shooter.cmd.primary = true
-	await t.frames(2)
-	shooter.cmd.primary = false
-	t.check(shooter.active_weapon_index == 0 and rifle.is_reloading(),
-			"with no loaded sidearm, an empty primary reloads")
+	shooter.cmd.reload_pressed = false
+	t.check(not pistol.is_reloading(), "no reload while the gun is still coming into the hand")
+	await t.frames(15)
+	t.check(pistol.is_reloading(), "the reload pressed meanwhile starts as soon as it can")
 	made[0].queue_free()
 	await t.frames(2)
 

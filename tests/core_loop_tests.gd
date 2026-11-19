@@ -93,9 +93,9 @@ static func _loop(t: Node, world_id: String) -> void:
 	if player == null:
 		raid.queue_free()
 		return
-	t.check(CRAFT in player.gear_items and player.get_active_weapon() != null
-			and player.get_active_weapon().item_id == CRAFT,
-			"%s: the next life deploys with the crafted gun in hand" % tag)
+	t.check(CRAFT in player.gear_items and player.get_active_weapon() == null
+			and player.weapons[player.last_drawn].item_id == CRAFT,
+			"%s: the next life deploys unarmed with the crafted gun ready to draw" % tag)
 
 	# --- Second life ends in death -------------------------------------------
 	var killer: Actor = null

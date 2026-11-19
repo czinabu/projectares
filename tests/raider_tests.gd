@@ -238,6 +238,12 @@ static func _kit_care(t: Node, raid: Raid) -> void:
 	brain._tend_kit(cmd)
 	t.check(cmd.reload_pressed, "and tops up a part-used mag")
 	brain.state = BotBrain.State.ATTACK
+	gun.ammo_in_mag = 0
+	cmd = ActorCommand.new()
+	brain._tend_kit(cmd)
+	var drawn := bot.weapons[cmd.switch_weapon] as Gun if cmd.switch_weapon >= 0 else null
+	t.check(drawn != null and drawn.is_sidearm and drawn.ammo_in_mag > 0,
+			"in a fight it runs a dry primary onto a loaded sidearm")
 	for w in bot.weapons:
 		if w is Gun:
 			(w as Gun).ammo_in_mag = 0

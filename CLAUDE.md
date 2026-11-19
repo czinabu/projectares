@@ -814,9 +814,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `Loadout.power_index`); the
   mouse wheel cycles the same order. Sidearms are firearms also tagged "sidearm";
   `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
-  the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
-  the primary dry with the trigger held draws a loaded sidearm instead of
-  reloading (`Actor._simulate_weapons`). Headshots come from
+  the primary slot), and `Weapon.is_sidearm` marks one once equipped. A gun
+  never switches itself (Caleb's call): run dry in hand it stays there and
+  reloads as the last shot cycles (`Gun.auto_reload`), and with nothing left
+  to load a pull only clicks ("Out of ammo"). A reload press the gun cannot
+  take yet (drawing, healing) is kept for `Actor.reload_buffer`. Only the
+  player, or a bot's brain pressing the same key (`BotBrain._tend_kit`),
+  changes weapons. A player arrives unarmed (Caleb's call): every life in
+  every world starts with the weapons put away and key 1's weapon ready to
+  draw (`Loadout.arrive_unarmed`, in `Raid.add_player` and the client's
+  copy in `NetSession`), and comes out only by choice: a number key, Z, the
+  wheel, or a pull of the trigger with empty hands, which only draws. While
+  `Actor.weapons_locked` (a safe zone, a gate outpost, the base off the
+  range) a weapon in hand is put away and nothing can be drawn
+  (`Actor._simulate_weapons`). Headshots come from
   `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
   Every gun has a range and a target it wins against (DESIGN.md "Gun
   roles"): each sets its own `headshot_mult` (more than 1 on every gun but
