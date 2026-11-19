@@ -241,7 +241,21 @@ static func bench_prompt(machine: String, league: Dictionary) -> String:
 	if RaceLeague.kits_for(league).size() < 2:
 		return "Tuning kits open in the %s league" % RaceLeague.league_name(1)
 	var next := RaceLeague.next_kit(league, machine)
-	return "E  Fit %s: %s" % [RaceLeague.kit_name(next), str(RaceLeague.KITS[next].about).to_lower()]
+	return "%s  Fit %s: %s" % [key(), RaceLeague.kit_name(next), str(RaceLeague.KITS[next].about).to_lower()]
+
+
+## The interact key as the player has it bound, for the desks' and
+## benches' prompts ("[F]"): never a letter of its own, which once said E
+## (free look) and left the desks doing nothing (Caleb's report).
+static func key() -> String:
+	if InputMap.has_action("interact"):
+		for event: InputEvent in InputMap.action_get_events("interact"):
+			if event is InputEventKey:
+				var code := (event as InputEventKey).physical_keycode
+				if code == KEY_NONE:
+					code = (event as InputEventKey).keycode
+				return "[%s]" % OS.get_keycode_string(code)
+	return "[F]"
 
 
 ## What a desk says now: its own words and the next race there.
@@ -252,6 +266,8 @@ static func desk_text(title: String, heat: Dictionary) -> String:
 			return "%s\nNext race %s · %d/%d riders" % [title, Race.format_countdown(float(heat.get("starts_in", 0.0)) - since),
 					int(heat.get("people", 0)), Race.GRID_SIZE]
 		"racing":
+			if bool(heat.get("ambient", false)):
+				return "%s\nAI racing now · sign up to race them" % title
 			return "%s\nRace on · %d on the grid" % [title, int(heat.get("field", 0))]
 	return "%s\nNo race yet: start one" % title
 
@@ -259,12 +275,15 @@ static func desk_text(title: String, heat: Dictionary) -> String:
 ## The prompt at a desk.
 static func desk_prompt(machine: String, heat: Dictionary) -> String:
 	if machine == "":
-		return "E  Watch the racers here"
+		return "%s  Watch the racers here" % key()
+	if bool(heat.get("ambient", false)):
+		# The AI's own race: signing up calls its field back to the grid.
+		return "%s  Race the AI: they line up on the grid" % key()
 	if str(heat.get("phase", "")) == "racing":
 		return "A race is on: the next forms once it is over"
 	if str(heat.get("phase", "")) == "forming":
-		return "E  Join the next race on the grid"
-	return "E  Start the next race (AI fill the grid)"
+		return "%s  Join the next race on the grid" % key()
+	return "%s  Start the next race (AI fill the grid)" % key()
 
 
 func _update_desks(delta: float) -> void:
@@ -496,6 +515,9 @@ static func heat_text(heat: Dictionary) -> String:
 					Race.format_countdown(float(heat.get("starts_in", 0.0)) - since), int(heat.get("people", 0)),
 					Race.GRID_SIZE]
 		"racing":
+			if bool(heat.get("ambient", false)):
+				return "AI RACE ON · %s league · %d riders · sign up to race them\n" % [
+						str(heat.get("league", "Rookie")), int(heat.get("field", 0))]
 			return "RACE ON · %s league · %d on the grid\n" % [str(heat.get("league", "Rookie")),
 					int(heat.get("field", 0))]
 		"done":

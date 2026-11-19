@@ -9,6 +9,7 @@ extends RefCounted
 
 const SKY_SHADER := preload("res://assets/shaders/planet_sky.gdshader")
 const GROUND_SHADER := preload("res://assets/shaders/planet_ground.gdshader")
+const GameSettings := preload("res://core/settings/game_settings.gd")
 
 ## The ground's layers, in the order of the shader's `textured` and `tile`.
 const LAYERS: Array[String] = ["base", "rock", "cap", "patch"]
@@ -38,11 +39,13 @@ static func atmosphere(parent: Node3D, type: PlanetType, war := {}) -> void:
 		mood.sky_mat = sky_mat
 	var sun := parent.get_node_or_null("Sun") as DirectionalLight3D
 	Look.apply_mood(Look.mood_values(type.calm), env_node.environment, sky_mat, sun)
+	if not type.smoke.is_empty():
+		parent.add_child(GroundSmoke.make(type.smoke, env_node.environment))
 	# Far ground is part of the planet now, so the sun's shadows reach further
 	# out, in fewer, cheaper splits beyond the fight.
 	if sun != null:
-		sun.directional_shadow_max_distance = 200.0
 		sun.directional_shadow_fade_start = 0.85
+		Look.GameSettings.fit_sun(sun, 200.0)
 
 
 static func sky_material(type: PlanetType) -> ShaderMaterial:
@@ -221,3 +224,83 @@ static func weather(parent: Node3D, kind: String, extent := 40.0, height := 24.0
 	particles.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(particles)
 	return particles
+
+
+## Battle smoke lying low over the ground (`PlanetType.smoke`): one
+## volumetric fog box that follows the camera and stands on the ground under
+## it, thicker as the war heats up and in a storm (the map's "war_intensity"
+## and "weather_here" metas, as `Look.WarMood` reads them). View only, and
+## off with `GameSettings.ground_smoke`.
+class GroundSmoke:
+	extends Node3D
+
+	## How far round the camera the smoke reaches.
+	var reach := 500.0
+	var depth := 18.0
+	var density := 0.08
+	var war_mult := 0.5
+	var storm_mult := 1.0
+	var env: Environment
+	var volume: FogVolume
+	var material: FogMaterial
+
+	static func make(p: Dictionary, p_env: Environment) -> GroundSmoke:
+		var smoke := GroundSmoke.new()
+		smoke.name = "GroundSmoke"
+		smoke.env = p_env
+		smoke.depth = float(p.get("depth", 18.0))
+		smoke.density = float(p.get("density", 0.08))
+		smoke.war_mult = float(p.get("war", 0.5))
+		smoke.storm_mult = float(p.get("storm", 1.0))
+		smoke.material = FogMaterial.new()
+		smoke.material.albedo = p.get("colour", Color(0.45, 0.44, 0.44))
+		smoke.material.height_falloff = 0.15
+		smoke.material.edge_fade = 0.2
+		var noise := FastNoiseLite.new()
+		noise.frequency = 0.025
+		var tex := NoiseTexture3D.new()
+		tex.noise = noise
+		tex.width = 64
+		tex.height = 32
+		tex.depth = 64
+		tex.seamless = true
+		smoke.material.density_texture = tex
+		smoke.volume = FogVolume.new()
+		smoke.volume.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+		smoke.volume.size = Vector3(smoke.reach * 2.0, smoke.depth, smoke.reach * 2.0)
+		smoke.volume.material = smoke.material
+		smoke.add_child(smoke.volume)
+		smoke.add_to_group("ground_smoke")
+		p_env.volumetric_fog_density = 0.0
+		p_env.volumetric_fog_albedo = smoke.material.albedo
+		p_env.volumetric_fog_anisotropy = 0.3
+		p_env.volumetric_fog_length = 200.0
+		p_env.volumetric_fog_detail_spread = 2.0
+		p_env.volumetric_fog_gi_inject = 1.0
+		p_env.volumetric_fog_ambient_inject = 0.8
+		smoke.show_smoke(GameSettings.ground_smoke)
+		return smoke
+
+	func show_smoke(on: bool) -> void:
+		visible = on
+		set_process(on)
+		if env != null:
+			env.volumetric_fog_enabled = on
+
+	## How thick it is for a war intensity and a share of storm, 0 to 1.
+	func density_for(war: float, storm: float) -> float:
+		return density * (1.0 + war_mult * clampf(war, 0.0, 1.0) + storm_mult * clampf(storm, 0.0, 1.0))
+
+	func _process(_delta: float) -> void:
+		var map := get_parent()
+		material.density = density_for(float(map.get_meta("war_intensity", 0.0)), float(map.get_meta("weather_here", 0.0)))
+		var camera := get_viewport().get_camera_3d()
+		if camera == null:
+			return
+		var at := camera.global_position
+		var ground := at.y - 2.0
+		if map.has_method("ground_height"):
+			ground = float(map.call("ground_height", at.x, at.z))
+		# Stood on the ground under the camera: thickest at the foot, thinning
+		# upward through `depth`.
+		volume.global_position = Vector3(at.x, ground + depth * 0.5 - 2.0, at.z)

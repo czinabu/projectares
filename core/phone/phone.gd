@@ -2127,6 +2127,23 @@ func _draw_settings() -> void:
 			smoothing.item_selected.connect(func(index: int) -> void: change_setting("anti_aliasing", index))
 			_body.add_child(smoothing)
 			_toggle("Outline far shapes (not with MSAA)", "edge_ink", GameSettings.edge_ink)
+			_body.add_child(_section("PERFORMANCE"))
+			_body.add_child(_label("Shadows", 14, UiTheme.INK))
+			var shadow_pick := OptionButton.new()
+			for pick: Array in GameSettings.SHADOWS:
+				shadow_pick.add_item(pick[0])
+			shadow_pick.select(GameSettings.shadows)
+			shadow_pick.item_selected.connect(func(index: int) -> void: change_setting("shadows", index))
+			_body.add_child(shadow_pick)
+			_body.add_child(_label("Render scale", 14, UiTheme.INK))
+			var scale_pick := OptionButton.new()
+			for pick: Array in GameSettings.RENDER_SCALE:
+				scale_pick.add_item(pick[0])
+			scale_pick.select(GameSettings.render_scale)
+			scale_pick.item_selected.connect(func(index: int) -> void: change_setting("render_scale", index))
+			_body.add_child(scale_pick)
+			_toggle("Ambient occlusion", "ambient_occlusion", GameSettings.ambient_occlusion)
+			_toggle("Battle smoke over the ground", "ground_smoke", GameSettings.ground_smoke)
 			_body.add_child(_section("CAMERA"))
 			_slider("Field of view, first person", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
 					func(v: float) -> String: return "%d" % roundi(v))

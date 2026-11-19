@@ -50,7 +50,7 @@ new planet is a new folder under `worlds/`.
 | Home base | `core/base` | Your private staging ground. The armory wall, the garage, the trophy shelf and the consoles. Loadouts are prepared here. |
 | PvE world | Frostline (partly) | The co-op expedition world: cold, whiteouts and tracking instead of a war. Learn the game, test builds, earn basic gear and the crafting parts every Mk2 and Mk3 needs (planned). No PvP, gentle death. |
 | PvP world | Ashfront | The high-stakes warzone. The fallen drop scrip piles, not their gear (see "Scrip piles"), so the best gear comes from its caches; the only source of heavy weapons, bank spots, sign-out tension. |
-| Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments. Loadouts are locked once a fight begins. Nobody loses gear. |
+| Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments, open or blades only. Loadouts are locked once a fight begins. Nobody loses gear. |
 
 ### Main hub
 
@@ -651,6 +651,24 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   when; the blast is a flash that lights the ground, a fireball throwing a
   fan of dirt and a column of smoke left drifting, heard and felt (the view
   jolts) once its sound arrives. Ashfront only for now.
+- **The scenery army (Caleb's call: view only, cannot be shot).** Squads of
+  both armies fight each other out in the mid distance, two to five fights
+  at once by how hot the war is, each two squads of 10 to 16 facing across
+  a line, placed toward the war's centre (`worlds/ashfront/battle.gd`, the
+  map's `make_battle`). They run up in hops, kneel or stand to fire
+  (orange Legion and cyan Tide tracers and muzzle flashes that cut through
+  the haze, heard as far gunfire once the sound arrives), fall, lie a
+  while and fade, and fresh ones come up from behind. They are the armies'
+  own riflemen: once per run of the game a dressed soldier of each army is
+  posed in a world of its own (a run cycle, aiming, kneeling, fallen) and
+  each pose is baked into a far copy of under 900 triangles, drawn one
+  MultiMesh per pose. Nothing of it is ever nearer a player or the camera
+  than `keep_off` (48 m; it dissolves in over the next 12 m), a fight is
+  placed at least 85 m from everyone, and one a player comes within 62 m
+  of ends and starts again elsewhere, so up close every soldier is a real
+  bot. A round from the player's own gun through an extra, or a shell
+  landing by it, drops it, on that screen only and for nothing. View only:
+  no collision, no `Combat.deal`, nothing sent online, none on a server.
 - Everything lost on death, but the body drops a scrip pile worth it, not
   the gear itself (section 10, "Scrip piles").
 - The only place heavy weapons are found.
@@ -1142,6 +1160,21 @@ vehicle has a job:
   the stands and a ring of stadium floodlight towers (Caleb's call) whose
   white beams spread out over the floor to its edges, never meeting at one
   point, so the fighters stand out.
+- **Rules per bout** (`Arena.RULES`): every bout and tournament is
+  **open** (anything the loadout carries), **blades** (melee only: guns stay
+  locked and every flight rig is off) or **blades and boots** (melee, and
+  thruster boots may fly, for air lunges and dash duels). Pure footwork is
+  the default blade rule (Caleb's call). Whoever asks for the bout picks:
+  the challenger, the player asking for practice, the first entrant of a
+  tournament. A blades bout needs a melee weapon on both fighters, and a
+  gladiator brought to one carries a blade. Every other exhibition the
+  house puts on is fought with blades.
+- **The Blade Tournament** is a tournament under blade rules. Its champion
+  takes the pot like any other and, once a week per account, the weekly
+  prize: the Blade Champion trophy for the base's trophy shelf (never sold
+  or traded) and a 35% chance at an artifact, the design's arena source of
+  both. The week is the contract board's (Monday to Sunday, UTC). Bots
+  fill an empty bracket as usual, so a solo player can win it too.
 
 ### Planet kit (proposed, Caleb to confirm)
 
@@ -1178,7 +1211,54 @@ the Ashland: its sky, light and ash-storm mood (the war mood is Ashfront's
 own), the Ashland's burnt ground and glowing cracks on the field, and its
 land and mountains past the rim to the horizon, kept low near the map so
 the skyline, the giants and the burning ring stand on it; the planet's
-rocks only on the rim's slope and past it, out of the fight.
+rocks only on the rim's slope and past it, out of the fight. The Ashland's
+air is ash grey and its light neutral (Caleb's look pass, after his
+references: grey smoke with hot lights burning through it), so the red
+lives in the sky's glow, the fires, the cracks and the tracers, and stands
+out. Low battle smoke lies over its ground (`PlanetType.smoke`, drawn by
+`Planet.GroundSmoke`), thicker as the war heats up and in a storm, and
+switched off with the "Battle smoke" graphics setting.
+
+### More worlds (planned, Caleb's picks)
+
+Four kinds of play have no home yet: melee as the natural choice, fighting
+things that are not soldiers, vehicles at the centre, and flight at the
+centre. Three new worlds and a Pit ruleset fill them, each on a planet type
+from the kit below, and each pays something no other place does. They are
+built in this order, cheapest and most connected first:
+
+1. **Blades in the Pit** (built, above): blade bouts and the weekly Blade
+   Tournament, the first arena source of trophies and artifacts.
+2. **Spore Marsh, the hunt.** A co-op PvE world (no PvP; player melee lives
+   in the Pit, Caleb's call) where blades are the natural choice and the
+   enemy is wildlife: stalker packs that circle and feint, shellbacks with
+   a soft rear, bloaters that burst into spore clouds, lurkers under the
+   black water and brood keepers guarding the hives. Mist and fungus
+   forests keep fights short, gunshots wake the marsh while melee kills stay
+   silent, and guns foul gently under sustained fire (Caleb's call): spread
+   grows and a long burst can jam until a reload, a world rule that leaves
+   Ashfront's guns alone. The Rootways are its dungeons, part of the one
+   running world like the Engine, each worked down to a keeper. Gentle
+   death (keep what you wear, drop the pack). It is the main source of
+   artifacts (Caleb's call), plus trophies, melee blueprints (new options,
+   never a higher Mk) and marsh cosmetics.
+3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
+   map several times Ashfront's width, salvage crates too big for a pack
+   that ride in a vehicle's cargo space, sandstorms that bury and uncover
+   wreck fields, armed AI convoys as a world event, and mounted guns.
+   You keep what you wear on death; the pack and every crate in your
+   vehicle drop (Caleb's call). It pays vehicle blueprints and parts,
+   mounted weapons and the most scrip a trip.
+4. **Basalt Rift, the sky fight.** Last, and only once there are players
+   enough for three PvP worlds: a small vertical world over lava where
+   flight rigs decide every fight, with updrafts, the Sky Leviathan and
+   Ashfront's death rule. It pays rig upgrade data and rig cosmetics.
+
+The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
+Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
+goes in, artifacts mostly come from it; a carried artifact still drops as
+itself under Ashfront's scrip-pile rule, so they keep changing hands in
+the war.
 
 ## 3. The watch
 
@@ -2059,8 +2139,10 @@ How they work for now:
   spent. There is no hotkey yet.
 - **One per outing.** Only the artifact you deploy with can be used. One
   found in the world rides in your pack as loot until you get it home.
-- **Finding them.** Until PvE dungeons, bosses and arena tournaments exist,
-  world events stand in: a warlord carries one half the time and a supply
+- **Finding them.** The Blade Tournament's weekly prize carries a chance
+  at one (section 2, "Gladiator arena"), and the Heart Warden's vault a
+  small one. Until the Spore Marsh's dungeons and bosses exist,
+  world events also stand in: a warlord carries one half the time and a supply
   pod holds one now and then (`WorldDef` sets the chances per world). They
   are off in Frostline for now, under the rule that rare gear stays in the
   full-loot war worlds; the PvE source in this section is Caleb's call to
@@ -2278,9 +2360,12 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   objective line carries the lap.
 - **Live races (Caleb's go-ahead).** The race icon's first pick is Race:
   it puts you on the grid of the track's next race, and anyone who gets on
-  a machine there while it forms joins it. A race forms for 30 s (8 s once
-  the grid is full of people), then AI racers take every slot left, so a
-  grid of 8 always goes, and everyone starts under one set of lights. The
+  a machine there while it forms joins it. AI racers take every slot left
+  on the grid at once (Caleb's report: starting a race looked like nothing
+  happened), and each person who joins later takes one's place, so a grid
+  of 8 always goes. A race forms for 30 s, 10 s once everyone in the world
+  is on its grid and 8 s once the grid is full of people, and everyone
+  starts under one set of lights. The
   watch and the visor carry your place ("P3/8"), the pit board the next
   race's countdown and then the results. Once the winner is home the rest
   have 20 s to cross the line, and a lap off the track costs 3 s on the
@@ -2349,7 +2434,19 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   visor say "head to the pits" and a column of light marks pit row;
   driving into it sets you down there and the machine goes, and if you
   ride on you are set down anyway 40 s after the finish. A machine a desk
-  made goes when you get off it.
+  made goes when you get off it. Getting off out on the track, or
+  stopping a run from the watch there, sets you down on pit row too
+  (Caleb's report) and the machine goes; in the pits nothing moves. The
+  desks' prompts name the interact key as it is bound.
+- **The tracks are never empty (Caleb's ask).** While anyone is in the
+  world, a track with no race and nobody riding it gets an AI race of its
+  own: six AI racers, the first a few seconds after someone arrives and
+  the next 20 s after one's results come down, at the league of the best
+  person there. It is shown on the pit board and the desks like any race
+  and moves nobody's league. Asking to race there, at a desk or from the
+  watch, calls its field back to the grid to race you; a time trial just
+  shares the track with them. With nobody in the world none run, so an
+  empty server pays nothing.
 
 The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the
@@ -2378,6 +2475,20 @@ sticks and jump as a racer goes past. Round it all, eroded mesas, the dead
 launch works on the skyline (leaning launch towers with holo-ads, gantry
 cranes, a crashed booster stage, power pylons), searchlights sweeping the
 haze and camera drones pacing the racers.
+
+**No bare salt (Caleb's call: too much open space).** The works fill the
+pan between the tracks and the dunes, which close in to about 900 m out
+(`works.gd`). A belt of districts runs all round, each a slice of the
+ring: tank farm, hangar row, container port, cooling plant and launch
+field. Each district has one landmark to steer by (fuel spheres, the
+vehicle assembly hall, a portal crane, twin cooling towers, a rocket still
+on its pad). Buildings stand low near the road and grow taller toward the
+dunes, so every view from the track ends on a skyline. Lit service roads
+run out into the works. Fans' car parks and tent camps sit just outside
+the tracks, and the infield holds a festival with a stage, a big wheel and
+a street of food stalls. Catch fences, hoardings and tyre walls line both
+roads. It is all decoration, merged into a block of meshes per material,
+and nothing stands on a road (`race_tests.gd`, `_test_works`).
 
 ## 10. Economy and progression
 
@@ -2862,7 +2973,8 @@ players far less than to bots.
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
    mech, jet), and the racing mode (section 9).
-   Artifacts arrive with arena tournaments and PvE dungeons, and the Sky
+   Artifacts arrive with arena tournaments (the Blade Tournament, built)
+   and PvE dungeons, and the Sky
    Leviathan with the jet and the PvE world. The hub's toy RC arena comes
    last. Squad visits to a base follow online base visits together;
    trophies follow PvE bosses and arena brackets; blueprints and tech cores

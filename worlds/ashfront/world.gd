@@ -505,6 +505,18 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 			bot.equip_weapon(_army_gun(def["weapon"], GUN_DAMAGE[tier], GUN_SPREAD[tier], GUN_INTERVAL[tier]))
 
 
+## Dresses `actor` as one of an army's riflemen, the way `equip_bot` does,
+## and nothing more: the scenery army (`battle.gd`) takes its far copies of
+## the soldiers from one of these. View only, never a bot.
+func dress_extra(actor: Actor, faction: String) -> void:
+	var def: Dictionary = ARMIES[faction if ARMIES.has(faction) else "legion"]["soldier"]
+	actor.faction = faction
+	actor.set_meta("kind", "soldier")
+	actor.set_meta("look", def["look"])
+	actor.body_color = def["color"]
+	actor.equip_weapon(_army_gun(def["weapon"], GUN_DAMAGE[0], GUN_SPREAD[0], GUN_INTERVAL[0]))
+
+
 ## One walker at each landmark: a new one is turned away while another walker
 ## is alive nearest the same landmark, and no warlord is a walker. Checked
 ## on the authority only (the `Raid` rolls a turned-away bot again).

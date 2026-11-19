@@ -220,7 +220,7 @@ const KINDS := [
 	["ability", "ability chip"], ["artifact", "artifact"], ["vehicle", "vehicle"],
 	["blueprint", "blueprint"], ["upgrade_data", "crafting data"], ["heal", "healing item"],
 	["paint", "armor paint"], ["cosmetic", "clothing"], ["decor", "decoration"], ["furniture", "furniture"],
-	["relic", "relic"], ["augment", "salvage"], ["material", "crafting material"],
+	["relic", "relic"], ["trophy", "trophy"], ["augment", "salvage"], ["material", "crafting material"],
 ]
 
 
@@ -342,6 +342,8 @@ static func facts(id: String) -> Array[String]:
 				"" if (stats.get("outfits", []) as Array).size() == 1 else "s"])
 	elif ItemDB.has_tag(id, "furniture"):
 		out.append("Goes on show in your home base")
+	elif ItemDB.has_tag(id, "trophy"):
+		out.append("A keepsake: never traded or sold")
 	var used := _used_in(id)
 	if not used.is_empty():
 		var shown := used.slice(0, 3)

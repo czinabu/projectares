@@ -219,6 +219,10 @@ var is_dead := false
 ## Set in a safe zone: weapons can be drawn and shown but not used, and
 ## abilities and healing do nothing.
 var weapons_locked := false
+## Set for a blades bout in the arena (`Arena._apply_rules`, on every
+## machine from the bout's rules): no gun may be drawn, and one in hand is
+## put away for the blade, so a fighter brings only their melee weapon.
+var guns_locked := false
 var heal_time_left := 0.0
 ## Seconds until a weapon summoned from the watch has finished materializing
 ## in the hand (it cannot be used until then), and how long that one takes.
@@ -1200,9 +1204,13 @@ func _simulate_weapons(delta: float) -> void:
 		# out. That pull only draws it.
 		_draw_weapon(last_drawn)
 		drew_on_pull = true
+	if guns_locked and switch_to >= 0 and switch_to < weapons.size() and weapons[switch_to] is Gun:
+		switch_to = -2
 	if cmd.switch_weapon != -1 and switch_to >= -1 and switch_to < weapons.size() \
 			and switch_to != active_weapon_index and _storing == null:
 		_draw_weapon(switch_to)
+	if guns_locked and get_active_weapon() is Gun and _storing == null:
+		_draw_weapon(blade_index())
 	_swap_primary_and_heavy()
 	materialize_left = maxf(0.0, materialize_left - delta)
 	var weapon := get_active_weapon()
@@ -1239,6 +1247,14 @@ func _swap_primary_and_heavy() -> void:
 		primary_in_watch = false
 		materialize_time = Loadout.summon_time(held.item_id)
 		materialize_left = materialize_time
+
+
+## Index of the melee weapon worn, or -1.
+func blade_index() -> int:
+	for i in weapons.size():
+		if weapons[i] is MeleeWeapon:
+			return i
+	return -1
 
 
 ## Takes out the weapon at `index`, or puts the one in hand away with -1.

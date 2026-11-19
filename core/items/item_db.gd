@@ -404,6 +404,10 @@ func _ready() -> void:
 	register("engine_coil", "Engine Coil", Rarity.RARE, 450, ["material"], {},
 			"A winding from the Stilled Engine, still faintly warm. Every Mk3 needs one.")
 	register("lattice_shard", "Lattice Shard", Rarity.RELIC, 2500, ["relic"])
+	# The Pit's Blade Tournament (DESIGN.md "Gladiator arena"): its champion's
+	# weekly prize, for the trophy shelf. Earned, never sold or traded.
+	register("trophy_blade_champion", "Blade Champion Trophy", Rarity.EPIC, 0, ["trophy"], {},
+			"A blade crossed over the Pit's ring, cast for a week's Blade Tournament champion.")
 
 	# Furniture and decorations for a home base. Bought from the Furnisher,
 	# kept in the stash, never taken on a raid. "footprint" is the size in
