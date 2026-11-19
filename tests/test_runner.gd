@@ -534,6 +534,14 @@ func _test_racing_online() -> void:
 		return int(rhea.account.get("racing", {}).get("races", 0)) > races_before, 240)
 	check(int(rhea.account.get("racing", {}).get("races", 0)) == races_before + 1,
 			"leaving a race counts as a finish that did not finish, on the server's account")
+	# A desk sign-up reaches the server, which decides it: away from race
+	# control it is turned away with the reason.
+	var notices: Array = []
+	me.notice.connect(func(text: String) -> void: notices.append(text))
+	race.ask("signup:%s:bike_raider" % race.track.id)
+	await _wait_until(func() -> bool: return not notices.is_empty(), 240)
+	check(notices.has("Sign up at race control's desk") and me.vehicle == null,
+			"a desk sign-up is the server's to decide (%s)" % str(notices))
 	await _leave(rhea)
 	OS.kill(pid)
 

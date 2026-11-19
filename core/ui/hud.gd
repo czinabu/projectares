@@ -233,6 +233,8 @@ func _process(delta: float) -> void:
 			"race": controller.race_pick, "race_open": controller.watch_open == "contract",
 			"ghost": controller.ghost_pick, "life_time": life_time} if controller != null else {"life_time": life_time}
 	race_line = Race.run_line((raid as Race).view_run()) if raid is Race else ""
+	if raid is Race:
+		_guide_to_pits((raid as Race).view_run())
 	var targets := map_targets(raid, p, ping_spots()) if wrist.raised and not p.is_dead else ([] as Array[Dictionary])
 	if controller != null:
 		controller.map_targets = targets
@@ -725,9 +727,22 @@ func set_waypoint(target: Dictionary) -> void:
 	_waypoint_mark.global_position = waypoint.at
 
 
+## A finished racer is shown the way into the pits (`Race.set_down`): the
+## track's pit row is the waypoint until the run is over.
+func _guide_to_pits(view: Dictionary) -> void:
+	var done := str(view.get("phase", "")) == "done"
+	if done and str(waypoint.get("kind", "")) != "pits":
+		var rt := (raid as Race).track_by_id(str(view.get("track", "")))
+		if rt != null:
+			set_waypoint({"at": rt.pit_spot(), "title": "Pits", "kind": "pits"})
+	elif not done and str(waypoint.get("kind", "")) == "pits":
+		set_waypoint({})
+
+
 ## Clears the waypoint once you reach it.
 func _update_waypoint(p: Actor) -> void:
-	if waypoint.is_empty():
+	# The way into the pits ends when the race sets you down, not here.
+	if waypoint.is_empty() or str(waypoint.get("kind", "")) == "pits":
 		return
 	var at: Vector3 = waypoint.at
 	if Vector2(at.x - p.global_position.x, at.z - p.global_position.z).length() <= WAYPOINT_REACHED:

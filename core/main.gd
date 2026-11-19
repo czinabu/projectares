@@ -885,7 +885,16 @@ func _attach_player_view() -> void:
 			(raid as Race).league_bank = Race.ProfileLeagueBank.new()
 		race_view = RaceView.new()
 		race_view.setup(raid)
+		race_view.watching_changed.connect(_on_race_watching)
 		raid.add_child(race_view)
+
+
+## Watching a race from its desk: the character stands still and the HUD
+## steps aside while the race view's chase camera follows the racers.
+func _on_race_watching(on: bool) -> void:
+	_show_overlays(not on)
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = on or phone.is_open
 
 
 ## A pick on the race icon: the ghost is this view's own, the rest are
