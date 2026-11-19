@@ -210,7 +210,10 @@ date in the same PR.
   round, the Ember a broad ceramic shell over its heat sinks, the scrap
   visor a patched pot with cracked goggles), framed glass that is dark
   and reflective, never a glowing panel; a Mk2 (`Visor.tier`) wears a lit
-  seam over the crown. Every helmet and armor piece is built from
+  seam over the crown. Worn with an armor frame, every helmet but the
+  scrap visor takes the frame's plate, trim and fabric colours in its
+  paint (`ActorSkin.helmet_colors`), so helmet and plates read as one kit.
+  Every helmet and armor piece is built from
   `GearShapes` (`core/visual/gear_shapes.gd`), merged into one mesh per
   material (`GearShapes.merge`: "Gear", and "Glass" with no shadow; the
   parts it was made of in its "parts" meta, `has_part`) and built once

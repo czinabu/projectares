@@ -156,6 +156,12 @@ date in the same PR.
   Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it,
   and the helmet, taken off or put on),
   Status (map, standing) and Mission (portal, contract, ping, sign-out).
+  The contract icon is the mission log (Caleb's ask): opened, the wheel
+  turns through the tour's step and each contract held
+  (`Hud.mission_entries`, `mission_slot`) and a click turns the picked one
+  from on the visor's objective block to the main one (first and lit) to
+  off it and back (`GameSettings.cycle_mission`, `untracked`,
+  `main_mission`: view only, read by `VisorHud.objective_lines`).
   The map icon, while read, draws a small holographic map beside it
   (`Hud.map_marks`, `Card._draw_map`): only what the player is told, never
   other people. The Status icons open with a click like a carousel (Caleb's

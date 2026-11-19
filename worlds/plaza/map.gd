@@ -1010,20 +1010,66 @@ func _tier(row: int) -> Dictionary:
 
 ## The contract board, a lit wall listing today's jobs, with a terminal in
 ## front of it to take them (DESIGN.md section 10). Rook stands beside it.
+## Each job is a card of its own in two columns, its title large enough to
+## read from across the square (Caleb's screenshot: one block of small text
+## could not be read a few steps away), its kind and pay under it.
 func _build_contract_board() -> void:
 	var at := CONTRACT_BOARD_AT
 	var yaw := PI
 	var facing := Basis(Vector3.UP, yaw)
 	var amber := Color(1.0, 0.75, 0.3)
-	_solid(Vector3(12, 7, 0.8), at + facing * Vector3(0, 3.5, -0.4), WALL, yaw)
+	# The board grows to fit the day's cards (each world adds jobs of its
+	# own): two columns, a card's room `step`, above the terminal's top.
+	var rows := contract_rows()
+	var per_column := maxi(ceili(rows.size() / 2.0), 1)
+	var step := 1.5
+	var top := maxf(2.45 + per_column * step, 8.35)
+	var tall := top + 2.25
+	var wide := 14.0
+	_solid(Vector3(wide, tall, 0.8), at + facing * Vector3(0, tall * 0.5, -0.4), WALL, yaw)
 	for side: float in [-1.0, 1.0]:
-		_part(self, Vector3(0.1, 7.0, 0.1), at + facing * Vector3(side * 6.02, 3.5, 0.02), amber, true, yaw)
-	_part(self, Vector3(10.5, 4.6, 0.05), at + facing * Vector3(0, 3.6, 0.02), Color(0.06, 0.05, 0.03), true, yaw)
-	for y: float in [1.25, 5.95]:
-		_part(self, Vector3(10.7, 0.1, 0.08), at + facing * Vector3(0, y, 0.05), amber, true, yaw)
-	_sign("CONTRACTS", at + facing * Vector3(0, 6.6, 0.1), yaw, 1.0, amber)
-	_sign("\n".join(contract_lines()), at + facing * Vector3(0, 3.6, 0.1), yaw, 0.32, Color(1.0, 0.92, 0.8), 10.0)
-	# The terminal in front of the board, its screen facing the square.
+		_part(self, Vector3(0.1, tall, 0.1), at + facing * Vector3(side * (wide * 0.5 + 0.02), tall * 0.5, 0.02), amber, true, yaw)
+	# The cards stand above the terminal in front, so it never hides one.
+	var panel := tall - 1.35 - 2.25
+	_part(self, Vector3(wide - 1.0, panel + 0.1, 0.05), at + facing * Vector3(0, 2.25 + panel * 0.5, 0.02),
+			Color(0.06, 0.05, 0.03), true, yaw)
+	for y: float in [2.25, tall - 1.35]:
+		_part(self, Vector3(wide - 0.8, 0.1, 0.08), at + facing * Vector3(0, y, 0.05), amber, true, yaw)
+	_sign("CONTRACTS", at + facing * Vector3(0, tall - 0.65, 0.1), yaw, 1.0, amber)
+	_sign(BOARD_NOTE, at + facing * Vector3(0, tall - 1.75, 0.1), yaw, 0.3, Color(1.0, 0.92, 0.8, 0.85))
+	for i in rows.size():
+		var column := floori(float(i) / per_column)
+		var x := -6.2 + column * 6.6
+		var y := top - (i % per_column) * step
+		# A short amber tick down the card's left edge, the title on top and
+		# its kind and pay under it, wrapped like the title where the card
+		# has room, else set smaller to stay on one line.
+		_part(self, Vector3(0.08, step * 0.75, 0.04), at + facing * Vector3(x - 0.2, y - step * 0.36, 0.06),
+				amber, true, yaw)
+		var title := str(rows[i].title)
+		_sign_left(title, at + facing * Vector3(x, y, 0.1), yaw, 0.42, Color(1.0, 0.95, 0.86), CARD_WIDTH)
+		var below := y - card_lines(title, 0.42) * 0.5 - 0.06
+		var pay := "%s  ·  %s" % [rows[i].kind, rows[i].reward]
+		var size := 0.3
+		if (y - below) + card_lines(pay, size) * 0.36 > step - 0.1:
+			size = minf(size, CARD_WIDTH / (pay.length() * GLYPH_WIDTH))
+		_sign_left(pay, at + facing * Vector3(x, below, 0.1), yaw, size, amber, CARD_WIDTH)
+	_build_contract_board_terminal(at, facing, yaw, amber)
+
+
+## How wide a card's text runs on the contract board, in metres, and how
+## wide a glyph is for its size, a little under half.
+const CARD_WIDTH := 5.9
+const GLYPH_WIDTH := 0.47
+
+
+## About how many lines `text` takes on a card at glyphs of `size` metres.
+static func card_lines(text: String, size: float) -> int:
+	return maxi(1, ceili(text.length() * size * GLYPH_WIDTH / CARD_WIDTH))
+
+
+## The terminal in front of the contract board, its screen facing the square.
+func _build_contract_board_terminal(at: Vector3, facing: Basis, yaw: float, amber: Color) -> void:
 	_solid(Vector3(1.2, 1.1, 0.6), at + facing * Vector3(0, 0.55, 1.4), STEEL, yaw)
 	var portal := _add_portal("contracts", "Use the contract board", at + facing * Vector3(0, 0, 3.4), 2.2)
 	var screen := Node3D.new()
@@ -1523,11 +1569,23 @@ func _add_talker(id: String, at: Vector3, yaw: float, who: String, role: String,
 	return marker
 
 
-## What the board's wall says: today's jobs and how they pay. The same for
-## everyone, since the offers follow the date (a reroll only changes your own
-## screen).
+## The line under the board's heading.
+const BOARD_NOTE := "Jobs that pay scrip. They count when you sign out alive."
+
+
+## What the board's wall says: today's jobs and how they pay, one line each.
+## The same for everyone, since the offers follow the date (a reroll only
+## changes your own screen).
 static func contract_lines() -> Array[String]:
-	var out: Array[String] = ["Jobs that pay scrip. They count when you sign out alive.", ""]
+	var out: Array[String] = [BOARD_NOTE, ""]
+	for row in contract_rows():
+		out.append("%s  %s   %s" % [row.kind, row.title, row.reward])
+	return out
+
+
+## Today's jobs as the board's cards: [{"kind", "title", "reward"}].
+static func contract_rows() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
 	if not ResourceLoader.exists(CONTRACTS):
 		return out
 	var rules := load(CONTRACTS) as Script
@@ -1536,8 +1594,8 @@ static func contract_lines() -> Array[String]:
 		# Favours are Rook's to offer, in person.
 		if str(job.get("kind", "")) == "favor":
 			continue
-		out.append("%s  %s   %s" % [str(job.get("kind", "")).to_upper(), rules.call("title_of", id),
-				rules.call("reward_text", id)])
+		out.append({"kind": str(job.get("kind", "")).to_upper(), "title": str(rules.call("title_of", id)),
+				"reward": str(rules.call("reward_text", id))})
 	return out
 
 
@@ -1857,6 +1915,29 @@ func _sign(text: String, at: Vector3, yaw: float, size: float, color: Color, wid
 	if width > 0.0:
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.width = width * 100.0
+	add_child(label)
+
+
+## A sign whose text starts at `at` and runs to the right (as you face it),
+## its top line at `at`, wrapped at `width` metres (0 for one line).
+func _sign_left(text: String, at: Vector3, yaw: float, size: float, color: Color, width: float) -> void:
+	var label := Label3D.new()
+	label.text = text
+	label.pixel_size = 0.01
+	label.font_size = int(size * 100.0)
+	label.outline_size = int(size * 12.0)
+	label.modulate = color
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	if width > 0.0:
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.width = width * 100.0
+	else:
+		# Unwrapped, the label is laid out from its position: left alignment
+		# alone starts the text there.
+		label.offset = Vector2.ZERO
+	label.position = at
+	label.rotation.y = yaw
 	add_child(label)
 
 

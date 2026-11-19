@@ -32,6 +32,9 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 	cam.add_child(lamp)
 	lamp.position = Vector3(0.8, 0.6, 0)
 	var frames := ["", "plate_light", "frame_runner", "frame_trooper", "frame_thermal", "frame_bulwark"]
+	# ARMOR_HELMET=<item id> wears that helmet too, to see it take each frame's colours.
+	if OS.get_environment("ARMOR_HELMET") != "":
+		Loadout.wear_helmet(player, OS.get_environment("ARMOR_HELMET"))
 	var pick := OS.get_environment("ARMOR_FRAMES")
 	if pick != "":
 		frames = Array(pick.split(","))

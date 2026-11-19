@@ -1590,12 +1590,13 @@ func _test_game_settings() -> void:
 	var settings_script: Script = GameSettings
 	for row: Dictionary in GameSettings.SCHEMA:
 		var kind: String = row.get("kind", "")
-		var whole: bool = row.get("tab", "") in PhoneScript.SETTINGS_TABS and row.has("label") and row.has("default") \
-				and (kind == "toggle" or (kind == "slider" and row.has("range") and row.has("step"))
-				or (kind == "choice" and row.has("choices")))
+		var hidden: bool = row.get("tab", "") == "" and kind in ["list", "text"] and row.has("default")
+		var whole: bool = hidden or (row.get("tab", "") in PhoneScript.SETTINGS_TABS and row.has("label")
+				and row.has("default") and (kind == "toggle" or (kind == "slider" and row.has("range")
+				and row.has("step")) or (kind == "choice" and row.has("choices"))))
 		if not whole or settings_script.get(row["key"]) == null:
 			bad_rows.append(row.get("key", "?"))
-	check(bad_rows.is_empty(), "every setting's row is whole, on a phone tab and has its var (%s)" % ", ".join(bad_rows))
+	check(bad_rows.is_empty(), "every setting's row is whole, on a phone tab (or kept off them) and has its var (%s)" % ", ".join(bad_rows))
 	var bus := AudioServer.get_bus_index("Master")
 	check(absf(AudioServer.get_bus_volume_db(bus) - linear_to_db(0.5)) < 0.01, "volume reaches the audio bus")
 	GameSettings.set_value("anti_aliasing", 99)

@@ -27,6 +27,8 @@ static func shoot(vc: Node, out_dir: String, _args: PackedStringArray) -> void:
 		["gates", Vector3(0, 2.2, -150), Vector3(0, 6, -190)],
 		["market", Vector3(0, 1.8, 64), Vector3(0, 3, 140)],
 		["civic", Vector3(108, 2.0, 4), Vector3(160, 4, 0)],
+		["contracts", Vector3(136, 1.7, 26), Vector3(136, 4.6, 38)],
+		["contracts_far", Vector3(128, 1.7, 16), Vector3(136, 4.6, 38)],
 		["residences", Vector3(-108, 2.0, -4), Vector3(-160, 4, 0)],
 		["lookout", Vector3(161, 1.7, -161), Vector3(0, 8, 0)],
 		["skyline", Vector3(0, 1.7, 40), Vector3(-40, 60, -200)],
@@ -36,7 +38,11 @@ static func shoot(vc: Node, out_dir: String, _args: PackedStringArray) -> void:
 		["tower_foot", Vector3(37, 1.7, -93), Vector3(46, 9, -111)],
 		["overview", Vector3(260, 220, 260), Vector3(0, 0, 0)],
 	]
+	# HUB_VIEWS=contracts,civic shoots only those.
+	var only := OS.get_environment("HUB_VIEWS")
 	for v: Array in views:
+		if only != "" and str(v[0]) not in only.split(","):
+			continue
 		camera.look_at_from_position(v[1], v[2])
 		await vc._settle(20)
 		await vc._shot(out_dir.path_join("hub_%s.png" % v[0]))

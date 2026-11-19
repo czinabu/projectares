@@ -73,7 +73,8 @@ const VIEW_DISTANCE_DEFAULT := 1
 ## "default", and by kind: a slider's "range", "step" and "format" (see
 ## `shown`), a choice's "choices" (rows whose first field is the name on the
 ## phone). "preview" marks a view setting whose slider lets the view go while
-## dragged (`Phone.PREVIEW_KEYS`).
+## dragged. A row whose "tab" is "" is kept and saved but never drawn on the
+## phone: a "list" (of strings) or a "text".
 const SCHEMA := [
 	{"key": "mouse_sensitivity", "tab": "input", "kind": "slider", "label": "Mouse sensitivity",
 			"default": 0.0022, "range": SENSITIVITY_RANGE, "step": 0.0001, "format": "sensitivity"},
@@ -110,6 +111,9 @@ const SCHEMA := [
 			"label": "Names over other players", "default": true},
 	{"key": "master_volume", "tab": "system", "kind": "slider", "label": "Volume", "default": 0.8,
 			"range": Vector2(0.0, 1.0), "step": 0.05, "format": "percent"},
+	# Kept but not on a Settings tab ("tab" ""): the watch's mission log.
+	{"key": "untracked", "tab": "", "kind": "list", "default": []},
+	{"key": "main_mission", "tab": "", "kind": "text", "default": ""},
 ]
 
 ## Tests turn this off so they never touch a real settings file.
@@ -177,6 +181,18 @@ static var ambient_occlusion: bool:
 static var ground_smoke: bool:
 	get: return _values["ground_smoke"]
 	set(v): _values["ground_smoke"] = v
+## The watch's mission log: what the player took off the visor's objective
+## block (a contract's id, or `TOUR_KEY` for the new player's tour). Every
+## mission is tracked until it is picked off. View only.
+static var untracked: Array[String]:
+	get: return _values["untracked"]
+	set(v): _values["untracked"] = v
+const TOUR_KEY := "tour"
+## The one mission pinned as the main one (a key as in `untracked`, "" for
+## none): listed first and lit on the visor. View only.
+static var main_mission: String:
+	get: return _values["main_mission"]
+	set(v): _values["main_mission"] = v
 ## An index into `VIEW_DISTANCE`.
 static var view_distance: int:
 	get: return _values["view_distance"]
@@ -204,7 +220,11 @@ static func ensure_loaded() -> void:
 
 static func reset() -> void:
 	for row: Dictionary in SCHEMA:
-		_values[row["key"]] = row["default"]
+		if row["kind"] == "list":
+			var list: Array[String] = []
+			_values[row["key"]] = list
+		else:
+			_values[row["key"]] = row["default"]
 
 
 ## The `SCHEMA` row for a key, or an empty one.
@@ -261,12 +281,21 @@ static func set_value(key: String, value: Variant) -> void:
 			_values[key] = bool(value)
 		"choice":
 			_values[key] = clampi(int(value), 0, (row["choices"] as Array).size() - 1)
+		"text":
+			_values[key] = str(value)
+		"list":
+			var list: Array[String] = []
+			if value is Array:
+				for each: Variant in value:
+					if str(each) != "" and str(each) not in list:
+						list.append(str(each))
+			_values[key] = list
 	apply()
 	save()
 
 
 static func to_dict() -> Dictionary:
-	return _values.duplicate()
+	return _values.duplicate(true)
 
 
 ## Pushes the settings that live outside the game's own nodes: volume, the
@@ -381,6 +410,47 @@ static func detail_reach() -> float:
 ## the camera sees.
 static func big_reach() -> float:
 	return float(VIEW_DISTANCE[view_distance][3])
+
+
+## Whether mission `key` shows in the visor's objective block.
+static func is_tracked(key: String) -> bool:
+	return key not in untracked
+
+
+## Tracks mission `key` again, or takes it off the visor (the watch's
+## mission log). Returns whether it is tracked now. A mission taken off is
+## no longer the main one.
+static func toggle_tracked(key: String) -> bool:
+	var keys := untracked.duplicate()
+	if key in keys:
+		keys.erase(key)
+	else:
+		keys.append(key)
+		if main_mission == key:
+			set_value("main_mission", "")
+	set_value("untracked", keys)
+	return is_tracked(key)
+
+
+## Where mission `key` stands on the visor: "main", "on" or "off".
+static func mission_state(key: String) -> String:
+	if not is_tracked(key):
+		return "off"
+	return "main" if key == main_mission else "on"
+
+
+## A click on a mission in the watch's mission log: on the visor, it becomes
+## the main one; the main one is taken off the visor; one off it goes back
+## on. Returns the new state.
+static func cycle_mission(key: String) -> String:
+	match mission_state(key):
+		"on":
+			set_value("main_mission", key)
+		"main":
+			toggle_tracked(key)
+		_:
+			toggle_tracked(key)
+	return mission_state(key)
 
 
 ## Whether the edge ink is drawn: switched on, and no MSAA, which leaves the

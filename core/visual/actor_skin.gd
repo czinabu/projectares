@@ -492,6 +492,8 @@ func _ready() -> void:
 		_player.advance(0.0)
 	look.stand_model(self, model, def["height"])
 	_def = def
+	_lurk_model = model
+	_lurk_base = model.position.y
 	var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
 	_skeleton = skeleton
 	if def.get("chassis", "") == "walker":
@@ -795,6 +797,7 @@ func _update(delta: float) -> void:
 	_update_weapon_hum()
 	_update_toy(delta)
 	_update_bark(delta)
+	_update_lurk(delta)
 	_aim_left = maxf(_aim_left - delta, 0.0)
 	var weapon := actor.get_active_weapon()
 	if phone_up() or toy_up():
@@ -1502,6 +1505,9 @@ func _update_helmet() -> void:
 	var own: String = _def.get("helmet", "") if id == "" else ""
 	if own != "":
 		id = "skin:" + own
+	# The frame (and its paint) is part of the key: a helmet wears its colours.
+	if id != "" and actor.frame_id != "":
+		id += "|" + actor.frame_id + "|" + frame_paint(actor.frame_id)
 	if id == _helmet_id and (id == "" or is_instance_valid(_helmet)):
 		_place_helmet(own == "")
 		return
@@ -1521,7 +1527,8 @@ func _update_helmet() -> void:
 	var mode := actor.visor.mode if own == "" else own
 	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
 	var tier := actor.visor.tier if own == "" else 1
-	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier),
+	var colors := helmet_colors(mode, actor.frame_id if own == "" else "")
+	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier, colors),
 			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset, true)
 	_helmet_model = _helmet.find_child("HelmetModel", true, false) as Node3D
 	if _helmet_model == null:
@@ -1682,9 +1689,29 @@ func _unhide(root: Node) -> void:
 ## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
 ## the head, front toward -Z, glass lit in `glass` and the mode's fitting,
 ## each design its own (`helmet_model.gd`). `tier` 2 adds the Mk2 trim.
-static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1) -> Node3D:
-	return HelmetModel.G.cached("helmet:%s:%s:%s:%s:%d" % [mode, glass.to_html(), size, shell_color.to_html(), tier],
-			func() -> Node3D: return HelmetModel.build(mode, glass, size, shell_color, tier))
+static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1,
+		colors := {}) -> Node3D:
+	var tint := ""
+	for key: String in ["plate", "plate2", "fabric"]:
+		if colors.has(key):
+			tint += (colors[key] as Color).to_html()
+	return HelmetModel.G.cached("helmet:%s:%s:%s:%s:%d:%s" % [mode, glass.to_html(), size, shell_color.to_html(), tier, tint],
+			func() -> Node3D: return HelmetModel.build(mode, glass, size, shell_color, tier, colors))
+
+
+## The colours a helmet of `mode` takes from the armor frame `frame_id`
+## (in its paint), so helmet and plates read as one kit: its "plate",
+## "plate2" and "fabric". {} with no frame, and always for the scrap visor
+## (a patched pot of its own) and an exo's closed helm.
+func helmet_colors(mode: String, frame_id: String) -> Dictionary:
+	if frame_id == "" or mode == "" or mode == "slit" or not ItemDB.has_item(frame_id):
+		return {}
+	var style := frame_style(frame_id, frame_paint(frame_id))
+	var out := {}
+	for key: String in ["plate", "plate2", "fabric"]:
+		if style.get(key) is Color:
+			out[key] = style[key]
+	return out
 
 
 ## An exo trooper's cooling pack, front toward -Z (against the back): a
@@ -1909,6 +1936,23 @@ const SOFT_REAR := Color(0.95, 0.66, 0.55)
 
 ## The walker's cannon, raised and lowered with the aim (view only).
 var _cannon: Node3D
+## A skin that "lurks" (metres, the marsh's lurkers) sinks that far while
+## its body lies low (`Actor.crouch`, held by an ambusher's brain at its
+## post), so it waits under the black water with only its lit eyes at the
+## surface, and rises as it comes up to strike. View only.
+var _lurk_model: Node3D
+var _lurk_base := 0.0
+var _lurk_sink := 0.0
+const LURK_RATE := 2.5
+
+
+func _update_lurk(delta: float) -> void:
+	var depth := float(_def.get("lurks", 0.0))
+	if depth <= 0.0 or _lurk_model == null:
+		return
+	var want := depth * actor.crouch if not actor.is_dead else 0.0
+	_lurk_sink = move_toward(_lurk_sink, want, LURK_RATE * delta)
+	_lurk_model.position.y = _lurk_base - _lurk_sink
 
 
 ## A marsh beast's own body (DESIGN.md "Spore Marsh"), built round the
@@ -2021,6 +2065,77 @@ func _build_creature(kind: String) -> void:
 				tusk.rotation.x = -1.9
 			_hang_at(face, "CreatureHead", "Head", Vector3.ZERO)
 			_creature_legs(dark, Vector2(0.24, 0.26), bone)
+		"lurker":
+			# Long and flat, made to lie in the water: a broad, low trunk, a
+			# wide flat skull with a jaw half its length, a lit lure hung
+			# over the snout on a stalk and a heavy tail.
+			var k := h / 1.4
+			var low := body.y * 0.7
+			var trunk := Node3D.new()
+			_piece(trunk, "Torso", ball, hide, Vector3(0, low, 0.1 * k), Vector3(0.8, 0.34, 1.7) * k)
+			_piece(trunk, "Belly", ball, dark, Vector3(0, low - 0.1 * k, 0.1 * k), Vector3(0.7, 0.2, 1.5) * k)
+			for i in 7:
+				var scute := _piece(trunk, "Scute", ball, dark, Vector3(0, low + 0.15 * k, (-0.55 + i * 0.2) * k),
+						Vector3(0.22, 0.08, 0.16) * k)
+				scute.rotation.x = 0.2
+			for i in 4:
+				_piece(trunk, "Tail", ball, hide, Vector3(0, low - 0.02 * i, (1.0 + i * 0.32) * k),
+						Vector3(0.36 - i * 0.07, 0.22 - i * 0.04, 0.5) * k)
+			_hang_at(trunk, "CreatureTrunk", "Torso", Vector3.ZERO)
+			var skull := Node3D.new()
+			var at := Vector3(0, low + 0.06 * k, -0.95 * k)
+			_piece(skull, "Skull", ball, hide, at, Vector3(0.62, 0.22, 0.62) * k)
+			_piece(skull, "Jaw", ball, dark, at + Vector3(0, -0.09, -0.12) * k, Vector3(0.58, 0.12, 0.7) * k)
+			for side: float in [-1.0, 1.0]:
+				_piece(skull, "Eye", ball, glow, at + Vector3(side * 0.2, 0.11, 0.05) * k, Vector3(0.07, 0.05, 0.07) * k)
+				for t in 4:
+					var fang := _piece(skull, "Tooth", horn, bone, at + Vector3(side * (0.24 - t * 0.03), -0.06, -0.12 - t * 0.09) * k,
+							Vector3(0.03, 0.09, 0.03) * k)
+					fang.rotation.x = PI
+			var stalk := _piece(skull, "LureStalk", tube, dark, at + Vector3(0, 0.3, -0.2) * k, Vector3(0.03, 0.42, 0.03) * k)
+			stalk.rotation.x = -0.7
+			_piece(skull, "Lure", ball, glow, at + Vector3(0, 0.44, -0.4) * k, Vector3(0.09, 0.09, 0.09) * k)
+			_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
+			_creature_legs(dark, Vector2(0.15, 0.17), bone)
+		"keeper":
+			# The brood's keeper: a hunched giant of the stalkers' kind,
+			# its back heaped with lit egg sacs, long arms ending in hooks.
+			var k := h / 2.4
+			var trunk := Node3D.new()
+			var mid := body.y * 0.95
+			_piece(trunk, "Torso", ball, hide, Vector3(0, mid, 0), Vector3(0.95, 0.85, 1.25) * k)
+			_piece(trunk, "Belly", ball, dark, Vector3(0, mid - 0.18 * k, -0.08 * k), Vector3(0.8, 0.6, 1.0) * k)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 23
+			for i in 9:
+				var spot := Vector3(rng.randf_range(-0.32, 0.32), 0.36 + rng.randf() * 0.12, rng.randf_range(-0.2, 0.5)) * k
+				_piece(trunk, "EggSac", ball, glow, Vector3(0, mid, 0) + spot, Vector3.ONE * rng.randf_range(0.18, 0.28) * k)
+			for i in 5:
+				var spine := _piece(trunk, "Spine", horn, bone, Vector3((i - 2) * 0.16 * k, mid + 0.4 * k, -0.35 * k),
+						Vector3(0.06, 0.26, 0.06) * k)
+				spine.rotation.x = -0.4
+			_hang_at(trunk, "CreatureTrunk", "Torso", Vector3.ZERO)
+			var skull := Node3D.new()
+			var at := Vector3(0, mid + 0.06 * k, -0.78 * k)
+			_piece(skull, "Skull", ball, hide, at, Vector3(0.42, 0.36, 0.48) * k)
+			_piece(skull, "Jaw", ball, dark, at + Vector3(0, -0.13, -0.16) * k, Vector3(0.34, 0.16, 0.44) * k)
+			for side: float in [-1.0, 1.0]:
+				for e in 2:
+					_piece(skull, "Eye", ball, glow, at + Vector3(side * (0.11 + e * 0.07), 0.08 + e * 0.05, -0.17) * k,
+							Vector3(0.045, 0.04, 0.045) * k)
+			_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
+			for side: float in [-1.0, 1.0]:
+				var arm := Node3D.new()
+				var shoulder := Vector3(side * 0.42 * k, mid + 0.1 * k, -0.45 * k)
+				var upper := _piece(arm, "Arm", tube, hide, shoulder + Vector3(side * 0.06, -0.3, -0.1) * k,
+						Vector3(0.12, 0.7, 0.12) * k)
+				upper.rotation.x = 0.35
+				for c in 3:
+					var hook := _piece(arm, "Claw", horn, bone,
+							shoulder + Vector3(side * 0.08 + (c - 1) * 0.05, -0.72, -0.3) * k, Vector3(0.04, 0.26, 0.04) * k)
+					hook.rotation.x = -2.0
+				_hang_at(arm, "Foreclaw" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
+			_creature_legs(hide, Vector2(0.2, 0.22), bone)
 		"bloater":
 			var sac := Node3D.new()
 			var at := Vector3(0, (chest.y + body.y) * 0.5, 0)
