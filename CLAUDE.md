@@ -1284,6 +1284,22 @@ without Caleb, and update the gap list when a PR closes a row.
   helmets are never sold or dropped: like rigs, they are crafted from
   blueprints (DESIGN.md section 10), so no loot table may list them. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
+  A worn helmet can come off onto the hip (Caleb's call, DESIGN.md
+  "Helmet off"): the watch's helmet icon (Summon tab) toggles the held
+  `ActorCommand.helmet_off` (`PlayerController.toggle_helmet`), which
+  `Actor.helmet_stow` follows (`_simulate_helmet`), so it predicts and
+  everyone sees it. Off the face the visor does nothing
+  (`Visor.stowed`; ask `Visor.working()`, never `enabled`, for whether a
+  visor shows or senses), but the helmet stays worn gear. The skin moves
+  the one model from the head to the off hand to its clip at the back of
+  the left hip (`ActorSkin._place_helmet`, `helmet_clip`) and the off arm
+  reaches for it (`ActionPose.helmet_hand`, `WeaponArm._off_goal`), with
+  the weapon hand helping it off the head (`ActionPose.helmet_both`; it
+  takes both hands, so `toggle_helmet` puts a drawn weapon away first), the
+  same in both views; the face shows while it is off. It goes back on by
+  itself when a new helmet goes on and on stepping out where people fight
+  (`PlayerController._keep_helmet`). Check by eye with
+  `visual_check.tscn -- <dir> --helmet-off-only`.
   A helmet is worn gear, not a flag: `Loadout.wear_helmet` is the one way
   one goes on or comes off (it resets the visor, keeps `gear_items` right
   and emits `Actor.helmet_changed`). Mid-raid, helmets in the pack
@@ -1984,7 +2000,8 @@ without Caleb, and update the gap list when a PR closes a row.
   feed). A new in-raid action goes on the watch; a new social or info
   feature is a phone app. The watch is a card-sized hologram of icons in
   three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
-  Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it),
+  Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it,
+  and the helmet, taken off or put on),
   Status (map, standing) and Mission (portal, contract, ping, sign-out).
   The contract icon is the mission log (Caleb's ask): opened, the wheel
   turns through the tour's step and each contract held

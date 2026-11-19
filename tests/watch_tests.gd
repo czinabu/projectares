@@ -369,8 +369,8 @@ static func _card(t: Node) -> void:
 	controller.scroll(-1)
 	t.check(controller.artifact_pick == 0 and controller.is_on_artifact(), "on the attuned one it uses it")
 	controller.close_watch_icon()
-	# Past the pack's icon to the map, then Standing.
-	for i in 3:
+	# Past the pack's and the helmet's icons to the map, then Standing.
+	for i in 4:
 		controller.scroll(1)
 	await t.frames(2)
 	t.check(hud.wrist.card.focused_tab() == "status" and hud.wrist.focused_id() == "standing",
