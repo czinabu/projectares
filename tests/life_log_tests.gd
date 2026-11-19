@@ -83,6 +83,10 @@ static func pushes(t: Node) -> void:
 	raid.army_pushed.connect(func(_s: int, _f: Vector3, _t: String, loud: bool) -> void: heard.append(loud))
 	var army: Array = raid.bots.filter(func(b: Actor) -> bool: return b.faction == "legion")
 	t.check(army.size() >= Raid.PUSH_MIN, "the Legion has enough bots to push")
+	# As if the world had just begun: no orders given yet.
+	raid._push_target.clear()
+	raid._push_loud_at.clear()
+	raid.pushes.clear()
 	raid._note_army_target("legion", raid.strongpoints[0], army)
 	t.check(heard.is_empty() and feed.is_empty(), "the first orders of a world are set quietly")
 	raid._note_army_target("legion", raid.strongpoints[1], army)

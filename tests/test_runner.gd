@@ -46,6 +46,7 @@ const SquadTests := preload("res://tests/squad_tests.gd")
 const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const PlazaLifeTests := preload("res://tests/plaza_life_tests.gd")
+const WarRoomTests := preload("res://tests/war_room_tests.gd")
 const MarketTests := preload("res://tests/market_tests.gd")
 const AccountStoreTests := preload("res://tests/account_store_tests.gd")
 const AccountServiceTests := preload("res://tests/account_service_tests.gd")
@@ -367,6 +368,7 @@ func _run() -> void:
 	await BaseUpgradeTests.run(self)
 	await ContractTests.run(self)
 	await PlazaLifeTests.run(self)
+	await WarRoomTests.run(self)
 	await MarketTests.run(self)
 	await CraftingTests.run(self)
 	await SafetyNetTests.run(self)
@@ -1856,6 +1858,8 @@ func _test_melee_defense() -> void:
 	var victim: Actor = duel[0]
 	var brute: Actor = duel[1]
 	brute.global_position = victim.global_position + Vector3(0, 0, -7.0)
+	# Posted where it stands, so it is not off back to its own post.
+	(brute.get_node("Brain") as BotBrain).post_to(brute.global_position, 4.0)
 	var victim_before := victim.health.health + victim.health.armor
 	await frames(300)
 	check(victim.health.health + victim.health.armor < victim_before, "a melee bot closes in and hits")
@@ -7436,6 +7440,54 @@ func _test_game_settings() -> void:
 	check(smoke.density_for(0.0, 0.0) < smoke.density_for(1.0, 0.0) and smoke.density_for(1.0, 0.0) < smoke.density_for(1.0, 1.0),
 			"battle smoke thickens with the war and thicker still in a storm")
 	smoke.queue_free()
+	# View distance (Caleb: a short view spoils it): a planet's far land
+	# ring is drawn whole at High, the lower levels draw a share of it, and
+	# every level scales how far a dressed map's props are drawn, live.
+	var horizon := Planet.horizon_far(PlanetTypes.get_type("glacier"))
+	GameSettings.set_value("view_distance", GameSettings.VIEW_DISTANCE_DEFAULT)
+	var reach_high := GameSettings.view_far_for(horizon, 400.0)
+	GameSettings.set_value("view_distance", GameSettings.VIEW_DISTANCE.size() - 1)
+	var reach_low := GameSettings.view_far_for(horizon, 400.0)
+	check(GameSettings.VIEW_DISTANCE[GameSettings.VIEW_DISTANCE_DEFAULT][0] == "High"
+			and reach_high > float(PlanetTypes.get_type("glacier").horizon["reach"])
+			and reach_low < reach_high and reach_low >= 400.0
+			and is_equal_approx(GameSettings.view_far_for(0.0, 400.0), 400.0)
+			and GameSettings.to_dict().has("view_distance"),
+			"the view reaches past a planet's far land ring at High, less on Low, never under the base reach")
+	var drawn := Node3D.new()
+	add_child(drawn)
+	var crate := MeshInstance3D.new()
+	var crate_box := BoxMesh.new()
+	crate_box.size = Vector3.ONE
+	crate.mesh = crate_box
+	drawn.add_child(crate)
+	var hall := MeshInstance3D.new()
+	var hall_box := BoxMesh.new()
+	hall_box.size = Vector3(40, 12, 40)
+	hall.mesh = hall_box
+	drawn.add_child(hall)
+	var rocks := MultiMeshInstance3D.new()
+	rocks.visibility_range_end = 220.0
+	drawn.add_child(rocks)
+	GameSettings.set_value("view_distance", GameSettings.VIEW_DISTANCE_DEFAULT)
+	Look._limit_draw_distance(drawn)
+	var crate_high := crate.visibility_range_end
+	var as_made := is_equal_approx(crate_high, Look.draw_distance_per_metre) and hall.visibility_range_end == 0.0 \
+			and is_equal_approx(rocks.visibility_range_end, 220.0)
+	GameSettings.set_value("view_distance", GameSettings.VIEW_DISTANCE.size() - 1)
+	GameSettings.apply_graphics()
+	var low_cut := crate.visibility_range_end < crate_high and hall.visibility_range_end > 0.0 \
+			and rocks.visibility_range_end < 220.0 and root.mesh_lod_threshold > 1.0
+	GameSettings.set_value("view_distance", 0)
+	GameSettings.apply_graphics()
+	var ultra := crate.visibility_range_end > crate_high and hall.visibility_range_end == 0.0 \
+			and rocks.visibility_range_end > 220.0 and root.mesh_lod_threshold < 1.0
+	GameSettings.set_value("view_distance", GameSettings.VIEW_DISTANCE_DEFAULT)
+	GameSettings.apply_graphics()
+	check(as_made and low_cut and ultra and is_equal_approx(crate.visibility_range_end, crate_high)
+			and is_equal_approx(root.mesh_lod_threshold, 1.0),
+			"View distance scales a standing map's prop reach and mesh detail, and High is the map as made")
+	drawn.free()
 	# Far ground and walls shimmer without mipmaps, so every world texture
 	# keeps them (and is not re-imported without them when seen in 3D).
 	var bare: Array[String] = []

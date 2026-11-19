@@ -76,6 +76,7 @@ const ArenaHudScript := preload("res://core/arena/arena_hud.gd")
 ## The arena listens this many ports above the raid server.
 const ARENA_PORT_OFFSET := 10
 const PlazaViewScript := preload("res://core/social/plaza_view.gd")
+const WarRoomPanel := preload("res://core/social/war_room_panel.gd")
 const ClanPanel := preload("res://core/social/clan_panel.gd")
 const ContractPanel := preload("res://core/economy/contract_panel.gd")
 const MarketPanel := preload("res://core/economy/market_panel.gd")
@@ -2409,6 +2410,8 @@ func use_portal(destination: String) -> void:
 		open_clans()
 	elif destination == "contracts":
 		open_contracts()
+	elif destination == "war_room":
+		open_war_room()
 	elif destination == "market":
 		open_market()
 	else:
@@ -2450,6 +2453,37 @@ func open_contracts() -> void:
 		if net:
 			net.contract_ask(action, job_id))
 	_open_terminal(panel)
+
+
+## The War Room console before the plaza's big screen: pick a world to see
+## its map on the console and on the big screen (for you only), and deploy
+## to it as its gate would (`use_portal`).
+func open_war_room() -> void:
+	if net == null or raid == null or shop_view != null:
+		return
+	var panel: Control = WarRoomPanel.new()
+	panel.world_status = net.world_status
+	panel.routes = net.routes
+	var room: Node = plaza_view.war_room if plaza_view != null and is_instance_valid(plaza_view) else null
+	var session := net
+	var on_news := func(_status: Dictionary) -> void:
+		if is_instance_valid(panel):
+			panel.refresh()
+	session.world_status_changed.connect(on_news)
+	panel.picked.connect(func(world_id: String) -> void:
+		if room != null and is_instance_valid(room):
+			room.focus = world_id)
+	panel.deploy_asked.connect(func(world_id: String) -> void:
+		close_shop()
+		use_portal("world:" + world_id))
+	panel.tree_exited.connect(func() -> void:
+		if room != null and is_instance_valid(room):
+			room.focus = ""
+		if is_instance_valid(session) and session.world_status_changed.is_connected(on_news):
+			session.world_status_changed.disconnect(on_news))
+	_open_terminal(panel)
+	if room != null and is_instance_valid(room):
+		room.focus = panel.chosen
 
 
 ## The player market's kiosk in the plaza: buy what other players listed,

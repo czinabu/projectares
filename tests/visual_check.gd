@@ -190,6 +190,13 @@ func _ready() -> void:
 		await _crafting_shots(out_dir)
 		get_tree().quit()
 		return
+	# `-- <output_dir> --war-room-only` shoots the Concourse's big screen
+	# (`WarRoom`) on made-up news: each segment flat, from the tiers, and
+	# the console in front of it in use.
+	if "--war-room-only" in args:
+		await _war_room_shots(out_dir)
+		get_tree().quit()
+		return
 	# `-- <output_dir> --panels-only` shoots the station screens with their
 	# item cards (the trader, the locker, the fabricator, the records board)
 	# flat and as seen in the room, and a Concourse storefront's screen.
@@ -276,6 +283,13 @@ func _ready() -> void:
 	# `-- <output_dir> --battle-only`: Ashfront's scenery army from where a
 	# player stands, wide and through a narrow view (battle_1_wide.png,
 	# battle_2_close.png, battle_3_later.png). Run with `--fixed-fps 60`.
+	# `-- <output_dir> --sky-only`: Ashfront's busy low sky from Signal Hill:
+	# a gunship raking a fight, fighters going over, a dropship falling and
+	# its crash (sky_1_gunship.png to sky_4_crash.png). Run with `--fixed-fps 60`.
+	if "--sky-only" in args:
+		await _sky_shots(out_dir)
+		get_tree().quit()
+		return
 	if "--battle-only" in args:
 		await _battle_shots(out_dir)
 		get_tree().quit()
@@ -324,6 +338,16 @@ func _ready() -> void:
 	# for: a line of soldiers out to 150 m in Ashfront and the home base, with
 	# the settings as saved (`--aa <0-4>` picks the anti-aliasing, `--ink 0|1`
 	# the edge ink on far shapes).
+	# `-- <output_dir> --sightlines-only [level ...]` looks out over every
+	# outdoor world through the player's own camera, in toward the middle
+	# and out to the rim, at each View distance level (`GameSettings.
+	# VIEW_DISTANCE`, all of them by default), and writes the draw calls and
+	# primitives of each shot to sightlines.txt beside the pictures.
+	if "--sightlines-only" in args:
+		await _sightline_shots(out_dir, args)
+		get_tree().quit()
+		return
+
 	if "--graphics-only" in args:
 		await _graphics_shots(out_dir, args)
 		get_tree().quit()
@@ -1425,6 +1449,95 @@ func _arena_shots(out_dir: String) -> void:
 				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 				Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
 	camera.queue_free()
+
+
+## Made-up news from the worlds, as a server would send it, for the War Room.
+static func war_room_news() -> Dictionary:
+	var now := int(Time.get_unix_time_from_system())
+	return {
+		"ashfront": {"players": 7, "war": 0.65, "level": "Battle", "bounty": 420, "event": "Warlord", "storm": "",
+			"wanted": [],
+			"front": [
+				{"name": "The Foundry", "x": 2, "z": -2, "holder": "tide", "contested": true},
+				{"name": "Signal Hill", "x": -150, "z": -118, "holder": "legion", "contested": false},
+				{"name": "Rustfall", "x": 158, "z": -106, "holder": "tide", "contested": false},
+				{"name": "The Breach", "x": -142, "z": 136, "holder": "players", "contested": false},
+				{"name": "Carrier Grave", "x": 134, "z": 132, "holder": "tide", "contested": false}],
+			"moments": [{"kind": "boss", "text": "Vex brought down the Ashfront Warlord", "at": now - 140},
+				{"kind": "front", "text": "The Tide took The Foundry", "at": now - 400}],
+			"hunted": [{"name": "Caleb", "clan": "ARES", "by": "legion"}, {"name": "Nyx", "clan": "", "by": "tide"}],
+			"race": {}},
+		"frostline": {"players": 2, "war": 0.1, "level": "Quiet", "bounty": 0, "event": "", "storm": "Whiteout",
+			"wanted": [], "front": [], "moments": [], "hunted": [], "race": {}},
+		"meridian": {"players": 1, "war": 0.0, "level": "Quiet", "bounty": 0, "event": "", "storm": "",
+			"wanted": [], "front": [], "moments": [], "hunted": [],
+			"race": {"track": "coilrun", "name": "Coilrun", "laps": 3, "racers": [
+				{"name": "Vex Morrow", "lap": 2, "at": 0.41, "place": 1}, {"name": "Juno Kade", "lap": 2, "at": 0.39, "place": 2},
+				{"name": "Sable Ito", "lap": 2, "at": 0.33, "place": 3}, {"name": "Dax Ferro", "lap": 2, "at": 0.31, "place": 4},
+				{"name": "Rook Halloran", "lap": 2, "at": 0.24, "place": 5}]}},
+	}
+
+
+## The War Room: each of the big screen's segments flat, the screen from
+## the tiers as the crowd sees it, and the console in front of it in use.
+func _war_room_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.social_world(), 5)
+	var camera := Camera3D.new()
+	camera.far = 1500.0
+	camera.fov = 70.0
+	add_child(camera)
+	camera.make_current()
+	var news := war_room_news()
+	var routes := {"ashfront": 1, "frostline": 2, "meridian": 3}
+	var view: CanvasLayer = load("res://core/social/plaza_view.gd").new()
+	view.setup(raid, routes, news)
+	raid.add_child(view)
+	await _settle(5)
+	var room: Node = view.get("war_room")
+	if room == null:
+		push_error("no War Room was made")
+		return
+	var wall: Node3D = get_tree().get_nodes_in_group("screen_wall")[0]
+	var from_tiers := wall.global_position + Vector3(0, -5.0, 26.0)
+	var looking := wall.global_position + Vector3(0, -0.8, 0)
+	camera.look_at_from_position(from_tiers, looking)
+	for focus: String in ["ashfront", "meridian", "frostline", ""]:
+		room.set("focus", focus)
+		await _settle(45)
+		await RenderingServer.frame_post_draw
+		var picture: Image = (room.get("viewport") as SubViewport).get_texture().get_image()
+		picture.save_png(out_dir.path_join("war_room_feed_%s.png" % (focus if focus != "" else "worlds")))
+		await _shot(out_dir.path_join("war_room_tiers_%s.png" % (focus if focus != "" else "worlds")))
+	# The console, in use, Ashfront picked.
+	var console: Node3D = null
+	for portal in get_tree().get_nodes_in_group("portal"):
+		if portal.get_meta("destination", "") == "war_room":
+			console = portal
+	var mount: Node3D = console.get_node("Screen")
+	var screen_view := SubViewport.new()
+	screen_view.size = Vector2i(1280, 720)
+	screen_view.disable_3d = true
+	var shop: Control = (load("res://core/main.gd") as GDScript).ShopView.new()
+	var panel: Control = load("res://core/social/war_room_panel.gd").new()
+	panel.set("world_status", news)
+	panel.set("routes", routes)
+	shop.panel = panel
+	screen_view.add_child(shop)
+	raid.add_child(screen_view)
+	var live := WorldScreen.new()
+	live.viewport = screen_view
+	mount.add_child(live)
+	room.set("focus", "ashfront")
+	camera.look_at_from_position(console.global_position + Vector3(0, 2.6, 2.4), mount.global_position)
+	await _settle(30)
+	await _shot(out_dir.path_join("war_room_console.png"))
+	await RenderingServer.frame_post_draw
+	screen_view.get_texture().get_image().save_png(out_dir.path_join("war_room_console_flat.png"))
+	camera.queue_free()
+	raid.queue_free()
+	await _settle(2)
 
 
 ## The plaza as a player sees it: the gates, and another player's gear card.
@@ -3499,6 +3612,91 @@ func _battle_shots(out_dir: String) -> void:
 	raid.queue_free()
 
 
+func _sky_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.visible = false
+	var eye := raid._stand(Vector3(-140, 0, -108)) + Vector3(0, 2.0, 0)
+	raid.player.global_position = eye - Vector3(0, 1.7, 0)
+	raid.player.visible = false
+	var cam := Camera3D.new()
+	cam.fov = 70.0
+	cam.far = 3000.0
+	raid.add_child(cam)
+	cam.make_current()
+	cam.look_at_from_position(eye, raid._stand(Vector3(-60, 0, -30)) + Vector3(0, 40, 0))
+	var sky: Node = raid.map.get_node_or_null("LowSky")
+	if sky == null:
+		push_error("no low sky")
+		raid.queue_free()
+		return
+	sky.set("_next_gunship", 9999.0)
+	sky.set("_next_pair", 9999.0)
+	sky.set("_next_wreck", 9999.0)
+	# The army needs a while to place its fights first.
+	for i in 200:
+		raid.war.intensity = 0.9
+		raid.war.centre = Vector3(-60, 0, -30)
+		await get_tree().process_frame
+	var run: Dictionary = sky.call("send_gunship")
+	run.t = (sky.GUNSHIP_RUN - sky.STRAFE_REACH * 0.7) / sky.GUNSHIP_SPEED
+	var pair: Dictionary = {}
+	var wreck: Dictionary = {}
+	var beats := [["gunship", 70], ["fighters", 50], ["wreck", 90], ["crash", 150]]
+	for i in beats.size():
+		var beat: Array = beats[i]
+		if beat[0] == "fighters":
+			pair = sky.call("send_fighters")
+			var way: Vector3 = pair.way
+			var nearest: float = (eye - (pair.from as Vector3)).dot(way) / float(sky.FIGHTER_SPEED)
+			pair.t = nearest - 3.2
+		elif beat[0] == "wreck":
+			wreck = sky.call("drop_wreck")
+			wreck.t = float(wreck.time) * 0.4
+		elif beat[0] == "crash":
+			wreck.t = maxf(float(wreck.t), float(wreck.time) - 0.4)
+		var frames := int(beat[1])
+		for f in frames:
+			raid.war.intensity = 0.9
+			# Each from close by beside it, so it reads in a still.
+			var look := Vector3.INF
+			var from := eye
+			var fov := 45.0
+			match beat[0]:
+				"gunship":
+					if not sky._gunships.is_empty():
+						look = sky.gunship_at(run)
+						var side := Vector3(-run.way.z, 0.0, run.way.x)
+						from = look + side * 110.0 - Vector3(0, 45, 0) - (run.way as Vector3) * 40.0
+				"fighters":
+					look = sky.lead_at(pair)
+					from = look + Vector3(-pair.way.z, 0.0, pair.way.x) * 90.0 - Vector3(0, 30, 0) + (pair.way as Vector3) * 120.0
+				"wreck":
+					look = sky.wreck_point(wreck.from, wreck.to, float(wreck.t) / float(wreck.time))
+					var toward := (Vector3(wreck.to.x, 0, wreck.to.z) - Vector3(wreck.from.x, 0, wreck.from.z)).normalized()
+					from = look + Vector3(-toward.z, 0, toward.x) * 160.0 - Vector3(0, 40, 0)
+				"crash":
+					# From the field, out over the rim, as a player sees it.
+					var out := Vector3(wreck.to.x, 0, wreck.to.z).normalized()
+					from = raid._stand(out * float(sky.field) * 0.35) + Vector3(0, 8, 0)
+					look = (wreck.to as Vector3) + Vector3(0, 40, 0)
+					fov = 60.0
+			if look.is_finite():
+				cam.fov = fov
+				cam.look_at_from_position(from, look)
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		print("sky: gunships ", sky._gunships.size(), ", tracers ", sky._tracers.size(), ", pairs ", sky._pairs.size(), ", wrecks ", sky._wrecks.size())
+		var file := "sky_%d_%s.png" % [i + 1, beat[0]]
+		get_viewport().get_texture().get_image().save_png(out_dir.path_join(file))
+		print("saved ", file)
+	raid.queue_free()
+
+
 func _impact_shots(out_dir: String) -> void:
 	var stage := Node3D.new()
 	add_child(stage)
@@ -5153,3 +5351,69 @@ func _arsenal_shots(out_dir: String) -> void:
 func _armed(raid: Raid) -> void:
 	if raid.player != null and raid.player.get_active_weapon() == null:
 		raid.player._draw_weapon(raid.player.weapon_for_key(1))
+
+
+## See `--sightlines-only` in `_ready`.
+func _sightline_shots(out_dir: String, args: PackedStringArray) -> void:
+	var GameSettings: GDScript = load("res://core/settings/game_settings.gd")
+	GameSettings.set("persist", false)
+	var levels: Array = []
+	var has_levels: bool = GameSettings.call("to_dict").has("view_distance")
+	for i in range(args.find("--sightlines-only") + 1, args.size()):
+		if args[i].is_valid_int():
+			levels.append(int(args[i]))
+	if levels.is_empty():
+		levels = range((GameSettings.get("VIEW_DISTANCE") as Array).size()) if has_levels else [-1]
+	var report := PackedStringArray()
+	var worlds: Array = ["ashfront", "frostline", "meridian", "plaza", "arena"]
+	for world_id: String in worlds:
+		for level: int in levels:
+			if level >= 0:
+				GameSettings.call("set_value", "view_distance", level)
+			var raid: Raid
+			if world_id == "arena":
+				var arena := Arena.new()
+				add_child(arena)
+				arena.start_solo(["rifle_carbine"])
+				raid = arena
+			else:
+				raid = Raid.new()
+				add_child(raid)
+				var world := Worlds.social_world() if world_id == "plaza" else Worlds.get_world(world_id)
+				raid.start(world, 42)
+			for bot in raid.bots:
+				bot.get_node("Brain").set_physics_process(false)
+			var controller := PlayerController.new()
+			controller.setup(raid.player)
+			raid.add_child(controller)
+			await _settle(30)
+			var spawn := raid.player.global_position
+			var to_mid := Vector3(-spawn.x, 0.0, -spawn.z)
+			if to_mid.length() < 20.0:
+				to_mid = Vector3(0, 0, -20)
+			raid.player.set_physics_process(false)
+			# From the spawn toward the middle, from halfway in out over the
+			# rim, and from 50 m over the spawn.
+			var half := spawn + to_mid * 0.5
+			for look: Array in [["in", spawn, to_mid, 0.03], ["rim", half, -to_mid, 0.03], ["high", spawn + Vector3(0, 50, 0), to_mid, -0.2]]:
+				var at: Vector3 = look[1]
+				if look[0] == "rim" and raid.map.has_method("ground_height"):
+					at.y = float(raid.map.call("ground_height", at.x, at.z))
+				raid.player.global_position = at
+				var dir: Vector3 = look[2]
+				controller.yaw = atan2(-dir.x, -dir.z)
+				controller.pitch = look[3]
+				await _settle(25)
+				await RenderingServer.frame_post_draw
+				var draws := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
+				var prims := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
+				var name := "%s_%s_%s" % [world_id, look[0], "before" if level < 0 else str(level)]
+				var cam := get_viewport().get_camera_3d()
+				report.append("%s far=%d draws=%d primitives=%d" % [name, int(cam.far) if cam != null else 0, draws, prims])
+				print(report[-1])
+				await _shot(out_dir.path_join(name + ".png"))
+			raid.queue_free()
+			await _settle(5)
+	var file := FileAccess.open(out_dir.path_join("sightlines.txt"), FileAccess.WRITE)
+	if file != null:
+		file.store_string("\n".join(report) + "\n")

@@ -124,6 +124,7 @@ const PROTOCOL := 58
 ## 51: a keeper's phase (`_keeper`) and its purge lanes (`_purge`).
 ## 54: the war's artillery: a salvo called, with where and when each shell
 ## lands (`_shells`).
+## 57: an army hunting you for a grudge is told to you (`_hunted`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -378,6 +379,7 @@ var _sent_war := -1.0    # war intensity last sent (server)
 var _sent_weather := ""   # the storm kind last sent (server), "" for none
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _sent_heat := {}     # peer id -> [body heat, warming] last sent to them (server)
+var _sent_hunted := {}   # peer id -> the army hunting them last sent (server)
 var _sent_tracks := {}   # peer id -> { track cell: last mark id sent } (server)
 ## Tracks: how far round a player new marks are sent, how often, and at most
 ## how many in one message (the rest follow next time).
@@ -743,6 +745,7 @@ func _clear_tables() -> void:
 	_sent_war = -1.0
 	_sent_points.clear()
 	_sent_heat.clear()
+	_sent_hunted.clear()
 	_sent_tracks.clear()
 	_actor_account.clear()
 	_board_sent.clear()
@@ -1702,6 +1705,7 @@ func _send_world(peer: int) -> void:
 		_send_portal(peer, portal)
 	_sent_points.erase(peer)
 	_sent_heat.erase(peer)
+	_sent_hunted.erase(peer)
 	_sent_tracks.erase(peer)
 	if not raid.ice_holes.is_empty():
 		_ice_holes.rpc_id(peer, raid.pack_ice_holes())
@@ -2147,6 +2151,17 @@ func _server_late_tick(_delta: float) -> void:
 			if _sent_heat.get(peer, []) != heat:
 				_sent_heat[peer] = heat
 				_body_heat.rpc_id(peer, heat[0], heat[1])
+	# Grudges: a player hears which army is hunting them, and nothing more.
+	if _tick % 30 == 0 and not raid.world.grudge_factions.is_empty():
+		for state in raid.players:
+			if not is_instance_valid(state.actor):
+				continue
+			var peer := _owner_peer(state.actor)
+			if peer == 0 or peer not in _joined_peers:
+				continue
+			if str(_sent_hunted.get(peer, "")) != state.actor.hunted_by:
+				_sent_hunted[peer] = state.actor.hunted_by
+				_hunted.rpc_id(peer, state.actor.hunted_by)
 	# Tracks: each player is sent the new marks near them, never the whole
 	# world's, a few times a second.
 	if _tick % TRACK_SEND_EVERY == 0 and raid.world.tracks:
@@ -2502,8 +2517,86 @@ func _world_status(p_status: Dictionary) -> void:
 				"bounty": maxi(0, int(entry.get("bounty", 0))),
 				"event": str(entry.get("event", "")).left(40),
 				"storm": str(entry.get("storm", "")).left(24),
-				"wanted": _clean_wanted(entry.get("wanted", []))}
+				"wanted": _clean_wanted(entry.get("wanted", [])),
+				"front": clean_front(entry.get("front", [])),
+				"moments": clean_moments(entry.get("moments", [])),
+				"hunted": clean_hunted(entry.get("hunted", [])),
+				"race": clean_race(entry.get("race", {}))}
 	world_status_changed.emit(world_status)
+
+
+## A world's landmarks as the server sent them (`Raid.front`), checked: at
+## most 16 of {name, x, z, holder, contested}.
+static func clean_front(raw: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry: Variant in raw:
+		if out.size() >= 16:
+			break
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		out.append({"name": str(entry.get("name", "")).left(24),
+				"x": clampi(int(entry.get("x", 0)), -5000, 5000), "z": clampi(int(entry.get("z", 0)), -5000, 5000),
+				"holder": str(entry.get("holder", "")).left(16),
+				"contested": typeof(entry.get("contested")) == TYPE_BOOL and entry.contested})
+	return out
+
+
+## A world's big moments (`Raid.live_moments`), checked: at most
+## `Raid.MOMENTS_KEPT` of {kind, text, at}.
+static func clean_moments(raw: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry: Variant in raw:
+		if out.size() >= Raid.MOMENTS_KEPT:
+			break
+		if typeof(entry) != TYPE_DICTIONARY or str(entry.get("text", "")).strip_edges() == "":
+			continue
+		out.append({"kind": str(entry.get("kind", "")).left(16), "text": str(entry.text).strip_edges().left(80),
+				"at": maxi(0, int(entry.get("at", 0)))})
+	return out
+
+
+## Who a world's armies hunt (`Raid.hunted`), checked: at most
+## `Raid.HUNTED_SHOWN` of {name, clan, by}.
+static func clean_hunted(raw: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for entry: Variant in raw:
+		if out.size() >= Raid.HUNTED_SHOWN:
+			break
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var name := str(entry.get("name", "")).strip_edges().left(24)
+		if name != "":
+			out.append({"name": name, "clan": str(entry.get("clan", "")).left(6), "by": str(entry.get("by", "")).left(16)})
+	return out
+
+
+## A race world's feed (`Race.race_feed`), checked.
+static func clean_race(raw: Variant) -> Dictionary:
+	if typeof(raw) != TYPE_DICTIONARY or str(raw.get("track", "")) == "":
+		return {}
+	var out := {"track": str(raw.track).left(24), "name": str(raw.get("name", "")).left(24)}
+	if raw.has("phase"):
+		out["phase"] = str(raw.phase).left(12)
+		out["people"] = clampi(int(raw.get("people", 0)), 0, 64)
+		return out
+	out["laps"] = clampi(int(raw.get("laps", 1)), 1, 20)
+	var racers: Array[Dictionary] = []
+	var rows: Variant = raw.get("racers", [])
+	if typeof(rows) == TYPE_ARRAY:
+		for entry: Variant in rows:
+			if racers.size() >= 12:
+				break
+			if typeof(entry) == TYPE_DICTIONARY:
+				racers.append({"name": str(entry.get("name", "")).left(20), "lap": clampi(int(entry.get("lap", 1)), 1, 20),
+						"at": clampf(float(entry.get("at", 0.0)), 0.0, 1.0), "place": clampi(int(entry.get("place", 0)), 0, 64)})
+	out["racers"] = racers
+	return out
 
 
 ## A world's most wanted as the server sent them (`Raid.wanted`), checked:
@@ -3662,6 +3755,15 @@ func _cloud(at: Vector3, radius: float, seconds: float, kind: String) -> void:
 func _ice_holes(data: PackedFloat32Array) -> void:
 	if raid != null and raid.world != null and raid.world.thin_ice:
 		raid.unpack_ice_holes(data)
+
+
+## The army hunting you for a grudge ("" for none), for the visor's tag.
+## Only the owner hears it.
+@rpc("authority", "call_remote", "reliable")
+func _hunted(faction: String) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null:
+		me.hunted_by = faction.left(32)
 
 
 ## Your body heat and whether you stand in warmth, for the visor and the

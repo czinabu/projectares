@@ -377,6 +377,47 @@ var keeper_purge_first := 2.0
 ## gunshot is heard (`Actor.heard`), so a drawn-out fight brings the rest.
 ## A kill in one blow calls nobody.
 var linked_factions := {}
+## Grudges (DESIGN.md "The enemy AI pass", step 5): the bot factions that
+## remember a player for one life. Hurting one of its bots raises that
+## army's grudge (`grudge_per_damage` a point of damage, `grudge_per_kill`
+## a kill), it fades by `grudge_fade` a second, and death clears it. Over
+## `grudge_hunt` the army sends a few of its bots after that player, to
+## where they roughly are, every `Raid.GRUDGE_EVERY` (still through the
+## brain's hunter and leash limits), and the player's visor says so.
+## Empty keeps no grudges.
+var grudge_factions: Array[String] = []
+var grudge_per_damage := 1.0
+var grudge_per_kill := 60.0
+var grudge_fade := 3.0
+var grudge_hunt := 300.0
+var grudge_cap := 700.0
+## Battles by ground (DESIGN.md "The enemy AI pass", step 4): how an army
+## fights where it stands. `ground_at` names a place's kind of ground and
+## `ground_styles` says how a soldier there fights, {kind: {key: value}}:
+## "range" scales the distance it keeps, "hunters" is added to how many may
+## leave their ground to hunt one person, "leash" (metres) is how far past
+## its ground it may chase, and "notice" scales how long it takes to spot
+## someone. The `Raid` sets them on each soldier with its orders
+## (`BotBrain.set_ground`), so they are authority only; empty changes
+## nothing. Kinds the `Raid` names itself: "line" for a soldier on a
+## "line_post" marker and "siege" for a team ringing a held site.
+var ground_styles := {}
+## The share of an army's soldiers the `Raid` keeps on its "line_post"
+## markers (meta "faction"), a standing skirmish line, before the
+## commander sends the rest out. 0 leaves the posts empty.
+var line_share := 0.0
+## Sieges: a team sent at a site the other side holds with at least
+## `siege_holders` near it first rings it from `siege_reach` metres past
+## its edge for `siege_time` seconds, trading fire, before it goes in.
+## 0 seconds goes straight in.
+var siege_time := 0.0
+var siege_reach := 22.0
+var siege_holders := 2
+## The bot kinds (meta "kind") that are an army's elite. A strongpoint
+## marker with the meta "hot_at" (war intensity, 0 to 1) is fought over
+## only once the war is that hot, and then only by elites, who go there
+## first (`WarCommander.plan`).
+var elite_kinds: Array[String] = []
 ## Contracts of its own (DESIGN.md section 10, "World-tagged contracts"):
 ## a world with a `contract_tag` ("expedition") puts `contract_jobs` on the
 ## board beside the jobs that count anywhere, and they count only in a world
@@ -545,6 +586,27 @@ func bot_skill_range(_bot: Actor, warlord: bool) -> Vector2:
 
 ## The risk zone at a point: 0 the outer ring, 1 the middle, 2 the core, or
 ## -1 for a world without zones.
+## The colour a bot faction wears on the plaza's War Room (its landmarks,
+## its side of the front line). Plain worlds get one from the faction's name.
+func faction_color(faction: String) -> Color:
+	if faction == "":
+		return Color(0.6, 0.65, 0.7)
+	return Color.from_hsv(float(hash(faction) % 360) / 360.0, 0.6, 0.95)
+
+
+## Big moments a world keeps on the wall clock rather than in its `Raid`
+## (a set piece every screen times the same way), for the War Room: each
+## {kind, text, at (unix seconds)}. None by default.
+func clock_moments(_unix: int) -> Array[Dictionary]:
+	return []
+
+
+## The race circuits the War Room shows from outside (`Race`'s tracks, built
+## from the map's data without the map). None for a world without races.
+func feed_tracks() -> Array[RaceTrack]:
+	return []
+
+
 ## What a bot faction is called in news ("the Legion"), for the war feed's
 ## lines about armies. Plain worlds use the faction's own name.
 func faction_title(faction: String) -> String:
@@ -553,6 +615,11 @@ func faction_title(faction: String) -> String:
 
 func zone_at(_pos: Vector3) -> int:
 	return -1
+
+
+## The kind of ground at a point, for `ground_styles` ("" for none).
+func ground_at(_pos: Vector3) -> String:
+	return ""
 
 
 ## What a zone tier is called on the watch.

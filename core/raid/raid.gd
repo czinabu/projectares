@@ -106,6 +106,14 @@ const SPAWN_SNAP := 2.5
 const BOT_REROLLS := 8
 ## How many of the most wanted a world tells the plaza about (`wanted`).
 const WANTED_SHOWN := 5
+## The War Room's big moments (`moments`, `note_moment`): how many a world
+## keeps to tell the plaza, newest first, and how long one stays news.
+const MOMENTS_KEPT := 4
+const MOMENT_LIFETIME := 600.0
+## The War Room's hunted list: at most this many, and a grudge only counts
+## once it is this share of the way to sending hunters (`hunted`).
+const HUNTED_SHOWN := 4
+const HUNTED_SHARE := 0.5
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
 ## An army's push is announced (horn, war feed) at most this often, and
@@ -221,6 +229,17 @@ var shelling := Shelling.new()
 ## Smoke that hides people from bots as it hides them from eyes (`Smoke`):
 ## authority only, aged every tick, added where a cloud rises (a shell).
 var smoke := Smoke.new()
+## Each army's grudge against each player for this life
+## ({player actor: {faction: points}}, `WorldDef.grudge_factions`).
+## Authority only; the player hears only who is hunting them
+## (`Actor.hunted_by`).
+var grudges := {}
+var _grudge_in := 0.0
+## Seconds between an army's hunters being sent after the player it holds
+## a grudge against, how many go each time, and from how far.
+const GRUDGE_EVERY := 12.0
+const GRUDGE_HUNTERS := 2
+const GRUDGE_REACH := 120.0
 ## The weather (DESIGN.md "Weather: ash storms"): at most one storm crossing
 ## the map, on `WorldDef.weather_kind`. Only the authority runs it; a client's
 ## copy comes from `NetSession` and is only carried on between updates.
@@ -235,6 +254,9 @@ var event := {}
 var teams := {}
 ## The warlords alive in the world, so clients can build the same bot.
 var warlords := {}
+## The big moments of this world for the plaza's War Room, newest first:
+## [{"kind", "text", "at" (unix seconds)}]. Authority only (`note_moment`).
+var moments: Array[Dictionary] = []
 var _event_in := 0.0
 var _event_bots: Array[Actor] = []
 ## Rival raiders in the world (`WorldDef.raider_count`, authority only), one
@@ -351,6 +373,15 @@ var commander := WarCommander.new()
 var _detail_in := 0.0
 ## Bot -> the strongpoint its faction last sent it to.
 var _orders := {}
+## Bot -> where it was last posted, for orders that send it short of the
+## site (a siege ring) or to a line post.
+var _posted := {}
+## Battles by ground (the enemy AI pass, step 4): the "line_post" markers,
+## bot -> the post it holds, and "faction:site index" -> when that army
+## began ringing that site (`_tick_orders`).
+var line_posts: Array[Node3D] = []
+var _line_of := {}
+var _sieges := {}
 ## The armies' pushes, newest last, as {"site", "from", "title", "at"}
 ## (`at` is `clock`): what the watch map draws as an arrow. The server
 ## decides them in `_tick_orders`; a client is told (`note_push`).
@@ -460,6 +491,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		point.name = "Strongpoint%d" % point.index
 		point.title = marker.get_meta("name", "Strongpoint %d" % (point.index + 1))
 		point.radius = float(marker.get_meta("radius", point.radius))
+		point.hot_at = float(marker.get_meta("hot_at", 0.0))
 		marker.add_child(point)
 		var faction: String = marker.get_meta("holder", "")
 		if faction != "":
@@ -467,6 +499,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		strongpoints.append(point)
 	_find_lifts()
 	outposts = _map_nodes("outpost")
+	line_posts = _map_nodes("line_post")
 	beacons = _map_nodes("beacon")
 	warmth = _map_nodes("warmth")
 	_find_keepers()
@@ -550,6 +583,8 @@ func _physics_process(delta: float) -> void:
 		shelling.tick(self, delta)
 	smoke.tick(delta)
 	_tick_cold(delta)
+	if not world.grudge_factions.is_empty() and zone_rules:
+		_tick_grudges(delta)
 	if world.thin_ice:
 		_tick_ice(delta)
 	_tick_bosses(delta)
@@ -738,6 +773,9 @@ func _on_strongpoint_taken(point: Strongpoint, inside: Array[Actor], loser: Stri
 			line += " from %s" % loser
 		war_feed.emit(line.left(1).to_upper() + line.substr(1))
 		war.report_capture(point.global_position)
+	if point.holder != "":
+		note_moment("front", "%s took %s" % [point.holder_name.left(1).to_upper() + point.holder_name.substr(1),
+				point.title])
 	if point.holder_is_player:
 		for actor in inside:
 			var state := state_for(actor)
@@ -1054,29 +1092,63 @@ func _tick_orders(delta: float) -> void:
 					strength[point][bot.faction] = int(strength[point].get(bot.faction, 0)) + 1
 			# A soldier falling back to its post is left to it.
 			var brain := bot.get_node("Brain") as BotBrain
-			if float(_busy_until.get(bot, 0.0)) > clock or brain._falling_back:
+			if float(_busy_until.get(bot, 0.0)) > clock or brain._falling_back or brain.is_broken():
 				continue
 			if not armies.has(bot.faction):
 				armies[bot.faction] = []
 			armies[bot.faction].append(bot)
 	# Untyped: a freed bot cannot be assigned to an `Actor` to be checked.
-	for bot: Variant in _orders.keys():
-		if not is_instance_valid(bot) or (bot as Actor).is_dead:
-			_orders.erase(bot)
+	for book: Dictionary in [_orders, _posted, _line_of]:
+		for bot: Variant in book.keys():
+			if not is_instance_valid(bot) or (bot as Actor).is_dead:
+				book.erase(bot)
+	# A share of each army stands on its line posts first.
+	var on_line := {}
+	for faction: String in armies:
+		_man_lines(faction, armies[faction], on_line)
+		armies[faction] = (armies[faction] as Array).filter(func(bot: Actor) -> bool:
+			return not on_line.has(bot))
 	var storm: Array = []
 	if world.weather_pushes:
 		storm = strongpoints.filter(func(p: Strongpoint) -> bool:
 			return weather.strength_at(p.global_position) >= STORM_COVER)
 	var teams := {}
 	var first := 1
+	var sieges := {}
+	var grounds := {}
+	for bot: Actor in on_line:
+		grounds[bot] = "line"
 	for faction: String in armies:
 		var orders := commander.plan(faction, armies[faction], strongpoints, strength, storm,
-				world.garrison_size, teams, first)
+				world.garrison_size, teams, first, war.intensity, world.elite_kinds)
 		first += 100
 		var pushing := {}
+		var sizes := {}
+		var centres := {}
 		for bot: Actor in orders:
-			_order(bot, orders[bot])
-			(bot.get_node("Brain") as BotBrain).team = int(teams.get(bot, 0))
+			var id := int(teams.get(bot, 0))
+			sizes[id] = int(sizes.get(id, 0)) + 1
+			centres[id] = (centres.get(id, Vector3.ZERO) as Vector3) + bot.global_position
+		var rank := {}
+		for bot: Actor in orders:
+			var id := int(teams.get(bot, 0))
+			var point: Strongpoint = orders[bot]
+			var ring := -1.0
+			if id != 0 and _besieging(faction, point, strength.get(point, {})):
+				var key := "%s:%d" % [faction, point.index]
+				if not sieges.has(key):
+					sieges[key] = float(_sieges.get(key, clock))
+				if clock - float(sieges[key]) < world.siege_time:
+					ring = float(rank.get(id, 0))
+					rank[id] = ring + 1.0
+			if ring >= 0.0:
+				var from: Vector3 = centres[id] / float(sizes[id])
+				_order(bot, point, _siege_spot(point, from, int(ring), int(sizes[id])), 6.0)
+				grounds[bot] = "siege"
+			else:
+				_order(bot, point)
+				grounds[bot] = world.ground_at(bot.global_position)
+			(bot.get_node("Brain") as BotBrain).set_team(id, int(sizes[id]) if id != 0 else 0)
 			if teams.has(bot):
 				if not pushing.has(orders[bot]):
 					pushing[orders[bot]] = []
@@ -1088,6 +1160,83 @@ func _tick_orders(delta: float) -> void:
 				main = point
 		if main != null:
 			_note_army_target(faction, main, pushing[main])
+	_sieges = sieges
+	if not world.ground_styles.is_empty():
+		for bot: Actor in grounds:
+			(bot.get_node("Brain") as BotBrain).set_ground(grounds[bot],
+					world.ground_styles.get(grounds[bot], {}))
+
+
+## Puts `line_share` of an army on its own "line_post" markers (meta
+## "faction"), a standing skirmish line: a soldier keeps its post from one
+## round to the next, and an empty post takes the nearest one free. The
+## ones posted go in `on_line`.
+func _man_lines(faction: String, army: Array, on_line: Dictionary) -> void:
+	if world.line_share <= 0.0 or line_posts.is_empty():
+		return
+	var posts := line_posts.filter(func(post: Node3D) -> bool:
+		return str(post.get_meta("faction", "")) == faction)
+	var count := mini(posts.size(), roundi(army.size() * world.line_share))
+	var free: Array = army.filter(func(bot: Actor) -> bool:
+		return str(bot.get_meta("kind", "")) not in world.elite_kinds)
+	var manned := {}
+	for bot: Actor in free:
+		if manned.size() < count and _line_of.has(bot) and not manned.has(_line_of[bot]):
+			manned[_line_of[bot]] = bot
+	for bot: Variant in _line_of.keys():
+		if str(_line_of[bot].get_meta("faction", "")) != faction:
+			continue
+		if not manned.has(_line_of[bot]) or manned[_line_of[bot]] != bot:
+			_line_of.erase(bot)
+	for post: Node3D in posts:
+		if manned.size() >= count:
+			break
+		if manned.has(post):
+			continue
+		var best: Actor = null
+		for bot: Actor in free:
+			if _line_of.has(bot):
+				continue
+			if best == null or bot.global_position.distance_squared_to(post.global_position) \
+					< best.global_position.distance_squared_to(post.global_position):
+				best = bot
+		if best == null:
+			break
+		manned[post] = best
+		_line_of[best] = post
+	for post: Node3D in manned:
+		var bot: Actor = manned[post]
+		on_line[bot] = true
+		_orders.erase(bot)
+		if (_posted.get(bot, Vector3.INF) as Vector3).distance_to(post.global_position) > 1.0:
+			_posted[bot] = post.global_position
+			(bot.get_node("Brain") as BotBrain).post_to(post.global_position, 4.0)
+
+
+## Whether `faction`'s team sent at `point` should ring it first: a site
+## the other side holds, with enough of them near it.
+func _besieging(faction: String, point: Strongpoint, near: Dictionary) -> bool:
+	if world.siege_time <= 0.0 or point.holder == "" or point.holder == "faction:" + faction:
+		return false
+	var theirs := 0
+	for side: String in near:
+		if side != faction:
+			theirs += int(near[side])
+	return theirs >= world.siege_holders
+
+
+## Where the `index`th of a team of `size` stands in the ring round
+## `point`, on the side the team comes from, spread along an arc.
+func _siege_spot(point: Strongpoint, from: Vector3, index: int, size: int) -> Vector3:
+	var out := from - point.global_position
+	out.y = 0.0
+	if out.length_squared() < 1.0:
+		out = Vector3.FORWARD
+	var angle := atan2(out.x, out.z) + (index - (size - 1) * 0.5) * 0.18
+	var spot := point.global_position + Vector3(sin(angle), 0.0, cos(angle)) * (point.radius + world.siege_reach)
+	if map != null and map.has_method("ground_height"):
+		spot.y = float(map.call("ground_height", spot.x, spot.z))
+	return spot
 
 
 ## A faction's army has a new site to go for: a push, told before it lands
@@ -1162,11 +1311,16 @@ func _army_target(faction: String, held: Array, army: Array) -> Strongpoint:
 	return best
 
 
-func _order(bot: Actor, point: Strongpoint) -> void:
-	if _orders.get(bot) == point:
+## Sends `bot` at `point`: into it, or with `at` set short of it (a siege
+## ring), to hold `radius` round there. A bot already sent there is left
+## alone, so its patrol goes on.
+func _order(bot: Actor, point: Strongpoint, at := Vector3.INF, radius := 0.0) -> void:
+	var spot := point.global_position if at == Vector3.INF else at
+	if _orders.get(bot) == point and (_posted.get(bot, Vector3.INF) as Vector3).distance_to(spot) < 4.0:
 		return
 	_orders[bot] = point
-	(bot.get_node("Brain") as BotBrain).post_to(point.global_position, point.radius)
+	_posted[bot] = spot
+	(bot.get_node("Brain") as BotBrain).post_to(spot, point.radius if at == Vector3.INF else radius)
 
 
 ## Vehicles nobody rides are cleared away, and empty parking spots get a new one.
@@ -1683,7 +1837,85 @@ func status() -> Dictionary:
 			bounty = maxi(bounty, actor.bounty)
 	return {"players": fighting.size(), "war": snappedf(war.intensity, 0.05), "level": war.level_name(),
 			"bounty": bounty, "event": str(event.get("title", "")),
-			"storm": world.weather_name if weather.active() else "", "wanted": wanted()}
+			"storm": world.weather_name if weather.active() else "", "wanted": wanted(),
+			"front": front(), "moments": live_moments(), "hunted": hunted()}
+
+
+## The War Room's front line: each landmark of this world, where it stands
+## (a landmark, never a person) and who holds it, as {name, x, z, holder
+## (an army's faction, "players" or ""), contested}. A player's own side key
+## never leaves the server.
+func front() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for point in strongpoints:
+		if not is_instance_valid(point):
+			continue
+		var holder := ""
+		if point.holder_is_player:
+			holder = "players"
+		elif point.holder.begins_with("faction:"):
+			holder = point.holder.trim_prefix("faction:")
+		var at := point.global_position if point.is_inside_tree() else Vector3.ZERO
+		out.append({"name": point.title.left(24), "x": roundi(at.x), "z": roundi(at.z), "holder": holder,
+				"contested": point.contested})
+	return out
+
+
+## Tells the plaza's War Room of a big moment here (a warlord or a boss
+## brought down, a landmark changing hands). Authority only; the newest
+## `MOMENTS_KEPT` are kept.
+func note_moment(kind: String, text: String) -> void:
+	if mode == Mode.CLIENT or text == "":
+		return
+	moments.push_front({"kind": kind.left(16), "text": text.left(80), "at": int(Time.get_unix_time_from_system())})
+	if moments.size() > MOMENTS_KEPT:
+		moments.resize(MOMENTS_KEPT)
+
+
+## The moments still news (`MOMENT_LIFETIME`), newest first.
+func live_moments() -> Array[Dictionary]:
+	var now := int(Time.get_unix_time_from_system())
+	var out: Array[Dictionary] = []
+	for moment in moments:
+		if now - int(moment.at) <= MOMENT_LIFETIME:
+			out.append(moment)
+	return out
+
+
+## Who the armies are hunting here, for the War Room: players an army holds
+## a grudge against (`grudges`, `WorldDef.grudge_factions`, where a world
+## keeps them), biggest first, as {name, clan, by (the army's faction)}.
+## Who and by whom, never where. Empty where no army keeps grudges.
+func hunted() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if world.safe_zone or not world.gear_at_risk:
+		return out
+	# Read by name so this stands whether or not the grudge pass is in.
+	var held: Variant = get("grudges")
+	var bar := float(world.get("grudge_hunt")) if world.get("grudge_hunt") != null else 0.0
+	if typeof(held) != TYPE_DICTIONARY:
+		return out
+	var rows: Array = []
+	for key: Variant in held:
+		if not is_instance_valid(key) or not key is Actor or (key as Actor).is_dead:
+			continue
+		var actor := key as Actor
+		var by := ""
+		var top := 0.0
+		var grudge: Variant = held[key]
+		if typeof(grudge) != TYPE_DICTIONARY:
+			continue
+		for faction: Variant in grudge:
+			if float(grudge[faction]) > top:
+				top = float(grudge[faction])
+				by = str(faction)
+		if by == "" or top < bar * HUNTED_SHARE:
+			continue
+		rows.append([top, {"name": actor.display_name.left(24), "clan": actor.clan_tag.left(6), "by": by.left(16)}])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
+	for row: Array in rows.slice(0, HUNTED_SHOWN):
+		out.append(row[1])
+	return out
 
 
 ## The most wanted here, for the plaza's board: up to `WANTED_SHOWN` players
@@ -2930,6 +3162,8 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	bot.died.connect(_on_actor_died)
 	if world.linked_factions.has(bot.faction):
 		bot.health.damaged.connect(_on_linked_hurt.bind(bot))
+	if world.grudge_factions.has(bot.faction) and mode != Mode.CLIENT:
+		bot.health.damaged.connect(_on_army_hurt.bind(bot))
 	world.on_spawn(bot)
 	_post_bot(bot)
 	actor_spawned.emit(bot)
@@ -3655,6 +3889,13 @@ func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3,
 
 func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	world.on_death(actor, info)
+	_tell_team(actor)
+	if grudges.has(actor):
+		# A grudge lasts one life.
+		grudges.erase(actor)
+		actor.hunted_by = ""
+	elif info != null and world.grudge_factions.has(actor.faction):
+		_add_grudge(info.source as Actor, actor.faction, world.grudge_per_kill)
 	if mode != Mode.CLIENT and state_for(actor) == null:
 		var burst := world.death_burst(actor)
 		if not burst.is_empty():
@@ -3722,6 +3963,10 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 				pay += Economy.bounty_scrip(bounty)
 				killer.actor.notice.emit("Bounty claimed: +%d scrip, yours once you get it home" % Economy.bounty_scrip(bounty))
 			_pay_scrip(killer, pay)
+		# A warlord or a boss brought down is news in the plaza's War Room.
+		if warlords.has(actor) or _bosses.any(func(boss: Dictionary) -> bool: return boss.bot == actor):
+			note_moment("boss", "%s brought down %s" % [killer.actor.display_name, actor.display_name]
+					if killer != null else "%s is down" % actor.display_name)
 		# Only kills that players are part of count as the war.
 		if state != null or killer != null:
 			war.report_kill(actor.global_position, state != null)
@@ -4339,3 +4584,86 @@ class PlayerState:
 	var end_note := {}
 	## Seconds held in a strongpoint of their side not yet counted.
 	var held_for := 0.0
+
+
+## A bot of a fireteam fell: the rest of its team hear of it
+## (`BotBrain.ally_down`, which breaks a team that has lost too many).
+## Authority only; one scan of the bots a death.
+func _tell_team(dead: Actor) -> void:
+	if mode == Mode.CLIENT or not dead.has_node("Brain"):
+		return
+	var team := (dead.get_node("Brain") as BotBrain).team
+	if team == 0:
+		return
+	for other: Variant in bots:
+		if not is_instance_valid(other) or other == dead:
+			continue
+		var bot := other as Actor
+		if bot.is_dead or bot.faction != dead.faction or not bot.has_node("Brain"):
+			continue
+		var brain := bot.get_node("Brain") as BotBrain
+		if brain.team == team:
+			brain.ally_down()
+
+
+## A bot of an army that keeps grudges was hurt: the player who did it rises
+## in that army's grudge (`WorldDef.grudge_factions`).
+func _on_army_hurt(info: DamageInfo, bot: Actor) -> void:
+	if info == null or info.amount <= 0.0 or not is_instance_valid(bot):
+		return
+	# No more than the bot had in it: an overkill counts as one body.
+	var hurt := minf(info.amount, bot.health.max_health)
+	_add_grudge(info.source as Actor, bot.faction, hurt * world.grudge_per_damage)
+
+
+func _add_grudge(source: Actor, faction: String, points: float) -> void:
+	if source == null or not is_instance_valid(source) or source.is_dead or state_for(source) == null:
+		return
+	var held: Dictionary = grudges.get(source, {})
+	held[faction] = minf(float(held.get(faction, 0.0)) + points, world.grudge_cap)
+	grudges[source] = held
+
+
+## Grudges fade, and an army whose grudge runs high sends a few of its bots
+## after that player: to where they roughly are (a heard place, never live
+## tracking), through `BotBrain.hunt_grudge`, so the brain's hunter and leash
+## limits still hold. Authority only.
+func _tick_grudges(delta: float) -> void:
+	_grudge_in -= delta
+	var send := _grudge_in <= 0.0
+	if send:
+		_grudge_in = GRUDGE_EVERY
+	# Untyped: a freed player cannot be assigned to an `Actor` to be checked.
+	for key: Variant in grudges.keys():
+		if not is_instance_valid(key):
+			grudges.erase(key)
+			continue
+		var player := key as Actor
+		var held: Dictionary = grudges[player]
+		var top := ""
+		for faction: String in held.keys():
+			var points := float(held[faction]) - world.grudge_fade * delta
+			if points <= 0.0:
+				held.erase(faction)
+				continue
+			held[faction] = points
+			if points >= world.grudge_hunt and (top == "" or points > float(held[top])):
+				top = faction
+		player.hunted_by = top
+		if held.is_empty():
+			grudges.erase(player)
+		elif send and top != "" and not player.is_dead:
+			_send_grudge_hunters(player, top)
+
+
+func _send_grudge_hunters(player: Actor, faction: String) -> void:
+	var near: Array = []
+	for bot in bots:
+		if not is_instance_valid(bot) or bot.is_dead or bot.faction != faction or _is_extra(bot):
+			continue
+		var d := bot.global_position.distance_to(player.global_position)
+		if d <= GRUDGE_REACH and bot.has_node("Brain"):
+			near.append([d, bot])
+	near.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for i in mini(GRUDGE_HUNTERS, near.size()):
+		(near[i][1].get_node("Brain") as BotBrain).hunt_grudge(player.global_position, player)

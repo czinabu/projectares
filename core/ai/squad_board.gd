@@ -15,7 +15,8 @@ extends RefCounted
 static var _hunters := {}
 ## Bots sent to look at one source's noise: {source id: {brain id: frame}}.
 static var _looking := {}
-## The one bot working round each person's flank: {person id: [brain id, frame]}.
+## The bots working round each person's flank: {person id: {brain id: frame}},
+## in the order they took it (one, or a pincer's two, `BotBrain.flankers`).
 static var _flankers := {}
 ## Cover spots in use: {cell key: [brain id, frame]}.
 static var _cover := {}
@@ -50,19 +51,26 @@ static func look(source: int, me: int, cap: int, now: int, hold: float) -> bool:
 	return _claim(_looking, source, me, cap, now, hold)
 
 
-## Asks to be the one bot working round the flank of the person `key`.
-static func flank(key: int, me: int, now: int, hold: float) -> bool:
-	var held: Array = _flankers.get(key, [])
-	if held.is_empty() or held[0] == me or held[1] <= now:
-		_flankers[key] = [me, now + int(hold * _tps())]
-		return true
-	return false
+## Asks to be one of `cap` bots working round the flank of the person `key`
+## (one by default; a pincer is two).
+static func flank(key: int, me: int, now: int, hold: float, cap := 1) -> bool:
+	return _claim(_flankers, key, me, cap, now, hold)
 
 
 static func stop_flank(key: int, me: int) -> void:
-	var held: Array = _flankers.get(key, [])
-	if not held.is_empty() and held[0] == me:
-		_flankers.erase(key)
+	var held: Dictionary = _flankers.get(key, {})
+	held.erase(me)
+
+
+## Which way `me` works round the person `key`: flankers alternate sides in
+## the order they took the flank, so a pincer's two come from both sides.
+## 0 for a bot that holds no flank.
+static func flank_side(key: int, me: int) -> int:
+	var held: Dictionary = _flankers.get(key, {})
+	var at := held.keys().find(me)
+	if at < 0:
+		return 0
+	return 1 if (at + key) % 2 == 0 else -1
 
 
 ## True when no other bot holds cover within `COVER_CELL` of `spot`.

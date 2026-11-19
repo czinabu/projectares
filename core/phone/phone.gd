@@ -2264,6 +2264,13 @@ func _draw_settings() -> void:
 			scale_pick.select(GameSettings.render_scale)
 			scale_pick.item_selected.connect(func(index: int) -> void: change_setting("render_scale", index))
 			_body.add_child(scale_pick)
+			_body.add_child(_label("View distance", 14, UiTheme.INK))
+			var reach_pick := OptionButton.new()
+			for pick: Array in GameSettings.VIEW_DISTANCE:
+				reach_pick.add_item(pick[0])
+			reach_pick.select(GameSettings.view_distance)
+			reach_pick.item_selected.connect(func(index: int) -> void: change_setting("view_distance", index))
+			_body.add_child(reach_pick)
 			_toggle("Ambient occlusion", "ambient_occlusion", GameSettings.ambient_occlusion)
 			_toggle("Battle smoke over the ground", "ground_smoke", GameSettings.ground_smoke)
 			_body.add_child(_section("CAMERA"))
