@@ -50,6 +50,16 @@ extends Raid
 ## answer for `RaceView` to play. Friends' best laps come the same way
 ## (`friend_bests`) for the pit boards.
 ##
+## Getting on and off made easy (Caleb's ask): race control's desks (map
+## markers in group "race_desk", metas "track" and "machine") put whoever
+## uses one straight onto the grid of that track's next race on a fresh
+## machine (`sign_up`, asked as "signup:<track>:<machine>"); the watch desk
+## (no machine) is `RaceView`'s, a view of the racers. Once a person's run
+## is done, they are guided into the pits (the track's `RaceTrack.pit`, a
+## waypoint on their HUD) and set down on pit row when they drive within
+## `PIT_RADIUS` of it, or after `PIT_TIME` wherever they are; the machine
+## goes (a bay fills again by itself).
+##
 ## A world may lay out several tracks (Meridian has Coilrun and Skyhook),
 ## each with its own pit bays, grid, gantry, gates and board. A run is on
 ## the track whose road the machine was nearest when it was got on
@@ -93,13 +103,20 @@ const AI_STUCK := 3.0
 const RADIO_GAP := 5.0
 const RIVAL_GAP := 20.0
 const RADIO_QUIET := 4.0
-## The callsigns of AI racers who are not named rivals.
+## A finished racer is set down within this of the track's pit (metres)...
+const PIT_RADIUS := 9.0
+## ...or this long after their finish, wherever they are (seconds).
+const PIT_TIME := 40.0
+## How near a race control desk a person must stand to use it (metres).
+const DESK_REACH := 3.0
+
 ## What the race icon's ghost pick turns through, in order.
 const GHOST_PICKS: Array[String] = ["mine", "friend", "leader", "off"]
 ## Solo: where the profile's ghosts are kept (the same file older builds
 ## kept the view's ghosts in, read in either form).
 const GHOST_PATH := "user://race_ghosts.json"
 
+## The callsigns of AI racers who are not named rivals.
 const AI_NAMES: Array[String] = ["Vex Morrow", "Juno Kade", "Rook Halloran", "Sable Ito", "Dax Ferro",
 		"Mika Strand", "Tavi Okonkwo", "Wren Castell", "Bodhi Lark", "Ines Varga", "Cass Rennick", "Oto Brandt"]
 
@@ -207,6 +224,10 @@ class Run:
 	var heard := {}
 	## The lap being driven, as a ghost (people only, authority).
 	var recording := RaceGhost.new()
+	## When the run was done (race clock), for the way into the pits.
+	var done_at := 0.0
+	## The machine was made for this run at a desk (`sign_up`).
+	var desk_made := false
 
 
 ## One track's live race.
@@ -428,6 +449,16 @@ func _on_vehicle_dismounted(actor: Actor, vehicle: Node3D) -> void:
 	var run: Run = runs.get(actor)
 	if run != null and run.vehicle == vehicle:
 		retire(actor)
+		if run.desk_made:
+			# A machine a desk made goes when its racer gets off.
+			_drop_machine.call_deferred(vehicle.get_instance_id())
+
+
+## A desk's machine whose racer got off, once the getting off is done.
+func _drop_machine(id: int) -> void:
+	var vehicle := instance_from_id(id) as Node3D
+	if vehicle != null and vehicle.get("rider") == null:
+		remove_vehicle(vehicle)
 
 
 ## Puts `actor`, riding `vehicle`, on a free start slot, held for the lights.
@@ -510,6 +541,9 @@ func _tick_run(run: Run, _delta: float) -> void:
 	var from := run.last_pos
 	run.last_pos = pos
 	run.hint = rt.locate(pos, run.hint)
+	if run.phase == "done" and not run.ai:
+		_tick_pit_in(run, pos)
+		return
 	if run.phase != "racing":
 		return
 	if not run.ai:
@@ -564,6 +598,7 @@ func _finish_lap(run: Run, at: float) -> void:
 	run.next_gate = 1
 	if run.lap >= run.track.laps:
 		run.phase = "done"
+		run.done_at = clock
 		run.total = at - run.go_at
 		if run.heat != null:
 			_finished_in_heat(run)
@@ -592,6 +627,35 @@ func _keep_ghost(run: Run, lap_time: float) -> void:
 				"machine": run.machine, "lap": lap_time, "ghost": ghost})
 
 
+## A person's run is done: once they drive into the pits (or the time for
+## it is up) they are set down on pit row and the machine goes.
+func _tick_pit_in(run: Run, pos: Vector3) -> void:
+	var pit := run.track.pit_spot()
+	var near := Vector2(pos.x - pit.x, pos.z - pit.z).length() <= PIT_RADIUS and absf(pos.y - pit.y) < 6.0
+	if near or clock - run.done_at >= PIT_TIME:
+		set_down(run.actor, not near)
+
+
+## Takes `actor` off their machine and out of their run, standing on pit row
+## (`to_pit`: put there; else where they got off), and the machine goes.
+func set_down(actor: Actor, to_pit := true) -> void:
+	var run: Run = runs.get(actor)
+	if run == null:
+		return
+	var vehicle := run.vehicle
+	var pit := run.track.pit_spot()
+	retire(actor)
+	if is_instance_valid(vehicle):
+		if vehicle.get("rider") == actor:
+			vehicle.call("dismount")
+		remove_vehicle(vehicle)
+	if is_instance_valid(actor):
+		if to_pit:
+			actor.velocity = Vector3.ZERO
+			actor.global_position = _stand(pit + Vector3(0, 0.3, 0))
+		actor.notice.emit("On pit row · take a machine or sign up at race control")
+
+
 ## Ends `actor`'s run: they keep their machine until they get off it, and
 ## nothing more is timed.
 func retire(actor: Actor) -> void:
@@ -618,6 +682,11 @@ func request(actor: Actor, action: String) -> Dictionary:
 			send_request.call(action)
 		return {"ok": true}
 	var run: Run = runs.get(actor)
+	if action.begins_with("signup:"):
+		var parts := action.split(":")
+		if parts.size() != 3:
+			return {"ok": false, "error": "Unknown request"}
+		return sign_up(actor, parts[1], parts[2])
 	match action:
 		"race":
 			return join_race(actor)
@@ -783,6 +852,56 @@ func join_race(actor: Actor) -> Dictionary:
 		heats[run.track.id] = heat
 	_join(run, heat)
 	return {"ok": true}
+
+
+## The race control desk for a track and machine `actor` stands at, or null.
+func desk_near(actor: Actor, track_id: String, machine: String) -> Node3D:
+	if map == null:
+		return null
+	for node: Node in _map_nodes("race_desk"):
+		var desk := node as Node3D
+		if desk != null and str(desk.get_meta("track", "")) == track_id and str(desk.get_meta("machine", "")) == machine \
+				and Vector2(desk.global_position.x - actor.global_position.x,
+						desk.global_position.z - actor.global_position.z).length() <= DESK_REACH:
+			return desk
+	return null
+
+
+## A desk at race control: `actor` goes straight onto the grid of the
+## track's next race on a fresh `machine` (one of the track's own),
+## leaving any run or machine they had. A race forms if none is.
+func sign_up(actor: Actor, track_id: String, machine: String) -> Dictionary:
+	var rt := track_by_id(track_id)
+	if rt == null or rt.id != track_id or machine not in _class_machines(rt):
+		return {"ok": false, "error": "No such race"}
+	if desk_near(actor, track_id, machine) == null:
+		return {"ok": false, "error": "Sign up at race control's desk"}
+	var heat: Heat = heats.get(rt.id)
+	if heat != null and heat.phase == "racing":
+		return {"ok": false, "error": "%s's race is on: the next forms once it is over. Watch it from the desk beside" \
+				% rt.display_name}
+	if heat != null and heat.phase == "forming" and heat.runs.size() >= GRID_SIZE:
+		return {"ok": false, "error": "The grid is full"}
+	var run: Run = runs.get(actor)
+	if run != null and run.heat == heat and heat != null and heat.phase == "forming" and run.machine == machine:
+		return {"ok": true}
+	if actor.vehicle != null:
+		# Off the old machine first (a desk's own goes as you get off).
+		actor.vehicle.call("dismount")
+	retire(actor)
+	var slot: Transform3D = rt.start_slots[0]
+	var vehicle := spawn_vehicle(machine, slot.origin + Vector3(0, 0.4, 0), slot.basis.get_euler().y)
+	if not vehicle.call("mount", actor):
+		remove_vehicle(vehicle)
+		return {"ok": false, "error": "Could not get on"}
+	run = runs.get(actor)
+	if run == null:
+		start_run(actor, vehicle)
+		run = runs.get(actor)
+	if run == null:
+		return {"ok": false, "error": "No machine to race"}
+	run.desk_made = true
+	return join_race(actor)
 
 
 ## Puts `run` on `heat`'s grid, held at a free slot.
@@ -1159,6 +1278,7 @@ func _close_heat(heat: Heat) -> void:
 		if run.phase == "racing":
 			# Out of time: the run ends where it is.
 			run.phase = "done"
+			run.done_at = clock
 			run.total = -1.0
 		if not run.ai and is_instance_valid(run.actor):
 			run.actor.notice.emit("P%d of %d%s" % [i + 1, order.size(), "" if finished else " · did not finish"])
@@ -1490,11 +1610,12 @@ static func run_line(view: Dictionary) -> String:
 			if str(view.get("heat", "")) != "":
 				var finish := int(view.get("finish_place", 0))
 				if finish <= 0:
-					return "%s · finished %s · waiting for the rest" % [place, format_time(float(view.get("total", -1.0)))]
+					return "%s · finished %s · head to the pits" % [place, format_time(float(view.get("total", -1.0)))]
 				if float(view.get("total", -1.0)) < 0.0:
 					return "P%d/%d · did not finish" % [finish, int(view.get("field", 1))]
-				return "P%d/%d · %s" % [finish, int(view.get("field", 1)), format_time(float(view.get("total", -1.0)))]
-			return "Finished %s · best %s" % [format_time(float(view.get("total", -1.0))),
+				return "P%d/%d · %s · head to the pits" % [finish, int(view.get("field", 1)),
+						format_time(float(view.get("total", -1.0)))]
+			return "Finished %s · best %s · head to the pits" % [format_time(float(view.get("total", -1.0))),
 					format_time(float(view.get("best_lap", -1.0)))]
 	return ""
 

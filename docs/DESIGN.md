@@ -2131,6 +2131,18 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   leader's best lap, and none. The pit board lists your friends' best
   times on that track under its own. Solo, the ghosts stay on this
   computer.
+- **Easy in, easy out (Caleb's ask).** Race control has a desk for each
+  track and machine ("Coilrun · Raider") that shows the next race's
+  countdown and how many riders are on its grid; using one puts you on a
+  fresh machine of that kind, straight onto that grid (forming one if none
+  is). While a race is on it tells you when the next forms. Each track
+  also has a watch desk: a chase camera on the racers with their name,
+  place and lap, the wheel to pick another, the interact key or Esc to
+  come back. Once your run is done, a race or a time trial, the watch and
+  visor say "head to the pits" and a column of light marks pit row;
+  driving into it sets you down there and the machine goes, and if you
+  ride on you are set down anyway 40 s after the finish. A machine a desk
+  made goes when you get off it.
 
 The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the

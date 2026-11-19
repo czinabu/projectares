@@ -1983,7 +1983,15 @@ without Caleb, and update the gap list when a PR closes a row.
   `NetSession._race_ghost_ask`, where the server finds a friend's among
   the phone's saved contacts, `_friend_ids`) and played by `RaceView`;
   friends' best times reach the pit boards the same way
-  (`Race.friend_bests`, `NetSession._send_friend_bests`). Where a road runs over
+  (`Race.friend_bests`, `NetSession._send_friend_bests`). Race control's
+  desks (map markers "race_desk", metas "track" and "machine") sign a
+  person onto the next race on a fresh machine (`Race.sign_up`, asked as
+  "signup:<track>:<machine>", which the authority decides, standing within
+  `DESK_REACH`); a desk with no machine is a watch desk, `RaceView.watch`,
+  a camera only. A done run is guided to the track's `RaceTrack.pit`
+  (`Hud._guide_to_pits`) and the authority sets the racer down there
+  (`Race.set_down`, within `PIT_RADIUS` or after `PIT_TIME`); a machine a
+  desk made goes when its racer gets off. Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
   (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration

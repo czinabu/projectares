@@ -2,6 +2,7 @@ class_name RaceView
 extends Node
 
 const RaceLeague := preload("res://core/race/race_league.gd")
+
 ## The local racer's view of a `Race` (DESIGN.md section 9), all in the
 ## world: the gantry's lights counting the run down, the split written big
 ## on each checkpoint's arch as you pass it (green ahead of your best, amber
@@ -13,9 +14,20 @@ const RaceLeague := preload("res://core/race/race_league.gd")
 ## and online, and changes nothing in the race. Never made on a headless
 ## server. Solo, the board starts with the profile's best laps.
 ##
+## Race control's desks are here too: standing at one shows what it does
+## and how the next race stands (its "Status" label and a prompt), and the
+## interact key signs up (`Race.ask("signup:...")`, the race decides) or,
+## at a watch desk, watches: the view follows the racers on that track
+## from behind (`watching`, `watching_changed`), the wheel picks another,
+## and the interact key or Esc comes back. Watching is a view only; `Main`
+## holds the player still while it lasts.
+##
 ## With several tracks each gantry, arch and board carries the meta "track"
 ## (a track id; none means the first track), and only the run's own track's
 ## gantry and arches answer it.
+
+## The view went to watching a track's racers, or came back.
+signal watching_changed(on: bool)
 
 ## Seconds a split stays on an arch.
 const SPLIT_TIME := 4.0
@@ -41,6 +53,21 @@ var _split_left := {}   # "track:gate" -> seconds still shown
 var _boards: Array[Label3D] = []
 var _ghost_node: Node3D
 var _ghost_machine := ""
+## The track being watched from a watch desk, or "".
+var watching := ""
+var _desks: Array[Node3D] = []
+var _desk_in := 0.0
+var _hud: CanvasLayer
+var _prompt: Label
+var _caption: Label
+var _camera: Camera3D
+var _previous: Camera3D
+var _watched: Node3D
+var _watch_list: Array = []
+var _watch_pick := 0
+var _list_in := 0.0
+## The frame watching stopped on, so the same press does not start it again.
+var _stopped_frame := -1
 var _go_flash := 0.0
 var _board_in := 0.0
 var _was_phase := ""
@@ -63,6 +90,8 @@ func _ready() -> void:
 				_splits[_key(_track_of(node), int(node.get_meta("gate", 0)))] = label
 		elif node.is_in_group("race_board") and node is Label3D:
 			_boards.append(node)
+		elif node.is_in_group("race_desk") and node is Node3D:
+			_desks.append(node)
 	_lights.sort_custom(func(a: MeshInstance3D, b: MeshInstance3D) -> bool:
 		return int(a.get_meta("index", 0)) < int(b.get_meta("index", 0)))
 	for light in _lights:
@@ -80,6 +109,7 @@ func _ready() -> void:
 		# Solo: your saved bests are the board's first times.
 		_seed_board()
 	_draw_board()
+	_make_hud()
 
 
 ## The track a gantry light, arch or board belongs to.
@@ -108,6 +138,8 @@ func _process(delta: float) -> void:
 			if _splits.has(g):
 				_splits[g].text = ""
 	_update_ghost(view)
+	_update_desks(delta)
+	_update_watch(delta)
 	# A forming race's countdown on the board.
 	_board_in -= delta
 	if _board_in <= 0.0:
@@ -117,6 +149,197 @@ func _process(delta: float) -> void:
 				_draw_board()
 				break
 	_was_phase = str(view.get("phase", ""))
+
+
+# --- Race control's desks and watching --------------------------------------------
+
+func _make_hud() -> void:
+	_hud = CanvasLayer.new()
+	_hud.layer = 2
+	add_child(_hud)
+	_prompt = _label(22, Color(1.0, 0.8, 0.45), 110.0)
+	_caption = _label(24, Color(0.75, 0.95, 1.0), -160.0, 1.0)
+
+
+func _label(font_size: int, color: Color, y: float, anchor_y := 0.5) -> Label:
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	label.add_theme_constant_override("outline_size", 5)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.anchor_left = 0.5
+	label.anchor_right = 0.5
+	label.anchor_top = anchor_y
+	label.anchor_bottom = anchor_y
+	label.offset_left = -500.0
+	label.offset_right = 500.0
+	label.offset_top = y
+	label.offset_bottom = y + 64.0
+	_hud.add_child(label)
+	return label
+
+
+## The desk the local player stands at, or null.
+func desk_here() -> Node3D:
+	var me := race.player
+	if me == null or not is_instance_valid(me) or me.vehicle != null or me.is_dead:
+		return null
+	for desk in _desks:
+		if Vector2(desk.global_position.x - me.global_position.x,
+				desk.global_position.z - me.global_position.z).length() <= Race.DESK_REACH:
+			return desk
+	return null
+
+
+## What a desk says now: its own words and the next race there.
+static func desk_text(title: String, heat: Dictionary) -> String:
+	match str(heat.get("phase", "")):
+		"forming":
+			var since := (Time.get_ticks_msec() - int(heat.get("made", 0))) / 1000.0
+			return "%s\nNext race %s · %d/%d riders" % [title, Race.format_countdown(float(heat.get("starts_in", 0.0)) - since),
+					int(heat.get("people", 0)), Race.GRID_SIZE]
+		"racing":
+			return "%s\nRace on · %d on the grid" % [title, int(heat.get("field", 0))]
+	return "%s\nNo race yet: start one" % title
+
+
+## The prompt at a desk.
+static func desk_prompt(machine: String, heat: Dictionary) -> String:
+	if machine == "":
+		return "E  Watch the racers here"
+	if str(heat.get("phase", "")) == "racing":
+		return "A race is on: the next forms once it is over"
+	if str(heat.get("phase", "")) == "forming":
+		return "E  Join the next race on the grid"
+	return "E  Start the next race (AI fill the grid)"
+
+
+func _update_desks(delta: float) -> void:
+	_desk_in -= delta
+	if _desk_in <= 0.0:
+		_desk_in = 0.5
+		for desk in _desks:
+			var label := desk.get_node_or_null("Status") as Label3D
+			if label == null:
+				continue
+			if not desk.has_meta("title"):
+				desk.set_meta("title", label.text)
+			var heat := race.heat_view(str(desk.get_meta("track", "")))
+			label.text = desk_text(str(desk.get_meta("title")), heat) if str(desk.get_meta("machine", "")) != "" \
+					else str(desk.get_meta("title"))
+	var desk := desk_here() if watching == "" else null
+	_prompt.text = desk_prompt(str(desk.get_meta("machine", "")), race.heat_view(str(desk.get_meta("track", "")))) \
+			if desk != null else ""
+	if desk != null and Input.is_action_just_pressed("interact") and not get_viewport().gui_get_focus_owner() \
+			and Engine.get_process_frames() != _stopped_frame:
+		use_desk(desk)
+
+
+## Uses a desk: signs up for its race, or watches its track.
+func use_desk(desk: Node3D) -> void:
+	var track_id := str(desk.get_meta("track", ""))
+	var machine := str(desk.get_meta("machine", ""))
+	if machine == "":
+		watch(track_id)
+	else:
+		race.ask("signup:%s:%s" % [track_id, machine])
+
+
+## Starts (a track id) or stops ("") watching a track's racers.
+func watch(track_id: String) -> void:
+	if track_id == watching:
+		return
+	watching = track_id
+	_watched = null
+	_watch_pick = 0
+	_list_in = 0.0
+	if track_id != "":
+		if _camera == null:
+			_camera = Camera3D.new()
+			_camera.name = "WatchCamera"
+			_camera.top_level = true
+			_camera.fov = 70.0
+			_camera.far = 4000.0
+			add_child(_camera)
+		_previous = get_viewport().get_camera_3d()
+		var desk_at := race.track_by_id(track_id).pit_spot()
+		_camera.global_transform = Transform3D(Basis.looking_at(Vector3.FORWARD, Vector3.UP), desk_at + Vector3(0, 12, 20))
+		_camera.make_current()
+	else:
+		if _previous != null and is_instance_valid(_previous) and _previous.is_inside_tree():
+			_previous.make_current()
+		_caption.text = ""
+		_stopped_frame = Engine.get_process_frames()
+	watching_changed.emit(track_id != "")
+
+
+## Who can be watched on a track: the riders on its road, people first.
+func watch_list(track_id: String) -> Array:
+	var rt := race.track_by_id(track_id)
+	var people: Array = []
+	var ai: Array = []
+	for v: Variant in race.vehicles:
+		if not is_instance_valid(v):
+			continue
+		var vehicle := v as Node3D
+		var rider: Variant = vehicle.get("rider")
+		if rider == null or not is_instance_valid(rider) or rider == race.player or race.track_near(vehicle.global_position) != rt:
+			continue
+		(ai if (rider as Node).has_meta("race_ai") else people).append(vehicle)
+	return people + ai
+
+
+func _update_watch(delta: float) -> void:
+	if watching == "":
+		return
+	_list_in -= delta
+	if _list_in <= 0.0 or _watched == null or not is_instance_valid(_watched) or _watched.get("rider") == null:
+		_list_in = 1.0
+		_watch_list = watch_list(watching)
+		if _watched == null or not is_instance_valid(_watched) or _watched not in _watch_list:
+			_watched = _watch_list[clampi(_watch_pick, 0, _watch_list.size() - 1)] if not _watch_list.is_empty() else null
+	var rt := race.track_by_id(watching)
+	if _watched == null:
+		_caption.text = "WATCHING %s · nobody on the track yet\nE or Esc: back" % rt.display_name.to_upper()
+		return
+	var rider: Actor = _watched.get("rider")
+	var velocity: Vector3 = _watched.get("velocity") if _watched.get("velocity") is Vector3 else Vector3.ZERO
+	var back := -_watched.global_basis.z
+	if Vector2(velocity.x, velocity.z).length() > 3.0:
+		back = Vector3(velocity.x, 0, velocity.z).normalized()
+	var want := _watched.global_position - back * 9.0 + Vector3(0, 3.6, 0)
+	var weight := 1.0 - exp(-delta * 4.0)
+	_camera.global_position = _camera.global_position.lerp(want, weight)
+	var look := _watched.global_position + Vector3(0, 1.2, 0) + back * 4.0
+	if _camera.global_position.distance_to(look) > 0.5:
+		_camera.look_at(look, Vector3.UP)
+	_caption.text = "WATCHING %s · %s · %s  (%d/%d)\nWheel: another racer · E or Esc: back" % [rt.display_name.to_upper(),
+			rider.display_name if is_instance_valid(rider) else "?", _machine_tag(str(_watched.get("item_id"))),
+			_watch_list.find(_watched) + 1, _watch_list.size()]
+
+
+## Another racer to watch (`step` +1 or -1).
+func watch_next(step: int) -> void:
+	if _watch_list.is_empty():
+		return
+	var at := _watch_list.find(_watched)
+	_watch_pick = posmod(at + step, _watch_list.size())
+	_watched = _watch_list[_watch_pick]
+
+
+func _input(event: InputEvent) -> void:
+	if watching == "":
+		return
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			watch_next(1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1)
+			get_viewport().set_input_as_handled()
+	elif (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE) \
+			or event.is_action_pressed("interact"):
+		watch("")
+		get_viewport().set_input_as_handled()
 
 
 # --- The gantry -----------------------------------------------------------------

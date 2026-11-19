@@ -67,6 +67,8 @@ static func build_track() -> RaceTrack:
 	for p: Vector3 in CHECKPOINTS:
 		spots.append(AT + p)
 	var t := RaceTrack.build(TRACK_ID, TRACK_NAME, control(), WIDTH, spots, AT + LINE, LAPS)
+	# In front of the bays.
+	t.pit = AT + Vector3(41, 0, 16)
 	return t
 
 

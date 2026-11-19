@@ -52,6 +52,7 @@ static func run(t: Node) -> void:
 	await _test_time_trial(t)
 	await _test_skyhook(t)
 	await _test_live_race(t)
+	await _test_desks_and_pits(t)
 	_test_crowd(t)
 	_test_ghost_data(t)
 
@@ -415,6 +416,142 @@ static func _test_live_race(t: Node) -> void:
 	await t.frames(2)
 	t.check(ai_machines.all(func(v: Variant) -> bool: return not is_instance_valid(v)), "with their machines")
 	t.check(str(race.view_run().get("heat", "x")) == "", "and your run is a time trial again")
+	race.queue_free()
+	await t.frames(2)
+
+
+## Race control's desks and the way off the track (Caleb's ask): a desk
+## puts you on the next race's grid on a fresh machine, a watch desk follows
+## the racers, a race on refuses a sign-up, and a finished racer is set down
+## on pit row (driving in, or after `PIT_TIME`) with the machine gone.
+static func _test_desks_and_pits(t: Node) -> void:
+	var world := Worlds.get_world("meridian")
+	var race: Race = world.new_raid()
+	t.add_child(race)
+	race.start(world, 11, [Loadout.BARE] as Array[String])
+	await t.frames(5)
+	var me := race.player
+	var track := race.track
+	var desks := {}
+	for node: Node in race.map.find_children("*", "", true, false):
+		if node.is_in_group("race_desk"):
+			desks["%s|%s" % [node.get_meta("track"), node.get_meta("machine")]] = node
+	var all_there := true
+	for rt in race.circuits:
+		for machine in ["bike_scrapper", "bike_raider", ""]:
+			all_there = all_there and desks.has("%s|%s" % [rt.id, machine])
+	t.check(all_there, "race control has a desk for each track's machines and one to watch from (%d)" % desks.size())
+	var raider_desk: Node3D = desks.get("%s|bike_raider" % track.id)
+	var scrapper_desk: Node3D = desks.get("%s|bike_scrapper" % track.id)
+	if raider_desk == null or scrapper_desk == null:
+		race.queue_free()
+		return
+	t.check(not race.request(me, "signup:%s:bike_raider" % track.id).get("ok", false), "a desk is used standing at it")
+	me.global_position = raider_desk.global_position + Vector3(1.0, 0.2, 0.0)
+	await t.frames(2)
+	t.check(not race.request(me, "signup:%s:jet_hawk" % track.id).get("ok", false), "only the track's own machines")
+	var bays := race.vehicles.size()
+	t.check(race.request(me, "signup:%s:bike_raider" % track.id).get("ok", false), "standing at a desk, you sign up")
+	await t.frames(2)
+	var view := race.view_run()
+	var bike: Node3D = me.vehicle
+	t.check(bike != null and bike.get("item_id") == "bike_raider" and race.vehicles.size() == bays + 1,
+			"on a fresh machine of the desk's kind")
+	t.check(view.get("phase") == "waiting" and view.get("heat") == "forming" and bool(bike.get("held")),
+			"straight onto the grid of the next race")
+	# Another desk swaps the machine; the one the desk made goes.
+	me.vehicle.call("dismount")
+	await t.frames(1)
+	me.global_position = scrapper_desk.global_position + Vector3(1.0, 0.2, 0.0)
+	await t.frames(2)
+	t.check(race.request(me, "signup:%s:bike_scrapper" % track.id).get("ok", false), "you can change machine at the next desk")
+	await t.frames(2)
+	t.check(not is_instance_valid(bike) and me.vehicle != null and me.vehicle.get("item_id") == "bike_scrapper"
+			and race.vehicles.size() == bays + 1 and race.view_run().get("heat") == "forming",
+			"the old desk machine goes and you keep your place in the race")
+	# Desks say how the next race stands.
+	var forming := race.heat_view(track.id)
+	t.check(RaceView.desk_text("COILRUN", forming).contains("1/%d riders" % Race.GRID_SIZE)
+			and RaceView.desk_prompt("bike_raider", forming).begins_with("E  Join"), "a desk shows the next race and who is on it")
+	t.check(RaceView.desk_prompt("bike_raider", {}).begins_with("E  Start")
+			and RaceView.desk_prompt("", forming).contains("Watch"), "and what it does")
+	var rv := RaceView.new()
+	rv.setup(race)
+	race.add_child(rv)
+	(race.heats[track.id] as Race.Heat).starts_at = race.clock
+	await t.frames(3)
+	var watched := rv.watch_list(track.id)
+	t.check(watched.size() == Race.GRID_SIZE - 1 and watched.all(func(v: Node3D) -> bool:
+			return v.get("rider") != me), "the watch desk follows everyone else on the track")
+	var racing := race.heat_view(track.id)
+	t.check(RaceView.desk_prompt("bike_raider", racing).begins_with("A race is on"), "while a race is on, the desk says so")
+	var stand := Actor.new()
+	stand.display_name = "Late"
+	race.add_child(stand)
+	stand.global_position = raider_desk.global_position + Vector3(0.5, 0.2, 0.0)
+	var late := race.sign_up(stand, track.id, "bike_raider")
+	t.check(not late.get("ok", false) and str(late.get("error", "")).contains("Watch"),
+			"a sign-up during a race is turned away, pointed at the watch desk")
+	stand.queue_free()
+	rv.watch(track.id)
+	t.check(rv.watching == track.id, "watching a track")
+	rv.watch("")
+	t.check(rv.watching == "", "and back")
+	rv.queue_free()
+	# Finished: driving into the pits sets you down there and the machine goes.
+	var run: Race.Run = race.runs.get(me)
+	var machine := me.vehicle
+	var laps := track.laps
+	track.laps = 1
+	run.lap = 1
+	run.phase = "racing"
+	race.call("_finish_lap", run, race.clock)
+	track.laps = laps
+	t.check(race.view_run().get("phase") == "done" and Race.run_line(race.view_run()).ends_with("head to the pits"),
+			"at the finish you are told to head to the pits")
+	await t.frames(int(Engine.physics_ticks_per_second))
+	t.check(me.vehicle == machine, "you can ride on after the line")
+	var pit := track.pit_spot()
+	machine.global_position = pit + Vector3(2.0, 0.6, 0.0)
+	machine.set("velocity", Vector3.ZERO)
+	machine.set("speed", 0.0)
+	await t.frames(4)
+	t.check(me.vehicle == null and race.view_run().is_empty(), "driving into the pits ends it: you are set down")
+	t.check(Vector2(me.global_position.x - pit.x, me.global_position.z - pit.z).length() < 4.0,
+			"standing on pit row")
+	await t.frames(2)
+	t.check(not is_instance_valid(machine), "and the machine goes")
+	# Out on the track, you are set down anyway once the time is up.
+	me.global_position = scrapper_desk.global_position + Vector3(1.0, 0.2, 0.0)
+	await t.frames(2)
+	t.check(race.request(me, "signup:%s:bike_scrapper" % track.id).get("ok", false)
+			and race.view_run().get("heat") == "forming", "once that race is over, a desk forms the next one")
+	var desk_bike: Node3D = me.vehicle
+	desk_bike.call("dismount")
+	await t.frames(3)
+	t.check(not is_instance_valid(desk_bike) and race.view_run().is_empty(), "getting off a desk's machine, it goes")
+	var bay: Node3D = null
+	for v: Node3D in race.vehicles:
+		if v.get("rider") == null and race.track_near(v.global_position) == track:
+			bay = v
+			break
+	if bay != null:
+		me.global_position = bay.global_position + Vector3(2.0, 0.2, 0.0)
+		await t.frames(2)
+		bay.call("mount", me)
+		await t.frames(2)
+		run = race.runs.get(me)
+		if run != null:
+			bay.global_position = track.points[track.points.size() / 2] + Vector3(0, 0.6, 0)
+			run.phase = "done"
+			run.done_at = race.clock - Race.PIT_TIME + 0.5
+			await t.frames(int(0.25 * Engine.physics_ticks_per_second))
+			t.check(me.vehicle == bay, "a finished time trial rides on for a while")
+			await t.frames(int(0.5 * Engine.physics_ticks_per_second))
+			t.check(me.vehicle == null and Vector2(me.global_position.x - pit.x, me.global_position.z - pit.z).length() < 4.0,
+					"then, out on the track, you are set down on pit row anyway")
+		else:
+			t.check(false, "getting on a bay machine starts a time trial")
 	race.queue_free()
 	await t.frames(2)
 
