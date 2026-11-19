@@ -949,10 +949,13 @@ func _physics_process(delta: float) -> void:
 
 
 ## Takes the worn helmet off onto the hip, or puts it back on (the watch's
-## helmet icon). Nothing to do bare-headed.
+## helmet icon). It takes both hands (Caleb's call), so a weapon in hand is
+## put away first, as with the holster key. Nothing to do bare-headed.
 func toggle_helmet() -> void:
 	if actor != null and is_instance_valid(actor) and actor.visor.enabled and not actor.is_dead:
 		helmet_off = not helmet_off
+		if actor.get_active_weapon() != null and not is_riding():
+			_pending_switch = ActorCommand.HOLSTER
 
 
 ## Sends whether the helmet is off (`helmet_off`), putting it back on by

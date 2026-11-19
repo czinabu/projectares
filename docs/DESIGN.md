@@ -1585,8 +1585,9 @@ people meet (the Concourse, a base) and a helmet is still to hand.
 
 - **From the watch.** The Summon tab's helmet icon takes it off or puts it
   back on with a click. The watch goes down, since the off hand does it.
-- **Shown, not swapped.** The off hand reaches up, lifts the helmet off,
-  carries it down round the body and clips it to the back of the left hip
+- **Shown, not swapped.** Both hands lift the helmet off (Caleb's call),
+  so a weapon in hand is put away first. The weapon hand lets go as it
+  comes down, and the off hand carries it round the body and clips it to the back of the left hip
   (about a second, `Actor.helmet_stow_time`), and the same backwards to put
   it on. The one body and the one helmet model in every view: in first
   person you see it come forward off the face and down out of the view.

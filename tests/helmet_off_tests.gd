@@ -48,6 +48,9 @@ static func _shown(t: Node) -> void:
 	t.check(ActionPose.helmet_hand(0.0) == 0.0 and ActionPose.helmet_hand(1.0) == 0.0
 			and ActionPose.helmet_hand(Actor.HELMET_LIFTED) > 0.99 and ActionPose.helmet_hand(0.6) > 0.99,
 			"the hand is on the helmet from before it leaves the head until it is clipped")
+	t.check(ActionPose.helmet_both(Actor.HELMET_LIFTED) > 0.99 and ActionPose.helmet_both(0.0) == 0.0
+			and ActionPose.helmet_both(ActionPose.HELMET_CLIPPED) == 0.0,
+			"both hands lift it off the head, and the weapon hand lets go on the way down")
 	t.check(ActionPose.helmet_carry(Actor.HELMET_LIFTED) == 0.0 and ActionPose.helmet_carry(ActionPose.HELMET_CLIPPED) == 1.0,
 			"it is carried from the head's place to the clip's with no jump")
 
@@ -102,9 +105,13 @@ static func _watch(t: Node) -> void:
 	controller.watch_focus = Hud.Wrist.SLOTS.find("helmet")
 	controller.watch_focus_moved = true
 	t.check(controller.watch_takes_fire(), "fire works the icon, not the gun")
+	p._draw_weapon(p.weapon_for_key(1))
+	await t.frames(2)
+	t.check(p.get_active_weapon() != null, "with a weapon drawn")
 	t.check(controller.click_watch() and controller.helmet_off and not controller.wrist_raised,
 			"a click sets it off, and the watch goes down for the hand")
 	await t.frames(3)
+	t.check(p.get_active_weapon() == null, "it takes both hands, so the weapon is put away first")
 	t.check(p.cmd.helmet_off, "the controller sends it as the held key")
 	icon = Hud.watch_slots(raid, p)[Hud.Wrist.SLOTS.find("helmet")]
 	t.check("put on" in str(icon.detail), "the icon then offers to put it back on")

@@ -4268,7 +4268,6 @@ func _helmet_off_shots(out_dir: String) -> void:
 	add_child(raid)
 	var helmet := OS.get_environment("VIEW_HELMET") if OS.has_environment("VIEW_HELMET") else "helm_warden"
 	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "frame_trooper", helmet])
-	_armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
@@ -4292,7 +4291,12 @@ func _helmet_off_shots(out_dir: String) -> void:
 	var outside := Camera3D.new()
 	outside.fov = 40.0
 	raid.add_child(outside)
+	# Empty hands, as the take off leaves them (it puts a weapon away first).
+	p.active_weapon_index = -1
 	var stows := [0.0, 0.25, 0.5, 0.65, 1.0]
+	# `HELMET_STOWS=0,0.2,0.4` picks the points through the take off.
+	if OS.has_environment("HELMET_STOWS"):
+		stows = Array(OS.get_environment("HELMET_STOWS").split(",")).map(func(v: String) -> float: return float(v))
 	var size := Vector2i(320, 240)
 	var sheet := Image.create(stows.size() * size.x, 3 * size.y, false, Image.FORMAT_RGBA8)
 	DirAccess.make_dir_recursive_absolute(out_dir.path_join("helmet_off"))
@@ -4316,9 +4320,19 @@ func _helmet_off_shots(out_dir: String) -> void:
 					outside.global_position = at + p.global_basis * Vector3(-1.9, 1.5, -2.0)
 					outside.look_at(at + Vector3(0, 1.1, 0))
 				await get_tree().process_frame
+			if OS.has_environment("HELMET_DEBUG"):
+				var skin: Node = p.get_node("Skin")
+				var sk: Skeleton3D = skin.find_child("Skeleton3D", true, false)
+				var to_actor := p.global_transform.affine_inverse()
+				var bone := func(n: String) -> Vector3: return to_actor * (sk.global_transform * sk.get_bone_global_pose(sk.find_bone(n)).origin)
+				var gl: Variant = skin.helmet_grip(-1.0)
+				var gr: Variant = skin.helmet_grip(1.0)
+				print("STOW %.2f gripL %s handL %s gripR %s handR %s head %s hips %s" % [stow,
+						to_actor * gl if gl != null else "-", bone.call("Wrist.L"), to_actor * gr if gr != null else "-",
+						bone.call("Wrist.R"), bone.call("Head"), bone.call("Hips")])
 			await RenderingServer.frame_post_draw
 			var frame := get_viewport().get_texture().get_image()
-			frame.save_png(out_dir.path_join("helmet_off/%d_%s.png" % [int(stow * 100), ["front", "third", "first"][cam]]))
+			frame.save_png(out_dir.path_join("helmet_off/%d_%s.png" % [roundi(stow * 100), ["front", "third", "first"][cam]]))
 			var w := frame.get_width()
 			var h := frame.get_height()
 			var cut_w := h * size.x / size.y

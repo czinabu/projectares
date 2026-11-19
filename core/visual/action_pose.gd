@@ -1556,6 +1556,14 @@ static func helmet_hand(stow: float) -> float:
 	return smoothstep(0.0, Actor.HELMET_LIFTED - 0.05, stow) * (1.0 - smoothstep(0.8, 1.0, stow))
 
 
+## How far the weapon hand is on the helmet at `stow`: both hands lift it
+## off the head (and set it on), and the weapon hand lets go a little way
+## down, leaving the off hand to clip it on. Only with nothing in that hand
+## (`PlayerController.toggle_helmet` puts a drawn weapon away first).
+static func helmet_both(stow: float) -> float:
+	return smoothstep(0.08, Actor.HELMET_LIFTED - 0.03, stow) * (1.0 - smoothstep(0.42, 0.58, stow))
+
+
 ## How far the helmet is on its way from the head (0) to the hip clip (1).
 static func helmet_carry(stow: float) -> float:
 	return smoothstep(Actor.HELMET_LIFTED, HELMET_CLIPPED, stow)

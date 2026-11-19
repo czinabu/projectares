@@ -222,21 +222,28 @@ var helmet_size := Vector3(0.27, 0.31, 0.31)
 var helmet_shell_color := Color(0.22, 0.23, 0.25)
 ## A helmet taken off (`Actor.helmet_stow`) is clipped to the belt at the
 ## back of the left hip, behind a sheathed blade (`hip_offset`), its face
-## turned out to the side and its crown tipped out a little: its middle this
+## turned back and a little out and its crown tipped out, so its narrow
+## side is against the hip and it stands clear of the body: its middle this
 ## far from the "Hips" bone (actor frame), turned by `helmet_clip_turn`
-## (yaw, then the tip out, radians). The off hand takes it there and back
-## (`ActionPose.helmet_hand`), holding it by its side (`helmet_grip_out`
+## (yaw, then the tip out, radians). Both hands lift it off the head, the
+## weapon hand letting go on the way down (`ActionPose.helmet_both`), and
+## the off hand takes it there and back (`ActionPose.helmet_hand`), holding it by its side (`helmet_grip_out`
 ## out from its middle, `helmet_grip_drop` under it) and lifting it ahead
 ## and out round the body on the way (`helmet_swing_ahead`, `helmet_swing`).
 ## One model in every view, as on the head.
-var helmet_clip := Vector3(-0.16, 0.12, 0.19)
-var helmet_clip_turn := Vector2(PI / 2.0, 0.2)
+var helmet_clip := Vector3(-0.26, 0.06, 0.19)
+var helmet_clip_turn := Vector2(PI * 0.85, 0.25)
 var helmet_grip_out := 0.13
 ## How far below the helmet's middle the wrist goes, so the fingers close
 ## round its side rather than reaching over it.
 var helmet_grip_drop := 0.09
 var helmet_swing := 0.08
-var helmet_swing_ahead := 0.2
+var helmet_swing_ahead := 0.4
+## Where a hand hangs before it reaches for the helmet (actor frame, the
+## off hand's side; scaled with the body's height), and how far ahead the
+## reach bows out on its way up.
+var helmet_hand_rest := Vector3(0.21, 1.06, -0.06)
+var helmet_reach_ahead := 0.18
 ## A worn armor frame is plates over the chest (on the "Chest" bone, front
 ## toward -Z), and from medium up a belly plate and shoulder pads (on the
 ## upper arm bones); heavy adds a collar. One model in every view.
@@ -1582,9 +1589,10 @@ func helmet_carried(carry: float) -> Transform3D:
 	return out
 
 
-## Where the off hand holds the helmet, in the world, or null with none to
-## hold: by its left side, wherever it is (`WeaponArm` reaches for it).
-func helmet_grip() -> Variant:
+## Where a hand holds the helmet, in the world, or null with none to hold:
+## by its left side (`side` -1, the off hand) or its right (1, the weapon
+## hand), wherever it is (`WeaponArm` reaches for it).
+func helmet_grip(side := -1.0) -> Variant:
 	if _helmet_model == null or not is_instance_valid(_helmet_model) or _helmet_clip == null:
 		return null
 	var stow := ActionPose.of(actor).helmet
@@ -1594,7 +1602,22 @@ func helmet_grip() -> Variant:
 		middle = helmet_carried(ActionPose.helmet_carry(stow)).origin
 	else:
 		middle = _held_part(_helmet if place == "head" else _helmet_clip).global_position
-	return middle - actor.global_basis.x.normalized() * helmet_grip_out - actor.global_basis.y.normalized() * helmet_grip_drop
+	return middle + actor.global_basis.x.normalized() * helmet_grip_out * side - actor.global_basis.y.normalized() * helmet_grip_drop
+
+
+## Where a hand reaches on its way to the helmet, in the world: `u` 0 is
+## the hand hanging at its side (`helmet_hand_rest`), 1 on its grip
+## (`helmet_grip`). The way bows out ahead, so the arm comes up in front
+## of the body as a person's does, never out to the side.
+func helmet_reach(side: float, u: float) -> Variant:
+	var grip: Variant = helmet_grip(side)
+	if grip == null:
+		return null
+	var scale := float(_def.get("height", 1.8)) / 1.8
+	var rest := actor.global_transform * (Vector3(helmet_hand_rest.x * side, helmet_hand_rest.y * scale, helmet_hand_rest.z))
+	var ahead := -actor.global_basis.z.normalized()
+	var t := smoothstep(0.0, 1.0, u)
+	return rest.lerp(grip as Vector3, t) + ahead * helmet_reach_ahead * sin(PI * t)
 
 
 ## Puts what `hide_head` moved to the head's layer back on its own.

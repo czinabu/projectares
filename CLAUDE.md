@@ -1209,7 +1209,9 @@ without Caleb, and update the gap list when a PR closes a row.
   visor shows or senses), but the helmet stays worn gear. The skin moves
   the one model from the head to the off hand to its clip at the back of
   the left hip (`ActorSkin._place_helmet`, `helmet_clip`) and the off arm
-  reaches for it (`ActionPose.helmet_hand`, `WeaponArm._off_goal`), the
+  reaches for it (`ActionPose.helmet_hand`, `WeaponArm._off_goal`), with
+  the weapon hand helping it off the head (`ActionPose.helmet_both`; it
+  takes both hands, so `toggle_helmet` puts a drawn weapon away first), the
   same in both views; the face shows while it is off. It goes back on by
   itself when a new helmet goes on and on stepping out where people fight
   (`PlayerController._keep_helmet`). Check by eye with
