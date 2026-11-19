@@ -5,6 +5,7 @@ extends RefCounted
 ## beside the exe. `-- --only updater` runs just these.
 
 const UpdaterScript := preload("res://core/update/updater.gd")
+const PhoneScript := preload("res://core/phone/phone.gd")
 const DIR := "user://test_updater"
 
 
@@ -15,6 +16,7 @@ static func run(t: Node) -> void:
 	_restarts(t)
 	_install(t)
 	_wiring(t)
+	_prompts(t)
 
 
 static func _when_it_runs(t: Node) -> void:
@@ -131,6 +133,44 @@ static func _wiring(t: Node) -> void:
 	screen.set_status("Downloading build 20: 40%")
 	t.check(screen.status_label.text == "DOWNLOADING BUILD 20: 40%", "the start screen shows what the updater is doing")
 	screen.queue_free()
+
+
+## An update waiting on the player is told: the phone buzzes with a pop-up,
+## held back while out in a world and told once somewhere quiet, and the
+## Servers app wears a badge until it goes in.
+static func _prompts(t: Node) -> void:
+	var was_state: String = Updater.state
+	var was_latest: Dictionary = Updater.latest
+	var phone: CanvasLayer = PhoneScript.new()
+	t.add_child(phone)
+	var out_there := [true]
+	phone.update_hold = func() -> bool: return out_there[0]
+	Updater.latest = {"build": 99}
+	Updater.state = "ready"
+	Updater.changed.emit()
+	t.check(phone.update_owed() and not phone._notice_panel.visible,
+			"an update ready while out in a world waits for somewhere quiet")
+	t.check(phone._icons["servers"].badge == 1, "the Servers app wears a badge while an update waits")
+	out_there[0] = false
+	phone.remind_update()
+	t.check(not phone.update_owed() and phone._notice_panel.visible
+			and "99" in phone._notice_label.text and "Servers" in phone._notice_label.text,
+			"home again, the phone pops up that the update is ready and where to put it in")
+	phone._notice_panel.visible = false
+	Updater.changed.emit()
+	t.check(not phone._notice_panel.visible, "the same update is not told again on every change")
+	Updater.state = "reinstall"
+	Updater.changed.emit()
+	t.check(phone._notice_panel.visible and "fresh install" in phone._notice_label.text,
+			"an update that needs a fresh install is told too")
+	Updater.state = "current"
+	Updater.changed.emit()
+	t.check(phone._icons["servers"].badge == 0 and not PhoneScript.update_waiting(),
+			"with nothing waiting the badge goes")
+	phone.queue_free()
+	Updater.state = was_state
+	Updater.latest = was_latest
+	Updater.changed.emit()
 
 
 static func _write(path: String, text: String) -> void:
