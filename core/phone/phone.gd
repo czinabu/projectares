@@ -150,6 +150,7 @@ const CONTROLS := [
 		["Use a medkit", "{heal}"],
 		["Use your ability", "{ability}"],
 		["Use your helmet's visor (zoom, scan, thermal)", "{visor}, again to step or turn off"],
+		["Take your helmet off and clip it to your hip, or put it back on", "{helmet}"],
 	]],
 	["MELEE", [
 		["Light attack (combo)", "Tap {fire}"],

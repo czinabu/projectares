@@ -45,6 +45,7 @@ extends Control
 ## A view only: it reads `Visor` state and never decides what is revealed.
 
 const Contracts := preload("res://core/economy/contracts.gd")
+const GameSettings := preload("res://core/settings/game_settings.gd")
 
 ## How long the mark for a scan that caught you stays on the glass.
 var felt_time := 2.5
@@ -1884,18 +1885,30 @@ func _draw_signature(p: Actor, ink: Color) -> void:
 
 
 ## What the objective block lists, in order: {"title", "have", "goal",
-## "share", "done", "tour"}. The contracts held, nearest done first, with this
-## life's counts on top, then the new player's tour objective.
-func objective_lines(held: Array[Dictionary], tally: Dictionary, objective: String) -> Array[Dictionary]:
+## "share", "done", "tour", "main"}. The main mission first, then the
+## contracts held, nearest done first, with this life's counts on top, then
+## the new player's tour objective. Only what is
+## tracked (the watch's mission log, `GameSettings.is_tracked`).
+func objective_lines(held: Array[Dictionary], tally: Dictionary, objective: String,
+		tour_key := GameSettings.TOUR_KEY) -> Array[Dictionary]:
 	var lines: Array[Dictionary] = []
 	for entry in held:
+		if not GameSettings.is_tracked(str(entry.get("id", ""))):
+			continue
 		var have: int = int(entry.get("have", 0)) + Contracts.live(str(entry.get("stat", "")), tally)
 		var goal: int = maxi(int(entry.get("goal", 1)), 1)
 		lines.append({"title": str(entry.get("title", "")), "have": mini(have, goal), "goal": goal,
-				"share": clampf(float(have) / goal, 0.0, 1.0), "done": have >= goal, "tour": false})
+				"share": clampf(float(have) / goal, 0.0, 1.0), "done": have >= goal, "tour": false,
+				"main": str(entry.get("id", "")) == GameSettings.main_mission})
 	lines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.share > b.share)
-	if objective != "":
-		lines.append({"title": objective, "have": 0, "goal": 0, "share": -1.0, "done": false, "tour": true})
+	if objective != "" and (tour_key == "" or GameSettings.is_tracked(tour_key)):
+		lines.append({"title": objective, "have": 0, "goal": 0, "share": -1.0, "done": false, "tour": true,
+				"main": tour_key != "" and tour_key == GameSettings.main_mission})
+	# The main mission (the watch's mission log) leads.
+	for i in lines.size():
+		if lines[i].main:
+			lines.push_front(lines.pop_at(i))
+			break
 	return lines
 
 
@@ -1910,9 +1923,11 @@ func _draw_objectives(p: Actor, ink: Color) -> void:
 	var held: Array[Dictionary] = []
 	held.assign(hud.get("contracts") if hud.get("contracts") is Array else [])
 	var objective := str(hud.get("objective")) if hud.get("objective") != null else ""
+	var tour_key := GameSettings.TOUR_KEY
 	if str(hud.get("race_line")) not in ["", "<null>"]:
 		objective = str(hud.get("race_line"))
-	var lines := objective_lines(held, p.tally, objective)
+		tour_key = ""
+	var lines := objective_lines(held, p.tally, objective, tour_key)
 	if lines.is_empty():
 		return
 	var right := size.x - size.y * 0.06 + sway.x
@@ -1949,8 +1964,12 @@ func _draw_objectives(p: Actor, ink: Color) -> void:
 			if tour:
 				draw_circle(Vector2(x + 6.0, y - 5.0), 2.0, _lit(tint, 0.95, false))
 		var title: String = line.title
-		_text(Vector2(x + 20.0, y), title, _lit(SQUAD_INK if done else Color.WHITE.lerp(ink, 0.4), 0.92),
-				HORIZONTAL_ALIGNMENT_LEFT, width - 80.0, 16)
+		var main: bool = line.get("main", false)
+		if main:
+			# The main mission: a lit tick beside its bullet, its title brighter.
+			draw_line(Vector2(x - 6.0, y - 15.0), Vector2(x - 6.0, y + 9.0), _lit(tint, 0.95, false), 2.5)
+		_text(Vector2(x + 20.0, y), title, _lit(SQUAD_INK if done else Color.WHITE.lerp(ink, 0.15 if main else 0.4),
+				1.0 if main else 0.92), HORIZONTAL_ALIGNMENT_LEFT, width - 80.0, 17 if main else 16)
 		if not tour:
 			_text(Vector2(right - 14.0, y), "%d/%d" % [line.have, line.goal],
 					_lit(SQUAD_INK if float(line.share) > 0.0 else ink, 0.95), HORIZONTAL_ALIGNMENT_RIGHT, 60.0, 15)

@@ -1505,6 +1505,9 @@ func _update_helmet() -> void:
 	var own: String = _def.get("helmet", "") if id == "" else ""
 	if own != "":
 		id = "skin:" + own
+	# The frame (and its paint) is part of the key: a helmet wears its colours.
+	if id != "" and actor.frame_id != "":
+		id += "|" + actor.frame_id + "|" + frame_paint(actor.frame_id)
 	if id == _helmet_id and (id == "" or is_instance_valid(_helmet)):
 		_place_helmet(own == "")
 		return
@@ -1524,7 +1527,8 @@ func _update_helmet() -> void:
 	var mode := actor.visor.mode if own == "" else own
 	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
 	var tier := actor.visor.tier if own == "" else 1
-	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier),
+	var colors := helmet_colors(mode, actor.frame_id if own == "" else "")
+	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier, colors),
 			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset, true)
 	_helmet_model = _helmet.find_child("HelmetModel", true, false) as Node3D
 	if _helmet_model == null:
@@ -1685,9 +1689,29 @@ func _unhide(root: Node) -> void:
 ## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
 ## the head, front toward -Z, glass lit in `glass` and the mode's fitting,
 ## each design its own (`helmet_model.gd`). `tier` 2 adds the Mk2 trim.
-static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1) -> Node3D:
-	return HelmetModel.G.cached("helmet:%s:%s:%s:%s:%d" % [mode, glass.to_html(), size, shell_color.to_html(), tier],
-			func() -> Node3D: return HelmetModel.build(mode, glass, size, shell_color, tier))
+static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1,
+		colors := {}) -> Node3D:
+	var tint := ""
+	for key: String in ["plate", "plate2", "fabric"]:
+		if colors.has(key):
+			tint += (colors[key] as Color).to_html()
+	return HelmetModel.G.cached("helmet:%s:%s:%s:%s:%d:%s" % [mode, glass.to_html(), size, shell_color.to_html(), tier, tint],
+			func() -> Node3D: return HelmetModel.build(mode, glass, size, shell_color, tier, colors))
+
+
+## The colours a helmet of `mode` takes from the armor frame `frame_id`
+## (in its paint), so helmet and plates read as one kit: its "plate",
+## "plate2" and "fabric". {} with no frame, and always for the scrap visor
+## (a patched pot of its own) and an exo's closed helm.
+func helmet_colors(mode: String, frame_id: String) -> Dictionary:
+	if frame_id == "" or mode == "" or mode == "slit" or not ItemDB.has_item(frame_id):
+		return {}
+	var style := frame_style(frame_id, frame_paint(frame_id))
+	var out := {}
+	for key: String in ["plate", "plate2", "fabric"]:
+		if style.get(key) is Color:
+			out[key] = style[key]
+	return out
 
 
 ## An exo trooper's cooling pack, front toward -Z (against the back): a
