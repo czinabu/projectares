@@ -19,6 +19,8 @@ extends Node3D
 ## sky, its moss and black water on the ground, its mist and its drifting
 ## spores, all view only.
 
+const Flora := preload("res://worlds/marsh/flora.gd")
+
 const LAYOUT_SEED := 7171
 ## Metres between ground samples, and how many there are along each edge.
 const CELL := 2.0
@@ -83,7 +85,9 @@ var _stalks: Array[Dictionary] = []
 var _stations: Array[Vector3] = []
 var _stalk_bodies: Array[StaticBody3D] = []
 ## Where each hive stands (its foot), for the dressing.
-var _hives: Array[Vector3] = []
+var _hives: Array[Vector3]
+## The far giants (`Flora.build_giants`), view only.
+var _giants: MeshInstance3D
 ## Bot spawn spots, placed last in order of `rank`: the Raid fills the first
 ## `bot_count` markers at the start, so every kind comes early.
 var _bot_spots: Array[Dictionary] = []
@@ -179,9 +183,13 @@ func _process(_delta: float) -> void:
 	if camera != null and is_instance_valid(_weather):
 		_weather.global_position = Vector3(camera.global_position.x, camera.global_position.y - 6.0,
 				camera.global_position.z)
-	# Under the caps the mist shuts in (the planet's close air).
+	# Under the caps the mist shuts in (the planet's close air), and the far
+	# giants go into it, as they do in a storm.
 	if camera != null:
-		set_meta("close_here", close_at(camera.global_position.x, camera.global_position.z))
+		var close := close_at(camera.global_position.x, camera.global_position.z)
+		set_meta("close_here", close)
+		if _giants != null:
+			Flora.set_veil(_giants, maxf(close, float(get_meta("weather_here", 0.0))))
 
 
 ## How far a point is under a forest's caps, 0 out in the open to 1 well
@@ -673,6 +681,7 @@ func _dress_stalks(art: Node3D) -> void:
 	_dress_moss(art)
 	_dress_reeds(art)
 	_dress_hives(art)
+	Flora.build_floor(self, art, LAYOUT_SEED + 23)
 
 
 const FUNGUS_SIDES := 14
@@ -1023,3 +1032,5 @@ func _dress_horizon(art: Node3D) -> void:
 	var clear := func(x: float, z: float) -> bool:
 		return maxf(absf(x), absf(z)) > BASIN + 8.0
 	PlanetProps.scatter(art, planet, height_of, half, LAYOUT_SEED + 3, clear)
+	# The giants far off in the haze (Caleb's call: scale).
+	_giants = Flora.build_giants(self, art, height_of, LAYOUT_SEED + 21, (planet.sky.get("horizon_color", Color.GRAY) as Color).lerp(planet.calm.get("fog_color", Color.GRAY) as Color, 0.5))

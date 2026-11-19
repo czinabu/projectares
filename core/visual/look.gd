@@ -183,7 +183,7 @@ const SKINS := {
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
 	"broodling": {
-		"scenes": ["Leela.glb"], "height": 0.9, "hide": ["Leela"], "creature": "stalker", "bare": true,
+		"scenes": ["Leela.glb"], "height": 0.9, "hide": ["Leela"], "creature": "broodling", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
 	# A bloater: a swollen sac of spores on stubby legs, studded with lit

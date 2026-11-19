@@ -32,7 +32,16 @@ date in the same PR.
   a planet's `close` mood the map blends in by its "close_here" meta
   (`Look.close_cover` brings the depth fog's floor down like a storm's),
   view only; what a bot sees there is `WorldDef.sight_at`, never the
-  view. Check by eye with `visual_check.tscn -- <dir> --marsh-only`.
+  view. Its scale and floor are view only (`worlds/marsh/flora.gd`,
+  built by the map where `Look` is on): far giants drawn in the haze
+  (`giant_haze.gdshader`, standing at `Flora.giant_spots`, veiled under
+  the caps and in a storm by `Flora.set_veil`) and the forest floor's
+  plants, one MultiMesh a kind on dry ground clear of the stalks, from
+  their own seed. A beast's hide is `creature.gdshader`
+  (`ActorSkin._creature_hide`, freckled by `CREATURE_FRECKLES`, which
+  every "creature" kind needs an entry in), patterned in the piece's own
+  space so it stays on the body. Check by eye with
+  `visual_check.tscn -- <dir> --marsh-only`.
 - The scenery army (DESIGN.md "The scenery army", Caleb's call): Ashfront's
   far fights are view only (`worlds/ashfront/battle.gd`, added by the map's
   `make_battle` only where `Look` is on): no collision, no `Combat.deal`,
