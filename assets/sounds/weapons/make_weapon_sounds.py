@@ -219,6 +219,8 @@ class Gun:
         self.far_hz = 900.0
         self.far_len = 1.8
         self.extra = None          # a function(rng, n) -> layer for odd guns
+        self.pow = 0.0             # the 'pow': a fat mid-low blast (Caleb's ask)
+        self.pow_hz = 300.0        # where the pow sits
         self.__dict__.update(kw)
 
 
@@ -245,6 +247,15 @@ def ballistic_dry(g, rng):
     rum = onepole_lp(rng.standard_normal(n), jitter(g.rumble_hz))
     rum = onepole_lp(rum, jitter(g.rumble_hz) * 1.5)
     out += norm(rum) * env(n, 0.001, jitter(g.rumble_tau)) * g.rumble * 0.85
+
+    # Pow: the blast itself, a fat mid-low pop that lands at once and is gone
+    # in a few tens of ms. A falling tone so it reads as one hit, with
+    # low-passed noise so it is a blast and never a note.
+    if g.pow > 0.0:
+        hz = jitter(g.pow_hz)
+        pop = drop_sine(n, hz * 2.4, hz, 0.006, rng) * env(n, 0.0004, 0.022)
+        air = onepole_lp(onepole_lp(rng.standard_normal(n), hz * 5), hz * 6)
+        out += (pop * 0.7 + norm(air) * env(n, 0.0003, 0.018) * 0.9) * g.pow
 
     # Colour: a resonant band of noise that makes each gun its own.
     mid = biquad(rng.standard_normal(n), "bp", jitter(g.mid_hz, 0.04), g.mid_q)
@@ -406,23 +417,23 @@ RATTLE = dict(bright=2100, ring=(1200, 1900, 3300), tau=0.03, gain=0.5)
 GUNS = {
     # Scrap Rifle: the starter, a worn automatic. Lower and rougher than the
     # carbine, with a loose part rattling after each shot.
-    "shot_scrap": Gun(crack_hz=3600, crack=0.85, body_f0=165, body_f1=52, body_tau=0.07,
+    "shot_scrap": Gun(pow=0.90, pow_hz=270, crack_hz=3600, crack=0.64, body_f0=165, body_f1=52, body_tau=0.07,
             rumble_hz=230, rumble=0.75, mid_hz=850, mid=0.55, mid_q=1.2,
             mech=[(0.004, BOLT), (0.018, RATTLE)], drive=1.3, length=0.35,
             tail_out=0.5, tail_in=0.42),
     # Ashfront Carbine: the all-rounder. Tight, crisp and clean, a firm punch.
-    "shot_carbine": Gun(crack_hz=5200, crack=1.1, body_f0=200, body_f1=58, body_tau=0.055,
+    "shot_carbine": Gun(pow=0.95, pow_hz=300, crack_hz=5200, crack=0.88, body_f0=200, body_f1=58, body_tau=0.055,
             rumble_hz=280, rumble=0.6, mid_hz=1400, mid=0.35, mech=[(0.003, BOLT)],
             drive=1.2, length=0.32, tail_out=0.55, tail_in=0.45),
     # Stinger SMG: very fast, so every round is short and snappy, light in
     # the low end and bright, so a burst is a crisp rip, not mush.
-    "shot_smg": Gun(crack_hz=6200, crack=1.0, crack_tau=0.003, body_f0=240, body_f1=90,
+    "shot_smg": Gun(pow=0.50, pow_hz=380, crack_hz=6200, crack=0.90, crack_tau=0.003, body_f0=240, body_f1=90,
             body_k=0.012, body_tau=0.03, body=0.8, rumble_hz=380, rumble=0.4, rumble_tau=0.035,
             mid_hz=2100, mid=0.35, mech=[(0.002, dict(SLIDE, gain=0.4))], drive=1.0,
             length=0.2, room=0.8, tail_out=0.38, tail_in=0.35),
     # Longshot DMR: the big one. A hard crack, a heavy punch, its coils
     # giving the shot a short electric edge, a long roll, and the bolt.
-    "shot_dmr": Gun(crack_hz=4200, crack=1.3, crack_tau=0.006, body_f0=150, body_f1=50,
+    "shot_dmr": Gun(pow=1.00, pow_hz=240, crack_hz=4200, crack=1.10, crack_tau=0.006, body_f0=150, body_f1=50,
             body_k=0.035, body_tau=0.11, body=1.3, rumble_hz=200, rumble=0.9, rumble_tau=0.12,
             mid_hz=950, mid=0.4, mech=[(0.003, BOLT)], drive=1.4, length=0.6, room=1.3,
             tail_out=0.7, tail_in=0.55, far_len=2.4,
@@ -430,7 +441,7 @@ GUNS = {
             cycle=[(0.2, dict(BOLT, gain=0.45)), (0.3, dict(BOLT, bright=3000, gain=0.5))]),
     # Breacher Shotgun: a wide, deep boom, more push than crack, then the
     # pump racked back and forward.
-    "shot_shotgun": Gun(crack_hz=3000, crack=0.9, crack_tau=0.008, body_f0=120, body_f1=50,
+    "shot_shotgun": Gun(pow=1.00, pow_hz=200, crack_hz=3000, crack=0.77, crack_tau=0.008, body_f0=120, body_f1=50,
             body_k=0.04, body_tau=0.1, body=1.5, rumble_hz=170, rumble=1.2, rumble_tau=0.09,
             mid_hz=650, mid=0.5, mid_q=0.9, drive=1.5, length=0.6, room=1.2,
             tail_out=0.65, tail_in=0.55, far_len=2.2,
@@ -438,18 +449,18 @@ GUNS = {
                    (0.42, dict(bright=2600, ring=(1400, 2300, 3600), tau=0.02, gain=0.8))]),
     # Service Pistol: a sharp, bright crack and a short punch, the slide
     # snapping home.
-    "shot_pistol": Gun(crack_hz=5600, crack=1.15, crack_tau=0.0035, body_f0=230, body_f1=70,
+    "shot_pistol": Gun(pow=1.05, pow_hz=330, crack_hz=5600, crack=0.92, crack_tau=0.0035, body_f0=230, body_f1=70,
             body_k=0.015, body_tau=0.04, body=0.9, rumble_hz=320, rumble=0.45, rumble_tau=0.045,
             mid_hz=1700, mid=0.35, mech=[(0.002, SLIDE), (0.035, dict(SLIDE, gain=0.35))],
             drive=1.1, length=0.25, room=0.9, tail_out=0.45, tail_in=0.42),
     # Hornet Machine Pistol: thin and buzzy, a high, light pop.
-    "shot_mpistol": Gun(crack_hz=6800, crack=0.9, crack_tau=0.0025, body_f0=280, body_f1=110,
+    "shot_mpistol": Gun(pow=0.45, pow_hz=430, crack_hz=6800, crack=0.81, crack_tau=0.0025, body_f0=280, body_f1=110,
             body_k=0.01, body_tau=0.025, body=0.7, rumble_hz=420, rumble=0.35, rumble_tau=0.03,
             mid_hz=2600, mid=0.45, mid_q=2.2, mech=[(0.002, dict(SLIDE, gain=0.35))], drive=0.9,
             length=0.17, room=0.75, tail_out=0.33, tail_in=0.32),
     # Warden Hand Cannon: a slow, heavy revolver. A deep boom with a
     # ringing frame, and the cylinder clicking round after.
-    "shot_cannon": Gun(crack_hz=3800, crack=1.2, crack_tau=0.006, body_f0=135, body_f1=50,
+    "shot_cannon": Gun(pow=1.20, pow_hz=220, crack_hz=3800, crack=0.96, crack_tau=0.006, body_f0=135, body_f1=50,
             body_k=0.03, body_tau=0.12, body=1.5, rumble_hz=190, rumble=1.0, rumble_tau=0.12,
             mid_hz=780, mid=0.45, mech=[(0.002, dict(bright=3300, ring=(2100, 3150, 4700), tau=0.004, gain=0.5))],
             drive=1.5, length=0.6, room=1.2, tail_out=0.68, tail_in=0.55, far_len=2.2,
