@@ -3,28 +3,8 @@ extends RefCounted
 ## `run(t)`.
 
 const StashService := preload("res://core/account/stash_service.gd")
-class FakeBank:
-	extends Arena.Bank
-
-	var money := {}
-	var wins := {}
-	var losses := {}
-
-	func scrip(key: String) -> int:
-		return money.get(key, 0)
-
-	func change(key: String, delta: int) -> bool:
-		if scrip(key) + delta < 0:
-			return false
-		money[key] = scrip(key) + delta
-		return true
-
-	func record(key: String, won: bool) -> void:
-		var book := wins if won else losses
-		book[key] = int(book.get(key, 0)) + 1
-
-
-## A server arena with quick bouts and no exhibitions, and `names` in the stands.
+## For its FakeBank, which `_quick_arena` sets up.
+const Runner := preload("res://tests/test_runner.gd")
 
 
 static func run(t: Node) -> void:
@@ -170,7 +150,7 @@ static func run(t: Node) -> void:
 
 	# A server arena: a staked duel between players, with the crowd betting.
 	arena = await t._quick_arena(["Ash", "Bex", "Cy", "Dov"])
-	var bank: FakeBank = arena.bank
+	var bank: Runner.FakeBank = arena.bank
 	var ash := arena.players[0].actor
 	var bex := arena.players[1].actor
 	var cy := arena.players[2].actor
