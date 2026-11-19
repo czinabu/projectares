@@ -41,8 +41,8 @@ static func atmosphere(parent: Node3D, type: PlanetType, war := {}) -> void:
 	# Far ground is part of the planet now, so the sun's shadows reach further
 	# out, in fewer, cheaper splits beyond the fight.
 	if sun != null:
-		sun.directional_shadow_max_distance = 200.0
 		sun.directional_shadow_fade_start = 0.85
+		Look.GameSettings.fit_sun(sun, 200.0)
 
 
 static func sky_material(type: PlanetType) -> ShaderMaterial:

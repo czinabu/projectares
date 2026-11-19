@@ -30,6 +30,25 @@ const ANTI_ALIASING := [
 	["Best (MSAA 4x + SMAA)", Viewport.MSAA_4X, Viewport.SCREEN_SPACE_AA_SMAA],
 ]
 const ANTI_ALIASING_DEFAULT := 2
+## How the sun's shadows are drawn, best first: [name on the phone, splits
+## (0 for none), share of the world's own shadow reach, shadow map size].
+## "High" is the world as it was made; the others are for a slower graphics
+## card, since every shadow split draws everything in it once more.
+const SHADOWS := [
+	["High", 4, 1.0, 4096],
+	["Medium", 2, 0.6, 4096],
+	["Low", 2, 0.35, 2048],
+	["Off", 0, 0.0, 2048],
+]
+## Drawing the 3D view smaller and sharpening it up to the screen (AMD FSR
+## 1), cheapest last: [name on the phone, scale]. The phone, the HUD and
+## text are always drawn at full size.
+const RENDER_SCALE := [
+	["Full", 1.0],
+	["Quality (77%)", 0.77],
+	["Balanced (67%)", 0.67],
+	["Performance (50%)", 0.5],
+]
 
 ## Tests turn this off so they never touch a real settings file.
 static var persist := true
@@ -50,6 +69,12 @@ static var anti_aliasing := ANTI_ALIASING_DEFAULT
 ## A thin dark outline on far shapes out in a world (`Look.edge_ink`), so
 ## they read against the haze. Not drawn in the MSAA modes (`ink_shown`).
 static var edge_ink := true
+## An index into `SHADOWS`.
+static var shadows := 0
+## An index into `RENDER_SCALE`.
+static var render_scale := 0
+## Ambient occlusion (the soft shade in corners and under things).
+static var ambient_occlusion := true
 static var _loaded := false
 
 
@@ -80,6 +105,9 @@ static func reset() -> void:
 	show_nameplates = true
 	anti_aliasing = ANTI_ALIASING_DEFAULT
 	edge_ink = true
+	shadows = 0
+	render_scale = 0
+	ambient_occlusion = true
 
 
 static func set_value(key: String, value: Variant) -> void:
@@ -106,6 +134,12 @@ static func set_value(key: String, value: Variant) -> void:
 			anti_aliasing = clampi(int(value), 0, ANTI_ALIASING.size() - 1)
 		"edge_ink":
 			edge_ink = bool(value)
+		"shadows":
+			shadows = clampi(int(value), 0, SHADOWS.size() - 1)
+		"render_scale":
+			render_scale = clampi(int(value), 0, RENDER_SCALE.size() - 1)
+		"ambient_occlusion":
+			ambient_occlusion = bool(value)
 		_:
 			return
 	apply()
@@ -117,7 +151,8 @@ static func to_dict() -> Dictionary:
 			"field_of_view_third": field_of_view_third, "camera_distance": camera_distance,
 			"eye_pullback": eye_pullback,
 			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates,
-			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink}
+			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink, "shadows": shadows,
+			"render_scale": render_scale, "ambient_occlusion": ambient_occlusion}
 
 
 ## Pushes the settings that live outside the game's own nodes: volume, the
@@ -153,9 +188,10 @@ static func apply_window() -> void:
 				else DisplayServer.WINDOW_MODE_WINDOWED)
 
 
-## Sets the main view's edge smoothing (only the main view: the scope's and
-## the mirror's small pictures keep their own) and shows or hides the edge
-## ink on far shapes.
+## Sets the main view's edge smoothing and render scale (only the main
+## view: the scope's and the mirror's small pictures keep their own), shows
+## or hides the edge ink on far shapes, and fits every world's sun and
+## atmosphere to the shadow and ambient occlusion settings.
 static func apply_graphics() -> void:
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null or tree.root == null:
@@ -163,8 +199,46 @@ static func apply_graphics() -> void:
 	var mode: Array = ANTI_ALIASING[anti_aliasing]
 	tree.root.msaa_3d = mode[1]
 	tree.root.screen_space_aa = mode[2]
+	var scale: float = RENDER_SCALE[render_scale][1]
+	tree.root.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
+	tree.root.scaling_3d_scale = scale
 	for ink: Node in tree.get_nodes_in_group("edge_ink"):
 		(ink as Node3D).visible = ink_shown()
+	RenderingServer.directional_shadow_atlas_set_size(SHADOWS[shadows][3], true)
+	for sun: Node in tree.get_nodes_in_group(SUN_GROUP):
+		fit_sun(sun as DirectionalLight3D)
+	for atmosphere: Node in tree.get_nodes_in_group(ATMOSPHERE_GROUP):
+		fit_atmosphere(atmosphere as WorldEnvironment)
+
+
+## A world's sun and atmosphere (`Look.atmosphere`) are in these groups, so
+## a changed setting reaches the world already standing.
+const SUN_GROUP := "world_sun"
+const ATMOSPHERE_GROUP := "world_atmosphere"
+
+
+## Fits a world's sun to the shadow setting. `reach` is how far the world
+## itself draws its shadows (kept on the sun for later changes); without one
+## the sun keeps the reach it was given last.
+static func fit_sun(sun: DirectionalLight3D, reach := -1.0) -> void:
+	if sun == null:
+		return
+	if reach > 0.0:
+		sun.set_meta("shadow_reach", reach)
+	var own: float = sun.get_meta("shadow_reach", sun.directional_shadow_max_distance)
+	var pick: Array = SHADOWS[shadows]
+	sun.shadow_enabled = int(pick[1]) > 0
+	if int(pick[1]) > 0:
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if int(pick[1]) >= 4 \
+				else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		sun.directional_shadow_max_distance = own * float(pick[2])
+
+
+## Fits a world's atmosphere to the ambient occlusion setting.
+static func fit_atmosphere(atmosphere: WorldEnvironment) -> void:
+	if atmosphere == null or atmosphere.environment == null:
+		return
+	atmosphere.environment.ssao_enabled = ambient_occlusion
 
 
 ## Whether the edge ink is drawn: switched on, and no MSAA, which leaves the

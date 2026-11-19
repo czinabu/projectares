@@ -629,9 +629,10 @@ func _set_detail(every: int) -> void:
 	_gear_shadows(every == 1)
 
 
-## Weapons cast shadows only on a body posed every frame (close by): further
-## out a gun's shadow is a few pixels, but it costs a draw in every shadow
-## split. Only what cast a shadow before is switched back on.
+## Weapons, a helmet and armor plates cast shadows only on a body posed
+## every frame (close by): further out their shadow is a few pixels inside
+## the body's own, but each costs a draw in every shadow split. Only what
+## cast a shadow before is switched back on.
 func _gear_shadows(on: bool) -> void:
 	if on:
 		for node in _unshadowed:
@@ -646,6 +647,11 @@ func _gear_shadows(on: bool) -> void:
 	for worn: Variant in _stowed.values():
 		if worn != null and is_instance_valid(worn):
 			holders.append(worn)
+	if _helmet != null and is_instance_valid(_helmet):
+		holders.append(_helmet)
+	for part: Variant in _frame_parts:
+		if part != null and is_instance_valid(part):
+			holders.append(part)
 	for holder in holders:
 		for node in holder.find_children("*", "GeometryInstance3D", true, false):
 			var geometry := node as GeometryInstance3D
@@ -1332,7 +1338,9 @@ func _update_helmet() -> void:
 	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
 	var tier := actor.visor.tier if own == "" else 1
 	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier),
-			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset)
+			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset, true)
+	if _detail_every > 1:
+		_gear_shadows(false)
 
 
 ## The helmet model for a visor `mode` (see `Visor`): a shell of `size` round
@@ -1372,7 +1380,7 @@ func _hang_at(part: Node3D, holder_name: String, bone_name: String, at: Vector3)
 	var offset := at
 	if bone >= 0:
 		offset = at - _rest_at(bone_name)
-	return _hang(part, holder_name, bone_name if bone >= 0 else "", offset, at)
+	return _hang(part, holder_name, bone_name if bone >= 0 else "", offset, at, true)
 
 
 ## Where a bone sits at rest, as the actor sees it.
@@ -1915,18 +1923,20 @@ func _update_frame() -> void:
 	var bulk: Dictionary = FRAME_BULK[frame_weight(id)]
 	var height: float = _def.get("height", 1.8)
 	_frame_parts.append(_hang(build_frame(id), "Frame", _def.get("back_bone", ""), frame_offset,
-			Vector3(0.0, height * 0.72, 0.0) + frame_offset))
+			Vector3(0.0, height * 0.72, 0.0) + frame_offset, true))
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
 		if int(bulk["pads"]) > 0:
 			_frame_parts.append(_hang(build_pad(id, out), "Pad" + side, "UpperArm." + side,
 					Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z),
-					Vector3(0.2 * out, height * 0.8, 0.0)))
+					Vector3(0.2 * out, height * 0.8, 0.0), true))
 		if int(bulk["tassets"]) > 0 and _skeleton.find_bone("UpperLeg." + side) >= 0:
 			# Which way is out for this leg, from where its bone stands.
 			var leg_out := signf(_rest_at("UpperLeg." + side).x)
 			_frame_parts.append(_hang(build_tasset(id, leg_out), "Tasset" + side, "UpperLeg." + side,
-					Vector3.ZERO, Vector3(0.1 * out, height * 0.52, 0.0)))
+					Vector3.ZERO, Vector3(0.1 * out, height * 0.52, 0.0), true))
+	if _detail_every > 1:
+		_gear_shadows(false)
 
 
 ## A frame's plates, front toward -Z, built round the chest bone and shaped
@@ -3217,7 +3227,12 @@ func _wear_part(part: Node3D, bone_name: String, offset: Vector3, fallback: Vect
 ## actor's way; this undoes the model's scale and turn so they come out that
 ## way. `offset` is from the bone, in the actor's frame. Skins without the
 ## bone get the part at `fallback` (actor frame), fixed to the body.
-func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3, fallback: Vector3) -> Node3D:
+func _hang(part: Node3D, holder_name: String, bone_name: String, offset: Vector3, fallback: Vector3,
+		merge := false) -> Node3D:
+	if merge:
+		# Plates, a helmet and armor parts are built from many still pieces:
+		# drawn as one mesh per material they cost a few draws, not dozens.
+		look.merge_pieces(part)
 	var bone := _skeleton.find_bone(bone_name) if _skeleton and bone_name != "" else -1
 	var holder := Node3D.new()
 	holder.name = holder_name
