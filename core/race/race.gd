@@ -31,6 +31,14 @@ extends Raid
 ## leave. An AI racer is a bot on a stock bay machine, driven through its
 ## `ActorCommand` like a player: its laps never go on the board.
 ##
+## The league (`RaceLeague`, kept on each racer's account through
+## `league_bank`): a race's grid is filled with the named rivals of its best
+## rider's league, then other AI racers at that league's skill. The rivals
+## talk to each person racing them on the race radio (`radio`): at the
+## lights, passing and being passed, off the track and at the finish. When
+## a race closes each person's finish goes to the bank, which moves their
+## rating and pays its scrip (`RaceLeague.apply`).
+##
 ## A world may lay out several tracks (Meridian has Coilrun and Skyhook),
 ## each with its own pit bays, grid, gantry, gates and board. A run is on
 ## the track whose road the machine was nearest when it was got on
@@ -40,6 +48,9 @@ extends Raid
 ## first `RaceTrack` and, with more than one, `race_tracks()` returning them
 ## all; "spawn_vehicle" markers for the bays, as in any world (the world's
 ## `roll_loot` names the machine each bay holds).
+
+const Contracts := preload("res://core/economy/contracts.gd")
+const RaceLeague := preload("res://core/race/race_league.gd")
 
 ## The lights over the line come on one every `LIGHT_STEP` seconds; when
 ## all `LIGHTS` are lit, they go out and the run goes.
@@ -65,7 +76,13 @@ const OFF_TRACK_PENALTY := 3.0
 ## An AI racer stopped this long in a race is put back at the last
 ## checkpoint, as anyone down in a channel is (it costs it the time).
 const AI_STUCK := 3.0
-## The AI racers' callsigns.
+## The race radio: at most one line to a racer every `RADIO_GAP` seconds,
+## and from one rival every `RIVAL_GAP`; nothing said in the first
+## `RADIO_QUIET` seconds after the lights, while the field sorts itself out.
+const RADIO_GAP := 5.0
+const RIVAL_GAP := 20.0
+const RADIO_QUIET := 4.0
+## The callsigns of AI racers who are not named rivals.
 const AI_NAMES: Array[String] = ["Vex Morrow", "Juno Kade", "Rook Halloran", "Sable Ito", "Dax Ferro",
 		"Mika Strand", "Tavi Okonkwo", "Wren Castell", "Bodhi Lark", "Ines Varga", "Cass Rennick", "Oto Brandt"]
 
@@ -76,6 +93,10 @@ signal lap_finished(actor: Actor, lap_time: float, counted: bool)
 signal board_changed
 ## A live race formed, started, changed its field or finished.
 signal heat_changed
+## A rival said `text` to `actor` over the race radio.
+signal radio(actor: Actor, from: String, text: String)
+## A race moved `actor`'s league standing (sent to their bank).
+signal league_changed(actor: Actor)
 
 ## The first track, and every track the map lays out (`circuits`; `tracks`
 ## is the `Raid`'s footprints).
@@ -96,8 +117,9 @@ var heats := {}
 ## Online client: each track's race as the server last sent it
 ## (`heat_view`), with "made" the local time it arrived.
 var remote_heats := {}
-## How good the AI racers are (0 to 1); each on a grid is spread about it.
-var ai_skill := 0.5
+## Where each racer's league standing is kept and their results go. None
+## (as in most tests): every grid is a rookie one and nothing is recorded.
+var league_bank: LeagueBank
 ## Actor -> RaceDriver, the AI racers on the authority.
 var drivers := {}
 var _ai_made := 0
@@ -143,6 +165,13 @@ class Run:
 	var off_laps := 0
 	## Seconds an AI racer has been stopped, racing (`AI_STUCK`).
 	var stuck_for := 0.0
+	## The racer's owner key (`Raid.PlayerState.owner`), for the league.
+	var key := ""
+	## An AI racer who is a named rival (`RaceLeague.RIVALS`).
+	var rival := ""
+	## The race radio: when this racer last heard a line, and from whom.
+	var radio_at := -INF
+	var heard := {}
 
 
 ## One track's live race.
@@ -157,12 +186,55 @@ class Heat:
 	## When the results come down and the AI racers leave.
 	var closes_at := INF
 	var runs: Array[Run] = []
+	## The league whose rivals and skill fill the grid (`RaceLeague`).
+	var league := 0
 	## Once done: [{"name", "machine", "time", "place", "ai", "penalty"}],
 	## first place first; "time" is -1 for a racer who did not finish.
 	var results: Array[Dictionary] = []
 
 	func people() -> int:
 		return runs.filter(func(r: Run) -> bool: return not r.ai).size()
+
+
+## Where racers' league standings are kept: nothing here (every racer a
+## fresh rookie, nothing recorded). Keys are owner keys.
+class LeagueBank:
+	extends RefCounted
+
+	func state(_key: String) -> Dictionary:
+		return RaceLeague.fresh()
+
+	## `result` is `RaceLeague.clean_result`'s; the bank applies it.
+	func record(_key: String, _result: Dictionary) -> void:
+		pass
+
+
+## Solo: the local profile.
+class ProfileLeagueBank:
+	extends LeagueBank
+
+	func state(_key: String) -> Dictionary:
+		return RaceLeague.clean(Profile.racing)
+
+	func record(_key: String, result: Dictionary) -> void:
+		Profile.record_race(result)
+
+
+## Server: the accounts a `StashService` (or an `AccountLink`) keeps.
+class StashLeagueBank:
+	extends LeagueBank
+
+	var service: Object
+
+	func _init(p_service: Object) -> void:
+		service = p_service
+
+	func state(key: String) -> Dictionary:
+		var snapshot: Dictionary = service.snapshot(key)
+		return RaceLeague.clean(snapshot.get("racing", {}))
+
+	func record(key: String, result: Dictionary) -> void:
+		service.record_race(key, result)
 
 
 # --- Setting up ---------------------------------------------------------------
@@ -256,6 +328,8 @@ func start_run(actor: Actor, vehicle: Node3D) -> void:
 	run.vehicle = vehicle
 	run.machine = str(vehicle.get("item_id"))
 	run.track = track_near(vehicle.global_position)
+	var state := state_for(actor)
+	run.key = state.owner if state != null else ""
 	var old: Run = runs.get(actor)
 	if old != null and old.track == run.track and old.machine == run.machine:
 		run.best_lap = old.best_lap
@@ -333,6 +407,8 @@ func _tick_run(run: Run, _delta: float) -> void:
 		run.actor.notice.emit("Off the track: this lap will not count" if run.heat == null
 				else "Off the track: %d s on your finish" % int(OFF_TRACK_PENALTY))
 		run_changed.emit(run.actor)
+		if run.heat != null and not run.ai:
+			_rival_says(run, _nearest_rival(run), "off")
 	var t := rt.cross(run.next_gate, from, pos)
 	if t < 0.0:
 		return
@@ -659,17 +735,22 @@ func _tick_heats(delta: float) -> void:
 					heat_changed.emit()
 
 
-## The lights: AI racers take every slot left, and everyone goes together.
+## The lights: AI racers take every slot left (the league's named rivals
+## first), and everyone goes together.
 func _start_heat(heat: Heat) -> void:
 	var taken := {}
+	heat.league = 0
 	for run: Run in heat.runs:
 		taken[run.slot] = true
+		if not run.ai:
+			heat.league = maxi(heat.league, int(_league_state(run).league))
 	var slots := mini(GRID_SIZE, heat.track.start_slots.size())
 	var spread_rng := RandomNumberGenerator.new()
 	spread_rng.seed = rng.randi()
+	var rivals := RaceLeague.rivals_in(heat.league)
 	for slot in slots:
 		if not taken.has(slot):
-			var run := _add_ai(heat, slot, spread_rng)
+			var run := _add_ai(heat, slot, spread_rng, rivals.pop_front() if not rivals.is_empty() else "")
 			if run != null:
 				heat.runs.append(run)
 	heat.phase = "racing"
@@ -692,14 +773,22 @@ func _start_heat(heat: Heat) -> void:
 		run_changed.emit(run.actor)
 	_update_places(heat)
 	heat_changed.emit()
+	# A rival on the grid says something to each person at the lights.
+	var on_grid := heat.runs.filter(func(r: Run) -> bool: return r.rival != "")
+	if not on_grid.is_empty():
+		for run: Run in heat.runs:
+			if not run.ai:
+				_rival_says(run, on_grid[rng.randi() % on_grid.size()], "lights")
 
 
-## An AI racer on a stock machine of the track's class at `slot`.
-func _add_ai(heat: Heat, slot: int, spread_rng: RandomNumberGenerator) -> Run:
+## An AI racer on a stock machine of the track's class at `slot`: the named
+## rival `rival` (on the machine they favour), or another at the league's
+## skill.
+func _add_ai(heat: Heat, slot: int, spread_rng: RandomNumberGenerator, rival := "") -> Run:
 	var machines := _class_machines(heat.track)
 	if machines.is_empty():
 		return null
-	var callsign := _ai_name()
+	var callsign := RaceLeague.rival_name(rival) if rival != "" else _ai_name()
 	var at: Transform3D = heat.track.start_slots[slot]
 	var bot := spawn_bot("Racer%d" % _ai_made, at.origin + Vector3(2.0, 0.2, 0.0), spread_rng.randi(), false,
 			"racer", -2, [Loadout.BARE])
@@ -710,6 +799,12 @@ func _add_ai(heat: Heat, slot: int, spread_rng: RandomNumberGenerator) -> Run:
 	bot.set_meta("race_ai", true)
 	actor_spawned.emit(bot)
 	var machine: String = machines[spread_rng.randi() % machines.size()]
+	if rival != "":
+		var hover := str(RaceLeague.RIVALS[rival].machine) == "hover"
+		for id in machines:
+			if ItemDB.has_tag(id, "hover") == hover:
+				machine = id
+				break
 	var vehicle := spawn_vehicle(machine, at.origin + Vector3(0, 0.4, 0), at.basis.get_euler().y)
 	vehicle.call("mount", bot)
 	var run := Run.new()
@@ -720,8 +815,10 @@ func _add_ai(heat: Heat, slot: int, spread_rng: RandomNumberGenerator) -> Run:
 	run.ai = true
 	run.slot = slot
 	run.heat = heat
+	run.rival = rival
 	runs[bot] = run
-	var skill := clampf(ai_skill + spread_rng.randf_range(-0.2, 0.2), 0.0, 1.0)
+	var skill := RaceLeague.rival_skill(rival) if rival != "" \
+			else clampf(RaceLeague.ai_skill(heat.league) + spread_rng.randf_range(-0.1, 0.04), 0.0, 1.0)
 	drivers[bot] = RaceDriver.make(skill, spread_rng.randi())
 	return run
 
@@ -815,11 +912,71 @@ func _update_places(heat: Heat) -> void:
 		far[run] = run_distance(run)
 	out.sort_custom(func(a: Run, b: Run) -> bool: return float(far[a]) > float(far[b]))
 	var order := home + out
+	var was := {}
+	for run in order:
+		was[run] = run.place
 	for i in order.size():
 		if order[i].place != i + 1:
 			order[i].place = i + 1
 			if not order[i].ai:
 				run_changed.emit(order[i].actor)
+	_radio_passes(order, was)
+
+
+## The race radio on passes: a rival someone just got by, or who just got
+## by them, says so.
+func _radio_passes(order: Array[Run], was: Dictionary) -> void:
+	for person in order:
+		if person.ai or person.phase != "racing" or clock < person.go_at + RADIO_QUIET:
+			continue
+		var before := int(was.get(person, 0))
+		if before == 0 or before == person.place:
+			continue
+		for rival in order:
+			if rival.rival == "" or rival.phase != "racing":
+				continue
+			var then := int(was.get(rival, 0))
+			if then == 0:
+				continue
+			if then < before and rival.place > person.place:
+				_rival_says(person, rival, "pass")
+				break
+			if then > before and rival.place < person.place:
+				_rival_says(person, rival, "passed")
+				break
+
+
+## `rival`'s line for `event` on `person`'s race radio, unless the radio was
+## busy a moment ago (the lights and the finish always get through).
+func _rival_says(person: Run, rival: Run, event: String) -> void:
+	if rival == null or rival.rival == "" or person.ai or not is_instance_valid(person.actor):
+		return
+	var always := event in ["lights", "win", "beaten"]
+	if not always and (clock - person.radio_at < RADIO_GAP
+			or clock - float(person.heard.get(rival.rival, -INF)) < RIVAL_GAP):
+		return
+	var text := RaceLeague.line(rival.rival, event, person.actor.display_name, _league_state(person), rng.randi())
+	if text == "":
+		return
+	person.radio_at = clock
+	person.heard[rival.rival] = clock
+	radio.emit(person.actor, RaceLeague.rival_name(rival.rival), text)
+
+
+## The rival nearest `person` in the running order.
+func _nearest_rival(person: Run) -> Run:
+	if person.heat == null:
+		return null
+	var best: Run = null
+	for other: Run in person.heat.runs:
+		if other.rival != "" and (best == null or absi(other.place - person.place) < absi(best.place - person.place)):
+			best = other
+	return best
+
+
+## A person's league standing, from the bank (a fresh rookie with none).
+func _league_state(run: Run) -> Dictionary:
+	return league_bank.state(run.key) if league_bank != null else RaceLeague.fresh()
 
 
 ## A racer in a live race crossed the line on their last lap.
@@ -875,6 +1032,58 @@ func _close_heat(heat: Heat) -> void:
 	heat.phase = "done"
 	heat.closes_at = clock + RESULTS_TIME
 	heat_changed.emit()
+	_record_heat(heat, order, home)
+
+
+## Each person's finish goes to the league: who they beat and who beat
+## them. Someone who left the race before the end counts as not finishing.
+func _record_heat(heat: Heat, order: Array[Run], home: Array[Run]) -> void:
+	for i in order.size():
+		var run := order[i]
+		if run.ai:
+			continue
+		var ahead: Array[String] = []
+		var behind: Array[String] = []
+		for j in order.size():
+			if order[j].rival != "":
+				(ahead if j < i else behind).append(order[j].rival)
+		var finished := home.has(run) and run.heat == heat
+		var result := {"track": heat.track.id, "place": i + 1, "field": order.size(), "finished": finished,
+				"ahead": ahead, "behind": behind}
+		_finish_talk(run, order, i, finished)
+		if league_bank == null:
+			continue
+		var before := _league_state(run)
+		var applied := RaceLeague.apply(before, result, Contracts.today())
+		league_bank.record(run.key, result)
+		if not is_instance_valid(run.actor):
+			continue
+		var now: Dictionary = applied.state
+		var points := int(applied.points)
+		var line := "%+d rating · %s" % [points, RaceLeague.standing_line(now)]
+		if int(applied.scrip) > 0:
+			line += " · +%d scrip" % int(applied.scrip)
+		run.actor.notice.emit(line)
+		if bool(applied.promoted):
+			run.actor.notice.emit("Promoted to the %s league" % RaceLeague.league_name(int(now.league)))
+		league_changed.emit(run.actor)
+
+
+## The radio at the finish: the rival you beat (your league's top rival
+## first) admits it, or the rival who won says so.
+func _finish_talk(run: Run, order: Array[Run], at: int, finished: bool) -> void:
+	if run.heat == null and not finished:
+		return
+	var top := RaceLeague.top_rival(int(_league_state(run).league))
+	var beaten: Run = null
+	if finished:
+		for j in range(at + 1, order.size()):
+			if order[j].rival != "" and (beaten == null or order[j].rival == top):
+				beaten = order[j]
+	if beaten != null:
+		_rival_says(run, beaten, "beaten")
+	elif order[0].rival != "":
+		_rival_says(run, order[0], "win")
 
 
 ## The results come down: the AI racers leave with their machines, and
@@ -924,6 +1133,7 @@ func heat_view(track_id: String) -> Dictionary:
 		"field": heat.runs.size() if heat.phase != "forming" else GRID_SIZE,
 		"starts_in": maxf(heat.starts_at - clock, 0.0) if heat.phase == "forming" else 0.0,
 		"results": heat.results.duplicate(true),
+		"league": RaceLeague.league_name(heat.league),
 		"made": Time.get_ticks_msec(),
 	}
 

@@ -1964,7 +1964,16 @@ without Caleb, and update the gap list when a PR closes a row.
   An AI racer is a bot (meta "race_ai") on a machine of its own, driven
   only through its `ActorCommand` by a `RaceDriver`, which is also the
   bench's driver; never give one speed, grip or a rule a player lacks, and
-  never put its laps on the board. Where a road runs over
+  never put its laps on the board. The league (`core/race/race_league.gd`,
+  static rules like `Contracts`) is kept on the account (`Profile.racing`,
+  `Account.racing`, in the snapshot and `StashRules.CARRIED`) and moved
+  only by a live race's close: the authority's `Race` sends each person's
+  finish to its `league_bank` (`StashLeagueBank` online, a sure
+  `record_race` call; `ProfileLeagueBank` solo), where `RaceLeague.apply`
+  moves the rating and pays the capped scrip. A grid's AI are the named
+  rivals of its best rider's league; their radio lines go only to the
+  racer they are said to (`Race.radio`, `NetSession._race_radio`) and are
+  drawn on the visor (`Hud.comms`, `VisorHud._draw_comms`). Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
   (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration

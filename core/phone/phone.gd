@@ -61,16 +61,20 @@ const GameSettings := preload("res://core/settings/game_settings.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const CharacterPanel := preload("res://core/ui/character_panel.gd")
+const RaceLeague := preload("res://core/race/race_league.gd")
+const Contracts := preload("res://core/economy/contracts.gd")
 
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 
-const APPS := ["contacts", "messages", "invites", "news", "servers", "mirror", "controls", "settings"]
+const APPS := ["contacts", "messages", "invites", "news", "racing", "servers", "mirror", "controls", "settings"]
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
-		"news": "News", "servers": "Servers", "mirror": "Mirror", "controls": "Controls", "settings": "Settings"}
+		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror", "controls": "Controls",
+		"settings": "Settings"}
 ## The names under the home screen's icons.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
-		"news": "News", "servers": "Servers", "mirror": "Mirror", "controls": "Keys", "settings": "Settings"}
+		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror", "controls": "Keys",
+		"settings": "Settings"}
 ## The screen's colours: the dark glass, the panels on it, and the dimmer
 ## ink for secondary text. The device's body is gunmetal.
 const SCREEN_BG := Color(0.035, 0.04, 0.047)
@@ -988,16 +992,17 @@ func _build_screen() -> void:
 	var readouts := HBoxContainer.new()
 	readouts.add_theme_constant_override("separation", 8)
 	_home.add_child(readouts)
-	for spec: Array in [["link", "LINK", "servers"], ["inbox", "INBOX", "messages"]]:
+	# Three across, so the apps below have room for three rows.
+	for spec: Array in [["link", "LINK", "servers"], ["inbox", "INBOX", "messages"], ["news", "LATEST", "news"]]:
 		var widget := Readout.new(spec[1])
 		widget.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		widget.size_flags_stretch_ratio = 1.4 if spec[0] == "news" else 1.0
+		widget.custom_minimum_size.x = 10.0
+		widget.value.add_theme_font_size_override("font_size", 22)
+		widget.detail.add_theme_font_size_override("font_size", 16)
 		widget.tapped.connect(open_app.bind(spec[2]))
 		readouts.add_child(widget)
 		_readouts[spec[0]] = widget
-	var latest := Readout.new("LATEST")
-	latest.tapped.connect(open_app.bind("news"))
-	_home.add_child(latest)
-	_readouts["news"] = latest
 
 	var grid := GridContainer.new()
 	grid.columns = 4
@@ -1357,6 +1362,7 @@ func refresh(redraw := true) -> void:
 		"messages": _draw_messages(keep_draft)
 		"invites": _draw_invites()
 		"news": _draw_news()
+		"racing": _draw_racing()
 		"servers": _draw_servers()
 		"mirror": _draw_mirror()
 		"controls": _draw_controls()
@@ -1523,6 +1529,57 @@ func _draw_news() -> void:
 		box.add_child(_label(str(entry.title), 19, UiTheme.ACCENT))
 		box.add_child(_label(str(entry.get("body", "")), 15, UiTheme.INK))
 		_body.add_child(card)
+
+
+# ---------------------------------------------------------------- racing ----
+
+## Your racing league (`RaceLeague`): the server's account online, the
+## local profile solo.
+func racing() -> Dictionary:
+	if linked() and net.account.has("racing"):
+		return RaceLeague.clean(net.account.racing)
+	return RaceLeague.clean(Profile.racing)
+
+
+## The Racing app: your league and rating, your league's rivals and how you
+## stand against each, and your last few races.
+func _draw_racing() -> void:
+	var state := racing()
+	var league := int(state.league)
+	var card := _card()
+	var box: VBoxContainer = card.get_child(0)
+	box.add_child(_label("%s LEAGUE" % RaceLeague.league_name(league).to_upper(), 22, UiTheme.ACCENT))
+	var next := RaceLeague.next_from(league)
+	box.add_child(_label("%d rating%s" % [int(state.rating), " · next league at %d" % next if next >= 0
+			else " · the top league"], 17, UiTheme.INK))
+	if RaceLeague.at_gate(state):
+		box.add_child(_label("Beat %s in a race to move up." % RaceLeague.rival_name(RaceLeague.top_rival(league)),
+				15, UiTheme.ACCENT))
+	box.add_child(_label("%d races · %d wins · %d podiums" % [int(state.races), int(state.wins), int(state.podiums)],
+			14, DIM_INK))
+	var paid := int(state.paid) if int(state.day) == Contracts.today() else 0
+	box.add_child(_label("Race pay today: %d of %d scrip" % [paid, RaceLeague.DAILY_CAP], 14, DIM_INK))
+	_body.add_child(card)
+	_body.add_child(_section("RIVALS"))
+	var top := RaceLeague.top_rival(league)
+	for id: String in RaceLeague.rivals_in(league):
+		var row := _card()
+		var row_box: VBoxContainer = row.get_child(0)
+		var rec := RaceLeague.record_against(state, id)
+		row_box.add_child(_label(RaceLeague.rival_name(id) + ("  · top rival" if id == top else ""), 17,
+				UiTheme.ACCENT if id == top else UiTheme.INK))
+		row_box.add_child(_label("You %d · them %d%s" % [int(rec[0]), int(rec[1]),
+				" · they rate you now" if RaceLeague.humbled(state, id) else ""], 14, DIM_INK))
+		_body.add_child(row)
+	_body.add_child(_section("RECENT RACES"))
+	var recent: Array = state.recent
+	if recent.is_empty():
+		_body.add_child(_label("No races yet. In Meridian, take a machine from a pit bay and pick Race on "
+				+ "the watch's race icon.", 15, DIM_INK))
+	for entry: Dictionary in recent:
+		var place := int(entry.place)
+		_body.add_child(_label("%s   %s   %+d" % ["P%d/%d" % [place, int(entry.field)] if place > 0 else "DNF",
+				str(entry.track).capitalize(), int(entry.points)], 15, UiTheme.INK))
 
 
 # --------------------------------------------------------------- servers ----
@@ -2265,6 +2322,15 @@ class AppIcon extends Control:
 				draw_rect(Rect2(c + Vector2(-10, -13) * k, Vector2(20, 7) * k), ink)
 				for i in 3:
 					draw_line(c + Vector2(-10, 0 + i * 6.5) * k, c + Vector2(10 if i % 2 == 0 else 4, 0 + i * 6.5) * k, ink, 2.0 * k)
+			"racing":
+				# A chequered flag on its pole.
+				draw_line(c + Vector2(-15, -20) * k, c + Vector2(-15, 21) * k, ink, w, true)
+				for row in 3:
+					for col in 4:
+						var cell := Rect2(c + Vector2(-13 + col * 7.5, -19 + row * 7.5) * k, Vector2(7.5, 7.5) * k)
+						if (row + col) % 2 == 0:
+							draw_rect(cell, ink)
+				draw_rect(Rect2(c + Vector2(-13, -19) * k, Vector2(30, 22.5) * k), ink, false, 2.0 * k)
 			"servers":
 				# A mast sending out rings.
 				draw_line(c + Vector2(0, -4) * k, c + Vector2(0, 20) * k, ink, w, true)

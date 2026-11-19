@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 52
+const PROTOCOL := 53
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -651,6 +651,11 @@ func _start_server_raid() -> void:
 		race.run_changed.connect(_on_race_run_changed)
 		race.board_changed.connect(_send_race_board)
 		race.heat_changed.connect(_send_race_heats)
+		# The league is kept on the accounts; the rivals' radio goes to the
+		# one racer it is said to.
+		race.league_bank = Race.StashLeagueBank.new(stash)
+		race.radio.connect(_on_race_radio)
+		race.league_changed.connect(_on_race_league_changed)
 	raid.start_server(world)
 
 
@@ -1741,6 +1746,21 @@ func _on_race_run_changed(actor: Actor) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
 	if peer in _api.get_peers():
 		_race_run.rpc_id(peer, (raid as Race).run_view(actor))
+
+
+## A rival's line goes to the racer it was said to.
+func _on_race_radio(actor: Actor, from: String, text: String) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer in _api.get_peers():
+		_race_radio.rpc_id(peer, from, text)
+
+
+## A race moved a racer's league standing: their account snapshot says so
+## (an official server's link hears it from the service instead).
+func _on_race_league_changed(actor: Actor) -> void:
+	var peer: int = _actor_peer.get(actor, 0)
+	if peer != 0 and not stash.is_remote():
+		_send_account(peer)
 
 
 ## Every track's live race goes to everyone here: the boards show it.
@@ -3295,6 +3315,14 @@ func _race_heats(rows: Array) -> void:
 	var race := raid as Race
 	if race != null:
 		race.set_remote_heats(rows)
+
+
+## Race: a rival's line on this racer's race radio.
+@rpc("authority", "call_remote", "reliable")
+func _race_radio(from: String, text: String) -> void:
+	var race := raid as Race
+	if race != null and race.player != null and is_instance_valid(race.player):
+		race.radio.emit(race.player, from.left(40), text.left(200))
 
 
 ## Race: the best laps on the board.

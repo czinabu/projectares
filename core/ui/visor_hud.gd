@@ -875,6 +875,7 @@ func _draw() -> void:
 			_draw_system(ink, v.charge_fraction(), "THERMAL ON" if v.thermal_on else "CELL %d%%" %
 					roundi(v.charge_fraction() * 100.0), v.thermal_on)
 			_draw_signature(p, ink)
+	_draw_comms(ink)
 	_draw_crate(p, ink)
 	_draw_pickups(p, ink)
 	_draw_slivers(p, centre, felt, felt_time, Color(1.0, 0.2, 0.12), 0.4)
@@ -1902,6 +1903,28 @@ func _draw_objectives(p: Actor, ink: Color) -> void:
 			if float(line.share) > 0.0:
 				draw_line(bar, bar + Vector2(long * float(line.share), 0.0), _lit(SQUAD_INK if done else ink, 0.85), 2.0)
 		y += row
+
+
+## The race radio (`Hud.comms`): each line a rival's name over what they
+## said, right under the objective block, fading as it goes.
+func _draw_comms(ink: Color) -> void:
+	if hud == null or not hud.get("comms") is Array:
+		return
+	var lines: Array = hud.get("comms")
+	if lines.is_empty():
+		return
+	var right := size.x - size.y * 0.06 + sway.x
+	var width := clampf(size.x * 0.24, 300.0, 480.0)
+	var y := size.y * 0.34 + sway.y
+	for line: Dictionary in lines:
+		# Gone over its last second.
+		var alpha := clampf(float(line.left), 0.0, 1.0)
+		_text(Vector2(right, y), "RADIO · " + str(line.from).to_upper(), _lit(ink, 0.7 * alpha, false),
+				HORIZONTAL_ALIGNMENT_RIGHT, width, 12)
+		_text(Vector2(right, y + 20.0), str(line.text), _lit(Color.WHITE.lerp(ink, 0.25), 0.95 * alpha, false),
+				HORIZONTAL_ALIGNMENT_RIGHT, width, 15)
+		draw_line(Vector2(right + 6.0, y - 10.0), Vector2(right + 6.0, y + 24.0), _lit(ink, 0.5 * alpha, false), 1.5)
+		y += 50.0
 
 
 ## True while the weapon readout should be lit: reloading, the mag low or

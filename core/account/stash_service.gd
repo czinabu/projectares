@@ -43,6 +43,7 @@ const Economy := preload("res://core/economy/economy.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const BasePlan := preload("res://core/base/base_plan.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
+const RaceLeague := preload("res://core/race/race_league.gd")
 const Crafting := preload("res://core/progression/crafting.gd")
 const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
@@ -151,6 +152,8 @@ class Account:
 	var scrip := Economy.STARTING_SCRIP
 	var arena_wins := 0
 	var arena_losses := 0
+	## The racing league (`RaceLeague`): moved only by live races.
+	var racing := RaceLeague.fresh()
 	## The home base upgrades owned (ids from `BaseUpgrades`). Never lost.
 	var base_upgrades: Array[String] = []
 	## Which room stands in which socket off the base's hub (`BasePlan`).
@@ -195,6 +198,7 @@ class Account:
 			"scrip": scrip,
 			"arena_wins": arena_wins,
 			"arena_losses": arena_losses,
+			"racing": racing,
 			"base_upgrades": base_upgrades,
 			"base_plan": base_plan,
 			"contracts": contracts,
@@ -239,6 +243,7 @@ class Account:
 		scrip = Economy.read_saved(data)
 		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
+		racing = RaceLeague.clean(data.get("racing"))
 		base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
 		base_plan = BasePlan.clean(data.get("base_plan"))
 		# Cleaned and brought up to date on first use (`_contracts_of`).
@@ -445,6 +450,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"scrip": account.scrip,
 		"arena_wins": account.arena_wins,
 		"arena_losses": account.arena_losses,
+		"racing": account.racing.duplicate(true),
 		"base_upgrades": account.base_upgrades.duplicate(),
 		"base_plan": account.base_plan.duplicate(),
 		"contracts": _contracts_of(account).duplicate(true),
@@ -922,6 +928,19 @@ func record_arena(account_id: String, won: bool) -> void:
 	else:
 		account.arena_losses += 1
 	_save(account)
+
+
+## Records a live race's result on the account (`RaceLeague.apply`): the
+## league standing moves and the race's scrip is paid, capped by the day.
+func record_race(account_id: String, result: Dictionary) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	var applied := RaceLeague.apply(account.racing, result, today())
+	account.racing = applied.state
+	account.scrip = Economy.add(account.scrip, int(applied.scrip))
+	_save(account)
+	return {"ok": true, "points": applied.points, "scrip": applied.scrip, "promoted": applied.promoted}
 
 
 ## Calls off a deploy that never became a real run: the gear goes back.

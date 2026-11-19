@@ -473,6 +473,9 @@ func _test_racing_online() -> void:
 	check(str(race.remote_run.get("phase", "")) == "racing" and me.vehicle != null
 			and absf(float(me.vehicle.get("speed"))) > 3.0, "at the go it races")
 	me.cmd.move = Vector2.ZERO
+	var radio: Array = []
+	race.radio.connect(func(a: Actor, from: String, text: String) -> void: radio.append([a, from, text]))
+	var races_before := int(rhea.account.get("racing", {}).get("races", 0))
 	# A live race: the server forms it, fills it with AI racers and starts it.
 	race.ask("race")
 	await _wait_until(func() -> bool: return str(race.remote_run.get("phase", "")) == "waiting", 240)
@@ -488,9 +491,15 @@ func _test_racing_online() -> void:
 	await _wait_until(func() -> bool: return int(race.remote_run.get("place", 0)) > 0, 600)
 	check(int(race.remote_run.get("place", 0)) > 0 and Race.place_tag(race.remote_run).begins_with("P"),
 			"and is told its place")
+	check(radio.size() >= 1 and radio[0][0] == me and str(radio[0][1]) != "" and str(radio[0][2]) != "",
+			"a rival's line at the lights reaches the racer's own radio")
 	race.ask("retire")
 	await _wait_until(func() -> bool: return race.remote_run.is_empty() and me.vehicle == null, 240)
 	check(race.remote_run.is_empty() and me.vehicle == null, "asking to stop ends the run on the server and gets off")
+	await _wait_until(func() -> bool:
+		return int(rhea.account.get("racing", {}).get("races", 0)) > races_before, 240)
+	check(int(rhea.account.get("racing", {}).get("races", 0)) == races_before + 1,
+			"leaving a race counts as a finish that did not finish, on the server's account")
 	await _leave(rhea)
 	OS.kill(pid)
 

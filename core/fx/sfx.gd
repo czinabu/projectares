@@ -97,6 +97,8 @@ func _ready() -> void:
 	_streams["far_fire"] = _far_fire(9)
 	# An army's push on a strongpoint: a long low war horn, heard far off.
 	_streams["war_horn"] = _tones([98.0, 147.0, 196.0], 1.8, 1.4, 0.6)
+	# The race radio: a short burst of static as a rival keys up.
+	_streams["radio"] = _noise_burst(0.14, 26.0, 0.7, 1300.0)
 	for sound: String in RECORDED:
 		var stream := recorded(sound)
 		if stream != null:
