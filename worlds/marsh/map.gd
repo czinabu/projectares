@@ -509,28 +509,122 @@ func _dress_water(art: Node3D) -> void:
 	art.add_child(water)
 
 
-## Each stalk wears the planet's own fungus (a ridged stem, a curling cap
-## and glowing gills) over its greybox trunk, scaled to it.
+## The giant fungus over the greybox stalks, all of it one mesh for the
+## flesh and one for the gills (`fungus.gdshader`): a tapering trunk that
+## flares at the foot and leans a little, a broad cap whose top sits on the
+## cap's collision (so standing on it looks right) and whose rim curls
+## down, and glowing gills under it.
 func _dress_stalks(art: Node3D) -> void:
+	var flesh := SurfaceTool.new()
+	flesh.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var gills := SurfaceTool.new()
+	gills.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for stalk: Dictionary in _stalks:
+		_fungus(flesh, gills, stalk)
 	for body: StaticBody3D in _stalk_bodies:
-		var height: float = body.get_meta("height", 10.0)
-		var across := float(body.get_meta("cap", 3.0)) / 0.32
-		var stalk := MeshInstance3D.new()
-		var shape := PlanetProps.mesh("stalk", _art_rng.randi() % PlanetProps.VARIANTS, planet) as ArrayMesh
-		stalk.mesh = shape
-		var turned := Basis(Vector3.UP, _art_rng.randf() * TAU) * Basis.from_scale(Vector3(across, height, across))
-		# The planet's stalks lean; stand this one so its cap is over the
-		# trunk, where the cap stands to be walked on.
-		if shape != null and shape.get_surface_count() > 1:
-			var top: Vector3 = turned * (shape.surface_get_arrays(1)[Mesh.ARRAY_VERTEX] as PackedVector3Array)[0]
-			var tilt := Basis(Quaternion(top.normalized(), Vector3.UP))
-			turned = tilt * Basis(Vector3.UP, 0.0).scaled(Vector3.ONE * height / maxf(top.length(), 0.01)) * turned
-		stalk.transform = Transform3D(turned, body.position + Vector3(0, -0.4, 0))
-		art.add_child(stalk)
 		for child in body.get_children():
 			if child is MeshInstance3D:
 				child.visible = false
+	var shader := load("res://assets/shaders/fungus.gdshader") as Shader
+	var flesh_mat := ShaderMaterial.new()
+	flesh_mat.shader = shader
+	var gill_mat := ShaderMaterial.new()
+	gill_mat.shader = shader
+	gill_mat.set_shader_parameter("gills", 1.0)
+	flesh.generate_normals()
+	gills.generate_normals()
+	flesh.set_material(flesh_mat)
+	gills.set_material(gill_mat)
+	var mesh := flesh.commit()
+	gills.commit(mesh)
+	var node := MeshInstance3D.new()
+	node.name = "Fungus"
+	node.mesh = mesh
+	art.add_child(node)
 	_dress_gill_lights(art)
+	_dress_glowcaps(art)
+
+
+const FUNGUS_SIDES := 14
+const FUNGUS_RINGS := 10
+const CAP_RINGS := 7
+
+
+## One stalk, in the map's space, into the two surfaces.
+func _fungus(flesh: SurfaceTool, gills: SurfaceTool, stalk: Dictionary) -> void:
+	var foot: Vector3 = stalk.at
+	var h: float = stalk.height
+	var r: float = stalk.radius
+	var big: float = stalk.cap
+	var lean := Vector2(_art_rng.randf_range(-1.0, 1.0), _art_rng.randf_range(-1.0, 1.0)) * r * 0.35
+	var twist := _art_rng.randf() * TAU
+	var centre := func(t: float) -> Vector3:
+		return foot + Vector3(lean.x * t * t, -0.8 + t * (h + 0.9), lean.y * t * t)
+	var trunk_r := func(t: float) -> float:
+		return r * lerpf(1.0, 0.72, t) * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.14, t)))
+	# The trunk, ridged lengthways.
+	var rings: Array[PackedVector3Array] = []
+	var vs: Array[float] = []
+	for ri in FUNGUS_RINGS + 1:
+		var t := float(ri) / FUNGUS_RINGS
+		var ring := PackedVector3Array()
+		for si in FUNGUS_SIDES:
+			var a := TAU * si / FUNGUS_SIDES + twist
+			var ridge := 1.0 + 0.07 * sin(a * 5.0 + t * 4.0)
+			ring.append(centre.call(t) + Vector3(cos(a), 0, sin(a)) * trunk_r.call(t) * ridge)
+		rings.append(ring)
+		vs.append(t * 0.92)
+	# The cap's top, from the middle out to the curled rim.
+	var top_at: Vector3 = centre.call(1.0)
+	var middle := Vector3(top_at.x, foot.y + h + 0.35, top_at.z)
+	var top_y := func(s: float) -> float:
+		return middle.y - big * 0.16 * pow(s, 2.2) - big * 0.1 * pow(s, 8.0)
+	var cap: Array[PackedVector3Array] = []
+	for ri in CAP_RINGS + 1:
+		var s := float(ri) / CAP_RINGS
+		var ring := PackedVector3Array()
+		for si in FUNGUS_SIDES * 2:
+			var a := TAU * si / (FUNGUS_SIDES * 2) + twist
+			var wob := 1.0 + 0.05 * sin(a * 3.0 + twist * 2.0) * s
+			ring.append(Vector3(middle.x + cos(a) * big * s * wob, top_y.call(s), middle.z + sin(a) * big * s * wob))
+		cap.append(ring)
+	_lathe(flesh, rings, vs, false)
+	var cap_v: Array[float] = []
+	for ri in CAP_RINGS + 1:
+		cap_v.append(1.0)
+	_lathe(flesh, cap, cap_v, true)
+	# The gills: from the rim (just under its edge) back in to the trunk.
+	var under: Array[PackedVector3Array] = []
+	var stem := float(trunk_r.call(1.0)) / big
+	for ri in CAP_RINGS + 1:
+		var s := lerpf(1.0, stem, float(ri) / CAP_RINGS)
+		var ring := PackedVector3Array()
+		for si in FUNGUS_SIDES * 2:
+			var a := TAU * si / (FUNGUS_SIDES * 2) + twist
+			var wob := 1.0 + 0.05 * sin(a * 3.0 + twist * 2.0) * s
+			var y: float = top_y.call(s) - 0.18 - (1.0 - s) * big * 0.1
+			ring.append(Vector3(middle.x + cos(a) * big * s * wob, y, middle.z + sin(a) * big * s * wob))
+		under.append(ring)
+	_lathe(gills, under, cap_v, true)
+
+
+## Joins rings of points into a band of quads facing out (or up, for a cap
+## whose rings run outward); `v` is each ring's UV.y.
+func _lathe(st: SurfaceTool, rings: Array[PackedVector3Array], v: Array[float], outward: bool) -> void:
+	for ri in rings.size() - 1:
+		var a_ring := rings[ri]
+		var b_ring := rings[ri + 1]
+		var n := a_ring.size()
+		for si in n:
+			var sj := (si + 1) % n
+			var quad := [a_ring[si], a_ring[sj], b_ring[si], b_ring[sj]]
+			var u0 := float(si) / n
+			var u1 := float(si + 1) / n
+			var uv := [Vector2(u0, v[ri]), Vector2(u1, v[ri]), Vector2(u0, v[ri + 1]), Vector2(u1, v[ri + 1])]
+			var order := [0, 2, 1, 1, 2, 3] if outward else [0, 1, 2, 1, 3, 2]
+			for k: int in order:
+				st.set_uv(uv[k])
+				st.add_vertex(quad[k])
 
 
 ## A few warm lights under the biggest caps, so the forests glow at dusk.
@@ -547,6 +641,66 @@ func _dress_gill_lights(art: Node3D) -> void:
 		light.shadow_enabled = false
 		light.position = stalk.at + Vector3(0, float(stalk.height) - 1.0, 0)
 		art.add_child(light)
+
+
+## Small glowcaps in clumps over the forests' floors and along the banks:
+## one mesh, drawn many times, lighting the ground a little at dusk.
+func _dress_glowcaps(art: Node3D) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var stem: Array[PackedVector3Array] = []
+	var cap: Array[PackedVector3Array] = []
+	var v: Array[float] = []
+	for ri in 3:
+		var t := ri / 2.0
+		var ring := PackedVector3Array()
+		var dome := PackedVector3Array()
+		for si in 8:
+			var a := TAU * si / 8.0
+			ring.append(Vector3(cos(a) * 0.035, t * 0.22, sin(a) * 0.035))
+			var s := float(ri) / 2.0
+			dome.append(Vector3(cos(a) * 0.13 * s, 0.27 - 0.08 * s * s, sin(a) * 0.13 * s))
+		stem.append(ring)
+		cap.append(dome)
+		v.append(t)
+	_lathe(st, stem, v, false)
+	_lathe(st, cap, v, true)
+	st.generate_normals()
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.3, 0.55, 0.45)
+	mat.emission_enabled = true
+	mat.emission = Color(0.3, 0.9, 0.6)
+	mat.emission_energy_multiplier = 0.9
+	mat.roughness = 0.4
+	st.set_material(mat)
+	var caps := MultiMesh.new()
+	caps.transform_format = MultiMesh.TRANSFORM_3D
+	caps.mesh = st.commit()
+	var spots: Array[Transform3D] = []
+	var tries := 0
+	while spots.size() < GLOWCAPS and tries < GLOWCAPS * 6:
+		tries += 1
+		var forest: Dictionary = FORESTS[_art_rng.randi() % FORESTS.size()]
+		var clump: Vector2 = forest["at"] + Vector2.from_angle(_art_rng.randf() * TAU) * _art_rng.randf() * (float(forest["radius"]) + 12.0)
+		var ground := ground_height(clump.x, clump.y)
+		if ground < WATER_Y + 0.05:
+			continue
+		for k in _art_rng.randi_range(3, 9):
+			var at := clump + Vector2(_art_rng.randf_range(-0.9, 0.9), _art_rng.randf_range(-0.9, 0.9))
+			var size := _art_rng.randf_range(0.6, 2.2)
+			var basis := Basis(Vector3.UP, _art_rng.randf() * TAU).scaled(Vector3.ONE * size)
+			spots.append(Transform3D(basis, Vector3(at.x, ground_height(at.x, at.y) - 0.02, at.y)))
+	caps.instance_count = spots.size()
+	for i in spots.size():
+		caps.set_instance_transform(i, spots[i])
+	var node := MultiMeshInstance3D.new()
+	node.name = "Glowcaps"
+	node.multimesh = caps
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	art.add_child(node)
+
+
+const GLOWCAPS := 1400
 
 
 func _dress_horizon(art: Node3D) -> void:

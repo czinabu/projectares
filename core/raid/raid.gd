@@ -2535,38 +2535,49 @@ func _tick_clouds(delta: float) -> void:
 ## A death burst's cloud, view only: a slow swell of spores that thins and
 ## goes as it runs out.
 func _show_cloud(at: Vector3, radius: float, seconds: float, _kind: String) -> void:
-	var cloud := MeshInstance3D.new()
+	# Soft puffs hung through the cloud's ball, low ones more than high, so it
+	# lies on the ground with a ragged edge (`spore_cloud.gdshader`).
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/spore_cloud.gdshader") as Shader
+	mat.set_shader_parameter("tint", Color(CLOUD_COLOR, CLOUD_ALPHA))
+	mat.set_shader_parameter("alpha", 0.0)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0, 2.0)
+	quad.material = mat
+	var puffs := MultiMesh.new()
+	puffs.transform_format = MultiMesh.TRANSFORM_3D
+	puffs.use_custom_data = true
+	puffs.mesh = quad
+	puffs.instance_count = CLOUD_PUFFS
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(Vector3i(at.round()))
+	for i in CLOUD_PUFFS:
+		var dir := Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-0.3, 0.7), rng.randf_range(-1.0, 1.0))
+		var spot := dir.limit_length(1.0) * radius * 0.7
+		var size := radius * rng.randf_range(0.45, 0.75)
+		puffs.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ONE * size), spot))
+		puffs.set_instance_custom_data(i, Color(rng.randf(), radius * 0.12, 0.0, 0.0))
+	var cloud := MultiMeshInstance3D.new()
 	cloud.name = "Cloud"
-	var ball := SphereMesh.new()
-	ball.radius = 1.0
-	ball.height = 1.4
-	ball.radial_segments = 20
-	ball.rings = 10
-	cloud.mesh = ball
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.proximity_fade_enabled = true
-	mat.proximity_fade_distance = 2.5
-	mat.albedo_color = Color(CLOUD_COLOR, 0.0)
-	cloud.material_override = mat
+	cloud.multimesh = puffs
 	cloud.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	cloud.custom_aabb = AABB(Vector3.ONE * -radius * 1.6, Vector3.ONE * radius * 3.2)
 	add_child(cloud)
 	cloud.global_position = at
-	cloud.scale = Vector3.ONE * radius * 0.4
+	cloud.scale = Vector3.ONE * 0.4
 	var swell := cloud.create_tween()
-	swell.tween_property(cloud, "scale", Vector3.ONE * radius, 0.8).set_ease(Tween.EASE_OUT)
-	swell.parallel().tween_property(mat, "albedo_color:a", CLOUD_ALPHA, 0.8)
+	swell.tween_property(cloud, "scale", Vector3.ONE, 0.8).set_ease(Tween.EASE_OUT)
+	swell.parallel().tween_property(mat, "shader_parameter/alpha", 1.0, 0.8)
 	swell.tween_interval(maxf(seconds - 2.8, 0.1))
-	swell.tween_property(mat, "albedo_color:a", 0.0, 2.0)
+	swell.tween_property(mat, "shader_parameter/alpha", 0.0, 2.0)
 	swell.tween_callback(cloud.queue_free)
 	Fx.ring(self, at, radius, CLOUD_COLOR, 0.9, false)
 	Sfx.play("spore_burst", at, 0.0, 50.0)
 
 
 const CLOUD_COLOR := Color(0.62, 0.85, 0.3)
-const CLOUD_ALPHA := 0.24
+const CLOUD_ALPHA := 0.36
+const CLOUD_PUFFS := 22
 
 
 ## Hazard ground (a molten core) drains whoever stands in it, once a second.
