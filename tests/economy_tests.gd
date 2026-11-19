@@ -237,12 +237,10 @@ static func _service(t: Node) -> void:
 	t.check(not restarted.sell(id, "").ok, "there is no loot left to sell")
 
 	# A hand-edited or damaged save cannot mint money.
-	var path := dir.path_join(id + ".json")
-	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
+	var store: RefCounted = restarted.store()
+	var data: Dictionary = store.read(id)
 	data["scrip"] = 1e12
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	file.store_string(JSON.stringify(data))
-	file.close()
+	store.write([data])
 	var capped := StashService.new()
 	capped.save_dir = dir
 	t.check(capped.snapshot(id).scrip == Economy.MAX_SCRIP, "a saved balance is capped when it loads")
