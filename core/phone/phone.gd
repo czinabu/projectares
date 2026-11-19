@@ -175,7 +175,7 @@ const CONTROLS := [
 		["Use your artifact (watch up, on the artifact icon)", "{fire}"],
 		["Ping where you look for your squad (watch up, on the ping icon)", "{fire}"],
 		["Emote: wave, salute, sit and more (watch up, Status tab, on the emote icon); move to stop", "{fire}"],
-		["Raise the watch straight onto the emotes, or lower it", "{emote_wheel}"],
+		["Emote wheel: hold, point with the mouse, let go to play (tap to keep it up, click to play)", "{emote_wheel}"],
 		["Play the emote last picked, or stop it", "{quick_emote}"],
 		["Raise the watch straight onto the map, or lower it", "{watch_map}"],
 		["Ping where you look for your squad, watch down", "{ping}"],
@@ -259,11 +259,10 @@ var mirror_picking := false
 ## only the hand lowers it (`held`, `ActorCommand.phone`), so every view
 ## and everyone else sees the same.
 var mirror_lowered := false
-## The settings whose sliders preview live (Caleb's ask): while one is
-## dragged the view stops zooming in on the phone and reading it from close,
-## so the field of view and the camera are seen as they will be.
-const PREVIEW_KEYS := ["field_of_view", "field_of_view_third", "camera_distance", "eye_pullback"]
-## True while such a slider is dragged (`preview_changed`).
+## True while a slider whose setting previews live is dragged (Caleb's ask,
+## `GameSettings.SCHEMA`'s "preview"): the view stops zooming in on the phone
+## and reading it from close, so the field of view and the camera are seen as
+## they will be (`preview_changed`).
 var previewing := false
 ## The slider being dragged with the view previewing, and how much its
 ## value moves for each pixel the mouse moves across the game's screen,
@@ -2233,60 +2232,11 @@ func open_settings_tab(tab: String) -> void:
 ## top, then fields of view, camera and names), Input (mouse, melee, the key
 ## list), System (sound, quit) and, in a debug run, Dev.
 func _draw_settings() -> void:
+	_draw_setting_rows(settings_tab)
 	match settings_tab:
 		"input":
-			_slider("Mouse sensitivity", "mouse_sensitivity", GameSettings.SENSITIVITY_RANGE, 0.0001,
-					GameSettings.mouse_sensitivity, func(v: float) -> String: return "%.1f" % (v * 1000.0))
-			_toggle("Invert mouse up and down", "invert_y", GameSettings.invert_y)
 			_body.add_child(_button("See what every key does", open_app.bind("controls")))
-		"view":
-			_body.add_child(_section("DISPLAY"))
-			_toggle("Fullscreen", "fullscreen", GameSettings.window_is_full())
-			_body.add_child(_label("Smooth edges", 14, UiTheme.INK))
-			var smoothing := OptionButton.new()
-			for mode: Array in GameSettings.ANTI_ALIASING:
-				smoothing.add_item(mode[0])
-			smoothing.select(GameSettings.anti_aliasing)
-			smoothing.item_selected.connect(func(index: int) -> void: change_setting("anti_aliasing", index))
-			_body.add_child(smoothing)
-			_toggle("Outline far shapes (not with MSAA)", "edge_ink", GameSettings.edge_ink)
-			_body.add_child(_section("PERFORMANCE"))
-			_body.add_child(_label("Shadows", 14, UiTheme.INK))
-			var shadow_pick := OptionButton.new()
-			for pick: Array in GameSettings.SHADOWS:
-				shadow_pick.add_item(pick[0])
-			shadow_pick.select(GameSettings.shadows)
-			shadow_pick.item_selected.connect(func(index: int) -> void: change_setting("shadows", index))
-			_body.add_child(shadow_pick)
-			_body.add_child(_label("Render scale", 14, UiTheme.INK))
-			var scale_pick := OptionButton.new()
-			for pick: Array in GameSettings.RENDER_SCALE:
-				scale_pick.add_item(pick[0])
-			scale_pick.select(GameSettings.render_scale)
-			scale_pick.item_selected.connect(func(index: int) -> void: change_setting("render_scale", index))
-			_body.add_child(scale_pick)
-			_body.add_child(_label("View distance", 14, UiTheme.INK))
-			var reach_pick := OptionButton.new()
-			for pick: Array in GameSettings.VIEW_DISTANCE:
-				reach_pick.add_item(pick[0])
-			reach_pick.select(GameSettings.view_distance)
-			reach_pick.item_selected.connect(func(index: int) -> void: change_setting("view_distance", index))
-			_body.add_child(reach_pick)
-			_toggle("Ambient occlusion", "ambient_occlusion", GameSettings.ambient_occlusion)
-			_toggle("Battle smoke over the ground", "ground_smoke", GameSettings.ground_smoke)
-			_body.add_child(_section("CAMERA"))
-			_slider("Field of view, first person", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
-					func(v: float) -> String: return "%d" % roundi(v))
-			_slider("Field of view, third person", "field_of_view_third", GameSettings.FOV_RANGE, 1.0,
-					GameSettings.field_of_view_third, func(v: float) -> String: return "%d" % roundi(v))
-			_slider("Camera distance, third person", "camera_distance", GameSettings.CAMERA_DISTANCE_RANGE, 0.1,
-					GameSettings.camera_distance, func(v: float) -> String: return "%.1f m" % v)
-			_slider("Camera pulled back, first person", "eye_pullback", GameSettings.EYE_PULLBACK_RANGE, 0.01,
-					GameSettings.eye_pullback, func(v: float) -> String: return "%d cm" % roundi(v * 100.0))
-			_toggle("Names over other players", "show_nameplates", GameSettings.show_nameplates)
 		"system":
-			_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
-					func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
 			_body.add_child(_section("NEW PLAYER TOUR"))
 			if tour_running:
 				_body.add_child(_label("Your handler is walking you through the basics in Messages.", 13, DIM_INK))
@@ -2297,6 +2247,33 @@ func _draw_settings() -> void:
 			_body.add_child(_button("Quit the game", func() -> void: quit_requested.emit()))
 		"dev":
 			_draw_dev_mode()  # DEV MODE
+
+
+## Draws a tab's settings from `GameSettings.SCHEMA`, a heading above each
+## new section. A new setting is a row there, never code here.
+func _draw_setting_rows(tab: String) -> void:
+	var section := ""
+	for row: Dictionary in GameSettings.rows_in(tab):
+		var key: String = row["key"]
+		if row.get("section", "") != section:
+			section = row.get("section", "")
+			if section != "":
+				_body.add_child(_section(section))
+		var value: Variant = GameSettings.value_of(key)
+		match row["kind"]:
+			"slider":
+				_slider(row["label"], key, row["range"], row["step"], float(value),
+						func(v: float) -> String: return GameSettings.shown(row, v))
+			"toggle":
+				_toggle(row["label"], key, bool(value))
+			"choice":
+				_body.add_child(_label(row["label"], 14, UiTheme.INK))
+				var pick := OptionButton.new()
+				for choice: Array in row["choices"]:
+					pick.add_item(choice[0])
+				pick.select(int(value))
+				pick.item_selected.connect(func(index: int) -> void: change_setting(key, index))
+				_body.add_child(pick)
 
 
 ## Skip or replay the tour, then redraw (deferred: the button that was
@@ -2373,7 +2350,7 @@ func _slider(text: String, key: String, range_: Vector2, step: float, value: flo
 		value_label.text = shown.call(v)
 		change_setting(key, v))
 	slider.custom_minimum_size = Vector2(0, 30)
-	if key in PREVIEW_KEYS:
+	if GameSettings.row_of(key).get("preview", false):
 		slider.drag_started.connect(_start_preview.bind(slider))
 	box.add_child(slider)
 	_body.add_child(card)

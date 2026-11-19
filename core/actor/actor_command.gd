@@ -200,6 +200,13 @@ func flags() -> int:
 	return out
 
 
+## What `to_array` packs, for `NetManifest`: raise it when the array's
+## fields change. The bits themselves are in the manifest by their names
+## (`WIRE_ALSO`), so a new flag needs nothing here.
+const WIRE_COMMAND := 1
+const WIRE_ALSO := ["FLAG_", "STATE_", "EMOTE_", "VISOR_LEVEL_", "MAX_EMOTE", "ARRAY_SIZE", "HOLSTER"]
+
+
 func to_array() -> Array:
 	return [move.x, move.y, yaw, pitch, aim_dir.x, aim_dir.y, aim_dir.z, flags(), (clampi(emote, 0, MAX_EMOTE) << EMOTE_SHIFT) | clampi(stance, 0, 3), switch_weapon]
 

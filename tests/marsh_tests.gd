@@ -18,6 +18,7 @@ static func run(t: Node) -> void:
 	await _wildlife(t)
 	await _brood_and_lurkers(t)
 	await _clouds(t)
+	_scale_and_floor(t)
 
 
 static func _settings(t: Node) -> void:
@@ -364,3 +365,86 @@ static func _brood_and_lurkers(t: Node) -> void:
 	t.check(box.sealed != "", "and when a new keeper comes, the hive is sealed again")
 	raid.queue_free()
 	await t.frames(1)
+
+
+static func _scale_and_floor(t: Node) -> void:
+	print("Marsh: its scale and its floor")
+	var flora: GDScript = load("res://worlds/marsh/flora.gd")
+	var map_script: GDScript = load("res://worlds/marsh/map.gd")
+	var spots: Array[Dictionary] = flora.giant_spots(map_script.LAYOUT_SEED + 21)
+	var arches := spots.filter(func(s: Dictionary) -> bool: return s.kind == "arch").size()
+	var nearest := INF
+	var bearings: Array[float] = []
+	for spot in spots:
+		nearest = minf(nearest, (spot.at as Vector2).length())
+		bearings.append((spot.at as Vector2).angle())
+	bearings.sort()
+	var widest := TAU - (bearings[-1] - bearings[0])
+	for i in bearings.size() - 1:
+		widest = maxf(widest, bearings[i + 1] - bearings[i])
+	t.check(spots.size() == flora.ELDERS + flora.ARCHES and arches == flora.ARCHES,
+			"the marsh is ringed by %d far giants, %d of them root arches" % [spots.size(), arches])
+	t.check(nearest > map_script.BASIN + map_script.FAR_RIM + 100.0 and widest < PI * 0.5,
+			"they stand far past the basin (the nearest %.0f m out) and no quarter of the sky is bare" % nearest)
+	t.check(flora.giant_spots(map_script.LAYOUT_SEED + 21) == spots, "every machine sees the same giants")
+	# Under the caps or in a storm the giants are veiled away.
+	var giants := MeshInstance3D.new()
+	var mesh := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for v: Vector3 in [Vector3.ZERO, Vector3.UP, Vector3.RIGHT]:
+		st.add_vertex(v)
+	st.commit(mesh)
+	var haze := ShaderMaterial.new()
+	haze.shader = load("res://assets/shaders/giant_haze.gdshader")
+	mesh.surface_set_material(0, haze)
+	giants.mesh = mesh
+	flora.set_veil(giants, 0.3)
+	var seen := giants.visible
+	flora.set_veil(giants, 1.0)
+	t.check(seen and not giants.visible and is_equal_approx(float(haze.get_shader_parameter("veil")), 1.0),
+			"the giants are veiled away under the caps and in a storm")
+	giants.free()
+	# The forest floor: plants only on dry ground inside the forests, clear of
+	# the stalks, and the same on every machine.
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(Worlds.get_world("marsh"), 12)
+	var map := raid.map as Node3D
+	var art := Node3D.new()
+	t.add_child(art)
+	var plants: Array[MultiMeshInstance3D] = flora.build_floor(map, art, map_script.LAYOUT_SEED + 23)
+	var total := 0
+	var wet := 0
+	var stray := 0
+	var in_stalk := 0
+	for plant in plants:
+		for i in plant.multimesh.instance_count:
+			var at := plant.multimesh.get_instance_transform(i).origin
+			total += 1
+			if float(map.call("ground_height", at.x, at.z)) < map_script.WATER_Y:
+				wet += 1
+			if not map_script.FORESTS.any(func(f: Dictionary) -> bool:
+					return (f["at"] as Vector2).distance_to(Vector2(at.x, at.z)) < float(f["radius"]) + 12.0):
+				stray += 1
+			if not bool(map.call("_clear_of_stalks", Vector2(at.x, at.z), 0.2)):
+				in_stalk += 1
+	var again: Array[MultiMeshInstance3D] = flora.build_floor(map, art, map_script.LAYOUT_SEED + 23)
+	t.check(plants.size() == 4 and total > 2000, "the forest floors grow ferns, spires, fronds and trumpets (%d plants)" % total)
+	t.check(wet == 0 and stray == 0 and in_stalk == 0,
+			"every plant stands on dry ground in a forest, clear of the stalks (%d wet, %d astray, %d in a stalk)" % [wet, stray, in_stalk])
+	t.check(again[0].multimesh.instance_count == plants[0].multimesh.instance_count
+			and again[0].multimesh.get_instance_transform(7) == plants[0].multimesh.get_instance_transform(7),
+			"and every machine grows the same floor")
+	art.queue_free()
+	raid.queue_free()
+	# Every beast wears a hide of its own kind: mottled, wet and freckled.
+	var kinds: Array[String] = []
+	for skin: Dictionary in Look.SKINS.values():
+		if str(skin.get("creature", "")) != "":
+			kinds.append(str(skin["creature"]))
+	var skin_script: GDScript = load("res://core/visual/actor_skin.gd")
+	var hide: ShaderMaterial = skin_script._creature_hide(Color(0.3, 0.3, 0.3), 0.2, 0.5)
+	t.check(kinds.size() >= 6 and kinds.all(func(k: String) -> bool: return skin_script.CREATURE_FRECKLES.has(k))
+			and hide.shader != null and float(hide.get_shader_parameter("freckles")) == 0.2,
+			"every beast's body has a hide of its own, freckled by kind")

@@ -1968,15 +1968,18 @@ func _update_lurk(delta: float) -> void:
 func _build_creature(kind: String) -> void:
 	if _skeleton == null:
 		return
-	var hide := _solid(actor.body_color, 0.0)
-	hide.metallic = 0.0
-	hide.roughness = 0.8
-	var dark := _solid(actor.body_color.darkened(0.45), 0.0)
-	dark.metallic = 0.0
-	dark.roughness = 0.9
+	var lit: float = CREATURE_FRECKLES.get(kind, 0.05)
+	var hide := _creature_hide(actor.body_color, lit, 0.6)
+	var dark := _creature_hide(actor.body_color.darkened(0.45), lit * 0.5, 0.4)
 	var bone := _solid(Color(0.78, 0.74, 0.62), 0.0)
 	bone.metallic = 0.0
 	var glow := _solid(CREATURE_GLOW, 2.6)
+	# Egg sacs, gill fans and spore vents glow softly from inside, never as
+	# bright as the eyes.
+	var soft_glow := _solid(CREATURE_GLOW.lerp(Color(0.85, 0.95, 0.7), 0.4), 0.8)
+	soft_glow.roughness = 0.35
+	var fan := _creature_hide(actor.body_color.lerp(Color(0.55, 0.4, 0.5), 0.5), 0.5, 0.8)
+	fan.set_shader_parameter("rim", 0.3)
 	var body := _rest_at("Body")
 	var chest := _rest_at("Chest")
 	var ball := SphereMesh.new()
@@ -1996,7 +1999,7 @@ func _build_creature(kind: String) -> void:
 	horn.radial_segments = 6
 	var h := actor.stand_height
 	match kind:
-		"stalker":
+		"stalker", "broodling":
 			var low := body.y * 0.95
 			var trunk := Node3D.new()
 			_piece(trunk, "Torso", ball, hide, Vector3(0, low, 0.0), Vector3(0.46, 0.42, 1.15) * h / 1.6)
@@ -2035,6 +2038,36 @@ func _build_creature(kind: String) -> void:
 							shoulder + Vector3((c - 1) * 0.03, -0.28, -0.24) * h / 1.6, Vector3(0.025, 0.16, 0.025) * h / 1.6)
 					claw.rotation.x = -2.2
 				_hang_at(arm, "Foreclaw" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
+			# Gill fans flared behind the skull, lit along their ribs, and a
+			# row of short spines down the tail.
+			var frill := Node3D.new()
+			for side: float in [-1.0, 1.0]:
+				for f in 3:
+					var vane := _piece(frill, "Gill", ball, fan, at + Vector3(side * (0.15 + f * 0.02), 0.04 + f * 0.05, 0.12 + f * 0.05) * h / 1.6,
+							Vector3(0.02, 0.2 - f * 0.03, 0.14) * h / 1.6)
+					vane.rotation = Vector3(-0.3 - f * 0.25, 0.0, side * (0.5 + f * 0.15))
+			_hang_at(frill, "CreatureGills", "Head", Vector3.ZERO)
+			for i in 4:
+				var barb := _piece(trunk, "TailSpine", horn, bone, Vector3(0, low + 0.12 * h / 1.6 - 0.025 * i * h / 1.6, (0.62 + i * 0.26) * h / 1.6),
+						Vector3(0.035, 0.11 - i * 0.015, 0.035) * h / 1.6)
+				barb.rotation.x = 0.9
+			if kind == "broodling":
+				# Fresh from the egg: shards of shell still stuck to its back
+				# and eyes too big for its head.
+				var shell := _solid(Color(0.82, 0.86, 0.72), 0.25)
+				shell.metallic = 0.0
+				var shards := Node3D.new()
+				var rng := RandomNumberGenerator.new()
+				rng.seed = 31
+				for i in 5:
+					var shard := _piece(shards, "Shard", ball, shell, Vector3(rng.randf_range(-0.14, 0.14), low + 0.2 * h / 1.6,
+							rng.randf_range(-0.3, 0.4)) * Vector3(h / 1.6, 1.0, h / 1.6), Vector3(0.16, 0.03, 0.12) * h / 1.6)
+					shard.rotation = Vector3(rng.randf_range(-0.5, 0.5), rng.randf() * TAU, rng.randf_range(-0.5, 0.5))
+				_hang_at(shards, "CreatureShards", "Torso", Vector3.ZERO)
+				var big := Node3D.new()
+				for side: float in [-1.0, 1.0]:
+					_piece(big, "Eye", ball, glow, at + Vector3(side * 0.12, 0.08, -0.1) * h / 1.6, Vector3(0.09, 0.08, 0.09) * h / 1.6)
+				_hang_at(big, "CreatureEyes", "Head", Vector3.ZERO)
 			_creature_legs(hide, Vector2(0.11, 0.13), bone)
 		"shellback":
 			var dome := Node3D.new()
@@ -2067,7 +2100,30 @@ func _build_creature(kind: String) -> void:
 				var tusk := _piece(face, "Tusk", horn, bone, at + Vector3(side * 0.2, -0.08, -0.3) * h / 1.6,
 						Vector3(0.06, 0.26, 0.06) * h / 1.6)
 				tusk.rotation.x = -1.9
+			# A hooked beak under the brow.
+			var beak := _piece(face, "Beak", horn, bone, at + Vector3(0, -0.06, -0.3) * h / 1.6, Vector3(0.16, 0.24, 0.14) * h / 1.6)
+			beak.rotation.x = -2.0
 			_hang_at(face, "CreatureHead", "Head", Vector3.ZERO)
+			# What grows on an old shell: tufts of moss in the seams and a few
+			# small fungal caps, lit underneath.
+			var growth := Node3D.new()
+			var moss := _creature_hide(Color(0.2, 0.24, 0.12), 0.0, 0.2)
+			var cap_mat := _creature_hide(Color(0.42, 0.3, 0.36), 0.25, 0.5)
+			var grow_rng := RandomNumberGenerator.new()
+			grow_rng.seed = 17
+			for i in 10:
+				var px := grow_rng.randf_range(-0.6, 0.6)
+				var pz := grow_rng.randf_range(-0.75, 0.7)
+				var up := 0.475 * sqrt(maxf(0.0, 1.0 - pow(px / 0.75, 2.0) - pow(pz / 0.95, 2.0)))
+				var spot := Vector3(px * h / 1.6, mid + 0.1 * h + up * h / 1.6, pz * h / 1.6)
+				if i < 6:
+					_piece(growth, "Moss", ball, moss, spot, Vector3(0.22, 0.07, 0.2) * h / 1.6)
+					continue
+				var tall := grow_rng.randf_range(0.12, 0.22) * h / 1.6
+				_strand(growth, "CapStem", tube, bone, spot, spot + Vector3(0, tall, 0), 0.025 * h / 1.6)
+				_piece(growth, "Cap", ball, cap_mat, spot + Vector3(0, tall, 0), Vector3(0.16, 0.05, 0.16) * h / 1.6)
+				_piece(growth, "CapGills", ball, soft_glow, spot + Vector3(0, tall - 0.012 * h, 0), Vector3(0.13, 0.02, 0.13) * h / 1.6)
+			_hang_at(growth, "CreatureGrowth", "Torso", Vector3.ZERO)
 			_creature_legs(dark, Vector2(0.24, 0.26), bone)
 		"lurker":
 			# Long and flat, made to lie in the water: a broad, low trunk, a
@@ -2085,6 +2141,12 @@ func _build_creature(kind: String) -> void:
 			for i in 4:
 				_piece(trunk, "Tail", ball, hide, Vector3(0, low - 0.02 * i, (1.0 + i * 0.32) * k),
 						Vector3(0.36 - i * 0.07, 0.22 - i * 0.04, 0.5) * k)
+			# Fins along its flanks, which ripple the water as it lies there.
+			for side: float in [-1.0, 1.0]:
+				for i in 4:
+					var fin := _piece(trunk, "Fin", ball, fan, Vector3(side * 0.4, low, (-0.4 + i * 0.34)) * k,
+							Vector3(0.3, 0.02, 0.2) * k)
+					fin.rotation = Vector3(0, side * 0.3, -side * 0.25)
 			_hang_at(trunk, "CreatureTrunk", "Torso", Vector3.ZERO)
 			var skull := Node3D.new()
 			var at := Vector3(0, low + 0.06 * k, -0.95 * k)
@@ -2099,6 +2161,10 @@ func _build_creature(kind: String) -> void:
 			var stalk := _piece(skull, "LureStalk", tube, dark, at + Vector3(0, 0.3, -0.2) * k, Vector3(0.03, 0.42, 0.03) * k)
 			stalk.rotation.x = -0.7
 			_piece(skull, "Lure", ball, glow, at + Vector3(0, 0.44, -0.4) * k, Vector3(0.09, 0.09, 0.09) * k)
+			# Barbels hanging off the jaw, feeling the water.
+			for b in 4:
+				var root_at := at + Vector3((b - 1.5) * 0.12, -0.12, -0.3 + absf(b - 1.5) * 0.08) * k
+				_strand(skull, "Barbel", tube, dark, root_at, root_at + Vector3((b - 1.5) * 0.05, -0.13, -0.08) * k, 0.016 * k)
 			_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
 			_creature_legs(dark, Vector2(0.15, 0.17), bone)
 		"keeper":
@@ -2113,7 +2179,13 @@ func _build_creature(kind: String) -> void:
 			rng.seed = 23
 			for i in 9:
 				var spot := Vector3(rng.randf_range(-0.32, 0.32), 0.36 + rng.randf() * 0.12, rng.randf_range(-0.2, 0.5)) * k
-				_piece(trunk, "EggSac", ball, glow, Vector3(0, mid, 0) + spot, Vector3.ONE * rng.randf_range(0.18, 0.28) * k)
+				_piece(trunk, "EggSac", ball, soft_glow, Vector3(0, mid, 0) + spot, Vector3.ONE * rng.randf_range(0.18, 0.28) * k)
+			# A skin of hide drawn over the heap, the eggs showing through.
+			_piece(trunk, "Membrane", ball, fan, Vector3(0, mid + 0.36 * k, 0.15 * k), Vector3(0.8, 0.22, 0.85) * k)
+			# Feeding tendrils trailing from under the belly.
+			for i in 6:
+				var from := Vector3(cos(i * 1.05) * 0.3, mid - 0.4, -0.1 + sin(i * 1.05) * 0.3) * Vector3(k, 1.0, k)
+				_strand(trunk, "Tendril", tube, dark, from, from + Vector3(cos(i * 2.3) * 0.08, -0.5, 0.1) * k, 0.03 * k)
 			for i in 5:
 				var spine := _piece(trunk, "Spine", horn, bone, Vector3((i - 2) * 0.16 * k, mid + 0.4 * k, -0.35 * k),
 						Vector3(0.06, 0.26, 0.06) * k)
@@ -2154,6 +2226,21 @@ func _build_creature(kind: String) -> void:
 				var tendril := _piece(sac, "Tendril", tube, dark,
 						at + Vector3(cos(i * 1.3) * 0.35, -0.75, sin(i * 1.3) * 0.35) * h / 2.1, Vector3(0.04, 0.5, 0.04) * h / 2.1)
 				tendril.rotation.z = cos(i * 2.1) * 0.25
+			# Spore vents round its crown, lit inside, and veins of glow
+			# running down the sac.
+			for i in 4:
+				var a := i * TAU / 4.0 + 0.4
+				var foot := at + Vector3(cos(a) * 0.3, 0.6, sin(a) * 0.3) * h / 2.1
+				var tip := foot + Vector3(cos(a) * 0.08, 0.2, sin(a) * 0.08) * h / 2.1
+				_strand(sac, "Vent", tube, dark, foot, tip, 0.06 * h / 2.1)
+				_piece(sac, "VentGlow", ball, soft_glow, tip, Vector3(0.09, 0.04, 0.09) * h / 2.1)
+			for i in 7:
+				var a := i * TAU / 7.0
+				for seg in 3:
+					var t0 := 0.3 + seg * 0.4
+					var p0 := at + Vector3(cos(a + seg * 0.2) * sin(t0), cos(t0), sin(a + seg * 0.2) * sin(t0)) * 0.66 * h / 2.1
+					var p1 := at + Vector3(cos(a + seg * 0.2 + 0.2) * sin(t0 + 0.4), cos(t0 + 0.4), sin(a + seg * 0.2 + 0.2) * sin(t0 + 0.4)) * 0.66 * h / 2.1
+					_strand(sac, "Vein", tube, soft_glow, p0, p1, 0.014 * h / 2.1)
 			_hang_at(sac, "CreatureSac", "Chest", Vector3.ZERO)
 			var face := Node3D.new()
 			var mouth := at + Vector3(0, -0.25, -0.62) * h / 2.1
@@ -2174,9 +2261,21 @@ func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
 	horn.height = 1.0
 	horn.radial_segments = 6
 	for side: String in ["L", "R"]:
-		_limb("UpperLeg." + side, "MidLeg." + side, Vector3.ZERO, size, mat, 0.0, 1.0, true)
-		_limb("MidLeg." + side, "LowerLeg." + side, Vector3.ZERO, size * 0.8, mat, 0.0, 1.0, true)
-		_limb("LowerLeg." + side, "FootBack." + side, Vector3.ZERO, size * 0.6, mat, 0.0, 1.0, true)
+		# A heavy haunch at the hip and a thigh tapering into the shank, so
+		# the legs carry the body rather than stilts.
+		var hip := Node3D.new()
+		var haunch := SphereMesh.new()
+		haunch.radial_segments = 12
+		haunch.rings = 6
+		_piece(hip, "Haunch", haunch, mat, Vector3.ZERO, Vector3(size.x * 2.6, size.y * 3.0, size.x * 3.0))
+		_hang_at(hip, "Haunch" + side, "UpperLeg." + side, _rest_at("UpperLeg." + side).lerp(_rest_at("MidLeg." + side), 0.2))
+		_limb("UpperLeg." + side, "MidLeg." + side, Vector3.ZERO, size * 2.0, mat, 0.0, 1.0, true)
+		_limb("MidLeg." + side, "LowerLeg." + side, Vector3.ZERO, size * 1.5, mat, 0.0, 1.0, true)
+		_limb("LowerLeg." + side, "FootBack." + side, Vector3.ZERO, size * 0.75, mat, 0.0, 1.0, true)
+		# A calf bulging at the top of the shank.
+		var calf := Node3D.new()
+		_piece(calf, "Calf", haunch, mat, Vector3.ZERO, Vector3(size.x * 1.9, size.y * 3.2, size.x * 2.0))
+		_hang_at(calf, "Calf" + side, "MidLeg." + side, _rest_at("MidLeg." + side).lerp(_rest_at("LowerLeg." + side), 0.3))
 		var ankle := _rest_at("FootBack." + side)
 		var foot := Node3D.new()
 		var pad := SphereMesh.new()
@@ -2188,6 +2287,38 @@ func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
 					Vector3(size.x * 0.35, size.x * 1.3, size.x * 0.35))
 			nail.rotation = Vector3(-1.5, -toe * 0.3, 0)
 		_hang_at(foot, "Foot" + side, "FootBack." + side, Vector3(ankle.x, 0.0, ankle.z))
+
+
+## How many of a beast's hide cells carry a lit freckle, by kind.
+const CREATURE_FRECKLES := {
+	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
+}
+
+
+## A beast's hide (`creature.gdshader`): its colour mottled darker, a paler
+## belly, lit freckles in the planet's glow and a wet sheen.
+static func _creature_hide(color: Color, freckles: float, wet: float) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/creature.gdshader") as Shader
+	mat.set_shader_parameter("hide", color)
+	mat.set_shader_parameter("mottle", Color.from_hsv(fposmod(color.h - 0.04, 1.0), minf(color.s * 1.2 + 0.05, 1.0), color.v * 0.6))
+	mat.set_shader_parameter("under", color.lerp(Color(0.78, 0.72, 0.62), 0.4))
+	mat.set_shader_parameter("glow", CREATURE_GLOW)
+	mat.set_shader_parameter("freckles", freckles)
+	mat.set_shader_parameter("wet", wet)
+	return mat
+
+
+## A tube from one point to another, `width` across: a tendril, a stem, a vein.
+static func _strand(root: Node3D, piece_name: String, tube: PrimitiveMesh, mat: Material, from: Vector3, to: Vector3,
+		width: float) -> MeshInstance3D:
+	var along := to - from
+	var part := _piece(root, piece_name, tube, mat, (from + to) * 0.5, Vector3.ONE)
+	var y := along.normalized() if along.length() > 0.0001 else Vector3.UP
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+	var z := x.cross(y).normalized()
+	part.basis = Basis(x * width, y * along.length(), z * width)
+	return part
 
 
 ## Pitches the walker's cannon in its mantlet toward where it aims.

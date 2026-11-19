@@ -37,3 +37,11 @@ static func name_of(id: String) -> String:
 ## How long emote `id` plays (0: until you move).
 static func seconds_of(id: String) -> float:
 	return float(SECONDS.get(id, 0.0))
+
+
+## Which way slice `i` of the quick emote wheel lies from its middle, on a
+## screen (y down): the first at the top, then round clockwise
+## (`PlayerController.wheel_slice` reads a pull the same way).
+static func slice_dir(i: int) -> Vector2:
+	var turn := TAU * float(i) / float(IDS.size())
+	return Vector2(sin(turn), -cos(turn))
