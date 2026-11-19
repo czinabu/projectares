@@ -712,6 +712,12 @@ without Caleb, and update the gap list when a PR closes a row.
   which eases off as the view tips down while the eyes lean ahead,
   `PlayerController.look_down_lean`, so looking down sees the chest, never
   the shoulders from behind)
+  from the head as drawn, in every pose (`ActorSkin._head_local`, the
+  posed head; its steadying trails it by at most `eye_steady_reach`, the
+  controller's easing by at most `eye_lag_reach`, and `head_posed` carries
+  it on with the head posed after the camera was placed; no landing dip on
+  top of the body's own squat), so the eyes never trail into the neck or
+  the armor's collar (`camera_tests.gd`, `_check_eyes_stay_in_the_head`),
   and leaves out only the head (`ActorSkin.hide_head` moves it and what is
   worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
   a mirror still see it). A station's own view (the bench's, a
@@ -1051,8 +1057,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
   keeping a pull made meanwhile. Light guns are quick and steady on the
   move; a DMR is slow to aim and wild on the run.
-  Feedback is view only (DESIGN.md "Feedback"): each kind of gun has its own
-  voice (the item's `shot_sound`) heard out to `Gun.SHOT_REACH`, a round
+  Feedback is view only (DESIGN.md "Feedback"): every gun has a voice of
+  its own (the item's `shot_sound`, one of `Sfx.GUN_VOICES`, never shared;
+  a test checks it) that fits what it is: the everyday guns are ballistic
+  (a crack, the action, a low punch, the cycle), the heavy weapons energy
+  (a charged snap, a zap or plasma, crackle). They are made from code by
+  `assets/sounds/weapons/make_weapon_sounds.py` (ours, no credit needed;
+  short rings and short echoes, Caleb's feedback: never a bell, never a
+  long echo), takes for the open, under a roof and far off.
+  `Sfx.shot` plays your own the tick it fires, flat, and anyone else's
+  where it went off: under a roof (`Sfx.roof_over`) the indoor take, past
+  `Sfx.FAR_FROM` giving way to the far take after the sound's travel time.
+  A rail's charge and a rotary gun's spin are heard from the gun's state
+  (`ActorSkin._update_weapon_hum`), a draw as the hand takes the weapon,
+  all heard out to `Gun.SHOT_REACH`, a round
   passing close is heard going by (`Sfx.pass_by`), a round leaves a puff
   and a wall a mark for a few seconds (`Fx.impact`, at most `Fx.MAX_MARKS`;
   `Combat.trace` gives the face's `normal`), the hit marker and its sound
