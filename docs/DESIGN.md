@@ -651,6 +651,24 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   when; the blast is a flash that lights the ground, a fireball throwing a
   fan of dirt and a column of smoke left drifting, heard and felt (the view
   jolts) once its sound arrives. Ashfront only for now.
+- **The scenery army (Caleb's call: view only, cannot be shot).** Squads of
+  both armies fight each other out in the mid distance, two to five fights
+  at once by how hot the war is, each two squads of 10 to 16 facing across
+  a line, placed toward the war's centre (`worlds/ashfront/battle.gd`, the
+  map's `make_battle`). They run up in hops, kneel or stand to fire
+  (orange Legion and cyan Tide tracers and muzzle flashes that cut through
+  the haze, heard as far gunfire once the sound arrives), fall, lie a
+  while and fade, and fresh ones come up from behind. They are the armies'
+  own riflemen: once per run of the game a dressed soldier of each army is
+  posed in a world of its own (a run cycle, aiming, kneeling, fallen) and
+  each pose is baked into a far copy of under 900 triangles, drawn one
+  MultiMesh per pose. Nothing of it is ever nearer a player or the camera
+  than `keep_off` (48 m; it dissolves in over the next 12 m), a fight is
+  placed at least 85 m from everyone, and one a player comes within 62 m
+  of ends and starts again elsewhere, so up close every soldier is a real
+  bot. A round from the player's own gun through an extra, or a shell
+  landing by it, drops it, on that screen only and for nothing. View only:
+  no collision, no `Combat.deal`, nothing sent online, none on a server.
 - Everything lost on death, but the body drops a scrip pile worth it, not
   the gear itself (section 10, "Scrip piles").
 - The only place heavy weapons are found.
@@ -1227,7 +1245,13 @@ the Ashland: its sky, light and ash-storm mood (the war mood is Ashfront's
 own), the Ashland's burnt ground and glowing cracks on the field, and its
 land and mountains past the rim to the horizon, kept low near the map so
 the skyline, the giants and the burning ring stand on it; the planet's
-rocks only on the rim's slope and past it, out of the fight.
+rocks only on the rim's slope and past it, out of the fight. The Ashland's
+air is ash grey and its light neutral (Caleb's look pass, after his
+references: grey smoke with hot lights burning through it), so the red
+lives in the sky's glow, the fires, the cracks and the tracers, and stands
+out. Low battle smoke lies over its ground (`PlanetType.smoke`, drawn by
+`Planet.GroundSmoke`), thicker as the war heats up and in a storm, and
+switched off with the "Battle smoke" graphics setting.
 
 ## 3. The watch
 

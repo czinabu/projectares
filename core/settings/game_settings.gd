@@ -50,6 +50,10 @@ static var anti_aliasing := ANTI_ALIASING_DEFAULT
 ## A thin dark outline on far shapes out in a world (`Look.edge_ink`), so
 ## they read against the haze. Not drawn in the MSAA modes (`ink_shown`).
 static var edge_ink := true
+## Low battle smoke over the ground where a planet has some
+## (`PlanetType.smoke`, `Planet.GroundSmoke`): volumetric fog, so it costs
+## frame time and can be switched off.
+static var ground_smoke := true
 static var _loaded := false
 
 
@@ -80,6 +84,7 @@ static func reset() -> void:
 	show_nameplates = true
 	anti_aliasing = ANTI_ALIASING_DEFAULT
 	edge_ink = true
+	ground_smoke = true
 
 
 static func set_value(key: String, value: Variant) -> void:
@@ -106,6 +111,8 @@ static func set_value(key: String, value: Variant) -> void:
 			anti_aliasing = clampi(int(value), 0, ANTI_ALIASING.size() - 1)
 		"edge_ink":
 			edge_ink = bool(value)
+		"ground_smoke":
+			ground_smoke = bool(value)
 		_:
 			return
 	apply()
@@ -117,7 +124,7 @@ static func to_dict() -> Dictionary:
 			"field_of_view_third": field_of_view_third, "camera_distance": camera_distance,
 			"eye_pullback": eye_pullback,
 			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates,
-			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink}
+			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink, "ground_smoke": ground_smoke}
 
 
 ## Pushes the settings that live outside the game's own nodes: volume, the
@@ -165,6 +172,8 @@ static func apply_graphics() -> void:
 	tree.root.screen_space_aa = mode[2]
 	for ink: Node in tree.get_nodes_in_group("edge_ink"):
 		(ink as Node3D).visible = ink_shown()
+	for smoke: Node in tree.get_nodes_in_group("ground_smoke"):
+		smoke.call("show_smoke", ground_smoke)
 
 
 ## Whether the edge ink is drawn: switched on, and no MSAA, which leaves the
