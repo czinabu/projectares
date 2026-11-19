@@ -121,12 +121,25 @@ func _ready() -> void:
 		_list_groups()
 		get_tree().quit(0)
 		return
+	# A script that fails to compile still preloads, but every call on it does
+	# nothing, so its group would pass by running no checks at all.
+	_check_scripts_load()
 	if "--tier" in args or "--shard" in args or "--groups" in args:
 		await _run_selected(args)
 	else:
 		await _run()
 	print("\n%d passed, %d failed" % [_passed, _failed])
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+## Fails the run for each script this runner preloads that did not compile
+## (a parse error in a test file or anything it depends on).
+func _check_scripts_load() -> void:
+	var consts := (get_script() as Script).get_script_constant_map()
+	for name: String in consts:
+		var value: Variant = consts[name]
+		if value is GDScript and not (value as GDScript).can_instantiate():
+			check(false, "%s (%s) compiles" % [name, (value as GDScript).resource_path])
 
 
 # --- Picking groups for CI -------------------------------------------------

@@ -1890,11 +1890,8 @@ func hunted() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if world.safe_zone or not world.gear_at_risk:
 		return out
-	# Read by name so this stands whether or not the grudge pass is in.
-	var held: Variant = get("grudges")
-	var bar := float(world.get("grudge_hunt")) if world.get("grudge_hunt") != null else 0.0
-	if typeof(held) != TYPE_DICTIONARY:
-		return out
+	var bar := world.grudge_hunt
+	var held := grudges
 	var rows: Array = []
 	for key: Variant in held:
 		if not is_instance_valid(key) or not key is Actor or (key as Actor).is_dead:
