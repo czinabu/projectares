@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 56
+const PROTOCOL := 57
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -634,6 +634,11 @@ func _start_server_raid() -> void:
 		for peer in _joined_peers:
 			_ice_holes.rpc_id(peer, holes))
 	raid.grid_called.connect(_on_server_grid_called)
+	raid.cloud_burst.connect(func(at: Vector3, radius: float, seconds: float, kind: String) -> void:
+		for peer in _joined_peers:
+			var viewer: Actor = _peer_actor.get(peer)
+			if viewer != null and is_instance_valid(viewer) and viewer.global_position.distance_to(at) <= CLOUD_RANGE:
+				_cloud.rpc_id(peer, at, radius, seconds, kind))
 	raid.shells_called.connect(func(points: PackedVector3Array, lands_in: PackedFloat32Array) -> void:
 		for peer in _joined_peers:
 			_shells.rpc_id(peer, points, lands_in))
@@ -3697,6 +3702,18 @@ func _keeper(kind: String, phase: int) -> void:
 func _purge(index: int, state: int) -> void:
 	if raid != null and index >= 0 and index < raid.purges.size():
 		raid.purge_changed.emit(index, clampi(state, 0, 2))
+
+
+## How far off a death burst's cloud is shown (`Raid.cloud_burst`).
+const CLOUD_RANGE := 140.0
+
+
+## A death burst's cloud (`Raid.cloud_burst`), for the view to show. The
+## server alone hurts anyone in it.
+@rpc("authority", "call_remote", "reliable")
+func _cloud(at: Vector3, radius: float, seconds: float, kind: String) -> void:
+	if raid != null and raid.world != null:
+		raid.cloud_burst.emit(at, clampf(radius, 0.5, 20.0), clampf(seconds, 0.1, 60.0), kind.left(16))
 
 
 ## The open holes in the ice (`Raid.pack_ice_holes`).

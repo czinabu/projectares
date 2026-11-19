@@ -119,11 +119,12 @@ const ALL_IN_FORM := 10.0
 ## is in the world, the free track nearest them gets an AI-only race of
 ## `AMBIENT_FIELD` racers, the first `AMBIENT_FIRST` seconds after someone
 ## is there and the next `AMBIENT_GAP` after one closes. At most
-## `AMBIENT_TRACKS` run at once: each AI racer's machine costs the server
-## about as much as a bot (its move), so the count is kept small. One runs
-## no longer than `AMBIENT_LIMIT`.
+## `AMBIENT_TRACKS` run at once, one a track, so both circuits are racing
+## when you arrive (Caleb's ask): each AI racer's machine costs the server
+## about as much as a bot (its move), so twelve is still small next to a
+## warzone's armies. One runs no longer than `AMBIENT_LIMIT`.
 const AMBIENT_FIELD := 6
-const AMBIENT_TRACKS := 1
+const AMBIENT_TRACKS := 2
 const AMBIENT_FIRST := 8.0
 const AMBIENT_GAP := 20.0
 const AMBIENT_LIMIT := 600.0

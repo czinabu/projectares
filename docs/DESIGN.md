@@ -1253,6 +1253,9 @@ built in this order, cheapest and most connected first:
    death (keep what you wear, drop the pack). It is the main source of
    artifacts (Caleb's call), plus trophies, melee blueprints (new options,
    never a higher Mk) and marsh cosmetics.
+   Part one is built (below, "The Spore Marsh"): the world, its map, three
+   of the five kinds of wildlife, fouling, spore clouds and its loot. The
+   lurkers, the brood keepers and their hives, and the Rootways come next.
 3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
    map several times Ashfront's width, salvage crates too big for a pack
    that ride in a vehicle's cargo space, sandstorms that bury and uncover
@@ -1270,6 +1273,68 @@ Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
 goes in, artifacts mostly come from it; a carried artifact still drops as
 itself under Ashfront's scrip-pile rule, so they keep changing hands in
 the war.
+
+### The Spore Marsh (part one, built)
+
+`worlds/marsh/`, on the marsh planet type. A drowned basin about 400 m
+across inside low hills: players come in on the dry southern shore (the
+outer zone), the drowned middle is hummocks between pools of black water
+(the pools are dug under one dark sheet of water at the waterline, view
+only), and the core in the north is the Grey Matriarch's forest. Five
+fungus forests stand in it, each twenty to thirty giant stalks a few
+metres apart under caps big enough to stand on, so sight lines close in
+and a fight is short. The planet's mist lies low over everything (its
+"smoke", thicker in a storm) and spores drift round the viewer.
+
+- **The wildlife.** Three kinds, each a faction of its own, so they hunt
+  each other as well as you and nobody hurts its own kind. Stalkers are
+  quick, fragile pack hunters with hooked claws; a pack dens round each
+  forest's heart, and they circle out of reach and feint more than an
+  army's blades do (the bot's "feint_chance"). Shellbacks are slow grazers
+  under a plated dome, 80 armor, with a heavy bash from the front and a
+  soft rear: hits from behind do three times as much. Bloaters are slow
+  sacs of spores with a weak slap. Each wears a beast's own body built in
+  code on the walker's skeleton (`ActorSkin._build_creature`), with nothing
+  in its hand: the claws and the bash are its own.
+- **Spore clouds.** A bloater bursts where it dies (`WorldDef.death_burst`)
+  into a cloud 4.5 m across that hangs eight seconds and hurts everyone in
+  it but other bloaters, players and beasts alike, 9 a second past armor
+  (`Raid.burst_cloud`, `_tick_clouds`, through `Combat.deal`, authority
+  only; clients are told with `NetSession._cloud` and draw it). So a blade
+  kill is a step back after the cut, and a shot from range is a noise.
+- **Gunshots wake the marsh.** Shots carry 1.6 times as far as still air
+  (`WorldDef.shot_carry`, which every bot's hearing scales by); melee kills
+  stay silent, as everywhere.
+- **Fouling** (Caleb's call). With `WorldDef.gun_fouling` over 0 every shot
+  fouls the gun a little (`Gun.fouling`, 4% a shot here): the spread grows
+  with it, up to 1.8 times, it clears on its own once the trigger rests,
+  and at full the gun jams (`Gun.jammed`): it only clicks until a reload,
+  which a pull on the trigger starts and which clears it all. About 25
+  shots without a pause jam a gun, so bursts are fine and a full mag held
+  down is not. Heavy weapons never foul (there are none here anyway), and
+  every other world's guns are untouched. Bots clear their own jams.
+- **The Grey Matriarch.** The core's boss, at her den in the north forest:
+  a stalker 2.9 m tall, 900 health, quick for her size and feinting most of
+  the time, made for one player and tougher for each other player near her
+  (`boss_party_scale`). She carries what a warlord carries, an artifact
+  more often than not, sometimes her trophy (the Matriarch's Fang, a
+  keepsake never traded or sold) and now and then the Spore paint, a Relic
+  armor paint earned nowhere else.
+- **What it pays.** It is the main source of artifacts: the Matriarch
+  (0.6), world events' pods (0.15), the den's cache, and now and then a
+  forest's hollow (the cache among the roots at its heart) or a cap (the
+  cache on its two tallest caps, reached by flight). Its own goods are
+  Stalker Fangs, Shellback Chitin, Spore Sacs and Glowcaps, and its own
+  blueprints, the Hookblade and the Reed Spear: melee options made from
+  them, never a higher Mk. Gear in its caches stays the basic tier, as in
+  every gentle world. The survey stations (a hut and a depot each) hold
+  what the expeditions left behind.
+- **Contracts.** Its own, tagged "marsh": hollows, caps, stalkers,
+  shellbacks and Spore Sacs as dailies; the Matriarch twice and three
+  Glowcaps as weeklies, which pay a blueprint like every weekly.
+- **Still to come.** Lurkers under the black water, brood keepers and the
+  hives they guard, the Rootways and their keepers, the rain storms the
+  planet already has a look for, and wading.
 
 ## 3. The watch
 
@@ -2152,12 +2217,12 @@ How they work for now:
   found in the world rides in your pack as loot until you get it home.
 - **Finding them.** The Blade Tournament's weekly prize carries a chance
   at one (section 2, "Gladiator arena"), and the Heart Warden's vault a
-  small one. Until the Spore Marsh's dungeons and bosses exist,
-  world events also stand in: a warlord carries one half the time and a supply
-  pod holds one now and then (`WorldDef` sets the chances per world). They
-  are off in Frostline for now, under the rule that rare gear stays in the
-  full-loot war worlds; the PvE source in this section is Caleb's call to
-  turn on when it exists.
+  small one. The Spore Marsh is their main source (Caleb's call): the Grey
+  Matriarch carries one more often than not, its pods sometimes, and its
+  forests' hollows, caps and the den now and then (section 2, "The Spore
+  Marsh"). World events stand in elsewhere: a warlord carries one half the
+  time and a supply pod holds one now and then (`WorldDef` sets the chances
+  per world). They are off in Frostline.
 - **Losing and keeping them.** The equipped one is gear: it drops in your bag
   on death in the PvP world and goes home on sign-out. One in the pack banks
   at a depot like any loot. Never sold in shops.
