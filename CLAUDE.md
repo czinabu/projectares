@@ -685,6 +685,12 @@ without Caleb, and update the gap list when a PR closes a row.
   which eases off as the view tips down while the eyes lean ahead,
   `PlayerController.look_down_lean`, so looking down sees the chest, never
   the shoulders from behind)
+  from the head as drawn, in every pose (`ActorSkin._head_local`, the
+  posed head; its steadying trails it by at most `eye_steady_reach`, the
+  controller's easing by at most `eye_lag_reach`, and `head_posed` carries
+  it on with the head posed after the camera was placed; no landing dip on
+  top of the body's own squat), so the eyes never trail into the neck or
+  the armor's collar (`camera_tests.gd`, `_check_eyes_stay_in_the_head`),
   and leaves out only the head (`ActorSkin.hide_head` moves it and what is
   worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
   a mirror still see it). A station's own view (the bench's, a
