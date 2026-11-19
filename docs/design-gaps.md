@@ -11,7 +11,7 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
-| Main hub as a safe social space | Built | The Concourse: safe zone, gates, shops, clan hall, arena gate, look tags. |
+| Main hub as a safe social space | Built | The Concourse: safe zone, gates, shops, clan hall, arena gate, look tags, set part way up a megacity (`worlds/plaza/megacity.gd`): towers from a canyon floor far below to over a kilometre above, lit windows, skyways, signs and air traffic, view only. |
 | Hub vehicles limited to harmless fun | Partly | Bikes can be ridden in the plaza and nobody can be hurt. An abandoned one does not pack itself away: a safe zone returns before `Raid._tick_vehicles`, so a thrown vehicle there is never removed. |
 | Watch skins shown off in the hub | Missing | No watch skin items yet. |
 | Expand the main hub | Built | A deck 480 m across in districts round the spire (DESIGN.md section 2): the gate terrace with a dispatcher, Market Row (six staffed shopfronts fitted out for their trade, transit at its end), the civic square (clan hall and clerk, contract and wanted boards, big screen), the residences, the arena and the shuttered RC yard, gardens, towers with skybridges at 15 m, rim lookouts and the bike loop. No floating ads, mast signs or floor pads: arches light while you stand in them. Still code-built greybox art; hand-made models can replace it later. |

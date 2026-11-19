@@ -333,6 +333,19 @@ without Caleb, and update the gap list when a PR closes a row.
   world doorway (`heat_signs`) and the wanted on the most-wanted board
   (`wanted_text`, the map's "wanted_board" label). Anything else that
   advertises a world reads `world_status`, not a second channel.
+- The Concourse's megacity (Caleb's "tall and grand"): the deck is one
+  terrace part way up a city, not its roof. `worlds/plaza/megacity.gd`
+  (view only, built by the map only where `Look` is on, its own RNG) stands
+  rings of towers from a canyon floor far below (`FLOOR_Y`) to over a
+  kilometre above, landmark spires, skyways (the near ring tied out past
+  the rail, `_ties`), a monorail ring, lit signs and air traffic.
+  Windows are never geometry: `megacity.gdshader` lights them floor by floor
+  from the world position (the near ring wears it too, `material_for(true)`)
+  and does its own haze; the traffic is one MultiMesh flown by
+  `sky_traffic.gdshader` (the monorail's trains too). All of it is a handful of meshes, so a new tower
+  is a box in the same batch, never a node. The map asks the view to draw
+  out to `VIEW_FAR` (its "view_far" meta). Check by eye with
+  `visual_check.tscn -- <dir> --hub-only`.
 - The War Room (DESIGN.md section 2, "Spectating screens"): the plaza's
   big screen is `WarRoom` (`core/social/war_room.gd`, view only, made by
   `PlazaView` only where `Look` is on, drawn into a `SubViewport` on the

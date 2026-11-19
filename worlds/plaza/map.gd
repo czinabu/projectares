@@ -33,6 +33,7 @@ extends Node3D
 ## "portal" with a "destination" and a "label".
 
 const VehicleScript := preload("res://core/vehicle/vehicle.gd")
+const MEGACITY := preload("res://worlds/plaza/megacity.gd")
 
 ## The balcony rail, where the deck ends.
 const RADIUS := 240.0
@@ -169,7 +170,11 @@ const CLERK := ["Ansel", "Clerk", ["Found a clan, or join one. The paperwork's l
 ## The boulevards: bearings and widths, from the plaza out to the districts.
 const SPOKES := [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0]
 const TOWER_RING := 120.0
-const TOWER_HEIGHTS := [85.0, 45.0, 60.0, 40.0, 70.0, 50.0, 90.0, 55.0]
+## The beacon spire's top, over everything on the deck.
+const SPIRE_TOP := 194.0
+## Taller than the deck is wide, so the near ring looks down on you (Caleb's
+## ask: tall and grand from the ground).
+const TOWER_HEIGHTS := [230.0, 135.0, 175.0, 120.0, 260.0, 150.0, 205.0, 140.0]
 const TOWER_SIZE := 10.0
 ## Tops of the tower decks and skybridges. Three boot kicks reach 15 m.
 const DECK_HEIGHT := 15.0
@@ -211,6 +216,10 @@ var _flushed := false
 ## Where the street lamps and shop lights hang; `_dress` lights each.
 var _lamps: Array[Vector3] = []
 var _shop_lights: Array[Array] = []
+## Where a lamp washes up each near tower's foot (`_dress`).
+var _foot_lights: Array[Vector3] = []
+## The near towers' glass, lit floor by floor like the megacity's.
+var _tower_glass: Material
 ## Each cart's customers, for the locals: see `locals_layout`'s "stops".
 var _stops: Array[Dictionary] = []
 
@@ -232,6 +241,9 @@ var _stops: Array[Dictionary] = []
 ## not so metallic that they turn into black holes against the floor.
 @onready var DARK := Look.surface("metal", {"tint": Color(0.4, 0.44, 0.52), "grime": 0.2, "scale": 0.3,
 		"metal": 0.4, "rough_mult": 1.2})
+## The near towers' feet: sci-fi plate, dark, so the lit glass above reads.
+@onready var CLADDING := Look.surface("panels", {"tint": Color(0.62, 0.66, 0.8), "grime": 0.15, "scale": 0.16,
+		"metal": 0.55, "rough_mult": 1.0})
 ## Inside a shop: warm pale panels, so the lights carry the room.
 @onready var INSIDE := Look.surface("metal", {"tint": Color(0.78, 0.76, 0.74), "grime": 0.1, "scale": 0.25,
 		"metal": 0.2, "rough_mult": 1.4})
@@ -239,6 +251,7 @@ var _stops: Array[Dictionary] = []
 
 func _ready() -> void:
 	_art_rng.seed = LAYOUT_SEED
+	_tower_glass = MEGACITY.material_for(true)
 	_build_environment()
 	nav_region = NavigationRegion3D.new()
 	nav_region.name = "Geometry"
@@ -267,18 +280,22 @@ func _build_environment() -> void:
 	# it, a calm, cool sky after the grey of the warzones (Caleb's call: grand
 	# and sci-fi, with the neon glowing).
 	Look.atmosphere(self, {
-		"sky_tint": Color(0.55, 0.6, 0.95),
-		"sky_saturation": 0.8,
-		"sky_energy": 0.6,
-		"fog_color": Color(0.16, 0.18, 0.3),
+		# A deep dusk over the megacity, warm where the canyon's light comes
+		# up into the haze, so the windows and the traffic carry the sky.
+		"sky": "qwantani_dusk_1_puresky_2k.hdr",
+		"sky_tint": Color(0.68, 0.6, 1.0),
+		"sky_saturation": 0.9,
+		"sky_energy": 0.24,
+		"fog_color": Color(0.42, 0.24, 0.32),
 		"fog_density": 0.0022,
-		"sun_color": Color(0.65, 0.7, 1.0),
-		"sun_energy": 0.6,
+		"haze_height": 0.36,
+		"sun_color": Color(0.75, 0.65, 1.0),
+		"sun_energy": 0.55,
 		"sun_angles": Vector3(-14, 35, 0),
-		"ambient_color": Color(0.5, 0.55, 0.75),
+		"ambient_color": Color(0.5, 0.52, 0.75),
 		"ambient_energy": 1.0,
 		"saturation": 0.95,
-		"glow": 0.75,
+		"glow": 0.8,
 	})
 	Look.weather(self, "embers", RADIUS * 0.5)
 
@@ -335,7 +352,8 @@ func _build_spire() -> void:
 		_sign("SAFE ZONE", face * Vector3(0, 3.0, 2.53), TAU * i / 4.0, 0.55, Color(0.6, 0.95, 0.75))
 		_sign("Weapons are locked here", face * Vector3(0, 2.35, 2.53), TAU * i / 4.0, 0.26, Color(0.9, 0.9, 0.9))
 	# The shaft tapers as it climbs, a light seam up each corner.
-	var levels := [[3.0, 4.0, 22.0], [2.2, 26.0, 18.0], [1.4, 44.0, 14.0]]
+	# Tall enough to stand over the near towers: the Concourse's own landmark.
+	var levels := [[4.2, 4.0, 60.0], [3.2, 64.0, 50.0], [2.2, 114.0, 44.0], [1.3, 158.0, 36.0]]
 	for level: Array in levels:
 		var w: float = level[0]
 		var base: float = level[1]
@@ -344,7 +362,8 @@ func _build_spire() -> void:
 		for i in 4:
 			var corner := Basis(Vector3.UP, PI / 4.0 + TAU * i / 4.0) * Vector3(w * 0.5, 0, w * 0.5)
 			_part(self, Vector3(0.18, tall, 0.18), corner + Vector3(0, base + tall * 0.5, 0), CYAN, true)
-	_part(self, Vector3(1.2, 2.0, 1.2), Vector3(0, 59.0, 0), Color(0.75, 1.0, 1.0), true)
+	_part(self, Vector3(1.2, 2.0, 1.2), Vector3(0, SPIRE_TOP + 1.0, 0), Color(0.75, 1.0, 1.0), true)
+	_part(self, Vector3(0.3, 26.0, 0.3), Vector3(0, SPIRE_TOP + 15.0, 0), Color(0.75, 1.0, 1.0), true)
 	# Podiums: step up, strike a pose, be inspected.
 	for i in PODIUMS:
 		var bearing := 360.0 * i / PODIUMS + 180.0 / PODIUMS
@@ -393,14 +412,24 @@ func _build_towers() -> void:
 		var tiers := [[TOWER_SIZE, 0.0, tall * 0.55], [TOWER_SIZE * 0.75, tall * 0.55, tall * 0.85],
 				[TOWER_SIZE * 0.5, tall * 0.85, tall]]
 		var color: Color = [CYAN, MAGENTA][i % 2]
+		# The foot, up to the landing deck, is clad in plate where people
+		# walk past it; the glass starts above.
+		var foot := DECK_HEIGHT - 0.5
+		_solid(Vector3(TOWER_SIZE, foot, TOWER_SIZE), at + Vector3(0, foot * 0.5, 0), CLADDING, yaw)
+		tiers[0][1] = foot
+		# A light strip at the foot and a lamp washing up the plate from the
+		# deck side, so the cladding reads at night.
+		_part(self, Vector3(TOWER_SIZE + 0.1, 0.12, TOWER_SIZE + 0.1), at + Vector3(0, 0.3, 0), color, true, yaw)
+		_foot_lights.append(at - at.normalized() * (TOWER_SIZE * 0.5 + 5.0) + Vector3(0, 2.5, 0))
 		for tier: Array in tiers:
 			var w: float = tier[0]
 			var size := Vector3(w, tier[2] - tier[1], w)
 			var centre := at + Vector3(0, (tier[1] + tier[2]) * 0.5, 0)
-			_solid(size, centre, WALL, yaw)
-			_add_seams(centre, size, yaw, color, 6.0)
+			_solid(size, centre, _tower_glass, yaw)
+			# Lit corners only: the windows are the material's.
+			_add_seams(centre, size, yaw, color, size.y + 1.0)
 			# A bright band where each tier steps in.
-			_part(self, Vector3(w + 0.12, 0.6, w + 0.12), centre + Vector3(0, size.y * 0.5 - 0.3, 0), color, true, yaw)
+			_part(self, Vector3(w + 0.12, 0.25, w + 0.12), centre + Vector3(0, size.y * 0.5 - 0.15, 0), color, true, yaw)
 		_part(self, Vector3(TOWER_SIZE * 0.5 + 0.3, 0.3, TOWER_SIZE * 0.5 + 0.3), at + Vector3(0, tall, 0), color, true)
 		_part(self, Vector3(0.25, tall * 0.12, 0.25), at + Vector3(0, tall * 1.06, 0), color, true)
 		_solid(Vector3(TOWER_SIZE + 8.0, 0.5, TOWER_SIZE + 8.0), at + Vector3(0, DECK_HEIGHT - 0.25, 0), DARK, yaw)
@@ -420,6 +449,66 @@ func _build_towers() -> void:
 			_part(self, Vector3(0.14, 0.08, length), rail + Vector3(0, 0.58, 0), CYAN, true, bridge_yaw)
 			_part(self, Vector3(0.1, 0.05, length), rail + Vector3(-side * 0.1, -0.52, 0), CYAN.darkened(0.3), true,
 					bridge_yaw)
+		_bridge_truss(mid, length, bridge_yaw)
+		_deck_brackets(at, yaw)
+
+
+## The girder under a skybridge (Caleb's feedback: they floated like
+## paper): a deep spine, a bottom chord each side and lit webbing between,
+## so the span reads as built. Scenery only: walking is on the deck above.
+func _bridge_truss(mid: Vector3, length: float, yaw: float) -> void:
+	var turn := Basis(Vector3.UP, yaw)
+	var depth := 3.2
+	var top := -0.4
+	var bottom := top - depth
+	_solid(Vector3(2.2, 1.0, length), mid + Vector3(0, top - 0.5, 0), STEEL, yaw, false)
+	var bays := maxi(int(length / 6.0), 2)
+	var step := length / bays
+	for side: float in [-1.0, 1.0]:
+		var x := side * 1.75
+		_solid(Vector3(0.35, 0.45, length), mid + turn * Vector3(x, bottom, 0), STEEL, yaw, false)
+		_part(self, Vector3(0.12, 0.12, length), mid + turn * Vector3(x * 1.08, bottom - 0.25, 0), CYAN.darkened(0.2),
+				true, yaw)
+		for k in bays:
+			var z0 := -length * 0.5 + k * step
+			var z1 := z0 + step
+			var upper := mid + turn * Vector3(x, top, z0)
+			var lower := mid + turn * Vector3(x, bottom, z1 if k % 2 == 0 else z0)
+			_strut(upper if k % 2 == 0 else mid + turn * Vector3(x, top, z1), lower, 0.22, STEEL)
+			_strut(mid + turn * Vector3(x, top, z1), mid + turn * Vector3(x, bottom, z1), 0.2, STEEL)
+
+
+## Struts under a tower's landing deck, from its corners back to the tower.
+func _deck_brackets(at: Vector3, yaw: float) -> void:
+	var turn := Basis(Vector3.UP, yaw)
+	var half := TOWER_SIZE * 0.5 + 4.0
+	for cx: float in [-1.0, 1.0]:
+		for cz: float in [-1.0, 1.0]:
+			var corner := at + turn * Vector3(cx * (half - 0.6), DECK_HEIGHT - 0.6, cz * (half - 0.6))
+			var root := at + turn * Vector3(cx * TOWER_SIZE * 0.45, DECK_HEIGHT - 7.0, cz * TOWER_SIZE * 0.45)
+			_strut(corner, root, 0.5, STEEL)
+	# A lit edge round the deck's underside, so its outline reads from below.
+	for i in 4:
+		var side := turn * Basis(Vector3.UP, TAU * i / 4.0)
+		_part(self, Vector3(half * 2.0, 0.1, 0.12), at + side * Vector3(0, DECK_HEIGHT - 0.56, half - 0.1), CYAN.darkened(0.3),
+				true, yaw + TAU * i / 4.0)
+
+
+## A bar from `a` to `b`, `thick` square, drawn with the solid parts but
+## never collided with.
+func _strut(a: Vector3, b: Vector3, thick: float, material: Material) -> void:
+	var along := b - a
+	var length := along.length()
+	if length < 0.01:
+		return
+	var z := along / length
+	var up := Vector3.UP if absf(z.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
+	var x := up.cross(z).normalized()
+	var y := z.cross(x)
+	if not _solid_parts.has(material):
+		_solid_parts[material] = []
+	(_solid_parts[material] as Array).append([Vector3(thick, thick, length),
+			Transform3D(Basis(x, y, z), (a + b) * 0.5)])
 
 
 ## One arch per raid world along the gate terrace, north of the spire, with
@@ -1471,42 +1560,20 @@ func _build_tiles() -> void:
 	_batch_sized(parts, mat)
 
 
-## The city far below the balcony and the skyline round it: scenery only, with
-## no collision, out of reach. Its own RNG so it never shifts the layout.
+## The megacity round the deck (`megacity.gd`): towers from a canyon far
+## below up past the top of the view, skyways and air traffic. Scenery only,
+## no collision, out of reach, from its own RNG so it never shifts the
+## layout; the view is drawn far enough to see it (the "view_far" meta).
 func _build_city_below() -> void:
+	set_meta("view_far", MEGACITY.VIEW_FAR)
 	if not Look.enabled:
 		return
-	var rng := RandomNumberGenerator.new()
-	rng.seed = LAYOUT_SEED + 1
-	var city := Node3D.new()
-	city.name = "City"
+	var city: Node3D = MEGACITY.new(LAYOUT_SEED + 1, RADIUS)
 	add_child(city)
-	var streets := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(5000, 5000)
-	plane.material = Look.surface("asphalt", {"tint": Color(0.18, 0.18, 0.22), "grime": 0.3, "scale": 0.02})
-	streets.mesh = plane
-	streets.position = Vector3(0, -80.0, 0)
-	streets.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	city.add_child(streets)
-	# Stepped towers of the same dark glass with lit seams, drawn as one mesh.
-	var blocks: Array = []
-	for i in 70:
-		var bearing := rng.randf() * 360.0
-		var r := rng.randf_range(RADIUS + 40.0, RADIUS + 300.0)
-		var w := rng.randf_range(14.0, 30.0)
-		var tall := rng.randf_range(80.0, 200.0) if r > RADIUS + 140.0 else rng.randf_range(20.0, 70.0)
-		var floor_y := -80.0
-		var yaw := rng.randf() * TAU
-		var base := _at(r, bearing) + Vector3(0, floor_y, 0)
-		var color: Color = [CYAN, MAGENTA, Color(0.55, 0.7, 1.0)][i % 3]
-		var tiers := [[w, 0.0, tall * 0.6], [w * 0.7, tall * 0.6, tall]]
-		for tier: Array in tiers:
-			var size := Vector3(tier[0], tier[2] - tier[1], tier[0])
-			var centre := base + Vector3(0, (tier[1] + tier[2]) * 0.5, 0)
-			blocks.append([size, Transform3D(Basis(Vector3.UP, yaw), centre)])
-			_add_seams(centre, size, yaw, color, 10.0)
-	_batch_sized(blocks, WALL)
+	var near: Array = []
+	for i in TOWER_HEIGHTS.size():
+		near.append([_at(TOWER_RING, 360.0 * (i + 0.5) / TOWER_HEIGHTS.size()), TOWER_HEIGHTS[i]])
+	city.build(near)
 
 
 func _dress() -> void:
@@ -1518,7 +1585,7 @@ func _dress() -> void:
 	# Few real lights: the glow strips carry the look, lamps only where people
 	# stand to read something or go in somewhere.
 	var beacon := Look.lamp(Color(0.6, 0.95, 1.0), 10.0, 60.0)
-	beacon.position = Vector3(0, 61.0, 0)
+	beacon.position = Vector3(0, SPIRE_TOP + 3.0, 0)
 	art.add_child(beacon)
 	var base := Look.lamp(Color(0.5, 0.9, 1.0), 4.0, 24.0)
 	base.position = Vector3(0, 6.0, 0)
@@ -1527,6 +1594,10 @@ func _dress() -> void:
 		var pool := Look.lamp(Color(0.8, 0.9, 1.0).lerp(WARM, 0.4), 5.0, 18.0)
 		pool.position = at
 		art.add_child(pool)
+	for at in _foot_lights:
+		var wash := Look.lamp(Color(0.75, 0.85, 1.0), 3.0, 18.0)
+		wash.position = at
+		art.add_child(wash)
 	for gate in _gates:
 		var glow := Look.lamp(Color(1.0, 0.5, 0.2), 5.0, 16.0)
 		glow.position = gate["at"] + Vector3(0, 5.0, 2.0)

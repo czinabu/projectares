@@ -6420,6 +6420,10 @@ func _test_plaza() -> void:
 			deck.global_position - Vector3(0, 5, 0), Actor.LAYER_WORLD))
 	check(not deck_hit.is_empty() and absf(deck_hit.position.y - deck.global_position.y) < 0.3,
 			"a landing deck is solid where it is marked")
+	# The megacity round the deck is scenery the view must reach (Caleb's
+	# "tall and grand"): drawn far enough, and never built headless.
+	check(float(raid.map.get_meta("view_far", 0.0)) >= 3000.0 and raid.map.find_child("Megacity", false, false) == null,
+			"the Concourse draws its megacity far off, and a server builds none of it")
 
 	# Leaving takes you and nothing else: no body, no bag.
 	raid.remove_player(b)
