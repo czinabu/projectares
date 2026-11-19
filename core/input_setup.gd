@@ -31,6 +31,7 @@ const KEY_ACTIONS := {
 	"free_look": KEY_E,
 	"inspect": KEY_I,
 	"helmet": KEY_K,
+	"lamp": KEY_J,
 	# Shortcuts (Caleb's ask): straight to a watch icon or a phone app.
 	"emote_wheel": KEY_B,
 	"quick_emote": KEY_N,

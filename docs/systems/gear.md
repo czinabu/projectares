@@ -199,6 +199,18 @@ date in the same PR.
   itself when a new helmet goes on and on stepping out where people fight
   (`PlayerController._keep_helmet`). Check by eye with
   `visual_check.tscn -- <dir> --helmet-off-only`.
+  Every worn helmet has a lamp on the right of its brow (Caleb's ask): its
+  own key (J, the "lamp" action) toggles the held `ActorCommand.lamp`
+  (`PlayerController.toggle_lamp`), so the server relays it and everyone
+  sees the beam. `Actor.lamp_lit` says when it shines: switched on, the
+  helmet on the head and its wearer alive. Clipped to the hip it goes dark
+  but stays switched on, and lights again when the helmet goes back on;
+  bare-headed there is nothing to switch. The barrel and lens are on the
+  one helmet model (`ActorSkin._build_lamp`); the beam is a spot light kept
+  off the skeleton, so first person never leaves it out, aimed along
+  `Actor.get_aim_dir` from just ahead of the lens (`_update_lamp`, view
+  only, tuned by `lamp_*`), fading out for far viewers. Check by eye with
+  `visual_check.tscn -- <dir> --helmet-lamp-only`.
   A helmet is worn gear, not a flag: `Loadout.wear_helmet` is the one way
   one goes on or comes off (it resets the visor, keeps `gear_items` right
   and emits `Actor.helmet_changed`). Mid-raid, helmets in the pack
