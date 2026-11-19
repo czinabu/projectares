@@ -213,8 +213,10 @@ date in the same PR.
   tab, not a new line of text; something that only matters now and then is
   a pop-up line (`Wrist.show_card`'s `popup`), not a slot. The summon
   carousel (Caleb's call) shows only what is carried, never the stash:
-  `Hud.weapon_entries` is the weapons worn then in the pack, and picking
-  one in the pack asks the authority's `Raid.summon` (`NetSession.summon`
+  `Hud.weapon_entries` is only the weapons worn (Caleb's call), and gear in
+  the pack comes out through the pack's list (`Hud.pack_slot`, which shows
+  the watch's rest as a ring): picking a weapon there asks the authority's
+  `Raid.summon` (`NetSession.summon`
   online), which swaps it with the one worn in its slot through
   `Loadout.swap_weapon` (the old one goes in the pack with its rounds,
   `Actor.stowed_rounds`; clients copy it from `Actor.weapon_swapped`). It

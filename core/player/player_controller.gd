@@ -639,7 +639,7 @@ func is_watch_on(id: String) -> bool:
 ## True while the card is open on the artifact icon with the attuned artifact
 ## picked out: fire uses it (`ActorCommand.artifact_pressed`).
 func is_on_artifact() -> bool:
-	return is_watch_on("artifact") and actor.artifact.enabled and artifact_pick == 0 and _is_open("artifact")
+	return is_watch_on("artifact") and actor.artifact.enabled and _is_open("artifact")
 
 
 ## Where a squad portal from the watch can lead from here

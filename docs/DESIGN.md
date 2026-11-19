@@ -1555,8 +1555,9 @@ Raising the watch opens a holo carousel, like pulling gear out of thin air:
 scroll through what you carry and pick it, and it materializes. The pack is
 the storage behind it.
 
-- **Only what you carry.** The carousel shows your loadout and your pack,
-  never the stash. Whatever you can summon is still what you drop when you
+- **Only what you carry.** The weapon carousel shows the weapons you wear
+  and the pack's list what you carry (Caleb's call: one place to swap gear
+  in), never the stash. Whatever you can summon is still what you drop when you
   die, so the extraction stakes stay. The pack's capacity still applies: a
   summoned weapon swaps places with the one worn in its slot, which goes into
   the pack with the rounds it had. The weapon in your hand can be stored
@@ -1571,11 +1572,10 @@ the storage behind it.
   list to its tab, a tab to the tab row, and the tab row lowers the watch.
   Turning back to a tab lands on the icon last looked at there.
 - **Three tabs**, turned with the mouse wheel on the tab row:
-  - **Summon:** weapons (worn ones are drawn with a click, the one in hand
-    is stored back into the pack, ones in the pack are materialized into
-    your hand), vehicles (the toy carousel) and
-    artifacts (the attuned one is used; others carried are shown but stay
-    loot, one per outing). The pack's fill, worth, heals and scrip sit under
+  - **Summon:** weapons (only the ones worn: drawn with a click, the one in
+    hand stored back into the pack), vehicles (the toy carousel) and the
+    artifact (one click uses the attuned one; others carried are loot in
+    the pack, one per outing). The pack's fill, worth, heals and scrip sit under
     the tab, and the pack's own icon opens (a click) as a list of what you
     carry, each with its worth, that the wheel turns through. Gear in it
     says the slot it goes in, and a click puts it on (Caleb's call: loot a
@@ -1667,7 +1667,7 @@ other places, not only to the worlds).
 
 | Feature | What it does |
 | --- | --- |
-| Weapon carousel | The weapons worn and in the pack: draw one worn, or materialize one from the pack (above). |
+| Weapon carousel | The weapons worn: draw one, or store the one in hand. Weapons in the pack materialize from the pack's list (above). |
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |

@@ -328,10 +328,11 @@ static func mark_open(slots: Array[Dictionary], opened: String) -> void:
 
 
 ## The weapons on the watch's carousel, in the order the wheel turns through
-## them: the ones worn (primary, sidearm, melee, heavy) and then the ones in
-## the pack, then any helmets and armor in the pack (a click puts one on). Each is
-## {"id", "index" (in `Actor.weapons`, or -1 in the pack)}.
-## Only what is carried is ever here, never the stash.
+## them: the ones worn (primary, sidearm, melee, heavy), drawn or stored
+## with a click. Each is {"id", "index" (in `Actor.weapons`)}. What is in the
+## pack is put on from the pack's own list (Caleb's call: one place to swap
+## gear in), never from here; at home the carousel goes on through the
+## collection (`PlayerController.watch_weapons`).
 static func weapon_entries(p: Actor) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	var storing := p.storing_weapon()
@@ -343,26 +344,16 @@ static func weapon_entries(p: Actor) -> Array[Dictionary]:
 	var heavy := Loadout.power_index(p)
 	if heavy >= 0:
 		entries.append({"id": p.weapons[heavy].item_id, "index": heavy})
-	for id in p.inventory.items:
-		if Loadout.summonable(id):
-			entries.append({"id": id, "index": -1})
-	# Helmets and armor frames carried are put on with a click, swapping for
-	# the one worn.
-	for id in p.inventory.items:
-		if ItemDB.has_tag(id, "helmet") or ItemDB.has_tag(id, "armor"):
-			entries.append({"id": id, "index": -1})
 	return entries
 
 
-## The artifacts on the watch's carousel (item ids): the one attuned for
-## this outing first, then any carried in the pack as loot.
+## The artifact on the watch (item ids): only the one attuned for this
+## outing, used with one click (Caleb's call). Any others carried are loot,
+## read in the pack's list.
 static func artifact_entries(p: Actor) -> Array[String]:
 	var entries: Array[String] = []
 	if p.artifact.enabled:
 		entries.append(p.artifact.item_id)
-	for id in p.inventory.items:
-		if ItemDB.has_tag(id, "artifact"):
-			entries.append(id)
 	return entries
 
 
@@ -427,19 +418,9 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 		var wait := 1.0 - recharge / maxf(p_raid.toy_cooldown, 0.01) if recharge > 0.0 else -1.0
 		slots.append(_slot("vehicle", "%d" % toys.size(), name if recharge <= 0.0 else "%s · %d s" % [name, ceili(recharge)],
 				["wheel", "click"] if recharge <= 0.0 else [], wait, false, false, toys.size(), at))
-	# The artifacts carried: the one attuned for this outing, and any found.
-	var relics := artifact_entries(p)
-	var relic_at := clampi(int(picks.get("artifact", 0)), 0, maxi(relics.size() - 1, 0))
-	if relic_at > 0 or (not relics.is_empty() and not p.artifact.enabled):
-		slots.append(_slot("artifact", "", "%s · in pack, not attuned" % ItemDB.item_name(relics[relic_at]),
-				["wheel"] if relics.size() > 1 else [], -1.0, false, false, relics.size(), relic_at))
-	else:
-		var relic := artifact_slot(p.artifact)
-		relic["count"] = relics.size()
-		if relics.size() > 1:
-			relic["hints"] = ["wheel"] + relic["hints"]
-		slots.append(relic)
-	slots.append(pack_slot(p, int(picks.get("pack", 0))))
+	# The artifact attuned for this outing: one click uses it.
+	slots.append(artifact_slot(p.artifact))
+	slots.append(pack_slot(p, int(picks.get("pack", 0)), p_raid))
 	# Status: where you are and how you stand.
 	var where := p_raid.world.display_name
 	# The risk zone you stand in (DESIGN.md section 2), or the outpost sheltering you.
@@ -664,7 +645,7 @@ static func standing_page(p_raid: Raid, p: Actor, page: int, jobs: Array[Diction
 
 ## The Pack icon on the Summon tab: how full it is, and once opened, the
 ## wheel turns through what is in it, the picked item's worth on the line.
-static func pack_slot(p: Actor, picked := 0) -> Dictionary:
+static func pack_slot(p: Actor, picked := 0, p_raid: Raid = null) -> Dictionary:
 	var items := p.inventory.items
 	var fill := "%d/%d" % [items.size(), p.inventory.capacity]
 	if items.is_empty():
@@ -676,6 +657,15 @@ static func pack_slot(p: Actor, picked := 0) -> Dictionary:
 	var slot := _slot("pack", fill, "%s · worth %d" % [ItemDB.item_name(id), ItemDB.total_value([id])],
 			["wheel", "click"] if Loadout.wearable_from_pack(id) else ["wheel"], -1.0, false, false,
 			items.size(), at)
+	# Resting after a summon or a swap, nothing in the pack goes on: the ring
+	# fills back up as the rest runs out.
+	var wait := p_raid.summon_wait(p) if p_raid != null else 0.0
+	if wait > 0.0 and Loadout.wearable_from_pack(id):
+		slot.detail = "%s · resting %d s" % [ItemDB.item_name(id), ceili(wait)]
+		slot.hints = ["wheel"]
+		slot.progress = p_raid.summon_charge(p)
+	elif Loadout.summonable(id):
+		slot.detail += " · %.1f s" % Loadout.summon_time(id)
 	slot["where"] = pack_text(p)
 	var lines: Array[String] = []
 	for item: String in items:
@@ -818,16 +808,7 @@ static func weapon_slot(p_raid: Raid, p: Actor, picked := 0) -> Dictionary:
 				return _slot("weapon", value, "%s · store" % detail, hints + ["click"], -1.0, false, false, entries.size(), at)
 			return _slot("weapon", value, "%s · in hand" % detail, hints, -1.0, false, false, entries.size(), at)
 		return _slot("weapon", value, detail, hints + ["click"], -1.0, false, false, entries.size(), at)
-	# Resting after a summon or a swap, nothing in the pack comes out: the
-	# ring fills back up as the rest runs out.
-	var wait := p_raid.summon_wait(p) if p_raid != null else 0.0
-	if wait > 0.0:
-		return _slot("weapon", value, "%s · resting %d s" % [name, ceili(wait)], hints, p_raid.summon_charge(p),
-				false, false, entries.size(), at)
-	if ItemDB.has_tag(entry.id, "helmet"):
-		return _slot("weapon", value, "%s · wear" % name, hints + ["click"], -1.0, false, false, entries.size(), at)
-	return _slot("weapon", value, "%s · pack · %.1f s" % [name, Loadout.summon_time(entry.id)], hints + ["click"],
-			-1.0, false, false, entries.size(), at)
+	return _slot("weapon", value, name, hints, -1.0, false, false, entries.size(), at)
 
 
 ## The weapon icon at home: the weapons worn, then every other one owned,

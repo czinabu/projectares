@@ -76,9 +76,9 @@ static func _summon(t: Node) -> void:
 	p.inventory.add_item("knife_gutter")
 	var entries := Hud.weapon_entries(p)
 	var ids: Array = entries.map(func(e: Dictionary) -> String: return e.id)
-	t.check(ids == ["rifle_scrap", "pistol_service", "blade_scrap", "rifle_carbine", "knife_gutter"]
-			and int(entries[0].index) >= 0 and int(entries[3].index) == -1,
-			"the carousel lists the weapons worn, then the ones in the pack, and only weapons: %s" % ", ".join(ids))
+	t.check(ids == ["rifle_scrap", "pistol_service", "blade_scrap"]
+			and entries.all(func(e: Dictionary) -> bool: return int(e.index) >= 0),
+			"the weapon carousel lists only the weapons worn; the pack's list swaps gear in: %s" % ", ".join(ids))
 	var changes := [0]
 	var swaps: Array[String] = []
 	raid.watch_changed.connect(func(_a: Actor) -> void: changes[0] += 1)
@@ -117,12 +117,14 @@ static func _summon(t: Node) -> void:
 	t.check(raid.summon_wait(p) > 0.0 and raid.summon(p, "knife_gutter") != "" and swaps.size() == 1
 			and raid.summon_charge(p) < 1.0,
 			"the watch rests after a summon (%.0f s), so weapons cannot be swapped freely in a fight" % raid.summon_wait(p))
-	var slot := Hud.weapon_slot(raid, p, 3)
+	var knife_at := p.inventory.items.find("knife_gutter")
+	var slot := Hud.pack_slot(p, knife_at, raid)
 	t.check(float(slot.progress) >= 0.0 and "click" not in slot.hints and slot.detail.begins_with("Gutter Knife"),
-			"the weapon icon shows the wait as a ring and offers no click")
+			"the pack icon shows the wait as a ring and offers no click")
 	state.summon_ready_at = -INF
-	slot = Hud.weapon_slot(raid, p, 3)
-	t.check("click" in slot.hints and slot.detail.contains("pack") and int(slot.count) == 5 and int(slot.index) == 3,
+	slot = Hud.pack_slot(p, knife_at, raid)
+	t.check("click" in slot.hints and slot.detail.ends_with(" s") and int(slot.count) == p.inventory.items.size()
+			and int(slot.index) == knife_at,
 			"rested, a weapon in the pack offers a click and says how long it takes: %s" % slot.detail)
 	t.check(raid.summon(p, "knife_gutter") == "" and p.get_active_weapon().item_id == "knife_gutter"
 			and p.inventory.has_item("blade_scrap") and p.materialize_time < Loadout.summon_time("rifle_carbine"),
@@ -198,8 +200,8 @@ static func _store(t: Node) -> void:
 			and Loadout.store_time("rifle_scrap") < Loadout.summon_time("rifle_scrap"),
 			"it dematerializes out of the hand, a little quicker than it came (%.2f s)" % p.dematerialize_time)
 	var ids: Array = Hud.weapon_entries(p).map(func(e: Dictionary) -> String: return e.id)
-	t.check(ids.count("rifle_scrap") == 1 and int(Hud.weapon_entries(p)[ids.find("rifle_scrap")].index) == -1,
-			"the carousel already lists it in the pack, once: %s" % ", ".join(ids))
+	t.check(ids.count("rifle_scrap") == 0 and p.inventory.items.count("rifle_scrap") == 1,
+			"it leaves the weapon carousel at once and is in the pack, once: %s" % ", ".join(ids))
 	t.check(raid.store(p, "rifle_scrap") != "", "and it cannot be stored twice")
 	p.cmd.primary = true
 	p.cmd.primary_pressed = true
@@ -287,11 +289,11 @@ static func _card(t: Node) -> void:
 	var contract: Dictionary = slots[Hud.Wrist.SLOTS.find("contract")]
 	t.check(contract.empty and contract.tab == "mission" and slots[Hud.Wrist.SLOTS.find("leave")].detail == "Sign out",
 			"Mission keeps a place for the contract, beside sign-out")
-	t.check(Hud.artifact_entries(p) == (["artifact_rewind", "artifact_cloak"] as Array[String]),
-			"the artifacts carried: the one attuned, then any in the pack")
-	var relic: Dictionary = Hud.watch_slots(raid, p, 0, "", -1.0, 0.0, {"artifact": 1})[Hud.Wrist.SLOTS.find("artifact")]
-	t.check(relic.detail.begins_with("Phase Cloak") and "click" not in relic.hints and int(relic.count) == 2,
-			"an artifact in the pack is shown but cannot be used: one per outing (%s)" % relic.detail)
+	t.check(Hud.artifact_entries(p) == (["artifact_rewind"] as Array[String]),
+			"the artifact icon holds only the one attuned; others carried are loot in the pack")
+	var relic: Dictionary = Hud.watch_slots(raid, p)[Hud.Wrist.SLOTS.find("artifact")]
+	t.check(relic.detail.begins_with("Time Rewind") and "click" in relic.hints and int(relic.get("count", 0)) == 0,
+			"one click uses it, with no list to open (%s)" % relic.detail)
 
 	var controller := PlayerController.new()
 	controller.setup(p)
@@ -318,9 +320,9 @@ static func _card(t: Node) -> void:
 			and controller.is_picking_weapons() and controller.wrist_raised and asked.is_empty(),
 			"a click opens the weapons, and nothing is drawn yet")
 	await t.frames(20)
-	t.check(hud.wrist.weapons_shown().size() == 4 and hud.wrist.get_node("Hologram/Weapons").visible
-			and hud.wrist.get_node("Hologram/Weapons").get_child_count() == 4,
-			"the weapons carried stand over the card as holograms")
+	t.check(hud.wrist.weapons_shown().size() == 3 and hud.wrist.get_node("Hologram/Weapons").visible
+			and hud.wrist.get_node("Hologram/Weapons").get_child_count() == 3,
+			"the weapons worn stand over the card as holograms")
 	t.check(hud.wrist.text().begins_with("Scrap Rifle") and hud.wrist.text().contains("store")
 			and "click" in hud.wrist.focused_hints(),
 			"the weapon in your hand offers to store it: %s" % hud.wrist.text().get_slice("\n", 0))
@@ -337,21 +339,19 @@ static func _card(t: Node) -> void:
 	controller.watch_focus_moved = true
 	controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
 	controller.click_watch()
-	controller.scroll(1)
-	controller.scroll(1)
-	await t.frames(2)
-	t.check(controller.weapon_pick == 3 and hud.wrist.text().begins_with("Ashfront Carbine")
-			and hud.wrist.text().get_slice("\n", 0).contains("pack"),
-			"past the worn weapons come the ones in the pack: %s" % hud.wrist.text().get_slice("\n", 0))
 	for i in 5:
 		controller.scroll(1)
 	await t.frames(2)
 	t.check(hud.wrist.focused_id() == "weapon" and controller.weapon_pick == Hud.weapon_entries(p).size() - 1,
 			"an opened list stops at its end; the wheel never leaves it")
-	controller.weapon_pick = 3
+	controller.close_watch_icon()
+	# A weapon in the pack comes out through the pack's list.
+	controller.watch_focus = Hud.Wrist.SLOTS.find("pack")
+	controller.click_watch()
+	controller.pack_pick = p.inventory.items.find("rifle_carbine")
 	t.check(controller.watch_takes_fire() and controller.click_watch() and asked == (["rifle_carbine"] as Array[String])
 			and controller._pending_switch < 0 and not controller.wrist_raised,
-			"a click on one asks the world to summon it, and lowers the watch")
+			"a click on a weapon in the pack's list asks the world to summon it, and lowers the watch")
 	controller.wrist_raised = true
 	controller.watch_focus_moved = true
 	controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
@@ -361,15 +361,8 @@ static func _card(t: Node) -> void:
 	controller.scroll(1)
 	controller.scroll(1)
 	await t.frames(2)
-	t.check(hud.wrist.focused_id() == "artifact" and not controller.is_on_artifact() and controller.watch_takes_fire(),
-			"on the artifacts (one attuned, one carried) a click first opens them")
-	controller.click_watch()
-	controller.scroll(1)
-	t.check(controller.artifact_pick == 1 and not controller.is_on_artifact() and not controller.watch_takes_fire(),
-			"on a carried artifact a click does nothing")
-	controller.scroll(-1)
-	t.check(controller.artifact_pick == 0 and controller.is_on_artifact(), "on the attuned one it uses it")
-	controller.close_watch_icon()
+	t.check(hud.wrist.focused_id() == "artifact" and controller.is_on_artifact() and controller.watch_takes_fire(),
+			"on the artifact icon one click uses the attuned artifact, with a second carried in the pack")
 	# In a tab the wheel stops at the tab's ends (Caleb's call).
 	for i in 4:
 		controller.scroll(1)
@@ -659,8 +652,7 @@ static func _rough_edges(t: Node) -> void:
 	p.inventory.add_item("pistol_machine")
 	t.check(raid.summon(p, "pistol_machine") == "" and raid.summon_wait(p) > 0.0, "a summon rests the watch")
 	p.inventory.add_item("knife_gutter")
-	var at := Hud.weapon_entries(p).map(func(e: Dictionary) -> String: return e.id).find("knife_gutter")
-	var resting := Hud.weapon_slot(raid, p, at)
+	var resting := Hud.pack_slot(p, p.inventory.items.find("knife_gutter"), raid)
 	t.check(resting.detail.contains("resting") and float(resting.progress) >= 0.0 and "click" not in resting.hints,
 			"resting, a weapon in the pack shows the rest running out (%s)" % resting.detail)
 	await t.frames(2)

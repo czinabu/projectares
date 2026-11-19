@@ -214,8 +214,8 @@ date in the same PR.
   A helmet is worn gear, not a flag: `Loadout.wear_helmet` is the one way
   one goes on or comes off (it resets the visor, keeps `gear_items` right
   and emits `Actor.helmet_changed`). Mid-raid, helmets in the pack
-  ride the watch's weapon carousel (`Hud.weapon_entries`, shown as their
-  own model), and a click on one goes through the summon
+  are put on from the watch's pack list (`PlayerController.take_picked_from_pack`),
+  and a click on one goes through the summon
   (`Raid.summon`, online `NetSession.summon`) to `Raid.swap_worn`
   (authority only, at once, then a short watch rest): it goes on and the
   worn one goes in the pack; `_worn_changed` tells every client. The skin wears it on the
@@ -244,8 +244,8 @@ date in the same PR.
   Armor frames are worn gear the same way: `Loadout.wear_frame` puts one on
   or off (`Actor.frame_id`), undoing the old frame's speed and heat scaling
   before applying the new one, and emits `Actor.frame_changed`. One frame is
-  worn; another in a kit is carried. A frame in the pack is on the summon
-  carousel too and goes through `Raid.swap_worn`. Both go on at once and
+  worn; another in a kit is carried. A frame in the pack is put on from the
+  pack list too and goes through `Raid.swap_worn`. Both go on at once and
   then the watch rests (`Loadout.SUMMON_TIMES` "helmet", short, and
   "armor", long), and a frame taken off keeps its armor left in
   `Actor.stowed_armor`, so spare plates are no instant refill. The skin
