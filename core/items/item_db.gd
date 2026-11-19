@@ -454,6 +454,22 @@ func _ready() -> void:
 	_outfit("outfit_trooper", "Trooper Outfit", 400, ["m_Swat", "f_Soldier"], "Fatigues and webbing. Looks the part.",
 			Rarity.UNCOMMON)
 
+	# Armor paints (`ArmorPaint`): cosmetic like clothing, a colour scheme
+	# for armor frames picked at the base's armor stands. The Tailor sells
+	# the plain ones; the earned ones are Relic loot from the hardest fights.
+	_paint_item("paint_ashen", "Ashen Paint", 250, "ashen", "Weathered grey with a warm glow.")
+	_paint_item("paint_desert", "Desert Paint", 250, "desert", "Sand and coyote brown.")
+	_paint_item("paint_woodland", "Woodland Paint", 250, "woodland", "Olive drab with a green glow.")
+	_paint_item("paint_night", "Night Ops Paint", 350, "night", "Blue-black plates for the dark.")
+	_paint_item("paint_arctic", "Arctic Paint", 450, "arctic", "Snow white over a cold blue glow.", Rarity.UNCOMMON)
+	_paint_item("paint_cobalt", "Cobalt Paint", 450, "cobalt", "Deep blue plates, a pale glow.", Rarity.UNCOMMON)
+	_paint_item("paint_crimson", "Crimson Paint", 600, "crimson", "Blood red plates. Hard to miss.", Rarity.UNCOMMON)
+	_paint_item("paint_hazard", "Hazard Paint", 600, "hazard", "Warning yellow over black.", Rarity.UNCOMMON)
+	_paint_item("paint_warlord", "Warlord Paint", 1500, "warlord",
+			"Black and gold, stripped off a fallen warlord. Only Ashfront's warlords carry it.", Rarity.RELIC)
+	_paint_item("paint_warden", "Heart Warden Paint", 1500, "warden",
+			"Ice white and frozen blue, from the Heart Warden's vault deep in the Engine.", Rarity.RELIC)
+
 
 ## Registers a weapon attachment for `slot` (also its tag: see `Loadout.SLOTS`).
 func _attachment(id: String, display_name: String, rarity: Rarity, value: int, slot: String, vendor: bool,
@@ -490,6 +506,17 @@ func _blueprint(id: String, display_name: String, rarity: Rarity, value: int, de
 func _outfit(id: String, display_name: String, value: int, outfits: Array, description: String,
 		rarity: Rarity = Rarity.COMMON) -> void:
 	register(id, display_name, rarity, value, ["cosmetic", "vendor"], {"outfits": outfits}, description)
+
+
+## Registers an armor paint item that unlocks the paint `paint` (an
+## `ArmorPaint.PAINTS` id). Shop paints carry "vendor"; earned ones (Relic)
+## do not, so only their content hands them out.
+func _paint_item(id: String, display_name: String, value: int, paint: String, description: String,
+		rarity: Rarity = Rarity.COMMON) -> void:
+	var tags := ["cosmetic", "paint"]
+	if rarity <= Rarity.UNCOMMON:
+		tags.append("vendor")
+	register(id, display_name, rarity, value, tags, {"paint": paint}, description)
 
 
 ## Registers a home base piece. Small pieces are also tagged "decor".

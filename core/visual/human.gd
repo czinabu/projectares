@@ -74,6 +74,10 @@ static func sanitize(raw: Variant) -> Dictionary:
 		var index: Variant = source.get(key)
 		# JSON hands numbers back as floats.
 		out[key] = clampi(int(index), 0, names.size() - 1) if typeof(index) in [TYPE_INT, TYPE_FLOAT] else 0
+	# Armor paints, frame look to paint (`ArmorPaint`); left out when none.
+	var paints := ArmorPaint.clean(source.get("paints"))
+	if not paints.is_empty():
+		out["paints"] = paints
 	return out
 
 
@@ -94,13 +98,20 @@ static func wearable(build: String, owned: Array = []) -> Array[String]:
 
 ## A valid appearance a player is allowed to wear. Like `sanitize`, but any
 ## part from an outfit that is neither starter clothing nor in `owned` falls
-## back to starter clothing. Bots and other non-players use `sanitize`.
+## back to starter clothing, and an armor paint not in `owned` comes off. Bots and other non-players use `sanitize`.
 static func player_look(raw: Variant, owned: Array = []) -> Dictionary:
 	var out := sanitize(raw)
 	var allowed := wearable(out["build"], owned)
 	for slot in SLOTS:
 		if out[slot] not in allowed:
 			out[slot] = allowed[0]
+	# Only the armor paints owned ("paint:<id>" in `owned`).
+	if out.has("paints"):
+		var paints := ArmorPaint.clean(out["paints"], owned)
+		if paints.is_empty():
+			out.erase("paints")
+		else:
+			out["paints"] = paints
 	return out
 
 

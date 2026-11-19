@@ -68,11 +68,17 @@ signal plan_used
 ## shape or style. Whoever owns the account keeps the plan and calls
 ## `show_gear` again with it.
 signal room_placed(socket: String, room: String)
+## The player used an armor stand's paint swatch: wear `paint` (an
+## `ArmorPaint` id, "" for the frame's own colours) on frames of the look
+## `look`. Whoever owns the account keeps it in the appearance and calls
+## `show_paints` with the paints worn.
+signal paint_requested(look: String, paint: String)
 ## A shot hit a plate on the test lane or a target on the firing range.
 ## Nothing there is real damage; the new player's tour listens for it.
 signal target_hit
 
 const StashRules := preload("res://core/account/stash_rules.gd")
+const Economy := preload("res://core/economy/economy.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
 const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const BasePlan := preload("res://core/base/base_plan.gd")
@@ -293,6 +299,9 @@ var _course_prev_z := INF
 var _range_time := 0.0
 var stash: Array = []
 var loadout := {}
+## The armor paints the owner wears, frame look to paint (`ArmorPaint`,
+## from their appearance; `show_paints`): the armor stands show them.
+var paints := {}
 ## The upgrade ids this base's owner has (see `BaseUpgrades`). Empty is the
 ## starter bunker.
 var upgrades: Array[String] = []
@@ -544,6 +553,31 @@ class PlanTable:
 	func interact(_actor: Actor) -> void:
 		if base and not base.read_only and not base.plan_open:
 			base.use_plan()
+
+
+## The paint swatch on an armor stand: shows the paint its frame's look is
+## worn in, and using it puts on the next paint owned (`paint_requested`),
+## round to the frame's own colours. Paints are bought at the Tailor or
+## earned (`ArmorPaint`).
+class PaintSwatch:
+	extends Interactable
+
+	var base: HomeBase
+	var look := ""
+
+	func get_prompt() -> String:
+		if base == null:
+			return "Paint"
+		var now := ArmorPaint.paint_name(str(base.paints.get(look, "")))
+		if base.read_only:
+			return "Paint: %s" % now
+		if base.owned_paints().is_empty():
+			return "Paint: %s. Armor paints are sold at the Tailor" % now
+		return "[F] Paint: %s (next %s)" % [now, ArmorPaint.paint_name(base.next_paint(look))]
+
+	func interact(_actor: Actor) -> void:
+		if base and not base.read_only and not base.owned_paints().is_empty():
+			base.paint_requested.emit(look, base.next_paint(look))
 
 
 ## The way out.
@@ -2930,7 +2964,7 @@ func _rebuild() -> void:
 	var plan := BaseLayout.plan(shown, loadout, upgrades)
 	var keys: Array[String] = []
 	for entry: Dictionary in plan:
-		keys.append(var_to_str([entry, spot_transform(entry["kind"], entry["index"]), upgrades]))
+		keys.append(var_to_str([entry, spot_transform(entry["kind"], entry["index"]), upgrades, _stand_paint(entry)]))
 	# What is no longer on show goes first, so a new display can take its name.
 	for key: String in old_displays.keys():
 		if key not in keys:
@@ -3039,6 +3073,7 @@ func _fill(display: Display) -> void:
 			_build_mount(display, Vector2(0.8, 2.3), Vector3(0, 0.3, 0.0), color)
 		"armor_stand":
 			_build_armor(model, id, color)
+			_build_swatch(display, id)
 			box = Vector3(1.2, 2.0, 1.0)
 			box_at = Vector3(0, 1.0, 0)
 			# Low in front of the stand's feet: the helmet shelf stands right
@@ -3843,10 +3878,74 @@ func plan_mark(room: String) -> void:
 	_refresh_plan()
 
 
+## The armor paints the stash holds (`ArmorPaint`), in their order.
+func owned_paints() -> Array[String]:
+	return ArmorPaint.owned_paints(Economy.unlocked_outfits(stash))
+
+
+## The paint after the one frames of `look` wear now, among those owned,
+## round to "" (the frame's own colours).
+func next_paint(look: String) -> String:
+	var choices: Array[String] = [""]
+	choices.append_array(owned_paints())
+	var at := choices.find(str(paints.get(look, "")))
+	return choices[(at + 1) % choices.size()]
+
+
+## Shows the armor paints worn (frame look to paint, cleaned): the stands
+## whose paint changed are built again.
+func show_paints(p_paints: Variant) -> void:
+	var fresh := ArmorPaint.clean(p_paints)
+	if fresh == paints:
+		return
+	paints = fresh
+	if is_inside_tree():
+		_rebuild()
+
+
+## The paint an armor stand's frame is shown in ("" for anything else).
+func _stand_paint(entry: Dictionary) -> String:
+	if entry.get("kind", "") != "armor_stand":
+		return ""
+	return str(paints.get(SkinScript.frame_look(str(entry.get("id", ""))), ""))
+
+
+## The paint swatch beside an armor stand (`PaintSwatch`): a small card on
+## an arm at the stand's front right, its plate colour and lit accent
+## showing the paint the frame is in, named under it.
+func _build_swatch(display: Display, id: String) -> void:
+	var look := SkinScript.frame_look(id)
+	var paint := str(paints.get(look, ""))
+	var style := SkinScript.frame_style(id, paint)
+	var swatch := PaintSwatch.new()
+	swatch.name = "PaintSwatch"
+	swatch.base = self
+	swatch.look = look
+	swatch.position = Vector3(0.42, 0.95, 0.56)
+	swatch.add_child(_part(Vector3(0.03, 0.03, 0.2), Vector3(0, -0.05, -0.12), Color(0.2, 0.2, 0.22)))
+	swatch.add_child(_part(Vector3(0.24, 0.2, 0.025), Vector3.ZERO, Color(0.1, 0.1, 0.11)))
+	var plate := _part(Vector3(0.1, 0.12, 0.01), Vector3(-0.05, 0.02, 0.016), style["plate"])
+	plate.name = "Plate"
+	swatch.add_child(plate)
+	swatch.add_child(_part(Vector3(0.1, 0.05, 0.01), Vector3(0.06, 0.05, 0.016), style["plate2"]))
+	var accent := _part(Vector3(0.1, 0.025, 0.01), Vector3(0.06, -0.01, 0.016), style["accent"], true)
+	accent.name = "Accent"
+	swatch.add_child(accent)
+	var label := _label(ArmorPaint.paint_name(paint), Color(0.85, 0.87, 0.9), 0.04)
+	label.position = Vector3(0, -0.075, 0.016)
+	label.name = "PaintName"
+	_near_only(label, 4.0)
+	swatch.add_child(label)
+	_add_collision(swatch, Vector3(0.26, 0.24, 0.08), Vector3.ZERO)
+	display.add_child(swatch)
+
+
 ## A mannequin wearing the frame: the same carrier, belt and shoulder pads
-## it is worn as (`ActorSkin.build_frame`, `build_belt`, `build_pad`), so
-## the stand shows its look and its weight.
+## it is worn as (`ActorSkin.build_frame`, `build_belt`, `build_pad`), in
+## the paint its look is worn in (`paints`), so the stand shows its look,
+## its weight and its colours.
 func _build_armor(model: Node3D, id: String, _color: Color) -> void:
+	var paint := str(paints.get(SkinScript.frame_look(id), ""))
 	var dummy := Color(0.22, 0.22, 0.24)
 	model.add_child(_part(Vector3(0.7, 0.08, 0.7), Vector3(0, 0.04, 0), dummy))
 	model.add_child(_part(Vector3(0.1, 0.9, 0.1), Vector3(0, 0.5, 0), dummy))
@@ -3854,13 +3953,13 @@ func _build_armor(model: Node3D, id: String, _color: Color) -> void:
 	model.add_child(_part(Vector3(0.28, 0.52, 0.22), Vector3(0, 1.22, 0), dummy))
 	model.add_child(_part(Vector3(0.14, 0.2, 0.14), Vector3(0, 1.6, 0), dummy))
 	# The mannequin faces +Z, the plates are built facing -Z.
-	for piece: Array in [[SkinScript.build_frame(id), Vector3(0, 1.36, 0)], [SkinScript.build_belt(id), Vector3(0, 0.98, 0)]]:
+	for piece: Array in [[SkinScript.build_frame(id, paint), Vector3(0, 1.36, 0)], [SkinScript.build_belt(id, paint), Vector3(0, 0.98, 0)]]:
 		var plates: Node3D = piece[0]
 		plates.position = piece[1]
 		plates.rotation.y = PI
 		model.add_child(plates)
 	for out: float in [-1.0, 1.0]:
-		var pad := SkinScript.build_pad(id, out)
+		var pad := SkinScript.build_pad(id, out, paint)
 		pad.position = Vector3(-out * 0.18, 1.44, 0)
 		pad.rotation.y = PI
 		model.add_child(pad)
