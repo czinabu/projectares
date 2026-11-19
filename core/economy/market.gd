@@ -24,7 +24,7 @@ extends RefCounted
 const StashRules := preload("res://core/account/stash_rules.gd")
 
 ## Never traded, by tag: the chase stays earned.
-const UNTRADEABLE_TAGS := ["power", "artifact", "relic", "starter"]
+const UNTRADEABLE_TAGS := ["power", "artifact", "relic", "starter", "trophy"]
 ## The highest Mk tier (`stats.tier`) that may be traded. Mk3 is earned.
 const MAX_TRADE_TIER := 2
 ## The highest rarity that may be traded (ItemDB.Rarity.EPIC). Relics are

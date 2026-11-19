@@ -976,9 +976,11 @@ without Caleb, and update the gap list when a PR closes a row.
   `ActorSkin._update_cloak` (the same body in both views). A cloak is read
   with `Actor.is_cloaked()` by bots, nameplates and the sign-out countdown.
   A jammed rig (`FlightRig.jam`, `working()`) and an overclocked one
-  (`heat_free`, `lock_up`) are rig states, not new rig types. Until PvE
-  dungeons and arena tournaments exist, artifacts drop from world events
-  (`WorldDef.roll_artifact`, `warlord_artifact_chance`, `pod_artifact_chance`).
+  (`heat_free`, `lock_up`) are rig states, not new rig types. Artifacts
+  drop from world events (`WorldDef.roll_artifact`, `warlord_artifact_chance`,
+  `pod_artifact_chance`), the Heart Warden's vault and the Blade
+  Tournament's weekly prize (`Arena.blade_prize_artifact`) until the Spore
+  Marsh's dungeons become their main source.
 - Flight is simulated in `Actor` from the command, like a dash, so it
   predicts and replicates: jets lit only while aim is held in the air
   (`Actor._wants_hover`, Caleb's call: never a hover that stays on by
@@ -2079,6 +2081,19 @@ without Caleb, and update the gap list when a PR closes a row.
   alone (`ArenaVenue.doors_open`, `barrier_raise`), which the `Arena` hands
   the map every tick (`set_stage`) on every machine, so they need no messages
   of their own. Static venue boxes are merged into one mesh per material.
+  Every bout and tournament has rules (`Arena.RULES`, DESIGN.md "Gladiator
+  arena"): "open", "blades" or "blades_boots". `Arena._apply_rules` holds
+  them on the fighters every tick on every machine, from the bout on the
+  authority and the board's "rules" and "nodes" on a client: no gun is
+  drawn (`Actor.guns_locked`, which puts one in hand away for the blade)
+  and a barred rig stays jammed (`FlightRig.jam`, renewed by `RIG_HOLD`).
+  A gladiator for a blades bout is picked by its seed
+  (`ArenaVenue.gladiator_has_blade`), so clients build the same one. A
+  tournament under blade rules is the Blade Tournament: its champion's
+  weekly prize (the `trophy_blade_champion` item and a chance at an
+  artifact) goes through `Arena.Bank.prize`, once a week per account
+  (`arena_prize_week`): `Profile.arena_prize` solo, the sure
+  `StashService.arena_prize` online, which checks the week again.
 
 - The race world (`worlds/meridian`, DESIGN.md section 9) is run by `Race`
   (`core/race/race.gd`, a `Raid` subclass from `WorldDef.new_raid`), on a

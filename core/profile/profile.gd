@@ -75,6 +75,9 @@ var kills := 0
 var scrip := Economy.STARTING_SCRIP
 var arena_wins := 0
 var arena_losses := 0
+## The week (`Contracts.week_of`) the Blade Tournament's weekly prize was
+## last won, or -1: the prize is paid once a week (`Arena._crown`).
+var arena_prize_week := -1
 ## The home base upgrades owned (ids from `BaseUpgrades`). Never lost. A save
 ## from before upgrades existed has none: the starter bunker.
 var base_upgrades: Array[String] = []
@@ -157,6 +160,7 @@ func reset() -> void:
 	scrip = Economy.STARTING_SCRIP
 	arena_wins = 0
 	arena_losses = 0
+	arena_prize_week = -1
 	racing = RaceLeague.fresh()
 	base_upgrades.clear()
 	base_plan = BasePlan.clean(null)
@@ -171,6 +175,16 @@ func record_arena(won: bool) -> void:
 	else:
 		arena_losses += 1
 	save()
+
+
+## The Blade Tournament's weekly prize for `week`: its items go in the
+## stash, once a week. False, changing nothing, if this week's was paid.
+func arena_prize(week: int, items: Array) -> bool:
+	if week == arena_prize_week:
+		return false
+	arena_prize_week = week
+	add_to_stash(items)
+	return true
 
 
 ## A live race's result for this racer (`RaceLeague.clean_result`): moves
@@ -432,6 +446,7 @@ func to_dict() -> Dictionary:
 		"scrip": scrip,
 		"arena_wins": arena_wins,
 		"arena_losses": arena_losses,
+		"arena_prize_week": arena_prize_week,
 		"racing": racing,
 		"base_upgrades": base_upgrades,
 		"base_plan": base_plan,
@@ -502,6 +517,7 @@ func load_dict(data: Dictionary) -> void:
 	scrip = Economy.read_saved(data)
 	arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 	arena_losses = maxi(0, int(data.get("arena_losses", 0)))
+	arena_prize_week = int(data.get("arena_prize_week", -1))
 	racing = RaceLeague.clean(data.get("racing"))
 	base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
 	base_plan = BasePlan.clean(data.get("base_plan"))

@@ -50,7 +50,7 @@ new planet is a new folder under `worlds/`.
 | Home base | `core/base` | Your private staging ground. The armory wall, the garage, the trophy shelf and the consoles. Loadouts are prepared here. |
 | PvE world | Frostline (partly) | The co-op expedition world: cold, whiteouts and tracking instead of a war. Learn the game, test builds, earn basic gear and the crafting parts every Mk2 and Mk3 needs (planned). No PvP, gentle death. |
 | PvP world | Ashfront | The high-stakes warzone. The fallen drop scrip piles, not their gear (see "Scrip piles"), so the best gear comes from its caches; the only source of heavy weapons, bank spots, sign-out tension. |
-| Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments. Loadouts are locked once a fight begins. Nobody loses gear. |
+| Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments, open or blades only. Loadouts are locked once a fight begins. Nobody loses gear. |
 
 ### Main hub
 
@@ -1103,6 +1103,21 @@ vehicle has a job:
   the stands and a ring of stadium floodlight towers (Caleb's call) whose
   white beams spread out over the floor to its edges, never meeting at one
   point, so the fighters stand out.
+- **Rules per bout** (`Arena.RULES`): every bout and tournament is
+  **open** (anything the loadout carries), **blades** (melee only: guns stay
+  locked and every flight rig is off) or **blades and boots** (melee, and
+  thruster boots may fly, for air lunges and dash duels). Pure footwork is
+  the default blade rule (Caleb's call). Whoever asks for the bout picks:
+  the challenger, the player asking for practice, the first entrant of a
+  tournament. A blades bout needs a melee weapon on both fighters, and a
+  gladiator brought to one carries a blade. Every other exhibition the
+  house puts on is fought with blades.
+- **The Blade Tournament** is a tournament under blade rules. Its champion
+  takes the pot like any other and, once a week per account, the weekly
+  prize: the Blade Champion trophy for the base's trophy shelf (never sold
+  or traded) and a 35% chance at an artifact, the design's arena source of
+  both. The week is the contract board's (Monday to Sunday, UTC). Bots
+  fill an empty bracket as usual, so a solo player can win it too.
 
 ### Planet kit (proposed, Caleb to confirm)
 
@@ -1146,6 +1161,47 @@ lives in the sky's glow, the fires, the cracks and the tracers, and stands
 out. Low battle smoke lies over its ground (`PlanetType.smoke`, drawn by
 `Planet.GroundSmoke`), thicker as the war heats up and in a storm, and
 switched off with the "Battle smoke" graphics setting.
+
+### More worlds (planned, Caleb's picks)
+
+Four kinds of play have no home yet: melee as the natural choice, fighting
+things that are not soldiers, vehicles at the centre, and flight at the
+centre. Three new worlds and a Pit ruleset fill them, each on a planet type
+from the kit below, and each pays something no other place does. They are
+built in this order, cheapest and most connected first:
+
+1. **Blades in the Pit** (built, above): blade bouts and the weekly Blade
+   Tournament, the first arena source of trophies and artifacts.
+2. **Spore Marsh, the hunt.** A co-op PvE world (no PvP; player melee lives
+   in the Pit, Caleb's call) where blades are the natural choice and the
+   enemy is wildlife: stalker packs that circle and feint, shellbacks with
+   a soft rear, bloaters that burst into spore clouds, lurkers under the
+   black water and brood keepers guarding the hives. Mist and fungus
+   forests keep fights short, gunshots wake the marsh while melee kills stay
+   silent, and guns foul gently under sustained fire (Caleb's call): spread
+   grows and a long burst can jam until a reload, a world rule that leaves
+   Ashfront's guns alone. The Rootways are its dungeons, part of the one
+   running world like the Engine, each worked down to a keeper. Gentle
+   death (keep what you wear, drop the pack). It is the main source of
+   artifacts (Caleb's call), plus trophies, melee blueprints (new options,
+   never a higher Mk) and marsh cosmetics.
+3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
+   map several times Ashfront's width, salvage crates too big for a pack
+   that ride in a vehicle's cargo space, sandstorms that bury and uncover
+   wreck fields, armed AI convoys as a world event, and mounted guns.
+   You keep what you wear on death; the pack and every crate in your
+   vehicle drop (Caleb's call). It pays vehicle blueprints and parts,
+   mounted weapons and the most scrip a trip.
+4. **Basalt Rift, the sky fight.** Last, and only once there are players
+   enough for three PvP worlds: a small vertical world over lava where
+   flight rigs decide every fight, with updrafts, the Sky Leviathan and
+   Ashfront's death rule. It pays rig upgrade data and rig cosmetics.
+
+The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
+Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
+goes in, artifacts mostly come from it; a carried artifact still drops as
+itself under Ashfront's scrip-pile rule, so they keep changing hands in
+the war.
 
 ## 3. The watch
 
@@ -2026,8 +2082,10 @@ How they work for now:
   spent. There is no hotkey yet.
 - **One per outing.** Only the artifact you deploy with can be used. One
   found in the world rides in your pack as loot until you get it home.
-- **Finding them.** Until PvE dungeons, bosses and arena tournaments exist,
-  world events stand in: a warlord carries one half the time and a supply
+- **Finding them.** The Blade Tournament's weekly prize carries a chance
+  at one (section 2, "Gladiator arena"), and the Heart Warden's vault a
+  small one. Until the Spore Marsh's dungeons and bosses exist,
+  world events also stand in: a warlord carries one half the time and a supply
   pod holds one now and then (`WorldDef` sets the chances per world). They
   are off in Frostline for now, under the rule that rare gear stays in the
   full-loot war worlds; the PvE source in this section is Caleb's call to
@@ -2844,7 +2902,8 @@ players far less than to bots.
    new gadgets, vehicle utility on the bike (passenger, cargo), loadout
    swapping in the PvE world, then the rest of the vehicle roster (rover,
    mech, jet), and the racing mode (section 9).
-   Artifacts arrive with arena tournaments and PvE dungeons, and the Sky
+   Artifacts arrive with arena tournaments (the Blade Tournament, built)
+   and PvE dungeons, and the Sky
    Leviathan with the jet and the PvE world. The hub's toy RC arena comes
    last. Squad visits to a base follow online base visits together;
    trophies follow PvE bosses and arena brackets; blueprints and tech cores

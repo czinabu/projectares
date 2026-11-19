@@ -154,6 +154,8 @@ class Account:
 	var scrip := Economy.STARTING_SCRIP
 	var arena_wins := 0
 	var arena_losses := 0
+	## The week the Blade Tournament's weekly prize was last won, or -1.
+	var arena_prize_week := -1
 	## The racing league (`RaceLeague`): moved only by live races.
 	var racing := RaceLeague.fresh()
 	## The home base upgrades owned (ids from `BaseUpgrades`). Never lost.
@@ -200,6 +202,7 @@ class Account:
 			"scrip": scrip,
 			"arena_wins": arena_wins,
 			"arena_losses": arena_losses,
+			"arena_prize_week": arena_prize_week,
 			"racing": racing,
 			"base_upgrades": base_upgrades,
 			"base_plan": base_plan,
@@ -245,6 +248,7 @@ class Account:
 		scrip = Economy.read_saved(data)
 		arena_wins = maxi(0, int(data.get("arena_wins", 0)))
 		arena_losses = maxi(0, int(data.get("arena_losses", 0)))
+		arena_prize_week = int(data.get("arena_prize_week", -1))
 		racing = RaceLeague.clean(data.get("racing"))
 		base_upgrades = BaseUpgrades.clean(data.get("base_upgrades"))
 		base_plan = BasePlan.clean(data.get("base_plan"))
@@ -452,6 +456,7 @@ func snapshot(account_id: String) -> Dictionary:
 		"scrip": account.scrip,
 		"arena_wins": account.arena_wins,
 		"arena_losses": account.arena_losses,
+		"arena_prize_week": account.arena_prize_week,
 		"racing": account.racing.duplicate(true),
 		"base_upgrades": account.base_upgrades.duplicate(),
 		"base_plan": account.base_plan.duplicate(),
@@ -930,6 +935,24 @@ func record_arena(account_id: String, won: bool) -> void:
 	else:
 		account.arena_losses += 1
 	_save(account)
+
+
+## Pays the Blade Tournament's weekly prize (`Arena._crown`): `items` go to
+## the account once in `week`. Only an `Arena` on the authority sends it.
+func arena_prize(account_id: String, week: int, items: Array) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if account.arena_prize_week == week:
+		return _fail("This week's prize is already won.")
+	var given: Array = []
+	for id: Variant in items:
+		if typeof(id) == TYPE_STRING and ItemDB.has_item(id) and StashRules.storable(id):
+			given.append(id)
+	account.arena_prize_week = week
+	account.add_items(given)
+	_save(account)
+	return {"ok": true, "items": given}
 
 
 ## Records a live race's result on the account (`RaceLeague.apply`): the

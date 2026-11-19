@@ -24,6 +24,12 @@ const GOLD := Color(1.0, 0.62, 0.22)
 const BET_AMOUNTS := [10, 50, 100]
 const STAKES := [0, 50, 200]
 const ArenaVenue := preload("res://core/arena/arena_venue.gd")
+## What each rule set means, under the rules button.
+const RULE_NOTES := {
+	"open": "Anything in your loadout.",
+	"blades": "Melee only: guns stay locked and flight rigs are off.",
+	"blades_boots": "Melee only, and thruster boots may fly.",
+}
 
 var arena: Arena
 ## The 2D picture on the big board, and the one on a booth's screen.
@@ -41,6 +47,9 @@ var _prompt: Label
 var _shown := ""
 var _refresh_left := 0.0
 var _stake_index := 0
+## The rules picked for the next practice, challenge or tournament
+## (`Arena.RULES`).
+var _rules_index := 0
 var _board_mounted := false
 
 
@@ -219,7 +228,7 @@ func _process(delta: float) -> void:
 	key.erase("phase_left")
 	if key.has("tournament") and not key.tournament.is_empty():
 		key.tournament.erase("starts_in")
-	var text := JSON.stringify(key) + str(_stake_index)
+	var text := JSON.stringify(key) + str(_stake_index) + str(_rules_index)
 	if text != _shown:
 		_shown = text
 		_rebuild(b)
@@ -252,6 +261,9 @@ func _show_bout(b: Dictionary) -> void:
 	var title := "%s  vs  %s" % [names[0], names[1]]
 	if str(bout.get("round", "")) != "":
 		title = "%s: %s" % [bout.round, title]
+	var rules := Arena.clean_rules(bout.get("rules", "open"))
+	if rules != "open":
+		title = "%s  ·  %s" % [title, str(Arena.RULE_NAMES[rules]).to_upper()]
 	var status := ""
 	match phase:
 		"calling":
@@ -307,6 +319,9 @@ func _rebuild(b: Dictionary) -> void:
 		_label(_panel, "CHALLENGES", 15, GOLD)
 		for c: Dictionary in challenges:
 			var stake := " for %d" % int(c.stake) if int(c.stake) > 0 else ""
+			var c_rules := Arena.clean_rules(c.get("rules", "open"))
+			if c_rules != "open":
+				stake += " (%s)" % str(Arena.RULE_NAMES[c_rules]).to_lower()
 			if c.get("incoming", false):
 				_label(_panel, "%s challenges you%s" % [c.from, stake], 13, Color.WHITE)
 				var row := HBoxContainer.new()
@@ -317,9 +332,13 @@ func _rebuild(b: Dictionary) -> void:
 			else:
 				_label(_panel, "You challenged %s%s" % [c.to, stake], 13, Color(0.75, 0.75, 0.75))
 
+	var rules: String = Arena.RULES[_rules_index]
 	if not you.get("busy", false):
 		_label(_panel, "FIGHT", 15, GOLD)
-		_button(_panel, "Practice against a gladiator", func() -> void: arena.ask("practice"))
+		_button(_panel, "Rules: %s (change)" % Arena.RULE_NAMES[rules], func() -> void:
+			_rules_index = (_rules_index + 1) % Arena.RULES.size())
+		_label(_panel, RULE_NOTES[rules], 12, Color(0.65, 0.65, 0.65))
+		_button(_panel, "Practice against a gladiator", func() -> void: arena.ask("practice", {"rules": rules}))
 		var others: Array = b.get("players", [])
 		if not others.is_empty():
 			_button(_panel, "Duel stake: %d (change)" % STAKES[_stake_index], func() -> void:
@@ -329,13 +348,18 @@ func _rebuild(b: Dictionary) -> void:
 					continue
 				var node: String = p.node
 				_button(_panel, "Challenge %s" % p.name, func() -> void:
-					arena.ask("challenge", {"to": node, "stake": STAKES[_stake_index]}))
+					arena.ask("challenge", {"to": node, "stake": STAKES[_stake_index], "rules": rules}))
 
 	var t: Dictionary = b.get("tournament", {})
-	_label(_panel, "TOURNAMENT", 15, GOLD)
+	var t_blades := Arena.is_blades(Arena.clean_rules(t.get("rules", rules)))
+	_label(_panel, "BLADE TOURNAMENT" if t_blades else "TOURNAMENT", 15, GOLD)
+	if t_blades:
+		_label(_panel, "This week's prize: you hold the trophy" if you.get("prized", false)
+				else "Weekly prize: the Blade Champion trophy and a chance at an artifact", 12, Color(0.85, 0.75, 0.5))
 	if t.is_empty():
-		_button(_panel, "Start a tournament (entry %d)" % int(b.get("fee", 0)), func() -> void:
-			arena.ask("join_tournament"))
+		var start := "Start a Blade Tournament" if Arena.is_blades(rules) else "Start a tournament"
+		_button(_panel, "%s (entry %d)" % [start, int(b.get("fee", 0))], func() -> void:
+			arena.ask("join_tournament", {"rules": rules}))
 	else:
 		var entrants: Array = t.get("entrants", [])
 		if t.get("running", false):
