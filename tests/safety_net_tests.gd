@@ -151,6 +151,15 @@ static func _accounts(t: Node) -> void:
 
 static func _in_a_world(t: Node) -> void:
 	Profile.reset()
+	# The bag path: Ashfront's scrip piles are checked in scrip_pile_tests.gd
+	# (there the insured item is recalled before the pile is counted).
+	var ashfront := Worlds.get_world("ashfront")
+	ashfront.death_drops_scrip = false
+	await _in_a_bag_world(t)
+	ashfront.death_drops_scrip = true
+
+
+static func _in_a_bag_world(t: Node) -> void:
 	var kit: Array[String] = ["rifle_carbine", "jetpack_mk2", "blade_scrap"]
 	var raid := Raid.new()
 	raid.apply_to_profile = false

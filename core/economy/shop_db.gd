@@ -17,6 +17,10 @@ const SHOPS := [
 		"blurb": "Furniture and decorations for your home base."},
 	{"id": "tailor", "name": "Tailor", "tags": ["cosmetic"],
 		"blurb": "Clothing that changes how you look and nothing else. Once bought it is yours for good."},
+	# The back room (`Economy.BLACK_MARKET`): no tags, its stock is picked by
+	# the date. A stall in an alley off Market Row, not a front ("stall").
+	{"id": "black_market", "name": "Back Room", "tags": [], "stall": true,
+		"blurb": "Two pieces a day, the kind the shops can't stock. Don't ask where from. Don't haggle."},
 ]
 
 

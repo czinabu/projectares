@@ -69,6 +69,8 @@ static func _rules(t: Node) -> void:
 	var loop_free := true
 	var base_only := true
 	for shop_id in ShopDB.ids():
+		if ShopDB.shop(shop_id).get("stall", false):
+			continue  # the back room's Rare pieces: scrip_pile_tests.gd
 		var stock := Economy.stock(shop_id)
 		t.check(not stock.is_empty(), "the %s has stock" % ShopDB.shop_name(shop_id))
 		for id in stock:

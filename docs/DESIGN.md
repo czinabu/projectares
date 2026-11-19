@@ -49,7 +49,7 @@ new planet is a new folder under `worlds/`.
 | Main hub | The Concourse (`worlds/plaza`) | Social space. Show off cosmetics, rigs and watch skins. Doors to every world, the shops, the clan hall and the arena. Nobody can be hurt. |
 | Home base | `core/base` | Your private staging ground. The armory wall, the garage, the trophy shelf and the consoles. Loadouts are prepared here. |
 | PvE world | Frostline (partly) | The co-op expedition world: cold, whiteouts and tracking instead of a war. Learn the game, test builds, earn basic gear and the crafting parts every Mk2 and Mk3 needs (planned). No PvP, gentle death. |
-| PvP world | Ashfront | The high-stakes warzone. Full loot, the only source of heavy weapons and the best loot, bank spots, sign-out tension. |
+| PvP world | Ashfront | The high-stakes warzone. The fallen drop scrip piles, not their gear (see "Scrip piles"), so the best gear comes from its caches; the only source of heavy weapons, bank spots, sign-out tension. |
 | Gladiator arena | The Pit (`core/arena`) | Duels, bouts and tournaments. Loadouts are locked once a fight begins. Nobody loses gear. |
 
 ### Main hub
@@ -651,7 +651,8 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   when; the blast is a flash that lights the ground, a fireball throwing a
   fan of dirt and a column of smoke left drifting, heard and felt (the view
   jolts) once its sound arrives. Ashfront only for now.
-- Full loot on death.
+- Everything lost on death, but the body drops a scrip pile worth it, not
+  the gear itself (section 10, "Scrip piles").
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).
 
@@ -1835,6 +1836,8 @@ world**.
 - Death drops it like the rest of your gear: it lies with your bag for
   whoever gets there first. In the game that is a rack beside the bag, so
   the finder scans it into their chamber; a heavy never sits in a pack.
+  Where deaths drop scrip piles (Ashfront, "Scrip piles") it is sold into
+  the pile with the rest instead, so heavies come only from racks.
 - Never sold in shops. Can be sold back at the trader at the usual 40%.
   No price was set for that, so each heavy is valued at 2,500 scrip (sells
   back for 1,000) until a playtest prices them.
@@ -1855,7 +1858,10 @@ they follow the heavy weapon's rules:
 - **One artifact per outing**, carried on the watch.
 - **Earned, not bought:** from PvE dungeons and bosses and from arena
   tournaments (so they arrive with those modes).
-- **Dropped on death in the PvP world**, with your bag, for whoever takes it.
+- **Dropped on death in the PvP world**, for whoever takes it. Where deaths
+  drop scrip piles (Ashfront) an artifact still drops as itself beside the
+  pile, attuned or in the pack, never sold into it (Caleb's call), so
+  artifacts keep changing hands.
 - **Banked at bank spots** or by signing out, to the home base.
 - Every artifact's effect is visible or felt by the people it touches, like
   visor reveals, and has a counter.
@@ -2261,6 +2267,49 @@ tier: the PvP world has the better weapons and the rarer drops, the PvE
 world has basic gear and materials. Stronger versions are crafted from
 blueprints (below), not found.
 
+### Scrip piles (Caleb's call, 19 November 2026)
+
+On Ashfront a death drops no gear. Everything the body carried is gone, and
+where it fell lies a glowing pile of scrip worth what a trader would pay for
+it (`Economy.sell_price`: gear at 40%, loot at full value), with the scrip
+they were carrying. Gear then comes only from caches, supply pods and racks,
+so a strong player cannot kill you and walk off with your best gun, while a
+kill still pays and the pile is still a risk to grab.
+
+- **Grabbed by running over it** (`Raid._tick_piles`, within
+  `WorldDef.pile_reach`), by any player, not only the killer. The scrip is
+  carried scrip, at stake until banked or carried out.
+- **One bonus item** beside it from the pack, never what was worn or held
+  (`Raid.pile_bonus`): usually something small (a consumable, a material,
+  an attachment), and with `pile_found_chance` (15%) a piece of gear they
+  found that life instead. Never the scrap kit, gear brought from the stash
+  in the pack, or a heavy weapon.
+- **Artifacts drop as themselves**, attuned or in the pack, and are not
+  sold into the pile (Caleb's call), so artifacts keep changing hands.
+- **The insured item** is recalled home first and is not in the pile; salvage
+  is paid as before. Insurance stays one item (Caleb agreed): paying out a
+  kit's worth would turn dying into selling, and keeping everything would
+  take the stakes away.
+- **Bounties go in the pile.** Killing a wanted player drops their bounty in
+  their pile instead of the killer's scrip: a bigger, redder pile with a
+  taller column of light, a line on the war feed, for whoever gets there.
+- **Visors mark piles near you** (`WorldDef.pile_seen_range`, 80 m): a coin
+  on the heading tape and the contact scope, a bounty's marked apart, so a
+  fresh kill draws third parties.
+- **Bots drop piles too**, at `bot_pile_share` (half) of what their pack
+  sells for, growing by up to `pile_war_bonus` (half again) as the war heats
+  up, so the war's dead do not flood the world with scrip and the big fights
+  pay best. Players' piles never grow.
+- A pile lies for `bag_lifetime` like a bag. Frostline and the arena keep
+  their own death rules (`WorldDef.death_drops_scrip` off).
+
+**The back room** gives scrip a top-end use without making rare gear easy:
+a stall down the alley off Market Row (the fence, Sable) sells two Rare
+pieces a day, picked by the date like a shop's featured piece, at three
+times their value (`Economy.BLACK_MARKET`, `black_market_stock`,
+`price_in`). Rare gear only: never a heavy weapon, an artifact, a vehicle,
+loot or a crafted Mk2 or Mk3. Numbers to tune by play.
+
 ### Two worlds, one loop (proposed, Caleb to confirm the numbers)
 
 Players who avoid PvP and players who love it should both feel rewarded,
@@ -2268,7 +2317,7 @@ without either being forced into the other's world. The split:
 
 | | Frostline (expedition, PvE, no PvP) | Ashfront (warzone, PvPvE) |
 | --- | --- | --- |
-| Death | Keep equipped gear, lose the pack | Full loot |
+| Death | Keep equipped gear, lose the pack | Lose it all; it drops as a scrip pile |
 | Exclusive rewards | Crafting parts, blueprints, Frostline cosmetics and trophies | Rare and Epic gear, heavy weapons, artifacts, most upgrade data, bounties |
 | Shared rewards | Scrip, contracts, mastery, a capped share of upgrade data | Scrip, contracts, mastery, renown |
 

@@ -345,7 +345,7 @@ static func stock_lines(shop_id: String, account: Dictionary, day: int) -> Array
 	var stash: Array = account.get("stash", [])
 	if not stock.is_empty():
 		var featured: String = stock[absi(hash([shop_id, day])) % stock.size()]
-		out.append("%s came in today. %d scrip." % [ItemDB.item_name(featured), Economy.buy_price(featured)])
+		out.append("%s came in today. %d scrip." % [ItemDB.item_name(featured), Economy.price_in(shop_id, featured)])
 	var advice := _advice(shop_id, stock, account)
 	if advice != "":
 		out.append(advice)
@@ -369,18 +369,20 @@ static func _advice(shop_id: String, stock: Array[String], account: Dictionary) 
 			var worn := str(loadout.get(slot, ""))
 			var worn_value := ItemDB.item_value(worn) if worn != "" else 0
 			for id: String in stock:
-				if not Loadout.fits(slot, id) or id in stash or Economy.buy_price(id) > scrip \
+				if not Loadout.fits(slot, id) or id in stash or Economy.price_in(shop_id, id) > scrip \
 						or ItemDB.item_value(id) <= worn_value:
 					continue
 				if worn == "" or ItemDB.has_tag(worn, "starter"):
 					return "Nothing worth the name in your %s slot. A %s is %d, and you can cover it." % \
-							[str(Loadout.SLOT_NAMES.get(slot, slot)).to_lower(), ItemDB.item_name(id), Economy.buy_price(id)]
+							[str(Loadout.SLOT_NAMES.get(slot, slot)).to_lower(), ItemDB.item_name(id), Economy.price_in(shop_id, id)]
 				return "That %s has done its time. A %s is %d, and you can cover it." % \
-						[ItemDB.item_name(worn), ItemDB.item_name(id), Economy.buy_price(id)]
+						[ItemDB.item_name(worn), ItemDB.item_name(id), Economy.price_in(shop_id, id)]
+		return ""
+	if shop_id == Economy.BLACK_MARKET:
 		return ""
 	for id: String in stock:
-		if id not in stash and Economy.buy_price(id) <= scrip:
-			return "You haven't got the %s yet. %d, and it's yours for good." % [ItemDB.item_name(id), Economy.buy_price(id)]
+		if id not in stash and Economy.price_in(shop_id, id) <= scrip:
+			return "You haven't got the %s yet. %d, and it's yours for good." % [ItemDB.item_name(id), Economy.price_in(shop_id, id)]
 	return ""
 
 
