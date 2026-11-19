@@ -975,6 +975,11 @@ func _on_solo_finished(_actor: Actor, result: Dictionary) -> void:
 	# Leave a beat so the player sees what happened before going home.
 	await get_tree().create_timer(1.0).timeout
 	_show_hub(result)
+	# Through a portal out of the world to somewhere else: the gear is home,
+	# and the trip goes on from the base as if through a portal opened there.
+	var door := str(result.get("door", ""))
+	if Portal.goes_on(door):
+		go_through_portal.call_deferred(door)
 
 
 ## The claims office (`SafetyNets`) messages the phone with what a death's
@@ -2242,8 +2247,16 @@ func _trip_ahead() -> Array:
 		var state := raid.state_for(me)
 		if destination == "" and state != null and state.sign_out_left >= 0.0 and not raid.world.safe_zone \
 				and not raid is Arena:
-			# Signing out: back to the plaza, unless a portal home leads to your base.
+			# Signing out: back to the plaza, unless a portal out of the world
+			# you are signing out through (the nearest open one of your side)
+			# leads on somewhere else.
 			destination = Portal.PLAZA
+			var nearest := ahead_range
+			for portal in raid.portals:
+				if is_instance_valid(portal) and portal.usable and portal.signs_out \
+						and portal.global_position.distance_to(me.global_position) < nearest:
+					nearest = portal.global_position.distance_to(me.global_position)
+					destination = portal.destination
 	elif raid == null and base != null and hub.in_lobby() and base.portal != null and is_instance_valid(base.portal):
 		destination = base.portal.destination
 	return _where_leads(destination)
@@ -2910,12 +2923,29 @@ func _return_to_lobby(result: Dictionary) -> void:
 	var account := net.account
 	var was_safe := raid != null and raid.world.safe_zone
 	var came_from := "world:%s" % raid.world.id if raid != null else ""
+	# Through a portal out of the world to another world or the arena: the
+	# gear went home with the sign-out, and the trip goes on from there
+	# (worked out while this session still knows the routes).
+	var door := str(result.get("door", ""))
+	var onward: Array = _onward_route(door) if not was_safe and Portal.goes_on(door) else []
 	_leave_raid()
 	hub.update_account(account)
 	hub.refresh(result)
 	if was_safe:
 		# Signing out of the plaza itself leaves the server.
 		leave_server()
+		return
+	if not onward.is_empty():
+		if door == Arena.ArenaVenue.ID:
+			# Leaving the arena comes back to this server's lobby: your base.
+			_lobby_port = _join_port
+			_lobby_address = _join_address
+			_show_travel("Entering the arena...")
+		else:
+			_gate_deploy = true
+			_portal_deploy = true
+			_show_travel("Travelling to %s..." % Portal.title_of(door))
+		_begin_join(onward[0], onward[1], 3)
 		return
 	# Back to the plaza if the server has one, else to the lobby. Through a
 	# portal home it is your base: this world's lobby, whose door leads back
@@ -2927,6 +2957,23 @@ func _return_to_lobby(result: Dictionary) -> void:
 		return
 	_show_travel("Going home..." if result.get("door", "") == Portal.HOME else "Returning to your base...")
 	_begin_join(_join_address, _join_port, 3)
+
+
+## Where a sign-out through a portal out of a world goes on to once the gear
+## is home (`door`, the result's): [host, port] for another world (landing at
+## its gate outpost) or the arena, or [] for home and the plaza, which
+## `_return_to_lobby` reaches the usual way, and for a world these servers do
+## not run (then it ends where any sign-out does).
+func _onward_route(door: String) -> Array:
+	if net == null:
+		return []
+	if door == Arena.ArenaVenue.ID:
+		var arena := _route(door)
+		return arena if not arena.is_empty() else [_join_address, _join_port + ARENA_PORT_OFFSET]
+	var world := Worlds.get_world(door)
+	if world == null or world.safe_zone or door == net.world_id:
+		return []
+	return _route(door)
 
 
 ## Disconnects from the lobby: back to the plaza if the server has one, else

@@ -16,6 +16,7 @@ static func run(t: Node) -> void:
 	t.check(main.base.station("launch") == null and main.base.door.get_prompt().contains("Head out"),
 			"the base has no launch pad, and its door leads out to the plaza")
 	await PortalTests.through_base(t, main)
+	await PortalTests.onward_solo(t, main)
 	main._leave_raid()
 	main.go_home()
 	await t.frames(2)

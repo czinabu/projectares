@@ -8,6 +8,10 @@ date in the same PR.
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
   `Actor.vehicle` is set. The script has no `class_name`; preload it.
+  Vehicles are on `Actor.LAYER_VEHICLES` (`Vehicle.LAYER_VEHICLES` is the
+  same layer), which every actor's mask includes, so people bump into a
+  vehicle instead of walking through it; a rider and its machine keep
+  collision exceptions with each other.
   A rider sits, never stands: the vehicle carries the actor low at
   `seat_offset` (so the eyes and head hitbox are a seated rider's), and the
   skin seats the model from the vehicle's `seat_point`, `grip_points` and

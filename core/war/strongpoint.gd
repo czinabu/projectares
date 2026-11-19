@@ -61,6 +61,7 @@ func _ready() -> void:
 	_beam.mesh = mesh
 	_beam.position.y = mesh.height * 0.5
 	_beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_beam.set_meta("walk_through", "a beam of light")
 	add_child(_beam)
 	refresh_look()
 

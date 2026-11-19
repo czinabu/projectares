@@ -59,6 +59,25 @@ static func run(t: Node) -> void:
 	t.check("rifle_carbine" in Profile.stash and "frame_bulwark" in Profile.stash,
 			"while you are out, your profile still holds the gear you carry")
 
+	# World to world: a sign-out through a portal to another world (the
+	# server's half is in `PortalTests`) goes home and on, landing there.
+	var next_id: String = Worlds.raid_worlds()[1].id
+	await t.frames(30)
+	main._on_portal_requested(next_id)
+	await t._wait_until(func() -> bool: return main.raid != null and not main.raid.portals.is_empty(), 300)
+	t.check(main.raid != null and not main.raid.portals.is_empty() and main.raid.portals[0].signs_out
+			and main.raid.portals[0].destination == next_id,
+			"the server opens the portal to %s as a sign-out, for everyone to see" % next_id)
+	await t._wait_until(func() -> bool:
+		return main.raid != null and main.raid.player != null and main.raid.world.id == next_id, 3600)
+	var onward: Actor = main.raid.player if main.raid != null else null
+	t.check(onward != null and main.raid.world.id == next_id and main.base == null,
+			"a portal's sign-out goes on from home into %s" % next_id)
+	if onward != null:
+		t.check("rifle_carbine" in onward.gear_items and "frame_bulwark" in onward.gear_items,
+				"with the loadout as it stands at home")
+		world_id = next_id
+
 	# Back to the plaza, in front of the gate you used.
 	main._return_to_lobby({})
 	await t._wait_until(func() -> bool: return main.raid != null and main.raid.player != null and main.raid.world.safe_zone, 1200)

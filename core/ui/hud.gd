@@ -434,7 +434,8 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 	slots.append(map_slot(where, picks.get("targets", []), int(picks.get("map", 0)), picks.get("waypoint", {}), p))
 	slots.append(standing_slot(p_raid, p, int(picks.get("standing", 0)), jobs, float(picks.get("life_time", 0.0))))
 	# Mission: the squad portal, the contract, and sign-out and banking.
-	slots.append(portal_slot(Portal.choices_for(p_raid, p), int(picks.get("portal", 0))))
+	slots.append(portal_slot(Portal.choices_for(p_raid, p), int(picks.get("portal", 0)),
+			not p_raid.world.safe_zone))
 	# On a race track the contract's place is the time trial's (no job
 	# counts there): the run's line, and restart, ghost and stop to pick.
 	if p_raid is Race:
@@ -879,15 +880,17 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 ## The squad portal icon: a carousel of where a portal can lead from here
 ## (`choices`, `Portal.choices_for`), the one `picked` out on its line.
 ## A click opens it in front of you for your squad to walk through.
-static func portal_slot(choices: Array[String], picked := 0) -> Dictionary:
+## `signs_out`: out in a world where gear is at stake, where every portal is
+## a sign-out (home first, then on from there), which the line says.
+static func portal_slot(choices: Array[String], picked := 0, signs_out := false) -> Dictionary:
 	if choices.is_empty():
 		return _slot("portal", "", "No portal opens here", [], -1.0, true, false)
-	if choices == [Portal.HOME]:
-		# Out in a world: a sign-out with a door.
-		return _slot("portal", "", "Portal home · signs you out", ["click"], -1.0, false, false, 1, 0)
 	var at := clampi(picked, 0, choices.size() - 1)
-	return _slot("portal", "", "Portal to %s" % Portal.title_of(choices[at]), ["wheel", "click"], -1.0, false, false,
-			choices.size(), at)
+	var line := "Portal home" if choices[at] == Portal.HOME else "Portal to %s" % Portal.title_of(choices[at])
+	if signs_out:
+		line += " · signs you out"
+	var hints: Array = ["click"] if choices.size() == 1 else ["wheel", "click"]
+	return _slot("portal", "", line, hints, -1.0, false, false, choices.size(), at)
 
 
 ## The contract icon: how many jobs are held, and the one nearest done as its
