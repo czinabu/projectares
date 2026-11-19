@@ -587,6 +587,35 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   `actor_fog_clear`, `actor_fog_full`, `actor_fog_min`, `actor_rim_strength`,
   `column_clear_near`, `column_clear_far`). Ashfront's own calm and war
   moods set the distances; `Look.soften_storm` enforces the floor.
+- **Scale you can see (Caleb's go-ahead, concepts in `ares/ashfront-grand/`
+  in the project files).** Something huge is always in view and the war goes
+  on past the rim without you, all view only and timed from what every
+  client already gets. Built: the far skyline is drawn dark against the sky
+  with its own haze (`Look.trim("distant")`, `skyline.gdshader`, the haze
+  set from the mood by `Look.skyline_haze`, so a storm still swallows it),
+  fires glow behind it (`horizon_glow.gdshader`, brighter with the war,
+  hidden by a storm), and the map's "view_far" meta lets the player's view
+  draw that far (`PlayerController._view_far`). The distant war is heard
+  (`Soundscape`, made by the map where `Look` is on): a rumble that rises
+  with the war, far gunfire from the way the fighting is, each horizon
+  flash's boom arriving after it by its distance, and a quiet wind; all of
+  it ducks under a storm's wind; recorded clips (Sonniss, kept out of the
+  public repository, `assets/sounds/README.md`) replace the made-up wind,
+  rumble and booms where the files are there (`Sfx.recorded`). The giants
+  (`worlds/ashfront/giants.gd`, view only, timed by the wall clock so
+  everyone sees them in one place): the Colossus, a hunched four-legged walker
+  near 270 m tall, its legs arching over its back, striding round 750 m out
+  with a searchlight sweeping ahead and smoke off its vents, each footfall
+  heard after its delay; a capital ship riding at anchor 400 m up over the
+  west; and from it a wing of dropships every 75 s (more the hotter the
+  war) diving over where the fighting is (`war_centre`) and away. Flak in
+  the sky (`worlds/ashfront/skyfire.gd`, view only): guns past the rim
+  hosing tracer up into the smoke, more of them firing the hotter the war,
+  shells bursting high and leaving puffs hanging, and bursts chasing a
+  dropship wing but never hitting it; a storm hides it all. Planned,
+  in this order: god rays,
+  a shared moment (the orbital lance brings the Colossus down), and ash on
+  the visor glass.
 - Full loot on death.
 - The only place heavy weapons are found.
 - Mid-map bank spots and sign-out create the extraction tension (section 7).
