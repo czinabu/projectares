@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 51
+const PROTOCOL := 52
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -650,6 +650,7 @@ func _start_server_raid() -> void:
 		# Each racer is sent their own run; everyone gets the board.
 		race.run_changed.connect(_on_race_run_changed)
 		race.board_changed.connect(_send_race_board)
+		race.heat_changed.connect(_send_race_heats)
 	raid.start_server(world)
 
 
@@ -1644,6 +1645,7 @@ func _send_world(peer: int) -> void:
 			_keeper.rpc_id(peer, kind, int(raid.keepers[kind]))
 	if raid is Race:
 		_race_board.rpc_id(peer, (raid as Race).public_board())
+		_race_heats.rpc_id(peer, (raid as Race).public_heats())
 
 
 ## Server: whichever connection plays `actor` now, if it is online, else 0.
@@ -1722,13 +1724,13 @@ func _arena_request(action: String, args: Dictionary) -> void:
 	_board_dirty = true
 
 
-## Race: a racer asks for a restart or to stop their run. The server's own
+## Race: a racer asks to race, for a restart or to stop their run. The server's own
 ## `Race.request` decides, for the sender's own actor.
 @rpc("any_peer", "call_remote", "reliable")
 func _race_request(action: String) -> void:
 	var peer := _api.get_remote_sender_id()
 	var race := raid as Race
-	if not is_server or race == null or not _peer_actor.has(peer) or action not in ["restart", "retire"]:
+	if not is_server or race == null or not _peer_actor.has(peer) or action not in ["race", "restart", "retire"]:
 		return
 	var result := race.request(_peer_actor[peer], action)
 	if not result.ok and peer in _api.get_peers():
@@ -1739,6 +1741,17 @@ func _on_race_run_changed(actor: Actor) -> void:
 	var peer: int = _actor_peer.get(actor, 0)
 	if peer in _api.get_peers():
 		_race_run.rpc_id(peer, (raid as Race).run_view(actor))
+
+
+## Every track's live race goes to everyone here: the boards show it.
+func _send_race_heats() -> void:
+	var race := raid as Race
+	if race == null:
+		return
+	var rows := race.public_heats()
+	for peer: int in _joined_peers:
+		if peer in _api.get_peers():
+			_race_heats.rpc_id(peer, rows)
 
 
 func _send_race_board() -> void:
@@ -3274,6 +3287,14 @@ func _race_run(view: Dictionary) -> void:
 	var race := raid as Race
 	if race != null:
 		race.set_remote_run(view)
+
+
+## Race: each track's live race (`Race.heat_view`).
+@rpc("authority", "call_remote", "reliable")
+func _race_heats(rows: Array) -> void:
+	var race := raid as Race
+	if race != null:
+		race.set_remote_heats(rows)
 
 
 ## Race: the best laps on the board.

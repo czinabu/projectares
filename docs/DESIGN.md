@@ -2028,8 +2028,28 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   runs beside you as a ghost of hard light. The watch's contract icon is the
   race icon here (restart, ghost on or off, stop), and the visor's
   objective line carries the lap.
-- **Rewards are cosmetic.** For now only the board's times. Scrip and
-  cosmetic rewards come with live races.
+- **Live races (Caleb's go-ahead).** The race icon's first pick is Race:
+  it puts you on the grid of the track's next race, and anyone who gets on
+  a machine there while it forms joins it. A race forms for 30 s (8 s once
+  the grid is full of people), then AI racers take every slot left, so a
+  grid of 8 always goes, and everyone starts under one set of lights. The
+  watch and the visor carry your place ("P3/8"), the pit board the next
+  race's countdown and then the results. Once the winner is home the rest
+  have 20 s to cross the line, and a lap off the track costs 3 s on the
+  finish. Restart takes you out of the race and back to a time trial.
+- **AI racers are fair (Caleb's ask: real racing lines).** An AI racer
+  (`RaceDriver`) is a bot on a stock machine of the track's class, on its
+  race profile, pressing the same keys a player does: no extra speed, no
+  catching up, no cutting the track. It follows the racing line, brakes by
+  the machine's own turn rate, drifts if it is good enough, moves off the
+  line to get past and can be passed. One skill number sets how near the
+  limit it brakes, how tidy its line is, how quick it is off the lights
+  and how often it makes a mistake; the best drives exactly like the
+  bench, so none ever beats a perfect run (`race_bench.tscn -- --ai`
+  checks it). Their laps never go on the board.
+- **Rewards are cosmetic.** For now only the board's times. Scrip, parts
+  and cosmetic rewards come with the league (DESIGN.md "Racing depth"
+  plan: ranks and named rivals, friends' ghosts, then tuning parts).
 
 The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the
