@@ -1043,8 +1043,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
   keeping a pull made meanwhile. Light guns are quick and steady on the
   move; a DMR is slow to aim and wild on the run.
-  Feedback is view only (DESIGN.md "Feedback"): each kind of gun has its own
-  voice (the item's `shot_sound`) heard out to `Gun.SHOT_REACH`, a round
+  Feedback is view only (DESIGN.md "Feedback"): every gun has a voice of
+  its own (the item's `shot_sound`, one of `Sfx.GUN_VOICES`, never shared;
+  a test checks it) that fits what it is: the everyday guns are ballistic
+  (a crack, the action, a low punch, the cycle), the heavy weapons energy
+  (a charged snap, a zap or plasma, crackle). They are made from code by
+  `assets/sounds/weapons/make_weapon_sounds.py` (ours, no credit needed;
+  short rings and short echoes, Caleb's feedback: never a bell, never a
+  long echo), takes for the open, under a roof and far off.
+  `Sfx.shot` plays your own the tick it fires, flat, and anyone else's
+  where it went off: under a roof (`Sfx.roof_over`) the indoor take, past
+  `Sfx.FAR_FROM` giving way to the far take after the sound's travel time.
+  A rail's charge and a rotary gun's spin are heard from the gun's state
+  (`ActorSkin._update_weapon_hum`), a draw as the hand takes the weapon,
+  all heard out to `Gun.SHOT_REACH`, a round
   passing close is heard going by (`Sfx.pass_by`), a round leaves a puff
   and a wall a mark for a few seconds (`Fx.impact`, at most `Fx.MAX_MARKS`;
   `Combat.trace` gives the face's `normal`), the hit marker and its sound
