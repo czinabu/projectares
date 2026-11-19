@@ -329,6 +329,7 @@ static func run(t: Node) -> void:
 
 	await _armies(t)
 	await _big_battles(t)
+	_skyline(t, raid)
 
 	# Built once, shared after: a second copy of the map is ready at once.
 	var before := Time.get_ticks_msec()
@@ -342,6 +343,96 @@ static func run(t: Node) -> void:
 	again.queue_free()
 	raid.queue_free()
 	await t.frames(2)
+
+
+## The far skyline (DESIGN.md "PvP world", "Scale you can see"): drawn from
+## anywhere in the field, dark against the sky in the clear and swallowed by
+## a storm.
+static func _skyline(t: Node, raid: Raid) -> void:
+	print("Battlefield: skyline")
+	var map := raid.map
+	# The skyline stands 400 to 490 m from the middle; a player can be at
+	# the spawn ring on the far side.
+	var far_side := float(map.get_script().get_script_constant_map()["SPAWN_RING"]) + 490.0
+	t.check(float(map.get_meta("view_far", 0.0)) > far_side,
+			"Ashfront asks the view to draw past the skyline on the far side of the field (%.0f m)" % float(map.get_meta("view_far", 0.0)))
+	var view := PlayerController.new()
+	view.actor = raid.player
+	t.check(is_equal_approx(view._view_far(), float(map.get_meta("view_far"))), "the player's view draws as far as the map asks")
+	view.actor = Actor.new()
+	t.check(is_equal_approx(view._view_far(), view.view_far), "away from a map the view keeps its own reach")
+	view.actor.free()
+	view.free()
+	var calm := Look.skyline_haze(0.66)
+	var war := Look.skyline_haze(0.86)
+	var storm := Look.skyline_haze(0.985)
+	t.check(calm < 0.5 and calm < war and war < storm and storm >= 0.99,
+			"the skyline is a dark veiled shape when clear, hazier in war and gone in a storm (%.2f, %.2f, %.2f)" % [calm, war, storm])
+	t.check(Look.trim("distant") is ShaderMaterial and Look.trim("horizon_glow") is ShaderMaterial,
+			"the skyline and the burning horizon shade themselves against the haze")
+	# The giants: view only, timed by the wall clock so every player sees
+	# them in one place, walking past the rim and always within the view.
+	var giants: Script = map.get_script().get_script_constant_map()["GIANTS"]
+	t.check(map.get_node_or_null("Giants") == null, "a map without a view builds no giants")
+	var walk_a: Transform3D = giants.walker_at(100.0)
+	var walk_b: Transform3D = giants.walker_at(110.0)
+	var walk_r: float = giants.WALK_RADIUS
+	t.check(absf(Vector2(walk_a.origin.x, walk_a.origin.z).length() - walk_r) < 0.1
+			and walk_r > 490.0 and walk_r + float(map.get_script().get_script_constant_map()["SPAWN_RING"]) < float(map.get_meta("view_far")),
+			"the Colossus walks past the skyline and stays in view from anywhere on the field")
+	var moved := walk_b.origin - walk_a.origin
+	t.check(is_equal_approx(moved.length(), giants.WALK_SPEED * 10.0) or absf(moved.length() - giants.WALK_SPEED * 10.0) < 0.5,
+			"the Colossus walks at its own pace")
+	t.check(moved.normalized().dot(walk_a.basis.z) > 0.95, "the Colossus faces the way it walks")
+	var lifted := 0
+	for n in 20:
+		if giants.lift(giants.stride(n * giants.STRIDE_TIME / 20.0, 0.0)) > 0.02:
+			lifted += 1
+	t.check(lifted >= 8 and lifted <= 11, "each leg is in the air for half a stride and on the ground for the other half")
+	t.check(giants.wing_size(0.0) < giants.wing_size(1.0), "more dropships fly to the fighting the hotter the war")
+	var from := Vector3(-800, 360, 0)
+	var over := Vector3(20, 150, 30)
+	var to := Vector3(700, 400, 50)
+	t.check(giants.flight_point(from, over, to, 0.0).is_equal_approx(from) and giants.flight_point(from, over, to, 0.5).is_equal_approx(over)
+			and giants.flight_point(from, over, to, 1.0).is_equal_approx(to),
+			"a dropship wing flies from the capital ship down over the fighting and away")
+	# Flak and tracer over the far lines: view only, following the war.
+	var sky: Script = map.get_script().get_script_constant_map()["SKYFIRE"]
+	t.check(map.get_node_or_null("Skyfire") == null, "a map without a view fires no flak")
+	t.check(sky.batteries_at(0.0) < sky.batteries_at(1.0) and sky.flak_rate(1.0) > sky.flak_rate(0.0) * 5.0,
+			"more flak guns fire, and far more often, the hotter the war")
+	var muzzle := Vector3(500, 38, 0)
+	var up_dir := Vector3(-0.5, 0.86, 0).normalized()
+	var round_a: Vector3 = sky.tracer_point(muzzle, up_dir, 0.0)
+	var round_b: Vector3 = sky.tracer_point(muzzle, up_dir, 1.0)
+	t.check(round_a.is_equal_approx(muzzle) and round_b.y > muzzle.y + 150.0 and round_b.y < (muzzle + up_dir * sky.TRACER_SPEED).y,
+			"a tracer climbs away from its gun and droops as it goes")
+	var ship := Vector3(0, 200, 0)
+	var closest := INF
+	for n in 12:
+		closest = minf(closest, sky.near_miss(ship, sky.WING_MISS.x, n / 12.0, fmod(n * 0.37, 1.0)).distance_to(ship))
+	t.check(closest > sky.WING_MISS.x - 0.1, "flak bursts round a passing dropship but never on it")
+	t.check(Look.trim("tracer") != null and Look.trim("flak_smoke") != null, "tracers and flak smoke have their own finishes")
+	# The war heard: view only, so a headless map makes no soundscape.
+	t.check(map.get_node_or_null("Soundscape") == null, "a map without a view hears nothing (no soundscape headless)")
+	t.check(is_equal_approx(Soundscape.boom_delay(510.0), 1.5) and is_equal_approx(Soundscape.boom_delay(3000.0), Soundscape.BOOM_DELAY_MAX),
+			"a far gun's boom comes after its flash, by its distance, but never long after")
+	var ears := Soundscape.new()
+	t.check(ears.bursts_per_second(1.0) > ears.bursts_per_second(0.0) * 5.0, "far gunfire rattles far more often in all-out war")
+	ears.free()
+	var heard := Soundscape.burst_from(Vector3.ZERO, Vector3(200, 0, 0), 45.0, 0.0)
+	var around := Soundscape.burst_from(Vector3.ZERO, Vector3(20, 0, 0), 45.0, 0.5)
+	t.check(heard.x > 40.0 and absf(heard.z) < 1.0 and is_equal_approx(Vector2(around.x, around.z).length(), 45.0),
+			"far gunfire is heard from the way the fighting is, and from all around inside it")
+	# Recorded sounds are optional (kept out of the public repository): with
+	# the files they load as loops and a set of takes, without them nothing.
+	t.check(Sfx.recorded("no_such_sound") == null, "a sound with no recording keeps its synthesized voice")
+	if ResourceLoader.exists(Sfx.RECORDED_DIR + "far_boom_1.ogg"):
+		var wind: AudioStream = Sfx.recorded("wind")
+		var booms: AudioStream = Sfx.recorded("far_boom")
+		t.check(wind is AudioStreamOggVorbis and (wind as AudioStreamOggVorbis).loop, "the recorded wind loops")
+		t.check(booms is AudioStreamRandomizer and (booms as AudioStreamRandomizer).streams_count == 3,
+				"far booms are taken at random from three recordings")
 
 
 ## What keeps a big battle affordable: bots nobody is near run in longer

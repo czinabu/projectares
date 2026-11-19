@@ -28,6 +28,12 @@ and add a row for each new source.
 
 `assets/branding` (the placeholder logo: `icon.png`, `icon.ico`, `splash.png`) was made for this project by `assets/branding/make_logo.py` and is CC0; the splash sets its name in Rajdhani.
 
+## Sounds
+
+| Folder | What | Author | License | Source |
+| --- | --- | --- | --- | --- |
+| `assets/sounds` (not in this repository, see its `README.md`) | Clips from Extreme Winds Vol. 1 (344 Audio), Sci-Fi Drones (Cinematic Sound Design) and Effective Trailer Booms Vol. 2 (Federico Soler), cut, filtered and looped | Sonniss #GameAudioGDC 2026 bundle | Sonniss GDC bundle license: royalty-free, commercial use, no attribution; may ship inside the game but not be sold or handed out as they come | https://gdc.sonniss.com |
+
 Shaders in `assets/shaders` were written for this project.
 
 ## Code libraries

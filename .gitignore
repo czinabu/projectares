@@ -11,3 +11,8 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+# Recorded sounds under a license that allows shipping them in the game but
+# not handing them out as loose files: kept out of this public repository
+# (see assets/sounds/README.md).
+assets/sounds/*.ogg
+assets/sounds/*.ogg.import
