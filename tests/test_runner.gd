@@ -5117,12 +5117,27 @@ func _move_toward(actor: Actor, point: Vector3) -> Vector2:
 	return Vector2(dir.x, -dir.z)
 
 
+## How high off the ground `_run_is_clear` sweeps the body from: a step
+## or a kerb under it is climbed, not a wall.
+const RUN_KNEE := 0.35
+
+
 ## Whether `actor` could run `reach` metres along `dir` (flat, unit length)
 ## from `from` without meeting a wall, a wreck, a bike or another actor. It
 ## follows the ground, so a slope does not count as a wall.
 func _run_is_clear(actor: Actor, from: Vector3, dir: Vector3, reach: float) -> bool:
+	return _clear_metres(actor, from, dir, reach) >= reach
+
+
+## How many metres (up to `reach`) `actor` could run along `dir` from `from`
+## before something stops it. The body is swept from step to step from knee
+## height up, not just a ray at the chest: a ray ran over a bike's seat or a
+## low wreck, and the run then stopped against it after a metre or two (the
+## flaky "a lagging player still runs at full speed" check on CI).
+func _clear_metres(actor: Actor, from: Vector3, dir: Vector3, reach: float) -> float:
 	var space := actor.get_world_3d().direct_space_state
 	var skip: Array[RID] = []
+	var stop := reach
 	for other in get_tree().get_nodes_in_group("actors"):
 		if other is Actor and Raid.together(other, actor):
 			skip.append((other as Actor).get_rid())
@@ -5130,36 +5145,60 @@ func _run_is_clear(actor: Actor, from: Vector3, dir: Vector3, reach: float) -> b
 			to.y = 0.0
 			var along := to.dot(dir)
 			if other != actor and along > 0.0 and along < reach + 1.0 and (to - dir * along).length() < 1.6:
-				return false
+				stop = minf(stop, maxf(along - 1.6, 0.0))
+	var body := CapsuleShape3D.new()
+	body.radius = Actor.BODY_RADIUS + 0.05
+	body.height = Actor.BODY_HEIGHT - RUN_KNEE
+	var sweep := PhysicsShapeQueryParameters3D.new()
+	sweep.shape = body
+	sweep.exclude = skip
+	sweep.collision_mask = actor.collision_mask
 	var last := Vector3.ZERO
-	for i in int(reach) + 1:
+	var last_floor := Vector3.ZERO
+	for i in int(stop) + 1:
 		var above := from + dir * float(i) + Vector3(0, 4.0, 0)
 		var down := PhysicsRayQueryParameters3D.create(above, above + Vector3(0, -12.0, 0))
 		down.exclude = skip
 		var floor_hit := space.intersect_ray(down)
 		if floor_hit.is_empty():
-			return false
-		var chest: Vector3 = floor_hit.position + Vector3(0, 0.9, 0)
+			return maxf(i - 1, 0)
+		var ground: Vector3 = floor_hit.position
+		var chest: Vector3 = ground + Vector3(0, 0.9, 0)
 		if i > 0:
 			if absf(chest.y - last.y) > 0.7:
-				return false
+				return i - 1
 			var ray := PhysicsRayQueryParameters3D.create(last, chest)
 			ray.exclude = skip
 			if not space.intersect_ray(ray).is_empty():
-				return false
+				return i - 1
+			# From over the higher of the two floors, so a slope is not
+			# taken for a wall.
+			var lift := maxf(last_floor.y, ground.y) + RUN_KNEE + body.height * 0.5
+			sweep.transform = Transform3D(Basis.IDENTITY, Vector3(last_floor.x, lift, last_floor.z))
+			sweep.motion = Vector3(ground.x - last_floor.x, 0.0, ground.z - last_floor.z)
+			if space.cast_motion(sweep)[0] < 1.0:
+				return i - 1
 		last = chest
-	return true
+		last_floor = ground
+	return stop
 
 
 ## A flat direction `actor` can run `reach` metres in from `from`: `prefer`
-## if that is clear, otherwise the nearest clear one to it.
+## if that is clear, otherwise the nearest clear one to it, and where none
+## is the one with the longest clear run.
 func _clear_run(actor: Actor, from: Vector3, prefer: Vector3, reach: float) -> Vector3:
+	var best := prefer
+	var best_metres := -1.0
 	for i in 16:
 		var turn := TAU / 16.0 * float((i + 1) / 2) * (1.0 if i % 2 == 1 else -1.0)
 		var dir := prefer.rotated(Vector3.UP, turn)
-		if _run_is_clear(actor, from, dir, reach):
+		var metres := _clear_metres(actor, from, dir, reach)
+		if metres >= reach:
 			return dir
-	return prefer
+		if metres > best_metres:
+			best_metres = metres
+			best = dir
+	return best
 
 
 func _test_online_lag_compensation() -> void:
