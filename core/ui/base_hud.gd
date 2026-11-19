@@ -156,6 +156,7 @@ func _update_wrist(delta: float) -> void:
 	slots[Hud.Wrist.SLOTS.find("vehicle")] = Hud.base_vehicle_slot(toys, toy_pick, controller != null and controller.pack_target() != null)
 	Hud.mark_open(slots, controller.watch_open if controller != null else "")
 	wrist.objective = objective if GameSettings.is_tracked(GameSettings.TOUR_KEY) else ""
+	wrist.tabs = wrist.raised and controller != null and controller.watch_tabs
 	wrist.show_card(slots, focus, "", p.health.health / maxf(p.health.max_health, 1.0), [] as Array[float])
 	var picking_toys := controller != null and controller.is_picking_toys()
 	var picking_weapons := controller != null and controller.is_picking_weapons()

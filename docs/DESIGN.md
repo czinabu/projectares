@@ -1562,12 +1562,15 @@ the storage behind it.
   the pack with the rounds it had. The weapon in your hand can be stored
   the same way in reverse: a click on it dematerializes it back into the
   pack, leaving its slot empty and your hands free, if the pack has room.
-- **Two levels (Caleb's call).** The mouse wheel steps only across the main
-  icons, tab after tab. A click on an icon that holds several things
-  (weapons, vehicles, artifacts, portal places) opens its list, and only
-  then does the wheel turn through what it holds; a click picks, and a
-  right click closes the list and goes back to the icons.
-- **Three tabs**, stepped through with the mouse wheel:
+- **Three levels (Caleb's call).** Raised, the watch is on its tab row:
+  the mouse wheel turns between the three tabs and a click goes into one.
+  In a tab the wheel moves across that tab's icons only. A click on an
+  icon that holds several things (weapons, vehicles, artifacts, portal
+  places) opens its list, and only then does the wheel turn through what
+  it holds; a click picks. A right click always backs out one level: a
+  list to its tab, a tab to the tab row, and the tab row lowers the watch.
+  Turning back to a tab lands on the icon last looked at there.
+- **Three tabs**, turned with the mouse wheel on the tab row:
   - **Summon:** weapons (worn ones are drawn with a click, the one in hand
     is stored back into the pack, ones in the pack are materialized into
     your hand), vehicles (the toy carousel) and
@@ -1826,9 +1829,9 @@ of the shots and their whizz.
 A worn helmet can come off and be clipped to the hip, so faces show where
 people meet (the Concourse, a base) and a helmet is still to hand.
 
-- **From the watch or its key.** The Summon tab's helmet icon takes it off
-  or puts it back on with a click, and so does its own key, K (Caleb's
-  ask). The watch goes down, since the off hand does it.
+- **From its key.** Its own key, K (Caleb's ask), takes it off or puts it
+  back on. It was a Summon tab icon on the watch until it had the key, and
+  left the watch then (Caleb's call).
 - **Shown, not swapped.** Both hands lift the helmet off (Caleb's call),
   so a weapon in hand is put away first. The weapon hand lets go as it
   comes down, and the off hand carries it round the body and clips it to the back of the left hip

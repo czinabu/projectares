@@ -269,6 +269,7 @@ func _process(delta: float) -> void:
 	var map_open: bool = wrist.raised and focus < slots.size() and slots[focus].id == "map"
 	wrist.map = map_marks(raid, p, ping_spots()) if map_open and not p.is_dead else {}
 	wrist.opened = opened if wrist.raised and focus < slots.size() and slots[focus].id == opened else ""
+	wrist.tabs = wrist.raised and not p.is_dead and controller != null and controller.watch_tabs
 	if wrist.opened == "map" and not wrist.map.is_empty():
 		var at := clampi(controller.map_pick if controller != null else 0, 0, maxi(targets.size() - 1, 0))
 		wrist.show_table(wrist.map, map_relief(raid, wrist.map),
@@ -440,7 +441,6 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 			relic["hints"] = ["wheel"] + relic["hints"]
 		slots.append(relic)
 	slots.append(pack_slot(p, int(picks.get("pack", 0))))
-	slots.append(helmet_slot(p))
 	# Status: where you are and how you stand.
 	var where := p_raid.world.display_name
 	# The risk zone you stand in (DESIGN.md section 2), or the outpost sheltering you.
@@ -664,19 +664,6 @@ static func standing_page(p_raid: Raid, p: Actor, page: int, jobs: Array[Diction
 			if not job.empty:
 				lines.append(job.detail)
 	return lines
-
-
-## The helmet icon on the Summon tab (DESIGN.md "Helmet off"): a click takes
-## the worn helmet off and clips it to the hip, or puts it back on
-## (`PlayerController.toggle_helmet`). Off, the visor shows nothing, and in
-## a world where people fight it goes back on as you step out into it.
-static func helmet_slot(p: Actor) -> Dictionary:
-	if not p.visor.enabled:
-		return _slot("helmet", "", "No helmet", [], -1.0, true, false)
-	# The helmet's name is the visor's own to say (`Visor.role_name`), not the watch's.
-	if p.cmd != null and p.cmd.helmet_off:
-		return _slot("helmet", "", "Helmet on your hip · put on", ["click"], -1.0, false, false)
-	return _slot("helmet", "", "Take helmet off · clip to hip", ["click"], -1.0, false, false)
 
 
 ## The Pack icon on the Summon tab: how full it is, and once opened, the
@@ -904,7 +891,6 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 	else:
 		slots.append(_slot("artifact", "", "No artifact", [], -1.0, true, false))
 	slots.append(_slot("pack", "", "Your pack fills out in a world", [], -1.0, true, false))
-	slots.append(helmet_slot(p) if p != null else _slot("helmet", "", "No helmet", [], -1.0, true, false))
 	slots.append(_slot("map", "", base_name, [], -1.0, false, false))
 	slots.append(_slot("standing", "", "At home", [], -1.0, true, false))
 	slots.append(emote_slot(emote_pick, emote_playing))
@@ -1807,13 +1793,18 @@ class Wrist:
 	## The card's tabs, left to right, and the icons on each.
 	const TABS := ["summon", "status", "mission"]
 	const TAB_SLOTS := {
-		"summon": ["weapon", "vehicle", "artifact", "pack", "helmet"],
+		"summon": ["weapon", "vehicle", "artifact", "pack"],
 		"status": ["map", "standing", "emote"],
 		"mission": ["portal", "contract", "ping", "leave"],
 	}
-	## Every icon, left to right, tab after tab (see `Hud.watch_slots`). The
-	## wheel steps along this.
-	const SLOTS := ["weapon", "vehicle", "artifact", "pack", "helmet", "map", "standing", "emote", "portal", "contract", "ping", "leave"]
+	## What each tab holds, the line shown on the tab row.
+	const TAB_LINES := {
+		"summon": "Weapons · vehicles · artifacts · pack",
+		"status": "Map · standing · emotes",
+		"mission": "Portal · missions · ping · sign out",
+	}
+	## Every icon, left to right, tab after tab (see `Hud.watch_slots`).
+	const SLOTS := ["weapon", "vehicle", "artifact", "pack", "map", "standing", "emote", "portal", "contract", "ping", "leave"]
 	const HOLO_TINT := Color(0.75, 1.0, 1.0, 0.95)
 	const GLOW_COLOR := Color(0.35, 0.95, 1.0)
 	## The card as projected light: faint scanlines that crawl up it, a
@@ -1874,6 +1865,10 @@ void fragment() {
 	## The icon opened with a click and being read ("" for none): its panel
 	## (a list or a page) takes the card's right side (set before `show_card`).
 	var opened := ""
+	## On the tab row (`PlayerController.watch_tabs`): the wheel turns the
+	## tabs, so the tab name is what is lit, not an icon (set before
+	## `show_card`).
+	var tabs := false
 	## The tabletop map over the card while the Map icon is opened: how wide
 	## it is (metres, from the eyes), how high its relief stands as a share
 	## of that, and how far it tips back towards the eyes.
@@ -2346,6 +2341,7 @@ void fragment() {
 		card.death = death
 		card.map = map
 		card.opened = opened
+		card.tabs = tabs
 		card.bars = bars
 		card.note = notes[-1] if not notes.is_empty() else ""
 		card.queue_redraw()
@@ -2705,6 +2701,8 @@ void fragment() {
 	func focused_hints() -> Array:
 		if card == null or card.slots.is_empty():
 			return []
+		if card.tabs:
+			return ["wheel", "click"]
 		return card.slots[card.focus].hints
 
 
@@ -2735,6 +2733,9 @@ void fragment() {
 		## The icon opened with a click ("" for none); its panel replaces the
 		## small map on the right.
 		var opened := ""
+		## On the tab row: the open tab's name is framed and its icons wait,
+		## none grown, the line under them naming what the tab holds.
+		var tabs := false
 		var _time := 0.0
 
 		func _process(delta: float) -> void:
@@ -2798,7 +2799,7 @@ void fragment() {
 				var i := shown[n]
 				var slot := slots[i]
 				var centre := Vector2(left + step * (n + 0.5), row_y)
-				var looked := i == focus
+				var looked := i == focus and not tabs
 				var color := _color_of(slot, looked)
 				var radius := 30.0 if looked else 21.0
 				if looked:
@@ -2819,8 +2820,11 @@ void fragment() {
 						var at := centre + Vector2((k - (held - 1) * 0.5) * pip, radius + 40.0)
 						draw_circle(at, 3.0 if k == int(slot.get("index", 0)) else 1.6,
 								Color(INK, 1.0 if k == int(slot.get("index", 0)) else 0.5))
-			# The open icon's one line, with its controls as glyphs after it.
+			# The open icon's one line, with its controls as glyphs after it;
+			# on the tab row, what the tab holds, with the wheel and a click.
 			var open := slots[focus]
+			if tabs:
+				open = {"detail": TAB_LINES.get(tab, ""), "hints": ["wheel", "click"], "alert": false, "empty": false}
 			var line_y := h - 40.0 if note == "" else h - 56.0
 			var hints: Array = open.hints
 			var room := w - 40.0 - hints.size() * 34.0
@@ -2957,6 +2961,15 @@ void fragment() {
 				if lit:
 					draw_line(Vector2(20.0 + each * i + each * 0.25, y + 6.0),
 							Vector2(20.0 + each * (i + 1) - each * 0.25, y + 6.0), color, 2.0)
+				if lit and tabs:
+					# On the tab row the open tab is what the wheel moves:
+					# a pulsing frame around its name, arrows to its sides.
+					var box := Rect2(Vector2(20.0 + each * i + each * 0.12, y - 22.0), Vector2(each * 0.76, 34.0))
+					draw_rect(box, Color(INK, 0.55 + 0.3 * sin(_time * 4.0)), false, 2.0)
+					if i > 0:
+						draw_string(font, Vector2(box.position.x - 16.0, y), "<", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(INK, 0.8))
+					if i < TABS.size() - 1:
+						draw_string(font, Vector2(box.end.x + 6.0, y), ">", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(INK, 0.8))
 			y += 12.0
 			var line: String = summaries.get(open_tab, "")
 			if line != "":
@@ -3026,14 +3039,6 @@ void fragment() {
 					_lines(PackedVector2Array([Vector2(-0.8, 0.5), Vector2(0, -0.3), Vector2(0.8, 0.5)]),
 							c, r, color, width)
 					_lines(PackedVector2Array([Vector2(-0.8, 0.95), Vector2(0.8, 0.95)]), c, r, color, width * 0.7)
-				"helmet":
-					# A helmet side on: the shell, its visor slit and a clip
-					# hanging under it.
-					draw_arc(c + Vector2(0, 0.1) * r, 0.8 * r, PI, TAU, 18, color, width, true)
-					_lines(PackedVector2Array([Vector2(-0.8, 0.1), Vector2(-0.8, 0.45), Vector2(0.35, 0.45),
-							Vector2(0.8, 0.1)]), c, r, color, width)
-					_lines(PackedVector2Array([Vector2(-0.1, -0.15), Vector2(0.7, -0.15)]), c, r, color, width * 0.8)
-					draw_arc(c + Vector2(-0.2, 0.75) * r, 0.2 * r, 0.0, TAU, 10, color, width * 0.6, true)
 				"ping":
 					# A point with rings going out.
 					draw_circle(c, 0.16 * r, color)

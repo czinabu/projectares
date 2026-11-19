@@ -370,16 +370,39 @@ static func _card(t: Node) -> void:
 	controller.scroll(-1)
 	t.check(controller.artifact_pick == 0 and controller.is_on_artifact(), "on the attuned one it uses it")
 	controller.close_watch_icon()
-	# Past the pack's and the helmet's icons to the map, then Standing.
+	# In a tab the wheel stops at the tab's ends (Caleb's call).
 	for i in 4:
 		controller.scroll(1)
 	await t.frames(2)
-	t.check(hud.wrist.card.focused_tab() == "status" and hud.wrist.focused_id() == "standing",
-			"then Status: the map and your standing")
+	t.check(hud.wrist.card.focused_tab() == "summon" and hud.wrist.focused_id() == "pack",
+			"in a tab the wheel stops at its last icon, the pack")
+	# A right click backs out to the tab row, where the wheel turns the tabs.
+	t.check(controller.back_watch() and controller.watch_tabs and controller.wrist_raised,
+			"a right click backs out to the tab row")
+	controller.scroll(1)
+	await t.frames(2)
+	t.check(hud.wrist.card.focused_tab() == "status" and hud.wrist.focused_id() == "map" and hud.wrist.card.tabs
+			and hud.wrist.focused_hints() == ["wheel", "click"],
+			"on the tab row the wheel turns to Status, which opens on its first icon, the map")
+	t.check(controller.watch_takes_fire() and controller.click_watch() and not controller.watch_tabs
+			and controller.watch_open == "", "a click goes into the tab")
+	controller.scroll(1)
+	await t.frames(2)
+	t.check(hud.wrist.focused_id() == "standing" and not hud.wrist.card.tabs, "then the wheel moves across its icons")
+	controller.back_watch()
+	for i in 20:
+		controller.scroll(1)
+	controller.click_watch()
 	for i in 20:
 		controller.scroll(1)
 	await t.frames(2)
 	t.check(hud.wrist.card.focused_tab() == "mission" and hud.wrist.focused_id() == "leave", "and Mission, ending on sign-out")
+	controller.back_watch()
+	controller.scroll(-1)
+	await t.frames(2)
+	t.check(hud.wrist.focused_id() == "standing", "turning back to a tab lands where you left it")
+	controller.back_watch()
+	t.check(not controller.wrist_raised and not controller.watch_tabs, "a right click on the tab row lowers the watch")
 	controller.wrist_raised = false
 	t.check(not controller.click_watch() and not controller.watch_takes_fire(), "with the watch down a click is a shot")
 	# At home the same card says what goes out.
