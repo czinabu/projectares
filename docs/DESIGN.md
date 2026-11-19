@@ -1137,6 +1137,15 @@ take apart one at a time from cover, or cross with a squad. The battle
 bench on Frostline (60 bots, 16 players): 5.2 ms a tick, and 76 stuck
 bot-windows against 107 before step 2, most of them up the glacier head.
 
+**The glacier-head post softened (Caleb's pick, 19 Nov, 30 duels a row).**
+A staggered lock (each Warden after the first waiting 0.2 s longer) moved
+nothing: a fight lasts long enough that the post still shot together,
+because a Warden that is hit fired back out of turn. Now a Warden holds its
+turn even when hit ("holds_turn"; point blank still skips the queue) and
+the glacier head's hit for 21 a shot, not 30. A solo player in the open
+beats a post of three 17-23% of the time, two Wardens 70-83%, and one alone
+every time, with health and the other zones unchanged.
+
 **Ashfront after step 3 (30 duels a row).** Each army's way of fighting is
 `DOCTRINE` in `worlds/ashfront/world.gd`, set on its bots as metas. Legion
 riflemen keep 30 m off and see 48 m, one rifleman in eight to five is a

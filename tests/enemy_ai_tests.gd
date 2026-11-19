@@ -111,6 +111,7 @@ static func _smoke_hides(t: Node) -> void:
 			"a Warden sees far and holds a beam before it fires")
 	var mouth := frost.spawn_bot("W0", Vector3(0, 40, 0), 3, false, "warden", 0)
 	t.check(warden.health.max_health > mouth.health.max_health, "and is tougher at the glacier head than at the mouth")
+	t.check(bool(warden.get_meta("holds_turn", false)), "a Warden post opens up in turn even when shot at")
 	t.check(feral.has_meta("tracker") and feral.has_meta("shuns_warmth"), "a Feral hunts by tracks and keeps out of the warm")
 	var ws := Worlds.get_world("frostline")
 	t.check(ws.bot_count >= 18, "the valley holds packs, not a handful of bots")
