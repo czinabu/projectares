@@ -1454,6 +1454,32 @@ they show the player's face and hair from the customizer.
 - **Fragile glass.** When visor glass can crack (a helmet follow-up),
   goggles crack sooner than a helmet.
 
+### Armor paints (Caleb's call)
+
+Every armor frame can be painted. A paint is a colour scheme, never a stat:
+it recolours the plates, the carrier, the straps, the undersuit and the lit
+accent, and leaves the frame's armor, speed, shape, metal, details and glow
+strength alone (`core/visual/armor_paint.gd`, `ArmorPaint`).
+
+- **Bought or earned, owned for good.** A paint is a cosmetic stash item
+  like clothing, so it never goes on a raid and a full-loot death never
+  takes it. The Tailor sells the plain ones (Ashen, Desert, Woodland, Night
+  Ops, Arctic, Cobalt, Crimson, Hazard). A few are earned only (Caleb's
+  call: the hardest content): Warlord, which Ashfront's warlords sometimes
+  carry, and Heart Warden, in the Heart Warden's vault deep in the Engine.
+  They are Relic items, so no shop sells them and the market never lists
+  them, and they are carried loot until they reach the stash.
+- **Picked at the armor stands.** Each stand in the gear hall has a paint
+  swatch beside it: using it turns that frame's look through the paints
+  owned and back to its own colours. No menu.
+- **Per frame look.** The choice is kept per look (Runner, Trooper,
+  Thermal, Bulwark, scrap), so each frame can wear its own paint.
+- **Part of the look.** The choice rides in the appearance, so it is checked
+  where clothing is (only paints the stash holds) and everyone sees it, in
+  both views and on the base's stands.
+- **Always readable.** Every colour is held in a safe range: plates never
+  near black or white, an accent always a clear lit colour, never neon.
+
 ### Weight
 
 A loadout has one of three weight tiers: **light, medium or heavy**. It is

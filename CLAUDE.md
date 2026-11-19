@@ -1222,7 +1222,19 @@ without Caleb, and update the gap list when a PR closes a row.
   carrier, strap, undersuit, accent and metal colours, and details such
   as the Runner's cool back panel, the Trooper's radio and hydration
   carrier or the Bulwark's hot back vents); a new frame gets a
-  `FRAME_LOOKS` entry (a test checks it). Check by eye with
+  `FRAME_LOOKS` entry (a test checks it). Frames can be painted
+  (DESIGN.md "Armor paints", Caleb's call): `ArmorPaint`
+  (`core/visual/armor_paint.gd`) is a row of the colour keys only, held in
+  a safe range (`ArmorPaint.SAFE`), laid over a look by `frame_style`, so a
+  paint never changes stats, shape, metal, details or glow strength. A
+  paint is a cosmetic item tagged "paint" (the Tailor sells the plain
+  ones; earned ones are Relic loot from `WorldDef.warlord_paint` and a
+  world's own tables, never sold or traded), unlocked as "paint:<id>" by
+  `Economy.unlocked_outfits`, and the choice (frame look to paint) rides in
+  the appearance's "paints", so `Human.player_look` checks it like clothing
+  and it travels wherever a look does. It is picked at the base's armor
+  stands (`HomeBase.PaintSwatch`, `paint_requested`, `show_paints`).
+  Check by eye with
   `visual_check.tscn -- <dir> --armor-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's

@@ -2805,6 +2805,9 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 		var relic := world.roll_artifact(rng, world.warlord_artifact_chance)
 		if relic != "":
 			bot.inventory.add_item(relic)
+		# And sometimes an earned armor paint, the trophy of the fight.
+		if world.warlord_paint != "" and rng.randf() < world.warlord_paint_chance:
+			bot.inventory.add_item(world.warlord_paint)
 		# And what crafting runs on (DESIGN.md section 10).
 		for id in world.roll_crafting_loot(rng, world.warlord_blueprint_chance, world.warlord_upgrade_data):
 			bot.inventory.add_item(id)

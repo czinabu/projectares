@@ -275,6 +275,10 @@ func _init() -> void:
 	pod_blueprint_chance = 0.25
 	warlord_upgrade_data = 2
 	pod_upgrade_data = 1
+	# The Warlord armor paint is earned here and nowhere else (Caleb's
+	# call: special paints come from the hardest fights).
+	warlord_paint = "paint_warlord"
+	warlord_paint_chance = 0.08
 	# Rival raiders, so the field never feels empty of people.
 	raider_count = 4
 	# An equal to the bench's mid kit (skill 0.5), not a cut above it. Flight
