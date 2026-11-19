@@ -1578,6 +1578,32 @@ Who is shooting you is not marked on screen: reading that is the tactical
 visor's strength (section on helmets), so plain helmets get only the sound
 of the shots and their whizz.
 
+### Helmet off (Caleb's call)
+
+A worn helmet can come off and be clipped to the hip, so faces show where
+people meet (the Concourse, a base) and a helmet is still to hand.
+
+- **From the watch.** The Summon tab's helmet icon takes it off or puts it
+  back on with a click. The watch goes down, since the off hand does it.
+- **Shown, not swapped.** The off hand reaches up, lifts the helmet off,
+  carries it down round the body and clips it to the back of the left hip
+  (about a second, `Actor.helmet_stow_time`), and the same backwards to put
+  it on. The one body and the one helmet model in every view: in first
+  person you see it come forward off the face and down out of the view.
+- **Still worn gear.** It stays in the helmet slot: it drops with the body
+  and goes home like any worn helmet. It is simply not on the face.
+- **Off, it does nothing.** Once it leaves the face the visor shows and
+  senses nothing (no glass, no readouts, no scan, zoom, Threat Sense or
+  thermal), and the vitals go to the watch card as with no helmet. Helmets
+  give no head armor today, so there is nothing else to lose; if they ever
+  do, it goes with the visor.
+- **Back on where people fight.** Stepping out where weapons work outside a
+  safe zone or the base (leaving a gate outpost, a new life in a world) puts
+  it back on by itself. Out there it only stays off by choice.
+- **Everyone sees it.** It travels as a held key
+  (`ActorCommand.helmet_off`), simulated like a crouch, so it predicts
+  online and every view shows the same hand and clip.
+
 ### Goggles
 
 Goggles are the light alternative to a helmet in the same `helmet` slot, and

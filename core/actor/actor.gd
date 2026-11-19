@@ -184,6 +184,18 @@ var ability := Ability.new()
 var artifact := Artifact.new()
 ## The helmet. Always there; `Visor.enabled` says whether one is worn.
 var visor := Visor.new()
+## Where the worn helmet is (DESIGN.md "Helmet off"): 0 on the head, 1
+## clipped to the hip, between while the off hand takes it off or puts it
+## back. It follows the held `ActorCommand.helmet_off` at the pace of
+## `helmet_stow_time`, so it predicts online and everyone sees the same; the
+## visor stops working once it leaves the face (`HELMET_LIFTED`) and works
+## again once it is back on. The skin shows the hand and the clip from it.
+var helmet_stow := 0.0
+## Seconds the whole take off (or put on) takes, hand up to hip.
+var helmet_stow_time := 1.1
+## How far into the take off the helmet leaves the head: the hand has
+## reached it by then (`ActionPose.helmet_hand`).
+const HELMET_LIFTED := 0.3
 var weapons: Array[Weapon] = []
 var active_weapon_index := 0
 ## Item ids of equipped gear (weapons, rig, armor). Dropped on death.
@@ -463,6 +475,7 @@ func _physics_process(delta: float) -> void:
 	artifact.tick(delta)
 	if cmd.artifact_pressed and stagger_left <= 0.0 and not weapons_locked:
 		artifact.activate()
+	_simulate_helmet(delta)
 	visor.tick(cmd, delta)
 	if not weapons_locked:
 		_simulate_heal(delta)
@@ -474,6 +487,23 @@ func _physics_process(delta: float) -> void:
 	if global_position.y < WorldDef.VOID_Y_MAX and _below_world():
 		kill("void")
 	_pulse_sign_out_beacon(delta)
+
+
+## The helmet comes off onto the hip, or back on, as the command asks
+## (`helmet_stow`). Bare-headed there is nothing to take off.
+func _simulate_helmet(delta: float) -> void:
+	if not visor.enabled:
+		helmet_stow = 0.0
+		visor.stowed = false
+		return
+	var off := cmd.helmet_off and not is_dead
+	helmet_stow = move_toward(helmet_stow, 1.0 if off else 0.0, delta / maxf(helmet_stow_time, 0.01))
+	visor.stowed = helmet_stow >= HELMET_LIFTED
+
+
+## True while a helmet is worn and on the head, not clipped to the hip.
+func helmet_on_head() -> bool:
+	return visor.working()
 
 
 ## Fallen out of the world: below its `WorldDef.void_y`. Asked only once

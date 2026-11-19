@@ -206,6 +206,14 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
+	# `-- <output_dir> --helmet-off-only` shoots a helmet taken off and
+	# clipped to the hip, at points through the take off, from the front
+	# left, over the shoulder and from the eyes.
+	if "--helmet-off-only" in args:
+		await _helmet_off_shots(out_dir)
+		get_tree().quit()
+		return
+
 	# `-- <output_dir> --vehicles-only` shoots every vehicle parked, alone
 	# from three sides and in a row from far off, to compare their looks.
 	if "--vehicles-only" in args:
@@ -4247,6 +4255,79 @@ func _inspect_shots(out_dir: String) -> void:
 		print("shot %s" % kind)
 	sheet.save_png(out_dir.path_join("inspect.png"))
 	print("saved inspect.png")
+	raid.queue_free()
+
+
+## The helmet coming off onto the hip (`Actor.helmet_stow`): a column per
+## point through the take off (on the head, the hand on it, on its way
+## down, clipped on, the hand gone), a row each from the front left, over
+## the shoulder and from the eyes. `VIEW_HELMET` picks the helmet. Saves
+## `helmet_off.png`, and each shot full size under `helmet_off/`.
+func _helmet_off_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	var helmet := OS.get_environment("VIEW_HELMET") if OS.has_environment("VIEW_HELMET") else "helm_warden"
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "pistol_service", "frame_trooper", helmet])
+	_armed(raid)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.global_position += Vector3(0, -500, 0)
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	var hud := Hud.new()
+	hud.setup(raid, controller)
+	raid.add_child(hud)
+	await _settle(30)
+	p.set_physics_process(false)
+	controller.set_physics_process(false)
+	# Turned about, so the left side (the clip's) faces open ground.
+	controller.yaw += PI
+	controller.pitch = -0.15
+	p.cmd.pitch = controller.pitch
+	p.cmd.yaw = controller.yaw
+	p.rotation.y = controller.yaw
+	var pose := ActionPose.of(p)
+	var outside := Camera3D.new()
+	outside.fov = 40.0
+	raid.add_child(outside)
+	var stows := [0.0, 0.25, 0.5, 0.65, 1.0]
+	var size := Vector2i(320, 240)
+	var sheet := Image.create(stows.size() * size.x, 3 * size.y, false, Image.FORMAT_RGBA8)
+	DirAccess.make_dir_recursive_absolute(out_dir.path_join("helmet_off"))
+	# `HELMET_CAMS=0,2` shoots only those rows (0 front left, 1 third, 2 first).
+	var cams := [0, 1, 2]
+	if OS.has_environment("HELMET_CAMS"):
+		cams = Array(OS.get_environment("HELMET_CAMS").split(",")).map(func(c: String) -> int: return int(c))
+	for cam: int in cams:
+		for col in stows.size():
+			var stow: float = stows[col]
+			controller.view_mode = PlayerController.ViewMode.FIRST if cam == 2 else PlayerController.ViewMode.THIRD
+			outside.current = cam == 0
+			controller.camera.current = cam != 0
+			p.cmd.helmet_off = stow > 0.0
+			for k in 16:
+				p.helmet_stow = stow
+				p.visor.stowed = stow >= Actor.HELMET_LIFTED
+				pose.helmet = stow
+				if cam == 0:
+					var at := p.global_position
+					outside.global_position = at + p.global_basis * Vector3(-1.9, 1.5, -2.0)
+					outside.look_at(at + Vector3(0, 1.1, 0))
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			var frame := get_viewport().get_texture().get_image()
+			frame.save_png(out_dir.path_join("helmet_off/%d_%s.png" % [int(stow * 100), ["front", "third", "first"][cam]]))
+			var w := frame.get_width()
+			var h := frame.get_height()
+			var cut_w := h * size.x / size.y
+			var cut := frame.get_region(Rect2i((w - cut_w) / 2, 0, cut_w, h))
+			cut.resize(size.x, size.y)
+			cut.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(cut, Rect2i(Vector2i.ZERO, size), Vector2i(col * size.x, cam * size.y))
+	sheet.save_png(out_dir.path_join("helmet_off.png"))
+	print("saved helmet_off.png")
 	raid.queue_free()
 
 

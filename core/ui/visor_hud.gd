@@ -303,7 +303,7 @@ func _exit_tree() -> void:
 ## and the camera in their head.
 func glass_shown() -> bool:
 	var p := _player()
-	if p == null or p.is_dead or not p.visor.enabled:
+	if p == null or p.is_dead or not p.visor.working():
 		return false
 	return controller == null or not controller.is_third_person()
 
@@ -314,7 +314,7 @@ func glass_shown() -> bool:
 ## behind your turns) belongs to first person.
 func flat_shown() -> bool:
 	var p := _player()
-	return p != null and not p.is_dead and p.visor.enabled 			and controller != null and controller.is_third_person()
+	return p != null and not p.is_dead and p.visor.working() 			and controller != null and controller.is_third_person()
 
 
 ## The thermal picture: the view's brightness run through a heat ramp, cold
@@ -599,7 +599,7 @@ func _on_threatened(origin: Vector3) -> void:
 ## high the wearer is.
 func _read_range(p: Actor, delta: float) -> void:
 	_range_wait -= delta
-	if _range_wait > 0.0 or p.visor.mode == "" or not p.visor.enabled or not p.is_inside_tree():
+	if _range_wait > 0.0 or p.visor.mode == "" or not p.visor.working() or not p.is_inside_tree():
 		return
 	_range_wait = range_interval
 	var from := p.get_eye_position()
