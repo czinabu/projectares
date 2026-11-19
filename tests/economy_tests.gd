@@ -101,8 +101,9 @@ static func _rules(t: Node) -> void:
 	t.check(described and has_decor, "furniture and decorations carry a footprint and a color")
 	var clothes := Economy.stock("tailor")
 	t.check(not clothes.is_empty() and clothes.all(func(id: String) -> bool:
-		return ItemDB.has_tag(id, "cosmetic") and not ItemDB.item_stats(id).get("outfits", []).is_empty()),
-			"the tailor's clothing each names the outfits it unlocks")
+		return ItemDB.has_tag(id, "cosmetic") and (not ItemDB.item_stats(id).get("outfits", []).is_empty()
+				or ArmorPaint.PAINTS.has(ItemDB.item_stats(id).get("paint", "")))),
+			"the tailor's clothing each names the outfits it unlocks, and its armor paints their paint")
 	t.check(Economy.unlocked_outfits(["outfit_punk", "rifle_carbine", "outfit_punk", "outfit_suit"]) == (["m_Punk", "f_Punk", "m_Suit", "f_Suit"] as Array[String])
 			and Economy.unlocked_outfits(["rifle_carbine"]).is_empty(), "owned clothing unlocks its outfits, and nothing else does")
 	var home_goods := furniture + clothes

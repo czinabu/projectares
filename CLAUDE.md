@@ -575,15 +575,29 @@ without Caleb, and update the gap list when a PR closes a row.
   it is simulated on, with a local guess at the guard; the attacker's view
   answers that (sound, `PlayerController.kick_view`, a hitstop of the blade's
   pose) at once, and the server's `hit_confirmed` only drives the hit marker.
-- Melee is directional. The stance travels in `ActorCommand.stance` (picked
-  by default from the movement keys, Jedi Academy style, Caleb's call; B
-  switches to the mouse flick), attacks
-  set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
-  guard stops a hit. A swing goes toward its stance (Caleb's call): a left
-  swing starts on the right and ends on the left, so `attack_dir` (the side
-  it comes from) is `MeleeWeapon.swing_from(stance)`. A guard covers its
-  stance's side, so a left swing meets a left guard. Windup and guard poses
-  must show their side; `threat_dir()` is what a defender reads.
+- Melee is timing, not sides (Caleb's call, DESIGN.md "Melee duels"): the
+  blade picks its own sides (`MeleeWeapon.next_stance`: a light combo runs
+  right, left, over the top; a heavy comes over the top, or from the side
+  straight off a light), and a guard turns to meet whatever comes from the
+  front (`_guard_toward`, `guard_dir` set by the hit), so nothing matches a
+  side and `ActorCommand.stance` is unused. A swing still goes toward its
+  stance (`attack_dir` is `swing_from(stance)`), and windup and guard poses
+  must show their side; `threat_dir()` is what a defender reads. What a
+  guard does is timing: a parry in `parry_window`, a timed block in
+  `timed_window` for `timed_block_cost` of the stamina, and a guard held
+  longer drains (`_drain_held_guard`); a guard raised straight after one
+  that met nothing is not timed (`guard_rearm`), one that met its hit in
+  time rearms at once (`_guard_paid`). A blow landing on a windup
+  interrupts it (`interrupt_stagger`); strikes landing together clash
+  (`clashes_with`); the kick (`ActorCommand.kick_pressed`, V,
+  `MeleeWeapon.kick`) goes through a guard and breaks it open but loses to
+  a swing; aim early in a heavy's windup feints it (`_try_feint`). The
+  dodge is the dash (Alt, `Actor.dodge_style`: a roll with no rig, the
+  rig's own dodge otherwise): swings pass through it (`evade_left`), rounds
+  do not, and the weapon waits out `dodge_recover`. What a guarded strike,
+  a reel and the feet look like is view only: `ActionPose.bind` (both
+  blades meet at `ActorSkin.bind_point`), `reel`, `footwork`; check with
+  `visual_check.tscn -- <dir> --bind-only`.
 - The game updates itself (`core/update/updater.gd`, the `Updater`
   autoload, second after `Boot` and, like it, free of project classes). The
   Windows client keeps its pack beside the exe (`embed_pck` off); the
@@ -705,6 +719,12 @@ without Caleb, and update the gap list when a PR closes a row.
   which eases off as the view tips down while the eyes lean ahead,
   `PlayerController.look_down_lean`, so looking down sees the chest, never
   the shoulders from behind)
+  from the head as drawn, in every pose (`ActorSkin._head_local`, the
+  posed head; its steadying trails it by at most `eye_steady_reach`, the
+  controller's easing by at most `eye_lag_reach`, and `head_posed` carries
+  it on with the head posed after the camera was placed; no landing dip on
+  top of the body's own squat), so the eyes never trail into the neck or
+  the armor's collar (`camera_tests.gd`, `_check_eyes_stay_in_the_head`),
   and leaves out only the head (`ActorSkin.hide_head` moves it and what is
   worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
   a mirror still see it). A station's own view (the bench's, a
@@ -816,11 +836,15 @@ without Caleb, and update the gap list when a PR closes a row.
   vertex's rest place and hand share in CUSTOM0, so `character.gdshader`
   draws patterns that stay on the body as it moves. Never change a
   vertex count, bone or weight there: a body must pose and cost the same.
-  Under an armor frame the bare skin below the head wears a fitted
-  undersuit with gloves and a lit cuff, drawn by the shader (`suit`, set
-  by `ActorSkin._update_frame`; `Human.surface_kind` says which surfaces
-  it covers), never a mesh, so plates fit the same over it. Check by eye
-  with `body_check.tscn -- <dir> [--suit] [--before]`.
+  Under an armor frame a person wears a fitted undersuit (Caleb's
+  tactical pass): the body, legs and boots of their build's
+  `ActorSkin.SUIT_OUTFITS` go on in place of their clothes
+  (`_wear_undersuit`, view only, the clothes given back when the frame
+  comes off, the appearance untouched), and the shader draws every
+  surface below the head as the suit in the frame's "suit" colour, with
+  gloves and a cuff lit in its accent (`suit`, `suit_color`,
+  `suit_trim`; `Human.surface_kind` says which surfaces it covers). Check
+  by eye with `body_check.tscn -- <dir> [--suit] [--before]`.
   Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
@@ -851,9 +875,22 @@ without Caleb, and update the gap list when a PR closes a row.
   `Loadout.power_index`); the
   mouse wheel cycles the same order. Sidearms are firearms also tagged "sidearm";
   `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
-  the primary slot), and `Weapon.is_sidearm` marks one once equipped. Running
-  the primary dry with the trigger held draws a loaded sidearm instead of
-  reloading (`Actor._simulate_weapons`). Headshots come from
+  the primary slot), and `Weapon.is_sidearm` marks one once equipped. A gun
+  never switches itself (Caleb's call): run dry in hand it stays there and
+  never reloads on its own; the prompt under the crosshair asks for one
+  (`Hud.reload_prompt`, on with or without a helmet, in both views) and a
+  pull on the empty gun starts it too, and with nothing left to load a pull
+  only clicks ("Out of ammo"). A reload press the gun cannot
+  take yet (drawing, healing) is kept for `Actor.reload_buffer`. Only the
+  player, or a bot's brain pressing the same key (`BotBrain._tend_kit`),
+  changes weapons. A player arrives unarmed (Caleb's call): every life in
+  every world starts with the weapons put away and key 1's weapon ready to
+  draw (`Loadout.arrive_unarmed`, in `Raid.add_player` and the client's
+  copy in `NetSession`), and comes out only by choice: a number key, Z, the
+  wheel, or a pull of the trigger with empty hands, which only draws. While
+  `Actor.weapons_locked` (a safe zone, a gate outpost, the base off the
+  range) a weapon in hand is put away and nothing can be drawn
+  (`Actor._simulate_weapons`). Headshots come from
   `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
   Every gun has a range and a target it wins against (DESIGN.md "Gun
   roles"): each sets its own `headshot_mult` (more than 1 on every gun but
@@ -1048,8 +1085,20 @@ without Caleb, and update the gap list when a PR closes a row.
   `Actor.sprint_out_time` after the sprint ends (`Actor.sprint_recover`),
   keeping a pull made meanwhile. Light guns are quick and steady on the
   move; a DMR is slow to aim and wild on the run.
-  Feedback is view only (DESIGN.md "Feedback"): each kind of gun has its own
-  voice (the item's `shot_sound`) heard out to `Gun.SHOT_REACH`, a round
+  Feedback is view only (DESIGN.md "Feedback"): every gun has a voice of
+  its own (the item's `shot_sound`, one of `Sfx.GUN_VOICES`, never shared;
+  a test checks it) that fits what it is: the everyday guns are ballistic
+  (a crack, the action, a low punch, the cycle), the heavy weapons energy
+  (a charged snap, a zap or plasma, crackle). They are made from code by
+  `assets/sounds/weapons/make_weapon_sounds.py` (ours, no credit needed;
+  short rings and short echoes, Caleb's feedback: never a bell, never a
+  long echo), takes for the open, under a roof and far off.
+  `Sfx.shot` plays your own the tick it fires, flat, and anyone else's
+  where it went off: under a roof (`Sfx.roof_over`) the indoor take, past
+  `Sfx.FAR_FROM` giving way to the far take after the sound's travel time.
+  A rail's charge and a rotary gun's spin are heard from the gun's state
+  (`ActorSkin._update_weapon_hum`), a draw as the hand takes the weapon,
+  all heard out to `Gun.SHOT_REACH`, a round
   passing close is heard going by (`Sfx.pass_by`), a round leaves a puff
   and a wall a mark for a few seconds (`Fx.impact`, at most `Fx.MAX_MARKS`;
   `Combat.trace` gives the face's `normal`), the hit marker and its sound
@@ -1139,13 +1188,20 @@ without Caleb, and update the gap list when a PR closes a row.
   worn one goes in the pack; `_worn_changed` tells every client. The skin wears it on the
   head (`ActorSkin._update_helmet`, `build_helmet`), hiding the head under it; it
   hangs off the "Head" bone, so first person leaves it out with the head.
-  Each helmet looks like what it does (Caleb's call; `helmet_model.gd`):
-  a dark hood, a shell with its own outline (`Shape`: the Spotter low and
-  high-cut, the Seeker a swept egg, the Warden faceted with a crest, the
-  Ember broad over its heat sinks), smoked glass glowing in the visor's
-  colour and the mode's fitting (rangefinder pod, emitter crown, sensor
-  eyes all round, thermal lens and heat sinks; the scrap visor patched and
-  cracked); a Mk2 (`Visor.tier`) wears a lit seam over the crown. Keep
+  Each helmet looks like what it does (Caleb's call, and his tactical
+  pass: grounded military sci-fi; `helmet_model.gd`): a dark hood, a
+  shell with a real outline (a superellipsoid, never a ball) with a brow,
+  a rim and the mode's own cut (the Spotter high-cut for a headset with a
+  flip-down rangefinder, the Seeker full-cut with a jaw guard and crown
+  emitter, the Warden a faceplate with a lit slit and sensor eyes all
+  round, the Ember a broad ceramic shell over its heat sinks, the scrap
+  visor a patched pot with cracked goggles), framed glass that is dark
+  and reflective, never a glowing panel; a Mk2 (`Visor.tier`) wears a lit
+  seam over the crown. Every helmet and armor piece is built from
+  `GearShapes` (`core/visual/gear_shapes.gd`), merged into one mesh per
+  material (`GearShapes.merge`: "Gear", and "Glass" with no shadow; the
+  parts it was made of in its "parts" meta, `has_part`) and built once
+  per kind, then shared (`GearShapes.cached`). Keep
   the back of the head clear for the vitals strip. Goggles will be the
   same glass and fitting on a strap, no shell. Check by eye with
   `visual_check.tscn -- <dir> --helmets-only` (helmet_closeups.png).
@@ -1156,22 +1212,41 @@ without Caleb, and update the gap list when a PR closes a row.
   carousel too and goes through `Raid.swap_worn`. Both go on at once and
   then the watch rests (`Loadout.SUMMON_TIMES` "helmet", short, and
   "armor", long), and a frame taken off keeps its armor left in
-  `Actor.stowed_armor`, so spare plates are no instant refill. The skin wears its plates
-  (`ActorSkin._update_frame`, `build_frame`, `build_pad`, `build_tasset`)
-  on the chest, upper arm and thigh bones, the same body in both views and
-  on the base's armor stands (`HomeBase._build_armor`). Plates are fitted,
-  never boxes (Caleb's call): curved shells (`_shell`) off the torso,
-  bevelled at the edges. Weight reads at a glance (Caleb's armor pass):
-  the frame's weight tag picks its bulk (`ActorSkin.FRAME_BULK`: plate
-  thickness, how far off the body, coverage, shoulder lames, tassets, a
-  gorget), light a thin breastplate and back plate, medium a carrier with
-  caps and a tasset, heavy thick layered plate that widens the shoulders,
-  so a frame moved to another weight tier changes bulk with it. Each frame
-  also has a look of its own that fits what it does (`FRAME_LOOKS` to
-  `FRAME_STYLES`: colours, a matte finish matching the helmets, and
-  details such as the Runner's cool spine vents or the Bulwark's hot back
-  vents); a new frame gets a `FRAME_LOOKS` entry (a test checks it). Check
-  by eye with `visual_check.tscn -- <dir> --armor-only`.
+  `Actor.stowed_armor`, so spare plates are no instant refill. The skin
+  wears the whole kit (`ActorSkin._update_frame`, `armor_model.gd`): a
+  plate carrier on the chest (`build_frame`), a battle belt on the hips
+  (`build_belt`) and on each side a segmented shoulder pad (`build_pad`),
+  an elbow pad and bracer (`build_bracer`), a thigh plate (`build_tasset`,
+  a drop-leg pouch on the right) and a knee pad and shin guard
+  (`build_shin`), each on the bone it moves with (`_hang_limb` turns a
+  limb piece along its limb), the same body in both views, over the
+  undersuit, and on the base's armor stands (`HomeBase._build_armor`).
+  Plates are fitted, never boxes (Caleb's call): curved shells off the
+  torso, bevelled at the edges, over a fabric carrier with straps,
+  webbing and pouches. Weight reads at a glance: the frame's weight tag
+  picks its coverage (`ActorSkin.FRAME_BULK`), light a slim carrier,
+  caps and knee pads, medium the full kit with a cummerbund and an upper
+  arm plate, heavy layered plate with abdominal lames, a gorget, faulds
+  and greaves that widens the shoulders, so a frame moved to another
+  weight tier changes bulk with it. Each frame also has a look of its own
+  that fits what it does (`FRAME_LOOKS` to `FRAME_STYLES`: plate,
+  carrier, strap, undersuit, accent and metal colours, and details such
+  as the Runner's cool back panel, the Trooper's radio and hydration
+  carrier or the Bulwark's hot back vents); a new frame gets a
+  `FRAME_LOOKS` entry (a test checks it). Frames can be painted
+  (DESIGN.md "Armor paints", Caleb's call): `ArmorPaint`
+  (`core/visual/armor_paint.gd`) is a row of the colour keys only, held in
+  a safe range (`ArmorPaint.SAFE`), laid over a look by `frame_style`, so a
+  paint never changes stats, shape, metal, details or glow strength. A
+  paint is a cosmetic item tagged "paint" (the Tailor sells the plain
+  ones; earned ones are Relic loot from `WorldDef.warlord_paint` and a
+  world's own tables, never sold or traded), unlocked as "paint:<id>" by
+  `Economy.unlocked_outfits`, and the choice (frame look to paint) rides in
+  the appearance's "paints", so `Human.player_look` checks it like clothing
+  and it travels wherever a look does. It is picked at the base's armor
+  stands (`HomeBase.PaintSwatch`, `paint_requested`, `show_paints`).
+  Check by eye with
+  `visual_check.tscn -- <dir> --armor-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
@@ -1341,7 +1416,14 @@ without Caleb, and update the gap list when a PR closes a row.
   answer that stops the resending. The client corrects its own
   actor by comparing the server's position with its remembered prediction for
   that input (`NetSession._history`), never with its current position, and
-  blends every correction over several ticks. Keep `Actor` movement
+  blends every correction over several ticks. Everyone else is corrected
+  the same way: the view runs on the client's own clock
+  (`NetSession._advance_view`), never on when updates arrive, and an update
+  is compared with where the client showed that body at the update's
+  server tick (`NetSession.Trail`, `_note_shown`), never with where it is
+  now, so a late update moves nobody (that was the uneven stepping on a
+  jittery connection; feel it with `--jitter`). Nothing is held back to
+  smooth them either. Keep `Actor` movement
   deterministic from its `ActorCommand` so prediction keeps matching.
 - Lag compensation: each input also carries the server tick the client's view
   had reached, and the server keeps half a second of past positions. Attacks

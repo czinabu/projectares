@@ -78,6 +78,10 @@ const VAULT_DATA := Vector2i(1, 2)
 const VAULT_BLUEPRINT := 0.3
 const VAULT_BLUEPRINTS := ["bp_frame_thermal", "bp_grip_glacier"]
 const VAULT_ARTIFACT := 0.05
+## The chance a share of the vault holds the Heart Warden armor paint,
+## earned nowhere else (Caleb's call: special paints from the hardest
+## fights).
+const VAULT_PAINT := 0.1
 ## Whiteouts (DESIGN.md "Frostline", step 5): blizzards that come down the
 ## valley one at a time on the shared weather (`WorldDef.weather_*`), most
 ## of them off the glacier (a cold wind falls downhill), now and then one
@@ -538,6 +542,8 @@ func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
 	var relic := roll_artifact(rng, VAULT_ARTIFACT)
 	if relic != "":
 		out.append(relic)
+	if rng.randf() < VAULT_PAINT:
+		out.append("paint_warden")
 	return out
 
 

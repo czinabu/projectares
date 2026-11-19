@@ -229,8 +229,9 @@ static func loot_value(stash: Array) -> int:
 
 
 ## The character customizer outfits the stash unlocks: every id in the
-## "outfits" stat of the cosmetic items owned. Pass it to the customizer as
-## its `owned` list.
+## "outfits" stat of the cosmetic items owned, and "paint:<id>" for every
+## armor paint owned (`ArmorPaint`). Pass it to the customizer, and to
+## `Look.clean_appearance`, as its `owned` list.
 static func unlocked_outfits(stash: Array) -> Array[String]:
 	var out: Array[String] = []
 	for id: Variant in stash:
@@ -239,6 +240,10 @@ static func unlocked_outfits(stash: Array) -> Array[String]:
 		for outfit: Variant in ItemDB.item_stats(id).get("outfits", []):
 			if typeof(outfit) == TYPE_STRING and outfit not in out:
 				out.append(outfit)
+		# An armor paint item unlocks its paint (`ArmorPaint`).
+		var paint: Variant = ItemDB.item_stats(id).get("paint")
+		if typeof(paint) == TYPE_STRING and ArmorPaint.owned_key(paint) not in out:
+			out.append(ArmorPaint.owned_key(paint))
 	return out
 
 

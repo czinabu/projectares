@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 55
+const PROTOCOL := 56
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -193,6 +193,14 @@ const MAX_REWIND_TICKS := 30
 const HISTORY_TICKS := 180
 ## The share of a position error that is corrected each tick.
 const CORRECTION_RATE := 0.2
+## The furthest a client's view runs ahead of an update that comes late, in
+## ticks (30 = half a second, all a `Trail` remembers). An update later than
+## that starts the view again from it.
+const MAX_VIEW_LEAD := 30
+## A view that was ahead of every update for this many ticks is ahead for
+## nothing (the connection got slower for good): half of what was spare
+## throughout, at least one tick, is folded away.
+const VIEW_SETTLE_TICKS := 60
 ## Notices the server passes on to a player. Others are produced locally.
 const FORWARDED_NOTICES := ["Parry!", "Wrong side", "Guard broken", "Staggered", "Killed ", "Looted ",
 		"Backpack full", "Someone is riding it", "Banked ", "Signing out", "Sign-out cancelled",
@@ -293,6 +301,10 @@ var my_actor_id := -1
 ## added in each direction, and the share of input packets thrown away (0 to 1).
 var simulated_lag := 0.0
 var simulated_loss := 0.0
+## Seconds of extra, uneven delay on the server's updates (client, for tests
+## and `--jitter`): each is held back by up to this much more, in order, so
+## they arrive late and then several at once, as on a bad connection.
+var simulated_jitter := 0.0
 ## Client: the largest gap seen between where the server put you and where
 ## this game had predicted you would be at that same moment.
 var max_correction := 0.0
@@ -325,6 +337,11 @@ var _acked_seq := 0      # newest input number the server says it has played (cl
 var _newest_tick := 0    # server tick of the newest state received (client)
 var _fresh_state := false # a newer state arrived since the last tick (client)
 var _view_tick := 0      # server tick the actors on screen show (client)
+var _clock := 0          # ticks this client has run in this world (client)
+var _least_lead := -1    # least ticks the view was ahead of an update as it arrived, this window; -1 none yet (client)
+var _lead_window := 0    # ticks into the window `_least_lead` is measured over (client)
+var _trails := {}        # actor id -> Trail: where this client showed them, tick by tick (client)
+var _latest_tick := {}   # actor id -> server tick of their entry in `_latest` (client)
 var _corrections := {}   # actor id -> position error still to blend away (client)
 var _delayed_out: Array = [] # [due msec, inputs] held back by simulated_lag
 var _delayed_in: Array = []  # [due msec, Callable] updates held back by simulated_lag
@@ -680,6 +697,11 @@ func _clear_tables() -> void:
 	_newest_tick = 0
 	_fresh_state = false
 	_view_tick = 0
+	_clock = 0
+	_least_lead = -1
+	_lead_window = 0
+	_trails.clear()
+	_latest_tick.clear()
 	_seq = 0
 	_acked_seq = 0
 	_history.clear()
@@ -2812,6 +2834,7 @@ func _welcome(actor_id: int) -> void:
 		_history.clear()
 		_corrections.erase(my_actor_id)
 		_latest.erase(my_actor_id)
+		_trails.erase(actor_id)
 		my_actor_id = actor_id
 		return
 	_clear_tables()
@@ -2908,6 +2931,7 @@ func _spawn(id: int, kind: String, shown_name: String, node_name: String, at: Ve
 		raid.add_child(actor)
 		actor.global_position = at
 		Loadout.equip(actor, data.get("kit", []))
+		Loadout.arrive_unarmed(actor)
 		var power: Variant = data.get("power")
 		if power is Array and power.size() == 3 and ItemDB.has_tag(str(power[0]), "power"):
 			Loadout.set_power(actor, power[0], int(power[1]), int(power[2]), false)
@@ -2945,6 +2969,7 @@ func _despawn(id: int) -> void:
 	var actor: Actor = _actors.get(id)
 	_actors.erase(id)
 	_latest.erase(id)
+	_trails.erase(id)
 	if actor == null or not is_instance_valid(actor):
 		return
 	_ids.erase(actor)
@@ -2976,8 +3001,12 @@ func _state(tick: int, entries: Array) -> void:
 
 ## Runs `update` now, or after the simulated lag.
 func _after_lag(update: Callable) -> void:
-	if simulated_lag > 0.0:
-		_delayed_in.append([Time.get_ticks_msec() + simulated_lag * 1000.0, update])
+	if simulated_lag > 0.0 or simulated_jitter > 0.0:
+		var due := Time.get_ticks_msec() + (simulated_lag + randf() * simulated_jitter) * 1000.0
+		# Updates stay in the order they were sent, as on the wire.
+		if not _delayed_in.is_empty():
+			due = maxf(due, _delayed_in[-1][0])
+		_delayed_in.append([due, update])
 	else:
 		update.call()
 
@@ -3003,6 +3032,7 @@ func _receive_state(tick: int, entries: Array) -> void:
 			if int(cmd[ActorCommand.SWITCH_INDEX]) < 0:
 				cmd[ActorCommand.SWITCH_INDEX] = earlier[ActorCommand.SWITCH_INDEX]
 		_latest[id] = entry
+		_latest_tick[id] = tick
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -3659,11 +3689,8 @@ func _client_early_tick() -> void:
 		_delayed_in.pop_front()[1].call()
 	if raid == null:
 		return
-	# Everyone else is shown as the newest state left them, moved on by local
-	# simulation, so the screen shows the server's tick from that state plus
-	# the ticks since. Attacks made now are judged against that tick.
-	_view_tick = _newest_tick + 1 if _fresh_state else _view_tick + 1
-	_fresh_state = false
+	_clock += 1
+	_advance_view()
 	for id: int in _actors:
 		var actor: Actor = _actors[id]
 		if not is_instance_valid(actor):
@@ -3679,9 +3706,63 @@ func _client_early_tick() -> void:
 			continue
 		var entry: Array = _latest[id]
 		_latest.erase(id)
-		_apply_state(actor, entry, mine)
+		_apply_state(actor, entry, mine, int(_latest_tick.get(id, _newest_tick)))
 	_blend_corrections()
 	_client_move_vehicles()
+
+
+## Moves the view on a tick. Everyone else is shown as a state left them,
+## moved on by local simulation, so the screen shows a server tick: the one
+## after the newest state when updates come evenly. Attacks made now are
+## judged against that tick.
+##
+## The view runs on the client's own clock, not on when updates happen to
+## arrive: an update that comes late finds the view a few ticks ahead of it
+## and leaves it there, and `_apply_state` compares it with where the body
+## was shown at that update's tick. Following the arrivals instead pulled
+## every body back for a late update and pushed it on again for the next,
+## which was the uneven stepping on a jittery connection.
+func _advance_view() -> void:
+	_view_tick += 1
+	if _fresh_state:
+		_fresh_state = false
+		var lead := _view_tick - (_newest_tick + 1)
+		if lead < 0:
+			# An update from further on than the view: catch up with it.
+			_view_tick -= lead
+			lead = 0
+		elif lead > MAX_VIEW_LEAD:
+			_view_tick -= lead
+			lead = 0
+		_least_lead = lead if _least_lead < 0 else mini(_least_lead, lead)
+	_lead_window += 1
+	if _lead_window >= VIEW_SETTLE_TICKS:
+		if _least_lead > 0:
+			@warning_ignore("integer_division")
+			_view_tick -= (_least_lead + 1) / 2
+		_least_lead = -1
+		_lead_window = 0
+
+
+## Remembers where everyone else stands after this tick, for the next
+## updates to be compared with (`Trail`).
+func _note_shown() -> void:
+	for id: int in _actors:
+		if id == my_actor_id:
+			continue
+		var actor: Actor = _actors[id]
+		if not is_instance_valid(actor):
+			continue
+		var trail: Trail = _trails.get(id)
+		if trail == null:
+			trail = Trail.new()
+			trail.since = _clock
+			_trails[id] = trail
+		if actor.is_dead or actor.vehicle != null:
+			# A rider goes where their vehicle goes: nothing here to compare.
+			trail.since = _clock + 1
+			continue
+		trail.note(_clock, actor.global_position, actor.velocity)
 
 
 ## Far from your own player an actor is simulated in longer steps.
@@ -3708,18 +3789,20 @@ func _blend_corrections() -> void:
 		var left: Vector3 = _corrections[id]
 		var step := left * CORRECTION_RATE if left.length() > 0.02 else left
 		actor.global_position += step
+		# Remembered positions move too, so the next comparison only sees
+		# what is still wrong.
 		if id == my_actor_id:
-			# Remembered positions move too, so the next comparison only sees
-			# what is still wrong.
 			for seq: int in _history:
 				_history[seq] += step
+		elif _trails.has(id):
+			_trails[id].moved += step
 		if step == left:
 			_corrections.erase(id)
 		else:
 			_corrections[id] = left - step
 
 
-func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
+func _apply_state(actor: Actor, entry: Array, mine: bool, tick: int = 0) -> void:
 	var at: Vector3 = entry[1]
 	var dead_kind: String = entry[7]
 	if dead_kind != "":
@@ -3780,6 +3863,24 @@ func _apply_state(actor: Actor, entry: Array, mine: bool) -> void:
 	actor.flight.is_hovering = _hovering_in(entry[3])
 	# Looting is decided by the server, never replayed here.
 	actor.cmd.interact_pressed = false
+	# Like your own position, another player's is from the past when its
+	# update was late: it belongs to `tick`, and the view may have moved on.
+	# So it is compared with where this game showed them at that tick, not
+	# with where they are now, and an update's lateness moves nobody.
+	var then := _clock - (_view_tick - tick)
+	var trail: Trail = _trails.get(id)
+	if trail != null and trail.has(then, _clock):
+		var miss := at - trail.place(then)
+		if miss.length() > SNAP_DISTANCE:
+			actor.global_position += miss
+			trail.moved += miss
+			_corrections.erase(id)
+		else:
+			_corrections[id] = miss
+		var push: Vector3 = entry[2] - trail.speed(then)
+		actor.velocity += push
+		trail.pushed += push
+		return
 	var gap := at - actor.global_position
 	if gap.length() > SNAP_DISTANCE:
 		actor.global_position = at
@@ -3802,6 +3903,7 @@ static func _hovering_in(cmd: Variant) -> bool:
 
 
 func _client_late_tick() -> void:
+	_note_shown()
 	var me: Actor = _actors.get(my_actor_id)
 	if me == null or not is_instance_valid(me) or me.is_dead or not _is_connected():
 		return
@@ -4134,6 +4236,41 @@ class LateTick:
 			session._server_late_tick(delta)
 		else:
 			session._client_late_tick()
+
+
+## Where a client showed another player's body after each of its last few
+## ticks, and how fast it was going. An update from the server is about one
+## server tick; this is what it is compared with, the way your own position
+## is compared with `_history`.
+class Trail:
+	const TICKS := 32
+
+	## The first client tick remembered here.
+	var since := 0
+	## Corrections made to the body since: every remembered place and speed
+	## counts as moved by them, so a comparison only sees what is still wrong.
+	var moved := Vector3.ZERO
+	var pushed := Vector3.ZERO
+	var _places := PackedVector3Array()
+	var _speeds := PackedVector3Array()
+
+	func _init() -> void:
+		_places.resize(TICKS)
+		_speeds.resize(TICKS)
+
+	func note(clock: int, at: Vector3, velocity: Vector3) -> void:
+		_places[clock % TICKS] = at - moved
+		_speeds[clock % TICKS] = velocity - pushed
+
+	## Whether the tick `clock` is remembered, on a client now at tick `now`.
+	func has(clock: int, now: int) -> bool:
+		return clock >= since and clock > now - TICKS and clock < now
+
+	func place(clock: int) -> Vector3:
+		return _places[clock % TICKS] + moved
+
+	func speed(clock: int) -> Vector3:
+		return _speeds[clock % TICKS] + pushed
 
 
 ## One player's inputs on the server, between arriving and being played.

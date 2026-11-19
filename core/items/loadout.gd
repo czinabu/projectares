@@ -88,6 +88,19 @@ static func fits(slot: String, id: String) -> bool:
 	return slot != "primary" or not ItemDB.has_tag(id, "sidearm")
 
 
+## Puts every weapon away, with key 1's weapon the one the holster key draws
+## (Z). A player arrives in a world like this (Caleb's call: never armed
+## until they choose to be), the same on the server and every client.
+static func arrive_unarmed(actor: Actor) -> void:
+	var first := actor.weapon_for_key(1)
+	if first < 0:
+		var order := actor.slot_order()
+		first = order[0] if not order.is_empty() else 0
+	actor.active_weapon_index = -1
+	actor.last_drawn = first
+	actor._refresh_weapon_visuals()
+
+
 static func equip(actor: Actor, item_ids: Array) -> void:
 	var frames: Array[String] = []
 	# Attachments go on the primary, so they are gathered first: the gun's

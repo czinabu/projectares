@@ -449,6 +449,7 @@ func tick(delta: float) -> void:
 			var need := mini(mag_size - ammo_in_mag, reserve_ammo)
 			ammo_in_mag += need
 			reserve_ammo -= need
+			_reload_sound("reload_in")
 
 
 func handle_input(cmd: ActorCommand, delta: float) -> void:
@@ -479,8 +480,14 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		_press_left = 0.0
 		if ammo_in_mag > 0:
 			_fire()
-		else:
+		elif cmd.primary_pressed:
+			# A fresh pull on the empty gun reloads it; a trigger held through
+			# the last round does not (the visor asks, `Hud.reload_prompt`).
 			start_reload()
+	if cmd.primary_pressed and ammo_in_mag <= 0 and reserve_ammo <= 0 and _reload_left <= 0.0:
+		_reload_sound("dry_fire")
+		if actor:
+			actor.notice.emit("Out of ammo")
 
 
 func drop_aim() -> void:
@@ -541,6 +548,15 @@ func reload_left() -> float:
 func start_reload() -> void:
 	if _reload_left <= 0.0 and ammo_in_mag < mag_size and reserve_ammo > 0:
 		_reload_left = reload_time
+		_reload_sound("reload_out")
+
+
+## The reload's clacks and the dry click: flat for the player's own gun, from
+## the gun for anyone else's. `Sfx` is a no-op on a server.
+func _reload_sound(sound: String) -> void:
+	if actor == null or not actor.is_inside_tree():
+		return
+	Sfx.play(sound, null if actor.is_player else actor.global_position + Vector3.UP * 1.2, -6.0, 25.0)
 
 
 func current_spread_deg() -> float:
@@ -623,7 +639,9 @@ func _fire() -> void:
 	if _noise_left <= 0.0:
 		_noise_left = noise_every
 		Combat.noise(actor, from, noise_reach())
-	Sfx.play(shot_sound, null if actor.is_player else from, -14.0 if quiet else 0.0,
+	# Your own shot is heard the tick it fires, flat; anyone else's from where
+	# it went off, by distance and by whether a roof is over it.
+	Sfx.shot(shot_sound, from, actor, actor.is_player, -14.0 if quiet else 0.0,
 			(SUPPRESSED_REACH if quiet else SHOT_REACH) * carry, Sfx.UNIT_SIZE * carry)
 
 
