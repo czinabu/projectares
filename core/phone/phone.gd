@@ -2135,6 +2135,7 @@ func _draw_settings() -> void:
 			smoothing.item_selected.connect(func(index: int) -> void: change_setting("anti_aliasing", index))
 			_body.add_child(smoothing)
 			_toggle("Outline far shapes (not with MSAA)", "edge_ink", GameSettings.edge_ink)
+			_toggle("Battle smoke over the ground", "ground_smoke", GameSettings.ground_smoke)
 			_body.add_child(_section("CAMERA"))
 			_slider("Field of view, first person", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
 					func(v: float) -> String: return "%d" % roundi(v))

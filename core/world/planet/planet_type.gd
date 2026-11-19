@@ -37,6 +37,12 @@ var horizon := {"reach": 2600.0, "peaks": 120.0}
 ## "embers", "ash", "snow", "rain", "sand", "spores", ""), "storm" the
 ## storm kind a world on this planet uses (`WorldDef.weather_kind`).
 var weather := {"air": "", "storm": ""}
+## Low smoke lying over the ground (`Planet.GroundSmoke`, view only, behind
+## `GameSettings.ground_smoke`), or empty for clear air: "density" in calm,
+## "colour", "depth" (metres it stands over the ground), "war" and "storm"
+## (how much thicker it is at full war and in the thick of a storm, as
+## shares of the calm density).
+var smoke := {}
 ## What is scattered on the ground (`PlanetProps`): kind, how many per
 ## hectare, size range, and where (slope, height).
 var props: Array[Dictionary] = []

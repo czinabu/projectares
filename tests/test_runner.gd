@@ -7252,6 +7252,21 @@ func _test_game_settings() -> void:
 	GameSettings.set_value("anti_aliasing", 3)
 	check(ink_smaa and not GameSettings.ink_shown() and GameSettings.to_dict().has("edge_ink"),
 			"the far-shape outline is saved, and left out with MSAA, which gives it no depth to read")
+	# Battle smoke (PlanetType.smoke): a setting that switches the volume and
+	# the volumetric fog it needs, thicker with the war and in a storm.
+	var smoke_env := Environment.new()
+	var smoke := Planet.GroundSmoke.make(PlanetTypes.get_type("ashland").smoke, smoke_env)
+	add_child(smoke)
+	GameSettings.set_value("ground_smoke", false)
+	GameSettings.apply_graphics()
+	var smoke_off := not smoke.visible and not smoke_env.volumetric_fog_enabled
+	GameSettings.set_value("ground_smoke", true)
+	GameSettings.apply_graphics()
+	check(smoke_off and smoke.visible and smoke_env.volumetric_fog_enabled and GameSettings.to_dict().has("ground_smoke"),
+			"battle smoke is a saved setting that switches the smoke and its volumetric fog")
+	check(smoke.density_for(0.0, 0.0) < smoke.density_for(1.0, 0.0) and smoke.density_for(1.0, 0.0) < smoke.density_for(1.0, 1.0),
+			"battle smoke thickens with the war and thicker still in a storm")
+	smoke.queue_free()
 	# Far ground and walls shimmer without mipmaps, so every world texture
 	# keeps them (and is not re-imported without them when seen in 3D).
 	var bare: Array[String] = []

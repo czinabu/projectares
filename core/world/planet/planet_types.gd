@@ -35,22 +35,26 @@ static func ashland() -> PlanetType:
 		"body2_dir": Vector3(-0.6, 0.32, -0.7), "body2_size": 0.035, "body2_color": Color(0.85, 0.55, 0.4),
 		"body_daylight": 0.35,
 	}
+	# Ash-grey air and a neutral light, so the red lives in the sky's glow,
+	# the fires and the cracks and they stand out (Caleb's look pass, after
+	# his references: grey smoke with hot lights burning through it).
 	t.calm = {
-		"sky_tint": Color(1.0, 0.92, 0.88), "sky_energy": 0.95, "sky_saturation": 0.85,
-		"fog_color": Color(0.36, 0.18, 0.13), "fog_density": 0.7,
+		"sky_tint": Color(0.75, 0.6, 0.55), "sky_energy": 0.95, "sky_saturation": 0.85,
+		"fog_color": Color(0.3, 0.28, 0.27), "fog_density": 0.7,
 		"fog_depth_begin": 70.0, "fog_depth_end": 900.0, "fog_depth_curve": 1.3,
 		"fog_height": 2.0, "fog_height_density": 0.04, "haze_height": 0.18,
-		"sun_color": Color(1.0, 0.56, 0.36), "sun_energy": 1.7, "sun_angles": Vector3(-20, 38, 0),
-		"ambient_color": Color(0.55, 0.42, 0.4), "ambient_energy": 1.4,
-		"exposure": 1.25, "saturation": 0.9, "contrast": 1.15, "glow": 0.9,
+		"sun_color": Color(0.95, 0.75, 0.62), "sun_energy": 1.7, "sun_angles": Vector3(-20, 38, 0),
+		"ambient_color": Color(0.5, 0.5, 0.52), "ambient_energy": 1.4,
+		"exposure": 1.25, "saturation": 0.65, "contrast": 1.15, "glow": 0.9,
 	}
 	t.storm = {
-		"sky_tint": Color(0.75, 0.55, 0.45), "sky_energy": 0.45, "fog_color": Color(0.36, 0.2, 0.14),
+		"sky_tint": Color(0.6, 0.5, 0.45), "sky_energy": 0.45, "fog_color": Color(0.32, 0.3, 0.28),
 		"fog_density": 0.985, "fog_depth_begin": 4.0, "fog_depth_end": 55.0, "fog_depth_curve": 0.8,
-		"haze_height": 0.9, "sun_color": Color(1.0, 0.55, 0.35), "sun_energy": 0.5,
-		"ambient_color": Color(0.6, 0.42, 0.36), "ambient_energy": 1.6,
-		"exposure": 1.3, "saturation": 0.75, "contrast": 1.05, "glow": 0.9,
+		"haze_height": 0.9, "sun_color": Color(0.95, 0.7, 0.55), "sun_energy": 0.5,
+		"ambient_color": Color(0.52, 0.5, 0.5), "ambient_energy": 1.6,
+		"exposure": 1.3, "saturation": 0.6, "contrast": 1.05, "glow": 0.9,
 	}
+	t.smoke = {"density": 0.08, "colour": Color(0.45, 0.44, 0.44), "depth": 18.0, "war": 0.5, "storm": 1.0}
 	t.terrain = {
 		"base_amp": 9.0, "base_freq": 0.006, "octaves": 4, "warp": 25.0,
 		"ridge_amp": 26.0, "ridge_freq": 0.005, "ridge_cover": 0.18,

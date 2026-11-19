@@ -3254,25 +3254,31 @@ func _battle_shots(out_dir: String) -> void:
 	cam.make_current()
 	var aim := raid._stand(Vector3(-60, 0, -30)) + Vector3(0, 6, 0)
 	cam.look_at_from_position(eye, aim)
-	var shots := [["wide", 75.0, 420], ["close", 22.0, 460], ["later", 75.0, 640]]
+	# Each shot looks across the nearest fight's line from its side, far
+	# enough out that nothing is faded: wide from above, close at eye height.
+	var shots := [["wide", 60.0, 420, 100.0, 30.0], ["close", 30.0, 520, 74.0, 4.0], ["later", 60.0, 700, 100.0, 30.0]]
 	var frame := 0
+	var battle: Node = null
 	for i in shots.size():
 		var shot: Array = shots[i]
 		while frame < int(shot[2]):
 			frame += 1
 			raid.war.intensity = 0.8
 			raid.war.centre = Vector3(-60, 0, -30)
+			if frame == int(shot[2]) - 40:
+				battle = raid.map.get_node_or_null("Battle")
+				if battle != null:
+					var near: Dictionary = {}
+					for fight: Dictionary in battle.fight_list():
+						if near.is_empty() or cam.global_position.distance_to(fight.centre) < cam.global_position.distance_to(near.centre):
+							near = fight
+					if not near.is_empty():
+						var centre := raid._stand(near.centre)
+						var side: Vector3 = (near.axis as Vector3).cross(Vector3.UP).normalized()
+						var at := raid._stand(near.centre + side * float(shot[3])) + Vector3(0, float(shot[4]), 0)
+						cam.fov = float(shot[1])
+						cam.look_at_from_position(at, centre + Vector3(0, 1.4, 0))
 			await get_tree().process_frame
-		cam.fov = float(shot[1])
-		var battle := raid.map.get_node_or_null("Battle")
-		if battle != null:
-			# Framed on the nearest fight.
-			var nearest := Vector3.INF
-			for fight: Dictionary in battle.fight_list():
-				if not nearest.is_finite() or eye.distance_to(fight.centre) < eye.distance_to(nearest):
-					nearest = fight.centre
-			if nearest.is_finite():
-				cam.look_at_from_position(eye, raid._stand(nearest) + Vector3(0, 1.5 if float(shot[1]) < 40.0 else 8.0, 0))
 		await get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		if battle != null:

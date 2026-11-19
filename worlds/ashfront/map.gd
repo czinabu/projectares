@@ -372,7 +372,7 @@ func _process(delta: float) -> void:
 
 func _build_environment() -> void:
 	# The Ashland (DESIGN.md "Planet kit"): smouldering even when it is
-	# quiet, a rust-red sky choked with smoke and a low, dull sun, so the
+	# quiet, a rust-red sky over ash-grey smoke and a low, dull sun, so the
 	# Forge, the cracks and the fires light the field; its storm mood is
 	# the thick of an ash storm. The war mood is Ashfront's own.
 	Planet.atmosphere(self, planet, {
@@ -381,10 +381,10 @@ func _build_environment() -> void:
 		# solid before 120 m, so a fight at 30–50 m stays readable.
 		# Look.soften_storm enforces that floor even if these numbers are
 		# pushed. The column of smoke is overhead, not a wall at eye level.
-		"sky_tint": Color(0.4, 0.16, 0.12),
+		"sky_tint": Color(0.32, 0.18, 0.15),
 		"sky_saturation": 0.38,
 		"sky_energy": 0.38,
-		"fog_color": Color(0.27, 0.13, 0.1),
+		"fog_color": Color(0.2, 0.19, 0.19),
 		"fog_density": 0.86,
 		"fog_depth_begin": 28.0,
 		"fog_depth_end": 120.0,
@@ -392,13 +392,13 @@ func _build_environment() -> void:
 		"fog_height": 1.1,
 		"fog_height_density": 0.12,
 		"haze_height": 0.4,
-		"sun_color": Color(1.0, 0.4, 0.25),
+		"sun_color": Color(0.95, 0.68, 0.55),
 		"sun_energy": 1.35,
-		"ambient_color": Color(0.55, 0.42, 0.4),
+		"ambient_color": Color(0.45, 0.45, 0.47),
 		"ambient_energy": 1.75,
 		"exposure": 1.35,
-		"saturation": 0.72,
-		"contrast": 1.16,
+		"saturation": 0.6,
+		"contrast": 1.22,
 		"glow": 0.9,
 	})
 	Look.weather(self, "embers", 45.0)
