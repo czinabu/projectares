@@ -7148,7 +7148,8 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 	for event: InputEvent in old_events:
 		InputMap.action_add_event("interact", event)
 	check(PhoneScript.key_name("interact") == "F", "the binding is put back")
-	phone.open_app("settings")
+	phone.open_settings_tab("input")
+	await frames(1)
 	var link := false
 	for child in phone._body.get_children():
 		if child is Button and (child as Button).text.contains("every key"):
@@ -7197,9 +7198,41 @@ func _test_phone_view() -> void:
 	check(phone._body.get_child_count() == 1, "offline, contacts explain how to reach players")
 	await _test_phone_controls(phone)
 	GameSettings.persist = false
+	var fresh: CanvasLayer = PhoneScript.new()
+	var opens_on: String = fresh.settings_tab
+	fresh.free()
+	phone.open_settings_tab("view")
+	check(opens_on == "view" and phone.settings_tabs()[0] == "view" and phone._tabs.visible
+			and phone._tabs.get_child_count() == phone.settings_tabs().size(),
+			"settings open on the View tab, first in a row of tabs")
+	await frames(1)
+	var first_toggle: CheckButton = phone._body.find_children("*", "CheckButton", true, false)[0]
+	check(first_toggle.text == "Fullscreen" and phone._body.get_child(1) == first_toggle
+			and phone._body.find_children("*", "OptionButton", true, false).size() == 1
+			and phone._body.find_children("*", "OptionButton", true, false)[0].get_index() < 6,
+			"fullscreen and smooth edges sit at the top of Settings (Caleb's call)")
+	check(first_toggle.button_pressed == GameSettings.window_is_full(),
+			"the fullscreen switch shows whether the window really is fullscreen")
+	await _check_pages_fit(phone)
 	phone.open_app("settings")
-	check(phone.settings_tab == "input" and phone._tabs.visible and phone._tabs.get_child_count() == phone.settings_tabs().size(),
-			"settings open on the Input tab, with a row of tabs")
+	phone.open_settings_tab("view")
+	await frames(1)
+	# Dragging a field of view or camera slider previews the view live.
+	var previews: Array = []
+	phone.preview_changed.connect(func(on: bool) -> void: previews.append(on))
+	var fov_slider: HSlider = phone._body.find_children("*", "HSlider", true, false)[0]
+	var fov_was := GameSettings.field_of_view
+	phone._start_preview(fov_slider)
+	var drag := InputEventMouseMotion.new()
+	drag.relative = Vector2(40, 0)
+	phone._input(drag)
+	check(phone.previewing and previews == [true] and GameSettings.field_of_view > fov_was,
+			"dragging the field of view slider previews it live, following the mouse's motion")
+	var let_go := InputEventMouseButton.new()
+	let_go.button_index = MOUSE_BUTTON_LEFT
+	phone._input(let_go)
+	check(not phone.previewing and previews == [true, false], "letting go ends the preview")
+	GameSettings.field_of_view = fov_was
 	phone.open_settings_tab("view")
 	await frames(1)
 	var sliders := 0
@@ -7302,6 +7335,12 @@ func _test_phone_view() -> void:
 		for i in 40:
 			await frames(1)
 		check(absf(_phone_share(controller) - share) < 0.05, "a wide field of view zooms just as far in on the phone")
+		controller.phone_preview = true
+		for i in 40:
+			await frames(1)
+		check(not controller.phone_zoomed() and absf(controller.camera.fov - controller.wanted_base_fov()) < 1.0,
+				"while a view slider is dragged the zoom lets go, so the field of view shows as it is")
+		controller.phone_preview = false
 		controller.base_fov = 80.0
 		controller.phone_out = false
 		controller.input_blocked = false
@@ -7317,6 +7356,27 @@ func _test_phone_view() -> void:
 	GameSettings.reset()
 	phone.queue_free()
 	await frames(1)
+
+
+## Every app and every Settings tab fits the phone's glass (Caleb's report:
+## pages ran off the right edge, as if zoomed in).
+func _check_pages_fit(phone: CanvasLayer) -> void:
+	var glass: float = phone.screen_size.x - phone.glass_inset.x - phone.glass_inset.z
+	var wide: Array[String] = []
+	var pages: Array = []
+	for tab: String in phone.settings_tabs():
+		pages.append(["settings", tab])
+	for app_name: String in PhoneScript.APPS:
+		if app_name != "settings":
+			pages.append([app_name, ""])
+	for page: Array in pages:
+		if page[1] != "":
+			phone.settings_tab = page[1]
+		phone.open_app(page[0])
+		await frames(2)
+		if phone._page.size.x > glass - 30.0 or phone._tabs.get_combined_minimum_size().x > glass - 30.0:
+			wide.append("%s %s (%d px)" % [page[0], page[1], phone._page.size.x])
+	check(wide.is_empty(), "every phone app and settings tab fits the glass (%s)" % ", ".join(wide))
 
 
 ## How much of the view's height the phone in the hand fills, from its corners.

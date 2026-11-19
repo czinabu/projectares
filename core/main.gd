@@ -425,7 +425,7 @@ func _attach_base_view() -> void:
 		controller.queue_free()
 	Look.set_appearance(base.player, _my_look())
 	controller = PlayerController.new()
-	controller.phone_out = phone != null and phone.is_open
+	controller.phone_out = phone != null and phone.held()
 	controller.setup(base.player)
 	controller.portal_requested.connect(_on_portal_requested)
 	controller.race_requested.connect(_on_race_requested)
@@ -805,7 +805,7 @@ func _attach_player_view() -> void:
 		# Solo: every new life wears the chosen look. Online the server sends it.
 		Look.set_appearance(raid.player, _my_look())
 	controller = PlayerController.new()
-	controller.phone_out = phone != null and phone.is_open
+	controller.phone_out = phone != null and phone.held()
 	controller.setup(raid.player)
 	if phone != null:
 		# The phone is held by this body's own hand, in every view.
@@ -1151,6 +1151,8 @@ func _setup_phone() -> void:
 	phone.quit_requested.connect(func() -> void: get_tree().quit())
 	phone.set_wardrobe(hub.character)
 	phone.mirror_changed.connect(_on_mirror_changed)
+	phone.held_changed.connect(_on_phone_held)
+	phone.preview_changed.connect(_on_phone_preview)
 	phone.tour_requested.connect(_on_tour_requested)
 	phone.host_requested.connect(_go_online_from_phone.bind(""))
 	phone.join_requested.connect(_go_online_from_phone)
@@ -1167,10 +1169,25 @@ func _on_phone_opened(open: bool) -> void:
 		var screen_open: bool = hub.station != "" or shop_view != null or bench_view != null \
 				or (arena_hud != null and arena_hud.booth_open)
 		controller.input_blocked = open or screen_open
-		controller.phone_out = open
+		controller.phone_out = phone.held() if phone != null else open
 		if phone != null:
 			phone.set_holder(controller.actor)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open or screen_open else Input.MOUSE_MODE_CAPTURED
+
+
+## The phone went down to look in the mirror, or came back up: the hand
+## follows (`ActorCommand.phone`, so everyone sees it); the phone stays
+## open, so the character still stands and the mouse stays free.
+func _on_phone_held(held: bool) -> void:
+	if controller != null and is_instance_valid(controller):
+		controller.phone_out = held
+
+
+## A view setting's slider is dragged on the phone: the view shows itself
+## as it really is meanwhile, so the change is seen live.
+func _on_phone_preview(on: bool) -> void:
+	if controller != null and is_instance_valid(controller):
+		controller.phone_preview = on
 
 
 # ---------------------------------------------------- new player's tour ----

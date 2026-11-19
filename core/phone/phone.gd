@@ -35,6 +35,14 @@ signal quit_requested
 ## The Mirror app was opened (true) or left (false). `Main` stands a mirror
 ## in front of the player while it is up (`core/visual/mirror.gd`).
 signal mirror_changed(up: bool)
+## The phone came up into the hand (true) or went down (false) while it
+## stays open: the Mirror app lowers it so the mirror shows the whole kit
+## (`mirror_lowered`). `Main` passes it on as `PlayerController.phone_out`.
+signal held_changed(held: bool)
+## A view setting's slider is being dragged (true) or let go (false):
+## `Main` has the view show itself as it really is meanwhile
+## (`PlayerController.phone_preview`), so the change is seen live.
+signal preview_changed(on: bool)
 ## The new player's tour was asked to stop ("skip") or start over ("replay")
 ## from Settings. `Main` runs the tour (`Onboarding`).
 signal tour_requested(action: String)
@@ -68,7 +76,9 @@ const DIM_INK := Color(0.62, 0.62, 0.6)
 const CASE_COLOR := Color(0.12, 0.122, 0.13)
 ## The Settings app's tabs, in order, and their names. "dev" is only shown
 ## where dev mode is available (DEV MODE).
-const SETTINGS_TABS := ["input", "view", "system", "dev"]
+## The display settings come first (Caleb's call): fullscreen and the
+## picture are what a player looks for.
+const SETTINGS_TABS := ["view", "input", "system", "dev"]
 const SETTINGS_TAB_NAMES := {"input": "Input", "view": "View", "system": "System", "dev": "Dev"}
 ## The home screen, which is not an app of its own.
 const HOME := "home"
@@ -167,6 +177,7 @@ const CONTROLS := [
 	["PHONE AND MOUSE", [
 		["Open or close the phone", "{phone}"],
 		["Open the phone at Settings, or close it; step back from a console", "Esc"],
+		["Mirror app: the phone goes down so the mirror shows your whole kit; bring it back up", "Click, right click or Esc"],
 		["Mirror app: wheel to a row, click it, wheel through it; right click to go back", "Wheel, clicks"],
 		["Mirror app: choose a row, then scroll it", "Arrows or W A S D"],
 	]],
@@ -216,6 +227,25 @@ var tour_running := false
 ## then turns through its options instead of moving between rows. A click
 ## on a row opens it, a right click closes it.
 var mirror_picking := false
+## True while the Mirror app has the phone lowered (Caleb's call): opening
+## it puts the phone down so the mirror shows the whole kit, the hand
+## included, and a click, a right click or Esc brings it back up. The phone
+## stays open meanwhile (the character still stands, the mouse stays free);
+## only the hand lowers it (`held`, `ActorCommand.phone`), so every view
+## and everyone else sees the same.
+var mirror_lowered := false
+## The settings whose sliders preview live (Caleb's ask): while one is
+## dragged the view stops zooming in on the phone and reading it from close,
+## so the field of view and the camera are seen as they will be.
+const PREVIEW_KEYS := ["field_of_view", "field_of_view_third", "camera_distance", "eye_pullback"]
+## True while such a slider is dragged (`preview_changed`).
+var previewing := false
+## The slider being dragged with the view previewing, and how much its
+## value moves for each pixel the mouse moves across the game's screen,
+## measured as the drag starts: the phone moves in the view while it
+## previews, so the drag follows the mouse's motion, not where it points.
+var _drag_slider: HSlider
+var _drag_per_pixel := 0.0
 
 ## The screen's 2D viewport: everything on the phone draws here.
 var _screen: SubViewport
@@ -237,7 +267,7 @@ var _icons := {}
 ## The home screen's live readings ("link", "inbox", "news").
 var _readouts := {}
 ## The Settings app's open tab (`SETTINGS_TABS`) and the row of tabs.
-var settings_tab := "input"
+var settings_tab := "view"
 var _tabs: HBoxContainer
 var _chassis: Control
 ## Who holds this phone (your own actor, `set_holder`): their character's
@@ -309,6 +339,11 @@ func _on_update_changed() -> void:
 func _input(event: InputEvent) -> void:
 	if not is_open:
 		return
+	if mirror_lowered:
+		_input_lowered(event)
+		return
+	if previewing and _drag_preview(event):
+		return
 	if event is InputEventMouse:
 		var mouse := event as InputEventMouse
 		var at := screen_point(mouse.position)
@@ -332,6 +367,65 @@ func _input(event: InputEvent) -> void:
 		_screen.push_input(event.duplicate(), true)
 		if _screen.is_input_handled():
 			get_viewport().set_input_as_handled()
+
+
+## While a view setting's slider previews, the mouse's motion moves it and
+## letting go ends the drag. Returns true when the event was the drag's.
+func _drag_preview(event: InputEvent) -> bool:
+	if _drag_slider == null or not is_instance_valid(_drag_slider):
+		_end_preview()
+		return false
+	var motion := event as InputEventMouseMotion
+	if motion != null:
+		get_viewport().set_input_as_handled()
+		_drag_slider.value += motion.relative.x * _drag_per_pixel
+		return true
+	var button := event as InputEventMouseButton
+	if button != null and button.button_index == MOUSE_BUTTON_LEFT and not button.pressed:
+		# The slider let go of where the press began.
+		get_viewport().set_input_as_handled()
+		var release := button.duplicate() as InputEventMouseButton
+		release.position = _drag_slider.get_global_rect().get_center()
+		release.global_position = release.position
+		_screen.push_input(release, true)
+		_end_preview()
+		return true
+	return false
+
+
+## A view setting's slider was grabbed: the view previews until it is let go.
+func _start_preview(slider: HSlider) -> void:
+	_drag_slider = slider
+	var mouse := get_viewport().get_mouse_position()
+	var a := screen_point(mouse)
+	var b := screen_point(mouse + Vector2(20.0, 0.0))
+	var phone_pixels := (b.x - a.x) / 20.0 if a.x >= 0.0 and b.x >= 0.0 else 0.5
+	_drag_per_pixel = (slider.max_value - slider.min_value) / maxf(slider.size.x, 1.0) * maxf(phone_pixels, 0.05)
+	if not previewing:
+		previewing = true
+		preview_changed.emit(true)
+
+
+func _end_preview() -> void:
+	_drag_slider = null
+	if previewing:
+		previewing = false
+		preview_changed.emit(false)
+
+
+## While the Mirror app has the phone lowered the mouse only brings it back
+## up (a click or a right click); the wheel waits, and Esc brings it up
+## too. Other keys go on as usual (the Mirror app's keys still turn a row).
+func _input_lowered(event: InputEvent) -> void:
+	if event is InputEventMouse:
+		get_viewport().set_input_as_handled()
+		var button := event as InputEventMouseButton
+		if button != null and button.pressed \
+				and button.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+			set_mirror_lowered(false)
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		get_viewport().set_input_as_handled()
+		set_mirror_lowered(false)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -457,10 +551,34 @@ func mirror_open() -> bool:
 
 
 ## `Main` reports whether a mirror could stand in front of the player.
+## Once one stands the phone goes down so it shows the whole kit.
 func set_mirror_up(up: bool) -> void:
+	var was_up := mirror_up
 	mirror_up = up
+	if mirror_open() and up and not was_up:
+		set_mirror_lowered(true)
+	elif not up:
+		set_mirror_lowered(false)
 	if mirror_open():
 		refresh()
+
+
+## Lowers the phone to look in the mirror (true) or brings it back up.
+## Only with the Mirror app open and its mirror standing.
+func set_mirror_lowered(down: bool) -> void:
+	down = down and mirror_open() and mirror_up
+	if down == mirror_lowered:
+		return
+	var was_held := held()
+	mirror_lowered = down
+	if was_held != held():
+		held_changed.emit(held())
+
+
+## True while the phone is up in the hand: open, and not lowered for the
+## mirror. What the character shows (`PlayerController.phone_out`).
+func held() -> bool:
+	return is_open and not mirror_lowered
 
 
 ## Scrolls one choice of the look, from what the player owns.
@@ -476,6 +594,8 @@ func mirror_step(key: String, steps: int) -> void:
 ## shade so the mirror can be seen.
 func _sync_mirror() -> void:
 	var up := mirror_open()
+	if not up:
+		set_mirror_lowered(false)
 	if up != _mirror_was_up:
 		_mirror_was_up = up
 		mirror_changed.emit(up)
@@ -635,6 +755,8 @@ func close() -> void:
 
 func _set_open(open_now: bool) -> void:
 	var changed := open_now != is_open
+	if not open_now:
+		_end_preview()
 	is_open = open_now
 	_screen.render_target_update_mode = SubViewport.UPDATE_ALWAYS if open_now else SubViewport.UPDATE_WHEN_VISIBLE
 	if open_now:
@@ -1045,7 +1167,7 @@ func _hold(_camera: Camera3D) -> void:
 			# Clicks land on the handheld's own face, where the screen is
 			# read in every view.
 			_device = Handheld.face_of(skin.handheld())
-	_flat.visible = is_open and _device == null and not has_hand()
+	_flat.visible = held() and _device == null and not has_hand()
 
 
 ## True when the holder has a hand to hold the device in (a dressed
@@ -1191,9 +1313,24 @@ func refresh(redraw := true) -> void:
 		"mirror": _draw_mirror()
 		"controls": _draw_controls()
 		"settings": _draw_settings()
+	fit_to_glass(_body)
 	if had_focus and _compose != null:
 		_compose.grab_focus()
 		_compose.caret_column = _compose.text.length()
+
+
+## Keeps a page inside the glass (Caleb's feedback: pages ran off the
+## right edge, as if zoomed in): the page cannot scroll sideways, so one
+## wide row widened the whole page and pushed everything past the glass.
+## Button text wraps and a drop-down's shows what fits, whatever an app
+## draws.
+static func fit_to_glass(root: Control) -> void:
+	for node: Node in root.find_children("*", "Button", true, false):
+		if node is OptionButton:
+			(node as OptionButton).clip_text = true
+			(node as OptionButton).text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		else:
+			(node as Button).autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
 func _offline_note() -> void:
@@ -1581,6 +1718,10 @@ func _draw_mirror() -> void:
 	_body.add_child(_label("Look ahead: the mirror shows you. Scroll through what you own. Changes save as you go."
 			if mirror_up else "Out in the world a mirror stands in front of you. Changes still save as you go.",
 			14, Color(0.7, 0.7, 0.7)))
+	if mirror_up:
+		var lower := _button("Lower the phone to look", set_mirror_lowered.bind(true))
+		lower.focus_mode = Control.FOCUS_NONE
+		_body.add_child(lower)
 	var keys := wardrobe.pick_keys()
 	mirror_row = clampi(mirror_row, 0, keys.size() - 1)
 	for i in keys.size():
@@ -1799,9 +1940,9 @@ func open_settings_tab(tab: String) -> void:
 		refresh.call_deferred()
 
 
-## Settings, grouped in tabs: Input (mouse, melee, the key list), View
-## (fields of view, camera, names, fullscreen, smooth edges), System (sound, quit) and,
-## in a debug run, Dev.
+## Settings, grouped in tabs: View first (fullscreen and the picture on
+## top, then fields of view, camera and names), Input (mouse, melee, the key
+## list), System (sound, quit) and, in a debug run, Dev.
 func _draw_settings() -> void:
 	match settings_tab:
 		"input":
@@ -1820,6 +1961,17 @@ func _draw_settings() -> void:
 			_body.add_child(melee)
 			_body.add_child(_button("See what every key does", open_app.bind("controls")))
 		"view":
+			_body.add_child(_section("DISPLAY"))
+			_toggle("Fullscreen", "fullscreen", GameSettings.window_is_full())
+			_body.add_child(_label("Smooth edges", 14, UiTheme.INK))
+			var smoothing := OptionButton.new()
+			for mode: Array in GameSettings.ANTI_ALIASING:
+				smoothing.add_item(mode[0])
+			smoothing.select(GameSettings.anti_aliasing)
+			smoothing.item_selected.connect(func(index: int) -> void: change_setting("anti_aliasing", index))
+			_body.add_child(smoothing)
+			_toggle("Outline far shapes (not with MSAA)", "edge_ink", GameSettings.edge_ink)
+			_body.add_child(_section("CAMERA"))
 			_slider("Field of view, first person", "field_of_view", GameSettings.FOV_RANGE, 1.0, GameSettings.field_of_view,
 					func(v: float) -> String: return "%d" % roundi(v))
 			_slider("Field of view, third person", "field_of_view_third", GameSettings.FOV_RANGE, 1.0,
@@ -1829,15 +1981,6 @@ func _draw_settings() -> void:
 			_slider("Camera pulled back, first person", "eye_pullback", GameSettings.EYE_PULLBACK_RANGE, 0.01,
 					GameSettings.eye_pullback, func(v: float) -> String: return "%d cm" % roundi(v * 100.0))
 			_toggle("Names over other players", "show_nameplates", GameSettings.show_nameplates)
-			_toggle("Fullscreen", "fullscreen", GameSettings.fullscreen)
-			_body.add_child(_section("SMOOTH EDGES"))
-			var smoothing := OptionButton.new()
-			for mode: Array in GameSettings.ANTI_ALIASING:
-				smoothing.add_item(mode[0])
-			smoothing.select(GameSettings.anti_aliasing)
-			smoothing.item_selected.connect(func(index: int) -> void: change_setting("anti_aliasing", index))
-			_body.add_child(smoothing)
-			_toggle("Outline far shapes (not with MSAA)", "edge_ink", GameSettings.edge_ink)
 		"system":
 			_slider("Volume", "master_volume", Vector2(0.0, 1.0), 0.05, GameSettings.master_volume,
 					func(v: float) -> String: return "%d%%" % roundi(v * 100.0))
@@ -1927,6 +2070,8 @@ func _slider(text: String, key: String, range_: Vector2, step: float, value: flo
 		value_label.text = shown.call(v)
 		change_setting(key, v))
 	slider.custom_minimum_size = Vector2(0, 30)
+	if key in PREVIEW_KEYS:
+		slider.drag_started.connect(_start_preview.bind(slider))
 	box.add_child(slider)
 	_body.add_child(card)
 

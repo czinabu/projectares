@@ -394,6 +394,30 @@ static func _run_mirror(t: Node) -> void:
 		square.y = 0.0
 		t.check(square.normalized().dot(-me.global_basis.z) > 0.95,
 				"the mirror stands square in front of the body, wherever the camera looks")
+	# The phone goes down so the mirror shows the whole kit (Caleb's call),
+	# and a click, a right click or Esc brings it back up.
+	t.check(main.phone.mirror_lowered and main.phone.is_open and not main.phone.held()
+			and not controller.phone_out and controller.input_blocked,
+			"with the mirror up the phone goes down, still open, so the whole kit shows")
+	await t.frames(2)
+	t.check(not me.cmd.phone, "the hand lowers it, which everyone sees")
+	for index: MouseButton in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+		var press := InputEventMouseButton.new()
+		press.button_index = index
+		press.pressed = true
+		main.phone._input(press)
+		t.check(not main.phone.mirror_lowered and main.phone.held() and controller.phone_out,
+				"a %s brings the phone back up" % ("click" if index == MOUSE_BUTTON_LEFT else "right click"))
+		main.phone.set_mirror_lowered(true)
+		t.check(main.phone.mirror_lowered and not controller.phone_out, "and it can go down again from the app")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	main.phone._input(esc)
+	t.check(not main.phone.mirror_lowered and main.phone.is_open and controller.phone_out,
+			"Esc brings it back up too, without closing the phone")
+	await t.frames(2)
+	t.check(me.cmd.phone, "and the hand holds it up again")
 	var before: Dictionary = me.get_meta("appearance", {}).duplicate()
 	main.phone.mirror_step("body", 1)
 	await t.frames(2)

@@ -64,6 +64,11 @@ var input_blocked := false
 ## everyone else sees (`ActorCommand.phone`), and the weapon is put away in
 ## the view until the phone is.
 var phone_out := false
+## Set while a view setting's slider is dragged on the phone (`Main`, Caleb's
+## ask for a live preview): the view stops dropping to the phone, zooming
+## in on it and reading it from close, so the field of view and the camera
+## are shown as they are; the phone stays in the hand.
+var phone_preview := false
 ## Crouched by the crouch key: a toggle, sent as the held `ActorCommand.crouch`.
 ## Sprinting, jumping or getting on a vehicle stands you back up.
 var crouch_toggled := false
@@ -1046,7 +1051,7 @@ func _process(delta: float) -> void:
 	_update_recoil(delta)
 	_update_dip(delta)
 	_update_shake(delta)
-	_phone_look = move_toward(_phone_look, 1.0 if phone_out and not actor.is_dead else 0.0, phone_read_rate * delta)
+	_phone_look = move_toward(_phone_look, 1.0 if phone_out and not phone_preview and not actor.is_dead else 0.0, phone_read_rate * delta)
 	var reading_pitch := phone_mirror_pitch if mirror_in_view() else phone_view_pitch
 	var view_pitch := lerpf(pitch, reading_pitch, smoothstep(0.0, 1.0, _phone_look))
 	var look := Basis.from_euler(Vector3(view_pitch + _shake.y, yaw + _shake.x, 0.0))
@@ -1417,7 +1422,8 @@ func is_third_person() -> bool:
 ## from over the shoulder and widens to keep the reflection in frame.
 func _read_phone(delta: float) -> void:
 	var face := phone_panel()
-	var wanted := 1.0 if phone_out and face != null and _wants_third_person() and not actor.is_dead else 0.0
+	var wanted := 1.0 if phone_out and not phone_preview and face != null and _wants_third_person() \
+			and not actor.is_dead else 0.0
 	phone_read = move_toward(phone_read, wanted, phone_read_rate * delta)
 	if phone_read <= 0.0 or face == null:
 		return
@@ -1445,7 +1451,7 @@ func _read_phone(delta: float) -> void:
 
 ## Whether the view is zoomed in on the phone in the hand (`phone_zoom`).
 func phone_zoomed() -> bool:
-	return phone_out and phone_panel() != null and not actor.is_dead and not mirror_in_view()
+	return phone_out and not phone_preview and phone_panel() != null and not actor.is_dead and not mirror_in_view()
 
 
 ## The field of view (degrees) from where the camera is now at which the
