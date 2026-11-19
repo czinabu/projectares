@@ -581,6 +581,16 @@ var _toy_thrown := ""
 ## `ActorCommand.inspect`.
 var inspect := 0.0
 var inspect_clock := 0.0
+## The emote shown (`ActorCommand.emote`, `Emotes`): which one, how far it
+## has come in (0 to 1, eased) and seconds since this view saw it start, so
+## a remote player's wave is timed from when it was seen, like the inspect.
+## The last one stays named while it eases out.
+var emote := 0.0
+var emote_id := ""
+var emote_clock := 0.0
+## How fast an emote comes in and goes out (a share a second).
+var emote_rate := 3.0
+var _emote_raise := 0.0
 var _inspect_raise := 0.0
 var _inspect_was := false
 
@@ -662,6 +672,7 @@ func advance(delta: float) -> void:
 		inspect_clock = 0.0
 	_inspect_raise = move_toward(_inspect_raise, 1.0 if inspect_wanted else 0.0, inspect_rate * delta)
 	inspect = smoothstep(0.0, 1.0, _inspect_raise)
+	advance_emote(delta)
 
 	var weapon := actor.get_active_weapon()
 	var melee := weapon as MeleeWeapon
@@ -871,6 +882,28 @@ func carry_bob() -> Vector3:
 ## Moves the toy hold and throw on by `delta` seconds. A throw starts when
 ## `Actor.toy_throws` goes up (not for the count first seen: a body that
 ## comes into view mid-game does not replay an old throw).
+## Eases the emote in and out from the held `ActorCommand.emote`. None
+## shows while down, riding, in the air or with the phone out, whatever the
+## command says, so a late packet never sits a body on a bike.
+func advance_emote(delta: float) -> void:
+	var wanted := Emotes.id_of(actor.cmd.emote) if actor.cmd != null else ""
+	if actor.is_dead or actor.vehicle != null or actor.airborne_time > 0.15 or (actor.cmd != null and actor.cmd.phone):
+		wanted = ""
+	if wanted != "" and wanted != emote_id:
+		# A new one: it starts again from its first beat (from the last
+		# one's pose, which it blends out of as it comes in).
+		emote_id = wanted
+		emote_clock = 0.0
+		_emote_raise = minf(_emote_raise, 0.5)
+	if emote_id != "":
+		emote_clock += delta
+	_emote_raise = move_toward(_emote_raise, 1.0 if wanted != "" else 0.0, emote_rate * delta)
+	emote = smoothstep(0.0, 1.0, _emote_raise)
+	if emote <= 0.0 and wanted == "":
+		emote_id = ""
+		emote_clock = 0.0
+
+
 func advance_toy(delta: float) -> void:
 	if _toy_throws_seen < 0:
 		_toy_throws_seen = actor.toy_throws

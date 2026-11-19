@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 58
+const PROTOCOL := 59
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -1309,8 +1309,27 @@ func _wear_clan(actor: Actor, account_id: String) -> void:
 	var clan_id := clans.clan_of(account_id)
 	actor.clan_tag = clans.tag_of(clan_id)
 	actor.clan = clan_id if _clans_fight_together() else ""
-	# A clan is also a squad, everywhere: who may use a portal it opens.
-	raid.set_squad(account_id, clan_id)
+	# A clan is also a squad, everywhere: who may use a portal it opens,
+	# unless the player is in a squad of their own making (the phone's).
+	_set_squad_key(account_id, _social_squad(account_id))
+
+
+## Server: the squad key the `Raid` keeps for `account_id`: the phone's
+## squad (`SocialService.squad_of`) if they are in one, else their clan.
+func _set_squad_key(account_id: String, squad: String) -> void:
+	if raid == null:
+		return
+	if squad != "":
+		raid.set_squad(account_id, "party:" + squad)
+	else:
+		raid.set_squad(account_id, clans.clan_of(account_id))
+
+
+## Server: the phone's squad `account_id` is in, or "".
+func _social_squad(account_id: String) -> String:
+	if stash.is_remote():
+		return str(stash.social_snapshot(account_id).get("squad", {}).get("id", ""))
+	return social.squad_of(account_id) if social != null else ""
 
 
 func _clans_fight_together() -> bool:
@@ -4174,6 +4193,9 @@ func _send_social(peer: int) -> void:
 	var snapshot: Dictionary = stash.social_snapshot(account_id) if stash.is_remote() else social.snapshot(account_id)
 	if not snapshot.is_empty():
 		_social.rpc_id(peer, snapshot)
+		# A squad made or left on the phone is who walks through your portals.
+		if _peer_actor.has(peer):
+			_set_squad_key(account_id, str(snapshot.get("squad", {}).get("id", "")))
 
 
 ## Server: sends `account_id` their phone snapshot, if they are here.
@@ -4263,6 +4285,19 @@ func _request_answer_invite(invite_id: int, accept: bool) -> void:
 		_world_invite_accepted.rpc_id(peer, invite)
 
 
+## `action` is "leave" (the only thing done to a squad from the phone; one is
+## made by accepting a squad invite).
+@rpc("any_peer", "call_remote", "reliable")
+func _request_squad(action: String) -> void:
+	if not _allow("social"):
+		return
+	var account_id := _social_sender()
+	if account_id == "" or action != "leave":
+		return
+	var peer := _api.get_remote_sender_id()
+	_social_answer(peer, await _social_do("squad", account_id, [action]))
+
+
 ## `action` is "add", "remove", "block" or "unblock".
 @rpc("any_peer", "call_remote", "reliable")
 func _request_contact(action: String, other: String) -> void:
@@ -4313,8 +4348,8 @@ func send_message(to: String, text: String) -> void:
 		_request_message.rpc_id(1, to, text)
 
 
-## Phone: invite a player online here to this server's raid ("world") or to
-## your home base ("base").
+## Phone: invite a player online here to this server's raid ("world"), to
+## your home base ("base") or to your squad ("squad").
 func send_invite(to: String, kind: String) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_invite.rpc_id(1, to, kind)
@@ -4323,6 +4358,12 @@ func send_invite(to: String, kind: String) -> void:
 func answer_invite(invite_id: int, accept: bool) -> void:
 	if _is_connected() and not account.is_empty():
 		_request_answer_invite.rpc_id(1, invite_id, accept)
+
+
+## Phone: leave the squad you are in.
+func leave_squad() -> void:
+	if _is_connected() and not account.is_empty():
+		_request_squad.rpc_id(1, "leave")
 
 
 ## Phone: "add", "remove", "block" or "unblock" a contact.

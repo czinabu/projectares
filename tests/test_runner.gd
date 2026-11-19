@@ -42,6 +42,8 @@ const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const UpdaterTests := preload("res://tests/updater_tests.gd")
 const ArtifactTests := preload("res://tests/artifact_tests.gd")
 const WatchTests := preload("res://tests/watch_tests.gd")
+const EmoteTests := preload("res://tests/emote_tests.gd")
+const SquadTests := preload("res://tests/squad_tests.gd")
 const PortalTests := preload("res://tests/portal_tests.gd")
 const ContractTests := preload("res://tests/contract_tests.gd")
 const PlazaLifeTests := preload("res://tests/plaza_life_tests.gd")
@@ -414,6 +416,8 @@ func _run() -> void:
 	await _test_heavy_units()
 	await _test_playtest_fixes()
 	await _test_watch()
+	await _test_emotes()
+	_test_squads()
 	await _test_portals()
 	await _test_feel()
 	await _test_view_match()
@@ -762,6 +766,14 @@ func _test_playtest_fixes() -> void:
 
 func _test_watch() -> void:
 	await WatchTests.run(self)
+
+
+func _test_emotes() -> void:
+	await EmoteTests.run(self)
+
+
+func _test_squads() -> void:
+	await SquadTests.run(self)
 
 
 func _test_portals() -> void:

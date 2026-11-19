@@ -388,6 +388,11 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	seated.name = "RidePose"
 	seated.run = _ride_pose
 	skeleton.add_child(seated)
+	# An emote's hips, legs and back, before the head looks round from them.
+	var emoting := WeaponArm.Hook.new()
+	emoting.name = "EmoteBody"
+	emoting.run = _emote_body
+	skeleton.add_child(emoting)
 	_head = skeleton.find_bone(def.get("head", "Head"))
 	var heading := WeaponArm.Hook.new()
 	heading.name = "LookAtAim"
@@ -1057,6 +1062,207 @@ func phone_pose() -> void:
 		var pose := skeleton.get_bone_global_pose(_neck)
 		pose.basis = Basis(right, -phone_look_down * w) * pose.basis
 		skeleton.set_bone_global_pose(_neck, pose)
+
+
+# --- Emotes -------------------------------------------------------------------
+# An emote (`Emotes`) is posed on the one body from `ActionPose.emote`, so
+# every view and every machine shows it the same. The hips, legs and back go
+# in `_emote_body` (before the head looks round), the arms in `emote_pose`,
+# the last hook of all, so they take the hands whatever was in them. Places
+# are in the actor's frame (metres: x right, y up, -z ahead, the feet at 0),
+# with elbows given as the way each bows.
+
+## Sitting on the ground: where the hips go, the ankles reach (out in front,
+## knees up) and the hands rest behind, and how far the back leans.
+var sit_hips := Vector3(0.0, 0.16, 0.06)
+var sit_ankle := Vector3(0.15, 0.08, -0.42)
+var sit_knee := Vector3(0.15, 1.0, -0.5)
+var sit_hand := Vector3(0.24, 0.12, 0.24)
+var sit_lean := 0.22
+## How fast each beat runs (beats a second) for the emotes that move.
+var wave_rate := 1.8
+var cheer_rate := 2.2
+var dance_rate := 1.05
+var taunt_rate := 1.6
+
+
+## Adds the emote's arms. Called by the skin after the phone hold.
+func add_emote_hook() -> void:
+	if skeleton == null:
+		return
+	var arms := WeaponArm.Hook.new()
+	arms.name = "EmoteArms"
+	arms.run = emote_pose
+	skeleton.add_child(arms)
+
+
+## The emote shown now and how far in it is ("" and 0 for none).
+func _emote_now() -> Array:
+	if skeleton == null or actor == null:
+		return ["", 0.0, 0.0]
+	var shared := ActionPose.of(actor)
+	if shared.emote <= 0.001 or shared.emote_id == "":
+		return ["", 0.0, 0.0]
+	return [shared.emote_id, smoothstep(0.0, 1.0, shared.emote), shared.emote_clock]
+
+
+func _emote_body() -> void:
+	var now := _emote_now()
+	var id: String = now[0]
+	var w: float = now[1]
+	var t: float = now[2]
+	if id == "":
+		return
+	match id:
+		"sit":
+			_emote_sit(w)
+		"lean":
+			_emote_hips(Vector3(0.05, -0.02, 0.02), 0.06, -0.06, w)
+		"dance":
+			var beat := t * dance_rate * TAU
+			_emote_hips(Vector3(0.07 * sin(beat), -0.05 * (0.5 - 0.5 * cos(beat * 2.0)), 0.0),
+					-0.08 * sin(beat), 0.05, w)
+			_emote_back(-0.04, 0.22 * sin(beat), w)
+		"cheer":
+			_emote_hips(Vector3(0.0, -0.04 * absf(sin(t * cheer_rate * PI)), 0.0), 0.0, 0.0, w)
+			_emote_back(0.1, 0.0, w)
+		"salute":
+			_emote_back(0.05, 0.0, w)
+		"taunt":
+			_emote_back(0.12, 0.0, w)
+		"point":
+			_emote_back(-0.05, 0.0, w)
+
+
+func emote_pose() -> void:
+	var now := _emote_now()
+	var id: String = now[0]
+	var w: float = now[1]
+	var t: float = now[2]
+	if id == "":
+		return
+	match id:
+		"wave":
+			var swing := 0.09 * sin(t * wave_rate * TAU)
+			_emote_arm(1.0, Vector3(0.36 + swing, 1.72, -0.12), Vector3(1.0, -0.6, 0.1), w)
+		"salute":
+			_emote_arm(1.0, Vector3(0.16, 1.63, -0.13), Vector3(1.0, -0.2, -0.2), w)
+		"point":
+			_emote_point(w)
+		"cheer":
+			var pump := 0.06 * sin(t * cheer_rate * TAU)
+			_emote_arm(1.0, Vector3(0.27, 1.98 + pump, -0.08), Vector3(1.0, 0.0, 0.2), w)
+			_emote_arm(-1.0, Vector3(-0.27, 1.98 - pump, -0.08), Vector3(-1.0, 0.0, 0.2), w)
+		"sit":
+			_emote_arm(1.0, sit_hand, Vector3(0.3, 0.0, 1.0), w)
+			_emote_arm(-1.0, Vector3(-sit_hand.x, sit_hand.y, sit_hand.z), Vector3(-0.3, 0.0, 1.0), w)
+		"lean":
+			# Arms folded across the chest.
+			_emote_arm(1.0, Vector3(-0.1, 1.2, -0.22), Vector3(1.0, -0.5, 0.2), w)
+			_emote_arm(-1.0, Vector3(0.1, 1.25, -0.2), Vector3(-1.0, -0.5, 0.2), w)
+		"dance":
+			var beat := 0.5 + 0.5 * sin(t * dance_rate * TAU)
+			_emote_arm(1.0, Vector3(0.26, 1.3 + 0.42 * beat, -0.24), Vector3(1.0, -0.6, 0.3), w)
+			_emote_arm(-1.0, Vector3(-0.26, 1.3 + 0.42 * (1.0 - beat), -0.24), Vector3(-1.0, -0.6, 0.3), w)
+		"taunt":
+			# Come on: one hand beckons, the other on the hip.
+			var pull := 0.5 + 0.5 * sin(t * taunt_rate * TAU)
+			_emote_arm(1.0, Vector3(0.14, 1.24 + 0.06 * pull, -0.44 + 0.13 * pull), Vector3(0.6, -1.0, 0.2), w)
+			_emote_arm(-1.0, Vector3(-0.21, 0.98, 0.0), Vector3(-1.0, 0.0, 0.3), w)
+
+
+## Moves the hips by `offset` (actor frame) and tips them `roll` about the
+## way ahead and `lean` about the right, the feet left planted where they
+## were and the legs bent to reach them.
+func _emote_hips(offset: Vector3, roll: float, lean: float, weight: float) -> void:
+	if weight <= 0.001 or _lead.size() != 3 or _trail.size() != 3:
+		return
+	var to_skeleton := skeleton.global_transform.affine_inverse() * actor.global_transform
+	var hips := skeleton.find_bone(_hip_name)
+	var pivot := skeleton.get_bone_global_pose(hips).origin if hips >= 0 \
+			else to_skeleton * Vector3(0.0, 0.9, 0.0)
+	var right := (to_skeleton.basis * Vector3.RIGHT).normalized()
+	var ahead := (to_skeleton.basis * Vector3.FORWARD).normalized()
+	var feet: Array[Transform3D] = [skeleton.get_bone_global_pose(_lead[2]), skeleton.get_bone_global_pose(_trail[2])]
+	var turn := Basis(ahead, roll * weight) * Basis(right, lean * weight)
+	var move := Transform3D(Basis.IDENTITY, pivot + to_skeleton.basis * offset * weight) \
+			* Transform3D(turn, Vector3.ZERO) * Transform3D(Basis.IDENTITY, -pivot)
+	for bone in _roots:
+		skeleton.set_bone_global_pose(bone, move * skeleton.get_bone_global_pose(bone))
+	var legs := [_lead, _trail]
+	for i in 2:
+		var leg: Array[int] = legs[i]
+		_reach(leg, feet[i].origin)
+		skeleton.set_bone_global_pose(leg[2], feet[i])
+
+
+## Leans the back `back` radians (back is positive) and turns the chest
+## `twist` about the up, shared down the spine.
+func _emote_back(back: float, twist: float, weight: float) -> void:
+	if weight <= 0.001 or _spine.is_empty():
+		return
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	var up := (to_skeleton * Vector3.UP).normalized()
+	var share := weight / _spine.size()
+	for bone in _spine:
+		var pose := skeleton.get_bone_global_pose(bone)
+		pose.basis = Basis(up, twist * share) * Basis(right, back * share) * pose.basis
+		skeleton.set_bone_global_pose(bone, pose)
+
+
+## Sits the body on the ground: hips down, knees up, feet out in front, the
+## back leaning onto the hands behind it (`emote_pose`).
+func _emote_sit(weight: float) -> void:
+	var to_skeleton := skeleton.global_transform.affine_inverse() * actor.global_transform
+	var hips := skeleton.find_bone(_hip_name)
+	if hips >= 0:
+		var want := to_skeleton * sit_hips
+		var shift := (want - skeleton.get_bone_global_pose(hips).origin) * weight
+		for bone in _roots:
+			var pose := skeleton.get_bone_global_pose(bone)
+			pose.origin += shift
+			skeleton.set_bone_global_pose(bone, pose)
+	_emote_back(sit_lean, 0.0, weight)
+	for leg in [_lead, _trail]:
+		if leg.size() != 3:
+			continue
+		var side := _side_of(leg[0])
+		var ankle := to_skeleton * Vector3(sit_ankle.x * side, sit_ankle.y, sit_ankle.z)
+		var knee := to_skeleton.basis * Vector3(sit_knee.x * side, sit_knee.y, sit_knee.z)
+		_bend(leg, _foot_on_shin[leg[2]].origin, ankle, knee, weight)
+		var foot := skeleton.get_bone_global_pose(leg[2])
+		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
+		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, weight * 0.7))
+
+
+## Points the right arm straight along the aim, where the head is looking.
+func _emote_point(weight: float) -> void:
+	for arm: Array[int] in _arms:
+		if arm.size() != 3 or _side_of(arm[0]) < 0.0:
+			continue
+		var to_skeleton := skeleton.global_transform.affine_inverse() * actor.global_transform
+		var to_actor := to_skeleton.affine_inverse()
+		var shoulder := to_actor * skeleton.get_bone_global_pose(arm[0]).origin
+		var elbow := to_actor * skeleton.get_bone_global_pose(arm[1]).origin
+		var wrist := to_actor * skeleton.get_bone_global_pose(arm[2]).origin
+		var reach := shoulder.distance_to(elbow) + elbow.distance_to(wrist)
+		var aim := (actor.global_basis.orthonormalized().inverse() * actor.get_aim_dir()).normalized()
+		# Never back through the body: at most out to the side.
+		aim.z = minf(aim.z, -0.15)
+		_emote_arm(1.0, shoulder + aim.normalized() * reach * 0.95, Vector3(0.4, -1.0, 0.3), weight)
+
+
+## Reaches the arm on `side` (1 right, -1 left) to `wrist`, its elbow bowing
+## toward `elbow`, both in the actor's frame.
+func _emote_arm(side: float, wrist: Vector3, elbow: Vector3, weight: float) -> void:
+	if weight <= 0.001:
+		return
+	var to_skeleton := skeleton.global_transform.affine_inverse() * actor.global_transform
+	for arm: Array[int] in _arms:
+		if arm.size() != 3 or signf(_side_of(arm[0])) != signf(side):
+			continue
+		_bend(arm, skeleton.get_bone_rest(arm[2]).origin, to_skeleton * wrist, to_skeleton.basis * elbow, weight)
 
 
 ## How far each hand (left, right) is round its grip now.
