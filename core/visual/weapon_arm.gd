@@ -81,7 +81,11 @@ var _steady_dt := 0.0
 var wrist_limit := 1.3
 ## The most the forearm rolls the fist round toward the blade before the
 ## wrist bends, in radians (a forearm turns about a half turn end to end).
-var forearm_roll_limit := 1.6
+var forearm_roll_limit := 2.8
+## How near a half turn the roll the fist needs may be before it keeps the
+## way it last rolled (radians), so it does not flip side to side.
+var roll_keep := 0.7
+var _last_roll := 0.0
 ## The most the wrist bends from the aim clip's hold to lie along a gun's
 ## own pistol grip, in radians.
 var grip_bend_limit := 0.6
@@ -866,8 +870,13 @@ func _place_weapon() -> void:
 				var now_flat := now - along * now.dot(along)
 				var want_flat := blade - along * blade.dot(along)
 				if now_flat.length() > 0.05 and want_flat.length() > 0.05:
-					var roll := clampf(now_flat.normalized().signed_angle_to(want_flat.normalized(), along),
-							-forearm_roll_limit, forearm_roll_limit) * _grip_weight
+					var wanted := now_flat.normalized().signed_angle_to(want_flat.normalized(), along)
+					# Near a half turn either way is as far: keep rolling the
+					# way it rolled last frame, or it flips each step.
+					if absf(wanted) > PI - roll_keep and signf(wanted) != signf(_last_roll) and _last_roll != 0.0:
+						wanted -= signf(wanted) * TAU
+					_last_roll = wanted
+					var roll := clampf(wanted, -forearm_roll_limit, forearm_roll_limit) * _grip_weight
 					if absf(roll) > 0.001:
 						pose.basis = Basis(along, roll) * pose.basis
 						skeleton.set_bone_global_pose(_wrist, pose)
