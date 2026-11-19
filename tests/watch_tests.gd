@@ -20,6 +20,7 @@ static func run(t: Node) -> void:
 	await _rough_edges(t)
 	await _status_opens(t)
 	await _pack_equips(t)
+	await _clicks_stay_on_watch(t)
 
 
 static func _rules(t: Node) -> void:
@@ -841,3 +842,67 @@ static func _pack_equips(t: Node) -> void:
 	copy.queue_free()
 	controller.queue_free()
 	await t._end_raid(raid)
+
+
+## Playtest feedback: a pick on the watch fired a round, a right click back
+## brought the sight up. A button pressed while the watch or the phone has
+## the hands belongs to them until it is let go, whatever closes on it.
+static func _clicks_stay_on_watch(t: Node) -> void:
+	print("Watch: clicks never reach the gun")
+	var raid: Raid = await t._kit_raid(91, KIT.duplicate())
+	var p := raid.player
+	var controller := PlayerController.new()
+	controller.setup(p)
+	raid.add_child(controller)
+	await t.frames(10)
+	var cmd := ActorCommand.new()
+	var press := func(fire: bool, aim: bool, fresh_fire := false, fresh_aim := false) -> void:
+		cmd.primary = fire
+		cmd.primary_pressed = fresh_fire
+		cmd.secondary = aim
+		cmd.secondary_pressed = fresh_aim
+		controller._hold_back_clicks(cmd)
+	# A pick that lowers the watch (an emote, as the emote wheel does).
+	controller.watch_shortcut("emote")
+	press.call(true, false, true)
+	t.check(not controller.wrist_raised and not cmd.primary and not cmd.primary_pressed,
+			"a pick that lowers the watch is not a shot")
+	press.call(true, false)
+	t.check(not cmd.primary, "and the button still held after the watch goes down never fires")
+	press.call(false, false)
+	press.call(true, false, true)
+	t.check(cmd.primary and cmd.primary_pressed, "once let go, the next click with the watch down shoots")
+	press.call(false, false)
+	# Right click backs out of an open icon, then the watch goes down.
+	controller.watch_shortcut("emote")
+	press.call(false, true, false, true)
+	t.check(controller.watch_open == "" and controller.wrist_raised and not cmd.secondary and not cmd.secondary_pressed,
+			"a right click backs out of the icon without aiming")
+	press.call(false, true)
+	t.check(not cmd.secondary, "held on the main row it still does not aim")
+	controller.wrist_raised = false
+	press.call(false, true)
+	t.check(not cmd.secondary, "nor once the watch is lowered with it still held")
+	press.call(false, false)
+	press.call(false, true, false, true)
+	t.check(cmd.secondary and cmd.secondary_pressed, "let go, the next right click aims")
+	press.call(false, false)
+	# The watch up on an icon with nothing to do: still no shot, no aim.
+	controller.wrist_raised = true
+	controller.watch_open = ""
+	controller.watch_focus_moved = true
+	controller.watch_focus = Hud.Wrist.SLOTS.find("standing")
+	press.call(true, true, true, true)
+	t.check(not cmd.primary and not cmd.primary_pressed and not cmd.secondary and not cmd.secondary_pressed,
+			"with the watch up neither button ever reaches the weapon")
+	controller.wrist_raised = false
+	press.call(false, false)
+	# The phone: a click on its screen, then it is put away with the button down.
+	controller.phone_out = true
+	press.call(true, true, true, true)
+	controller.phone_out = false
+	press.call(true, true)
+	t.check(not cmd.primary and not cmd.secondary, "a click held on the phone as it goes away neither fires nor aims")
+	press.call(false, false)
+	controller.queue_free()
+	raid.queue_free()
