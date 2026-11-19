@@ -254,8 +254,11 @@ without Caleb, and update the gap list when a PR closes a row.
   (`PlanetTerrain`, thread safe) reach the simulation, the rest is view
   only through `Planet` and a no-op headless. Each ground layer wears a
   CC0 scan named in `PlanetType.surfaces` (detail only: the recipe's
-  colours keep the hue). Check by eye with `planet_check.tscn -- <dir>
-  [type ids]`.
+  colours keep the hue). A type's `smoke` lays low battle smoke over the
+  ground (`Planet.GroundSmoke`, a volumetric fog box that follows the
+  camera, thicker with the war and in a storm), off with
+  `GameSettings.ground_smoke`. Check by eye with `planet_check.tscn --
+  <dir> [type ids]`.
 - Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
   collision and a mesh that knows nothing about any world. A map on one
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it

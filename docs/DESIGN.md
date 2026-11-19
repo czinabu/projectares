@@ -1139,7 +1139,13 @@ the Ashland: its sky, light and ash-storm mood (the war mood is Ashfront's
 own), the Ashland's burnt ground and glowing cracks on the field, and its
 land and mountains past the rim to the horizon, kept low near the map so
 the skyline, the giants and the burning ring stand on it; the planet's
-rocks only on the rim's slope and past it, out of the fight.
+rocks only on the rim's slope and past it, out of the fight. The Ashland's
+air is ash grey and its light neutral (Caleb's look pass, after his
+references: grey smoke with hot lights burning through it), so the red
+lives in the sky's glow, the fires, the cracks and the tracers, and stands
+out. Low battle smoke lies over its ground (`PlanetType.smoke`, drawn by
+`Planet.GroundSmoke`), thicker as the war heats up and in a storm, and
+switched off with the "Battle smoke" graphics setting.
 
 ## 3. The watch
 
