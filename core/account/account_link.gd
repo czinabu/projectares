@@ -23,7 +23,7 @@ extends Node
 ## "unanswered": true} so nothing ever waits on the service for long.
 ##
 ## Sure. `bank`, `settle`, `cancel_deploy`, `change_scrip`, `record_arena`,
-## `record_race`, `keep_ghost`
+## `record_race`, `keep_ghost`, `tune_race`
 ## and `cancel_all_deploys` carry a result the server alone knows (a life
 ## that ended, loot handed in), so they are never dropped: each stays
 ## queued, in order, and is sent again after every reconnect until the
@@ -391,6 +391,10 @@ func record_arena(account_id: String, won: bool) -> void:
 
 func record_race(account_id: String, result: Dictionary) -> void:
 	_ask("record_race", [account_id, result], true)
+
+
+func tune_race(account_id: String, machine: String, kit: String) -> void:
+	_ask("tune_race", [account_id, machine, kit], true)
 
 
 func keep_ghost(account_id: String, track_id: String, machine: String, lap: float, packed: String) -> void:

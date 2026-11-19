@@ -1991,7 +1991,15 @@ without Caleb, and update the gap list when a PR closes a row.
   a camera only. A done run is guided to the track's `RaceTrack.pit`
   (`Hud._guide_to_pits`) and the authority sets the racer down there
   (`Race.set_down`, within `PIT_RADIUS` or after `PIT_TIME`); a machine a
-  desk made goes when its racer gets off. Where a road runs over
+  desk made goes when its racer gets off. Tuning kits
+  (`RaceLeague.KITS`, kept per machine in the league state's "tunes",
+  unlocked by league) are fitted at a pit bench (map markers "race_tune",
+  `Race.tune`, asked as "tune:<machine>"; online the sure
+  `StashService.tune_race`) and put on a person's machine for their run
+  only (`Race.fit` at `start_run`, stock again at `retire`); a client fits
+  the kit its run view names so it predicts the same. Every kit must keep
+  its machine inside the class's 3% on every track
+  (`race_bench.tscn -- --tunes`). Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
   (`Crowd`, `assets/shaders/crowd.gdshader`) and skyline are decoration
