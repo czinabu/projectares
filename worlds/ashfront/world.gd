@@ -348,6 +348,26 @@ func faction_title(faction: String) -> String:
 	return str(ARMIES[faction].name) if ARMIES.has(faction) else super(faction)
 
 
+## The Colossus's fall is the war's shared moment, on the wall clock like
+## the giants themselves (`giants.gd`): the War Room counts down to the
+## lance and tells of the fall while the wreck still burns.
+func clock_moments(unix: int) -> Array[Dictionary]:
+	var since: float = MapScript.GIANTS.since_lance(fmod(float(unix), 100000.0))
+	if since >= 0.0 and since < MapScript.GIANTS.WRECK_GONE:
+		return [{"kind": "colossus", "text": "An orbital lance brought the Colossus down", "at": unix - int(since)}]
+	if since < 0.0 and since > -240.0:
+		return [{"kind": "colossus", "text": "Lance strike on the Colossus in %d:%02d" % [int(-since) / 60,
+				int(-since) % 60], "at": unix}]
+	return []
+
+
+## Each army in its soldiers' colour, lifted to read on a lit screen.
+func faction_color(faction: String) -> Color:
+	if ARMIES.has(faction):
+		return (ARMIES[faction]["exo"]["color"] as Color).lightened(0.15)
+	return super(faction)
+
+
 func contract_jobs() -> Dictionary:
 	return CONTRACTS
 

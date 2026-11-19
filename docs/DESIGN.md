@@ -75,6 +75,17 @@ new planet is a new folder under `worlds/`.
    worlds and the Marked, by name, clan tag and world, never where they are
    (`Raid.wanted` rides in each world's `world_status`). Kade, the bounty
    broker, stands at it. Arena results and live video are still to come.
+   *Built:* the big screen is the War Room, a live feed of the worlds that
+   the tiers face. It turns through each world's front (the map split by
+   who holds each landmark, so where two colours meet is the front line,
+   with a landmark under attack pulsing), the race world's track camera
+   (its AI races cut between a chase, an overhead and a trackside shot,
+   with the order; exhibition laps, labelled as such, while no race runs)
+   and the worlds at a glance, with big moments (a warlord or boss brought
+   down, a landmark changing hands, the Colossus falling) and who the
+   armies are hunting down the side and each world's news along the
+   bottom. A console in front of it picks a world: its map comes up on
+   the console and on the big screen for you, and you deploy from there.
 2. **Ring races and time trials.** Courses of rings through the hub's
    skyline, one per rig plus a bike course. A cheap, small version of the
    racing mode (section 9) and a place for new players to practise each rig.

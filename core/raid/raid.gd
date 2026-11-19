@@ -106,6 +106,14 @@ const SPAWN_SNAP := 2.5
 const BOT_REROLLS := 8
 ## How many of the most wanted a world tells the plaza about (`wanted`).
 const WANTED_SHOWN := 5
+## The War Room's big moments (`moments`, `note_moment`): how many a world
+## keeps to tell the plaza, newest first, and how long one stays news.
+const MOMENTS_KEPT := 4
+const MOMENT_LIFETIME := 600.0
+## The War Room's hunted list: at most this many, and a grudge only counts
+## once it is this share of the way to sending hunters (`hunted`).
+const HUNTED_SHOWN := 4
+const HUNTED_SHARE := 0.5
 ## Seconds between rounds of orders to the bot factions.
 const ORDERS_EVERY := 8.0
 ## An army's push is announced (horn, war feed) at most this often, and
@@ -246,6 +254,9 @@ var event := {}
 var teams := {}
 ## The warlords alive in the world, so clients can build the same bot.
 var warlords := {}
+## The big moments of this world for the plaza's War Room, newest first:
+## [{"kind", "text", "at" (unix seconds)}]. Authority only (`note_moment`).
+var moments: Array[Dictionary] = []
 var _event_in := 0.0
 var _event_bots: Array[Actor] = []
 ## Rival raiders in the world (`WorldDef.raider_count`, authority only), one
@@ -762,6 +773,9 @@ func _on_strongpoint_taken(point: Strongpoint, inside: Array[Actor], loser: Stri
 			line += " from %s" % loser
 		war_feed.emit(line.left(1).to_upper() + line.substr(1))
 		war.report_capture(point.global_position)
+	if point.holder != "":
+		note_moment("front", "%s took %s" % [point.holder_name.left(1).to_upper() + point.holder_name.substr(1),
+				point.title])
 	if point.holder_is_player:
 		for actor in inside:
 			var state := state_for(actor)
@@ -1823,7 +1837,85 @@ func status() -> Dictionary:
 			bounty = maxi(bounty, actor.bounty)
 	return {"players": fighting.size(), "war": snappedf(war.intensity, 0.05), "level": war.level_name(),
 			"bounty": bounty, "event": str(event.get("title", "")),
-			"storm": world.weather_name if weather.active() else "", "wanted": wanted()}
+			"storm": world.weather_name if weather.active() else "", "wanted": wanted(),
+			"front": front(), "moments": live_moments(), "hunted": hunted()}
+
+
+## The War Room's front line: each landmark of this world, where it stands
+## (a landmark, never a person) and who holds it, as {name, x, z, holder
+## (an army's faction, "players" or ""), contested}. A player's own side key
+## never leaves the server.
+func front() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for point in strongpoints:
+		if not is_instance_valid(point):
+			continue
+		var holder := ""
+		if point.holder_is_player:
+			holder = "players"
+		elif point.holder.begins_with("faction:"):
+			holder = point.holder.trim_prefix("faction:")
+		var at := point.global_position if point.is_inside_tree() else Vector3.ZERO
+		out.append({"name": point.title.left(24), "x": roundi(at.x), "z": roundi(at.z), "holder": holder,
+				"contested": point.contested})
+	return out
+
+
+## Tells the plaza's War Room of a big moment here (a warlord or a boss
+## brought down, a landmark changing hands). Authority only; the newest
+## `MOMENTS_KEPT` are kept.
+func note_moment(kind: String, text: String) -> void:
+	if mode == Mode.CLIENT or text == "":
+		return
+	moments.push_front({"kind": kind.left(16), "text": text.left(80), "at": int(Time.get_unix_time_from_system())})
+	if moments.size() > MOMENTS_KEPT:
+		moments.resize(MOMENTS_KEPT)
+
+
+## The moments still news (`MOMENT_LIFETIME`), newest first.
+func live_moments() -> Array[Dictionary]:
+	var now := int(Time.get_unix_time_from_system())
+	var out: Array[Dictionary] = []
+	for moment in moments:
+		if now - int(moment.at) <= MOMENT_LIFETIME:
+			out.append(moment)
+	return out
+
+
+## Who the armies are hunting here, for the War Room: players an army holds
+## a grudge against (`grudges`, `WorldDef.grudge_factions`, where a world
+## keeps them), biggest first, as {name, clan, by (the army's faction)}.
+## Who and by whom, never where. Empty where no army keeps grudges.
+func hunted() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if world.safe_zone or not world.gear_at_risk:
+		return out
+	# Read by name so this stands whether or not the grudge pass is in.
+	var held: Variant = get("grudges")
+	var bar := float(world.get("grudge_hunt")) if world.get("grudge_hunt") != null else 0.0
+	if typeof(held) != TYPE_DICTIONARY:
+		return out
+	var rows: Array = []
+	for key: Variant in held:
+		if not is_instance_valid(key) or not key is Actor or (key as Actor).is_dead:
+			continue
+		var actor := key as Actor
+		var by := ""
+		var top := 0.0
+		var grudge: Variant = held[key]
+		if typeof(grudge) != TYPE_DICTIONARY:
+			continue
+		for faction: Variant in grudge:
+			if float(grudge[faction]) > top:
+				top = float(grudge[faction])
+				by = str(faction)
+		if by == "" or top < bar * HUNTED_SHARE:
+			continue
+		rows.append([top, {"name": actor.display_name.left(24), "clan": actor.clan_tag.left(6), "by": by.left(16)}])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
+	for row: Array in rows.slice(0, HUNTED_SHOWN):
+		out.append(row[1])
+	return out
 
 
 ## The most wanted here, for the plaza's board: up to `WANTED_SHOWN` players
@@ -3871,6 +3963,10 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 				pay += Economy.bounty_scrip(bounty)
 				killer.actor.notice.emit("Bounty claimed: +%d scrip, yours once you get it home" % Economy.bounty_scrip(bounty))
 			_pay_scrip(killer, pay)
+		# A warlord or a boss brought down is news in the plaza's War Room.
+		if warlords.has(actor) or _bosses.any(func(boss: Dictionary) -> bool: return boss.bot == actor):
+			note_moment("boss", "%s brought down %s" % [killer.actor.display_name, actor.display_name]
+					if killer != null else "%s is down" % actor.display_name)
 		# Only kills that players are part of count as the war.
 		if state != null or killer != null:
 			war.report_kill(actor.global_position, state != null)

@@ -36,6 +36,9 @@ var heat_sign_height := 6.9
 var tag: Label3D
 ## The people of the place (`PlazaLocals`), made only where `Look` draws.
 var locals: Node3D
+## The big screen's live feed of the worlds (`WarRoom`), made only where
+## `Look` draws and the map has a "screen_wall".
+var war_room: Node3D
 ## The player's account snapshot from the server, for what a talker offers.
 var account := {}
 var _prompt: Label
@@ -77,6 +80,11 @@ func _ready() -> void:
 		locals.name = "Locals"
 		locals.setup(raid)
 		add_child(locals)
+	if Look.enabled and raid != null and raid.map != null:
+		war_room = WarRoom.new()
+		war_room.name = "WarRoom"
+		war_room.setup(raid, world_status)
+		add_child(war_room)
 	refresh_heat()
 
 
