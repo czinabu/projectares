@@ -110,13 +110,15 @@ void fragment() {
 		float near = 1.0 - smoothstep(2.5, 6.0, dist0);
 		float glove = smoothstep(0.45, 0.6, rest.w);
 		vec3 cloth = mix(suit_color, glove_color, glove);
-		// Raised cells with sunken seams between them, gloves left smooth.
+		// The outfit's own panels kept as tone, so pads and seams still read.
+		cloth *= mix(0.7 + 0.9 * own, 1.0, glove);
+		// A fine hex weave, faint, gloves left smooth.
 		float seam = 1.0 - smoothstep(0.03, 0.12, edge);
-		cloth *= mix(1.0, 0.62, seam * (1.0 - glove) * near);
+		cloth *= mix(1.0, 0.86, seam * (1.0 - glove) * near);
 		c = mix(c, cloth, suited);
-		r = mix(r, mix(0.42, 0.75, glove), suited);
-		m = mix(m, 0.15, suited);
-		NORMAL = mix(NORMAL, bump(NORMAL, VERTEX, -seam * 0.0012 * (1.0 - glove) * near), suited);
+		r = mix(r, mix(0.82, 0.7, glove), suited);
+		m = mix(m, 0.0, suited);
+		NORMAL = mix(NORMAL, bump(NORMAL, VERTEX, -seam * 0.0004 * (1.0 - glove) * near), suited);
 		// A lit trim where the glove meets the sleeve.
 		float cuff = smoothstep(0.3, 0.42, rest.w) * (1.0 - smoothstep(0.42, 0.54, rest.w));
 		glow += suit_trim * cuff * 1.6 * suited;
