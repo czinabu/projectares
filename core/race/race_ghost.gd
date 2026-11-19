@@ -3,11 +3,19 @@ extends RefCounted
 ## A lap as the racer drove it, for a time trial's ghost (DESIGN.md section
 ## 9): where the machine was and which way it faced, sampled every `STEP`
 ## seconds from the lap's start, and played back between the samples. View
-## only: nothing in a `Race` reads it. `RaceView` records the local racer's
-## laps and keeps the best per track and machine on disk.
+## only: a `Race` records each person's laps on the authority and hands a
+## personal best to its bank (`Race.LeagueBank.keep_ghost`), which keeps it
+## on the account (online, `StashService.keep_ghost`) or on disk (solo), and
+## `RaceView` plays the one picked on the race icon.
+##
+## Kept and sent packed (`to_packed`): whole centimetres, milliseconds and
+## milliradians, each sample the change from the last, compressed, as text.
+## A lap of a minute and a half is a few KB.
 
 ## Seconds between samples.
 const STEP := 0.1
+## The most samples a ghost may hold (ten minutes): anything longer is refused.
+const MAX_SAMPLES := 6000
 
 var machine := ""
 var lap_time := -1.0
@@ -94,3 +102,50 @@ static func from_data(data: Variant) -> RaceGhost:
 		ghost._points.append(Vector3(float(flat[i * 3]), float(flat[i * 3 + 1]), float(flat[i * 3 + 2])))
 		ghost._yaws.append(float(yaws[i]))
 	return ghost
+
+
+## Packed small for an account or a message: see the class notes.
+func to_packed() -> String:
+	var ints := PackedInt32Array()
+	var last := [0, 0, 0, 0, 0]
+	for i in _times.size():
+		var now: Array = [roundi(_times[i] * 1000.0), roundi(_points[i].x * 100.0), roundi(_points[i].y * 100.0),
+				roundi(_points[i].z * 100.0), roundi(wrapf(_yaws[i], -PI, PI) * 1000.0)]
+		for k in 5:
+			ints.append(now[k] - last[k])
+		last = now
+	var raw := ints.to_byte_array()
+	return "%d:%s" % [raw.size(), Marshalls.raw_to_base64(raw.compress(FileAccess.COMPRESSION_DEFLATE))]
+
+
+## Back from `to_packed`, or null when the text is not a ghost.
+static func from_packed(text: Variant, p_machine := "", p_lap := -1.0) -> RaceGhost:
+	if typeof(text) != TYPE_STRING:
+		return null
+	var parts := (text as String).split(":", true, 1)
+	if parts.size() != 2 or not parts[0].is_valid_int():
+		return null
+	var size := int(parts[0])
+	if size <= 0 or size > MAX_SAMPLES * 5 * 4 or size % 20 != 0:
+		return null
+	var packed := Marshalls.base64_to_raw(parts[1])
+	if packed.is_empty():
+		return null
+	var raw := packed.decompress(size, FileAccess.COMPRESSION_DEFLATE)
+	if raw.size() != size:
+		return null
+	var ints := raw.to_int32_array()
+	var ghost := RaceGhost.new()
+	ghost.machine = p_machine
+	ghost.lap_time = p_lap
+	var now: Array = [0, 0, 0, 0, 0]
+	for i in ints.size() / 5:
+		for k in 5:
+			now[k] += ints[i * 5 + k]
+		var time: float = now[0] / 1000.0
+		if not ghost._times.is_empty() and time < ghost._times[ghost._times.size() - 1]:
+			return null
+		ghost._times.append(time)
+		ghost._points.append(Vector3(now[1], now[2], now[3]) / 100.0)
+		ghost._yaws.append(now[4] / 1000.0)
+	return ghost if ghost.samples() >= 2 else null

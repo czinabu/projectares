@@ -41,6 +41,16 @@ var start_slots: Array[Transform3D] = []
 ## only way across for wheels. Read by drivers that follow the line (the
 ## time-trial bench), never by the race's rules.
 var keep_lines: Array[Dictionary] = []
+## Pit row: where a finished racer is guided and set down (`Race.PIT_RADIUS`).
+## Unset (INF), the first start slot.
+var pit := Vector3.INF
+
+
+## Where a finished racer is set down: `pit`, or the first start slot.
+func pit_spot() -> Vector3:
+	if pit != Vector3.INF:
+		return pit
+	return start_slots[0].origin if not start_slots.is_empty() else Vector3.ZERO
 
 
 ## Builds the track from control points (a smooth closed curve through

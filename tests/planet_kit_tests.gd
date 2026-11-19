@@ -68,6 +68,16 @@ static func run(t: Node) -> void:
 	t.check(frost_handed != null and frost_handed.id == "glacier", "and hands its map the planet")
 	frost_map.free()
 
+	# Ashfront stands on the Ashland.
+	var ashfront: WorldDef = load("res://worlds/ashfront/world.gd").new()
+	t.check(ashfront.planet == "ashland" and is_zero_approx(ashfront.cold)
+			and is_equal_approx(ashfront.surface_grip(Vector3.ZERO), 1.0),
+			"Ashfront stands on the Ashland, warm and at full grip")
+	var ash_map: Node3D = ashfront.create_map()
+	var ash_handed: PlanetType = ash_map.get("planet")
+	t.check(ash_handed != null and ash_handed.id == "ashland", "and hands its map the planet")
+	ash_map.free()
+
 	# The same ground for the same point, whichever copy asks and on any thread.
 	var recipe: Dictionary = PlanetTypes.get_type("glacier").terrain
 	var a := PlanetTerrain.new(recipe, 7)

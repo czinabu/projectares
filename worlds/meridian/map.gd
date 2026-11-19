@@ -24,6 +24,12 @@ extends Node3D
 ## views, Label3D boards in group "race_board", the line's lights in group
 ## "race_light" (meta "index", 0 first), and one node per gate in group
 ## "race_gate" (meta "gate", the gate's index) with a Label3D child "Split".
+## Pit tuning benches are Marker3D nodes in group "race_tune" (metas
+## "track" and "machine") with a "Status" label; `Race.tune` fits there.
+## Race control's desks are Marker3D nodes in group "race_desk" (metas
+## "track" and "machine", an empty machine for the watch desk) with a
+## Label3D child "Status" for `RaceView` to write on; each track's `pit` is
+## where a finished racer is set down.
 
 const TRACK_ID := "coilrun"
 const TRACK_NAME := "Coilrun"
@@ -101,6 +107,8 @@ func race_track() -> RaceTrack:
 		var spots: Array[Vector3] = []
 		spots.assign(CHECKPOINTS)
 		_track = RaceTrack.build(TRACK_ID, TRACK_NAME, control, TRACK_W, spots, LINE, LAPS)
+		# Pit row, between the wall and the bays.
+		_track.pit = Vector3(-104, 0, PIT_Z + 10.0)
 	return _track
 
 
@@ -399,6 +407,9 @@ func _build_pits() -> void:
 		tag.position = Vector3(x, 0.05, PIT_Z + 7.4)
 		tag.rotation = Vector3(-PI / 2.0, 0, 0)
 		add_child(tag)
+	# The tuning benches, behind each machine's bays.
+	_tune_bench(Vector3(-126.5, 0, PIT_Z - 3.0), TRACK_ID, "bike_scrapper", AMBER)
+	_tune_bench(Vector3(-90.5, 0, PIT_Z - 3.0), TRACK_ID, "bike_raider", CYAN)
 	# Where a racer arrives: by the pit building's door.
 	var spawn := Marker3D.new()
 	spawn.add_to_group("spawn_player")
@@ -555,6 +566,69 @@ func _build_race_control() -> void:
 		label.modulate = spec[1]
 		label.position = at + Vector3(0, float(spec[2]), -0.1)
 		add_child(label)
+	# The desks under it: race on each machine, or watch, for each track.
+	var x := -181.0
+	for spec: Array in [[TRACK_ID, AMBER], [SkyhookScript.TRACK_ID, Color(1.0, 0.3, 0.7)]]:
+		for machine: String in ["bike_scrapper", "bike_raider", ""]:
+			_desk(Vector3(x, 0, -37.5), str(spec[0]), machine, spec[1])
+			x += 4.0
+		x += 10.0
+
+
+## A desk at race control: a lit pedestal and the marker `RaceView` and the
+## `Race` read (group "race_desk"), its words on the "Status" label.
+func _desk(at: Vector3, track_id: String, machine: String, color: Color) -> void:
+	var marker := Marker3D.new()
+	marker.add_to_group("race_desk")
+	marker.set_meta("track", track_id)
+	marker.set_meta("machine", machine)
+	marker.position = at
+	add_child(marker)
+	_box(Vector3(1.6, 1.05, 0.7), at + Vector3(0, 0.525, -0.6), _metal(Color(0.14, 0.14, 0.17), 0.2))
+	_box(Vector3(1.5, 0.05, 0.6), at + Vector3(0, 1.08, -0.6), _glow(CYAN if machine == "" else color, 1.6, 0.8),
+			0.0, false)
+	var label := Label3D.new()
+	label.name = "Status"
+	label.font_size = 48
+	label.pixel_size = 0.006
+	label.modulate = CYAN if machine == "" else color
+	label.position = Vector3(0, 1.9, -0.6)
+	label.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	label.text = desk_title(track_id, machine)
+	marker.add_child(label)
+
+
+## A pit tuning bench for one machine: a tool counter and the marker the
+## `Race` and `RaceView` read (group "race_tune", metas "track" and
+## "machine"), its words on the "Status" label. `back` is the side of the
+## marker the counter stands on (-1 toward -z).
+func _tune_bench(at: Vector3, track_id: String, machine: String, color: Color, back := -1.0) -> void:
+	var marker := Marker3D.new()
+	marker.add_to_group("race_tune")
+	marker.set_meta("track", track_id)
+	marker.set_meta("machine", machine)
+	marker.position = at
+	add_child(marker)
+	_box(Vector3(2.4, 0.95, 0.8), at + Vector3(0, 0.475, 0.7 * back), _metal(Color(0.2, 0.2, 0.22), 0.4))
+	_box(Vector3(2.3, 0.05, 0.7), at + Vector3(0, 0.98, 0.7 * back), _glow(color, 1.2, 0.6), 0.0, false)
+	_box(Vector3(2.4, 1.4, 0.1), at + Vector3(0, 1.65, 1.1 * back), _metal(Color(0.1, 0.1, 0.12), 0.3))
+	var label := Label3D.new()
+	label.name = "Status"
+	label.font_size = 40
+	label.pixel_size = 0.005
+	label.modulate = color
+	label.position = Vector3(0, 1.7, 1.0 * back)
+	label.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	label.text = "%s TUNING" % ("SCRAPPER" if machine == "bike_scrapper" else "RAIDER")
+	marker.add_child(label)
+
+
+## A desk's own words, before `RaceView` adds the next race's.
+static func desk_title(track_id: String, machine: String) -> String:
+	var track_name := TRACK_NAME if track_id == TRACK_ID else SkyhookScript.TRACK_NAME
+	if machine == "":
+		return "%s\nWATCH THE RACE" % track_name.to_upper()
+	return "%s · %s\nRACE" % [track_name.to_upper(), "SCRAPPER" if machine == "bike_scrapper" else "RAIDER"]
 
 
 # --- Decoration only: no collision, nothing the game depends on ----------------------

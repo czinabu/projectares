@@ -255,6 +255,8 @@ const BOT_TABLE := [
 
 
 func _init() -> void:
+	# The Ashland (DESIGN.md "Planet kit"): its sky, ground and horizon.
+	take_planet("ashland")
 	id = "ashfront"
 	display_name = "Ashfront"
 	description = "Open battlefield where two armies fight over the wrecks. Always-on PvP, full loot. Safe only at the gate outposts; the burning core pays best."
@@ -303,7 +305,9 @@ func contract_jobs() -> Dictionary:
 
 
 func create_map() -> Node3D:
-	return MapScript.new()
+	var map := MapScript.new()
+	map.planet = planet_type()
+	return map
 
 
 func prepare_map() -> void:

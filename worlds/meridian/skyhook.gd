@@ -67,6 +67,8 @@ static func build_track() -> RaceTrack:
 	for p: Vector3 in CHECKPOINTS:
 		spots.append(AT + p)
 	var t := RaceTrack.build(TRACK_ID, TRACK_NAME, control(), WIDTH, spots, AT + LINE, LAPS)
+	# In front of the bays.
+	t.pit = AT + Vector3(41, 0, 16)
 	return t
 
 
@@ -223,6 +225,9 @@ func _build_pits() -> void:
 		tag.position = AT + Vector3(x, 0.05, 25.4)
 		tag.rotation = Vector3(-PI / 2.0, PI, 0)
 		map.add_child(tag)
+	# The tuning benches, behind each machine's bays.
+	map.call("_tune_bench", AT + Vector3(27.75, 0, 29.0), TRACK_ID, "bike_scrapper", Color(1.0, 0.6, 0.2), 1.0)
+	map.call("_tune_bench", AT + Vector3(53.75, 0, 29.0), TRACK_ID, "bike_raider", CYAN, 1.0)
 	# The board on two legs past the bays, facing the track.
 	var at := AT + Vector3(90, 0, 26)
 	for x: float in [-11.0, 11.0]:

@@ -1101,8 +1101,12 @@ type's storm mood), snow, blue ice and banded rock on the valley's ground
 and rocks, and the Glacier's land and peaks past the walls to the horizon
 (raised at the map's edge to meet its mountains; the planet's boulders and
 shards only up past the rim, out of the fight). The cold, the still air's
-carry and the snow and ice grip stay Frostline's own. Ashfront moves in
-its own PR.
+carry and the snow and ice grip stay Frostline's own. Ashfront stands on
+the Ashland: its sky, light and ash-storm mood (the war mood is Ashfront's
+own), the Ashland's burnt ground and glowing cracks on the field, and its
+land and mountains past the rim to the horizon, kept low near the map so
+the skyline, the giants and the burning ring stand on it; the planet's
+rocks only on the rim's slope and past it, out of the fight.
 
 ## 3. The watch
 
@@ -2084,8 +2088,9 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   in the pit bays, never the rider's own (toys stay on the watch here). Each
   vehicle item carries a race profile (`ItemDB.RACE_*`, its `race` stat)
   that replaces its combat tuning on the track, so changing a bike for the
-  warzone never moves a lap time. Ranked racing will use these same stock
-  machines, so a race is decided by the rider.
+  warzone never moves a lap time. League races use these same machines,
+  with the rider's tuning kit fitted (below): kits are sidegrades held to
+  the bench, so a race is still decided by the rider.
 - **Balance is measured.** The time-trial bench (`tests/race_bench.tscn`)
   drives every machine of a class round every track at its limits and
   flags any whose best lap is more than 3% off the class average. Each
@@ -2098,7 +2103,7 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   channel is put back at the last checkpoint. Your split is written on each
   arch, the best laps on the pit board, and your best lap on each machine
   runs beside you as a ghost of hard light. The watch's contract icon is the
-  race icon here (restart, ghost on or off, stop), and the visor's
+  race icon here (race, restart, which ghost, stop), and the visor's
   objective line carries the lap.
 - **Live races (Caleb's go-ahead).** The race icon's first pick is Race:
   it puts you on the grid of the track's next race, and anyone who gets on
@@ -2141,8 +2146,39 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   and 5 for any other finish, at most 120 a day, so racing never out-earns
   the warzone. The phone's Racing app shows your league, rating and what
   stands between you and the next, your record against each rival, the
-  day's pay and your last five races. Friends' ghosts and tuning parts
-  come next (the "Racing depth" plan).
+  day's pay and your last five races.
+- **Ghosts on the server, and friends'.** The server records every
+  person's lap as it is driven, and a clean lap faster than your best on
+  that track and machine is kept with your account (a few KB, beside the
+  account rather than in it), whether it was a time trial's or a race's.
+  The race icon's ghost pick turns through your own best, the fastest of
+  your friends' (the phone's saved contacts) on that machine, the board
+  leader's best lap, and none. The pit board lists your friends' best
+  times on that track under its own. Solo, the ghosts stay on this
+  computer.
+- **Tuning (Caleb's calls: allowed in league races, unlocked by league).**
+  Each machine's pit bench (one per machine, behind its bays) fits a
+  tuning kit to that machine for you, kept on your account; pressing E
+  turns to the next kit you have unlocked, and a machine waiting on the
+  grid takes it at once. Club opens Short and Tall gearing, Pro Grip
+  tyres, Elite Bite brakes and Champion the Light frame. Every kit trades
+  one feel for another (out of corners against top speed, turn against
+  drag, braking against getting going) and the time-trial bench drives
+  every kit on every machine and track, holding each inside the class's
+  3% (`race_bench.tscn -- --tunes`, `--sweep` for what one stat is
+  worth), so a kit never buys speed. AI racers run stock.
+- **Easy in, easy out (Caleb's ask).** Race control has a desk for each
+  track and machine ("Coilrun · Raider") that shows the next race's
+  countdown and how many riders are on its grid; using one puts you on a
+  fresh machine of that kind, straight onto that grid (forming one if none
+  is). While a race is on it tells you when the next forms. Each track
+  also has a watch desk: a chase camera on the racers with their name,
+  place and lap, the wheel to pick another, the interact key or Esc to
+  come back. Once your run is done, a race or a time trial, the watch and
+  visor say "head to the pits" and a column of light marks pit row;
+  driving into it sets you down there and the machine goes, and if you
+  ride on you are set down anyway 40 s after the finish. A machine a desk
+  made goes when you get off it.
 
 The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the
