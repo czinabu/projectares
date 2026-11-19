@@ -1152,8 +1152,8 @@ func _simulate_weapons(delta: float) -> void:
 	var weapon := get_active_weapon()
 	if weapon and heal_time_left <= 0.0 and stagger_left <= 0.0 and not weapons_locked and not drew_on_pull \
 			and not visor.is_zoomed() and materialize_left <= 0.0 and _storing == null:
-		# A gun run dry stays in hand and reloads (`Gun.auto_reload`); only
-		# the player switches weapons. A reload press made while the gun
+		# A gun run dry stays in hand (the visor prompts a reload,
+		# `Hud.reload_prompt`); only the player switches weapons. A reload press made while the gun
 		# could not take it (drawing, healing, staggered) is kept a moment.
 		var gun := weapon as Gun
 		if gun and _reload_ask > 0.0:

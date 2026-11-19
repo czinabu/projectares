@@ -96,14 +96,24 @@ static func _run_dry(t: Node) -> void:
 	shooter.cmd.primary = true
 	await t.frames(14)
 	shooter.cmd.primary = false
-	t.check(shooter.active_weapon_index == 0 and rifle.is_reloading(),
-			"running the primary dry with the trigger held keeps it in hand and reloads it at once (%d, %d/%d, %s)"
-			% [shooter.active_weapon_index, rifle.ammo_in_mag, rifle.reserve_ammo, rifle.is_reloading()])
+	await t.frames(2)
+	t.check(shooter.active_weapon_index == 0 and rifle.ammo_in_mag == 0 and not rifle.is_reloading(),
+			"running the primary dry keeps it in hand, and it does not reload on its own")
+	t.check(Hud.reload_prompt(shooter).ends_with("Reload"),
+			"a prompt asks for the reload ('%s')" % Hud.reload_prompt(shooter))
+	shooter.cmd.reload_pressed = true
+	await t.frames(1)
+	shooter.cmd.reload_pressed = false
+	t.check(rifle.is_reloading() and Hud.reload_prompt(shooter) == "",
+			"the reload key starts it at once, and the prompt goes")
 	rifle._reload_left = 0.0
 	rifle.ammo_in_mag = 0
-	rifle.reserve_ammo = 30
-	await t.frames(2)
-	t.check(rifle.is_reloading(), "a dry gun in hand starts its reload with no pull at all")
+	shooter.cmd.primary = true
+	shooter.cmd.primary_pressed = true
+	await t.frames(1)
+	shooter.cmd.primary_pressed = false
+	shooter.cmd.primary = false
+	t.check(rifle.is_reloading(), "a pull on the empty gun starts the reload too")
 
 	# Nothing left to load: a pull clicks, and the gun stays in hand.
 	rifle._reload_left = 0.0
@@ -117,7 +127,8 @@ static func _run_dry(t: Node) -> void:
 	shooter.cmd.primary_pressed = false
 	await t.frames(4)
 	shooter.cmd.primary = false
-	t.check(shooter.active_weapon_index == 0 and not rifle.is_reloading() and heard[0] == "Out of ammo",
+	t.check(shooter.active_weapon_index == 0 and not rifle.is_reloading() and heard[0] == "Out of ammo"
+			and Hud.reload_prompt(shooter) == "Out of ammo",
 			"an empty gun with nothing to load clicks and stays in hand ('%s')" % heard[0])
 
 	# The sidearm is one key away, and fires once per pull.

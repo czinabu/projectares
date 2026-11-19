@@ -842,8 +842,10 @@ without Caleb, and update the gap list when a PR closes a row.
   `Loadout.fits(slot, id)` decides what goes in a slot (a sidearm never fits
   the primary slot), and `Weapon.is_sidearm` marks one once equipped. A gun
   never switches itself (Caleb's call): run dry in hand it stays there and
-  reloads as the last shot cycles (`Gun.auto_reload`), and with nothing left
-  to load a pull only clicks ("Out of ammo"). A reload press the gun cannot
+  never reloads on its own; the prompt under the crosshair asks for one
+  (`Hud.reload_prompt`, on with or without a helmet, in both views) and a
+  pull on the empty gun starts it too, and with nothing left to load a pull
+  only clicks ("Out of ammo"). A reload press the gun cannot
   take yet (drawing, healing) is kept for `Actor.reload_buffer`. Only the
   player, or a bot's brain pressing the same key (`BotBrain._tend_kit`),
   changes weapons. A player arrives unarmed (Caleb's call): every life in

@@ -421,6 +421,10 @@ func _physics_process(delta: float) -> void:
 			_move_toward(cmd, errand, delta, true)
 	else:
 		_patrol(cmd, delta)
+	# A gun never reloads itself: a bot presses the key like a player.
+	var dry := actor.get_active_weapon() as Gun
+	if dry != null and dry.ammo_in_mag <= 0 and dry.reserve_ammo > 0 and not dry.is_reloading():
+		cmd.reload_pressed = true
 	if uses_kit:
 		_tend_kit(cmd)
 
@@ -443,7 +447,7 @@ func _tend_kit(cmd: ActorCommand) -> void:
 	var gun := held as Gun
 	if state == State.ATTACK:
 		# A primary run dry mid-fight: the sidearm, as a player would press 2
-		# (the gun itself only ever reloads, see `Gun.auto_reload`).
+		# (a gun never switches itself).
 		if gun != null and not gun.is_sidearm and not gun.is_power() and gun.ammo_in_mag <= 0:
 			var sidearm := _loaded_sidearm()
 			if sidearm >= 0:

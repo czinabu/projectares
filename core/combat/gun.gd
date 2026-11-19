@@ -40,10 +40,6 @@ var mag_size := 30
 var ammo_in_mag := 30
 var reserve_ammo := 120
 var reload_time := 1.7
-## A gun that runs dry in hand starts its reload by itself as the last shot
-## cycles, and stays in hand (Caleb's call: never a switch to another weapon
-## on its own). With nothing left to load, a pull only clicks.
-var auto_reload := true
 var max_range := 150.0
 var spread_deg := 1.2
 var ads_spread_mult := 0.3
@@ -458,7 +454,7 @@ func tick(delta: float) -> void:
 
 func handle_input(cmd: ActorCommand, delta: float) -> void:
 	_aiming = cmd.secondary and _reload_left <= 0.0 and spin_up <= 0.0
-	if cmd.reload_pressed or (auto_reload and ammo_in_mag <= 0 and _cooldown <= 0.0):
+	if cmd.reload_pressed:
 		start_reload()
 	if spin_up > 0.0:
 		var spinning := (cmd.primary or cmd.secondary) and _reload_left <= 0.0
@@ -484,7 +480,9 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		_press_left = 0.0
 		if ammo_in_mag > 0:
 			_fire()
-		else:
+		elif cmd.primary_pressed:
+			# A fresh pull on the empty gun reloads it; a trigger held through
+			# the last round does not (the visor asks, `Hud.reload_prompt`).
 			start_reload()
 	if cmd.primary_pressed and ammo_in_mag <= 0 and reserve_ammo <= 0 and _reload_left <= 0.0:
 		_reload_sound("dry_fire")
