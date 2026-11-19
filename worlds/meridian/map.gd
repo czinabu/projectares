@@ -1,6 +1,8 @@
 extends Node3D
 ## Greybox Meridian: Coilrun, a street circuit through a dead launch works on
-## salt flats under a sun that never sets.
+## salt flats under a sun that never sets. It stands on the Salt Flat
+## planet type (DESIGN.md "Planet kit"): its sky, light, salt pan, horizon
+## and rocks, which the world hands over as `planet`.
 ##
 ## The track is data (`CONTROL`, `CHECKPOINTS`, `LINE`): `race_track()` hands
 ## the `RaceTrack` built from it to the `Race`, and the road, its edges and
@@ -49,6 +51,10 @@ const RAIL_TO := 100.0
 ## Pit row, north of the line.
 const PIT_Z := -30.0
 const LAYOUT_SEED := 7071
+## The planet's rocks stand no nearer than `FAR_CLEAR` to `FAR_CENTRE`, the
+## middle of both circuits, so none lands on a road or a stand.
+const FAR_CENTRE := Vector3(-40, 0, 100)
+const FAR_CLEAR := 720.0
 
 const CYAN := Color(0.3, 0.85, 1.0)
 const AMBER := Color(1.0, 0.6, 0.2)
@@ -57,6 +63,9 @@ const StandsScript := preload("res://worlds/meridian/stands.gd")
 const SkylineScript := preload("res://worlds/meridian/skyline.gd")
 
 var nav_region: Node3D
+## The planet the map stands on (`WorldDef.planet_type`), set before it
+## enters the tree.
+var planet: PlanetType
 var _track: RaceTrack
 var _skyhook_track: RaceTrack
 var _skyhook: RefCounted
@@ -108,28 +117,9 @@ func ground_height(_x: float, _z: float) -> float:
 
 
 func _build_environment() -> void:
-	# The sun stuck on the horizon: long shadows, a dusty orange sky.
-	Look.atmosphere(self, {
-		"sky_tint": Color(1.0, 0.62, 0.42),
-		"sky_saturation": 0.55,
-		"sky_energy": 0.7,
-		"sky_rotation": 0.55,
-		"fog_color": Color(0.62, 0.42, 0.34),
-		"fog_density": 0.55,
-		"fog_depth_begin": 120.0,
-		"fog_depth_end": 900.0,
-		"fog_depth_curve": 1.4,
-		"haze_height": 0.32,
-		"sun_scatter": 0.5,
-		"sun_color": Color(1.0, 0.62, 0.4),
-		"sun_energy": 2.2,
-		"sun_angles": Vector3(-11, -58, 0),
-		"ambient_color": Color(0.48, 0.46, 0.6),
-		"ambient_energy": 1.9,
-		"saturation": 0.95,
-		"contrast": 1.1,
-		"glow": 0.9,
-	})
+	# The sun stuck on the horizon: long shadows, a dusty orange sky with a
+	# ringed giant in it.
+	Planet.atmosphere(self, planet)
 
 
 # --- Shapes ----------------------------------------------------------------------
@@ -190,8 +180,7 @@ func _yaw_at(i: int) -> float:
 # --- Ground and road ---------------------------------------------------------------
 
 func _build_ground() -> void:
-	var salt := Look.surface("ground", {"tint": Color(0.92, 0.84, 0.74), "saturation": 0.35, "scale": 0.08,
-			"grime": 0.15, "rough_mult": 0.8})
+	var salt := Planet.ground_material(planet)
 	var big := 2400.0
 	var north := CHANNEL_Z - CHANNEL_W * 0.5
 	var south := CHANNEL_Z + CHANNEL_W * 0.5
@@ -204,6 +193,22 @@ func _build_ground() -> void:
 	var bed := Look.surface("concrete", {"tint": Color(0.5, 0.45, 0.42), "grime": 0.7})
 	_box(Vector3(CHANNEL_X.y - CHANNEL_X.x, 1, CHANNEL_W), Vector3((CHANNEL_X.x + CHANNEL_X.y) * 0.5,
 			-CHANNEL_DEPTH - 0.5, CHANNEL_Z), bed)
+	_build_far_land(big * 0.5)
+
+
+## Past the salt boxes the planet's own land runs on to the horizon, with
+## its mesas, spires and slabs; none of it collides or is read by the race.
+## Rocks keep clear of the circuits and the launch works round them.
+func _build_far_land(half: float) -> void:
+	if not Look.enabled:
+		return
+	var land := PlanetTerrain.new(planet.terrain, LAYOUT_SEED)
+	add_child(Planet.horizon(planet, land, half))
+	var height_of := func(x: float, z: float) -> float:
+		return 0.0 if maxf(absf(x), absf(z)) < half else land.height_at(x, z)
+	var clear := func(x: float, z: float) -> bool:
+		return Vector2(x - FAR_CENTRE.x, z - FAR_CENTRE.z).length() > FAR_CLEAR
+	PlanetProps.scatter(self, planet, height_of, half, LAYOUT_SEED + 3, clear)
 
 
 ## The road: one mesh along the centre line, with collision, glowing edge
