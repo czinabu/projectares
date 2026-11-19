@@ -11,10 +11,20 @@ date in the same PR.
   Whatever is worn is always on show (`BaseLayout.plan` gives it a spot
   even when better gear fills its section), so anything can be taken off
   in the room.
-  The base is modular (Caleb's call, DESIGN.md "Home base"): a hub with six
+  The base is modular (Caleb's call, DESIGN.md "Home base"): a hub with seven
   doorways of one size (`BasePlan.SOCKETS`, `HomeBase.socket_transform`)
-  and six rooms standing in them, one each (`BasePlan.ROOMS`: armory,
-  workshop, garage, ops, gear hall, stores). Which room stands where is the
+  and seven rooms standing in them, one each (`BasePlan.ROOMS`: armory,
+  workshop, garage, ops, gear hall, stores, lounge). The seventh socket,
+  "F1", is in the hub's front wall left of the door in the hall and the
+  courtyard, and off the corridor's left wall in the spine and the ring,
+  whose hub walls are full (`HomeBase.corridor_socket`,
+  `CORRIDOR_SOCKET_FROM`); there the corridor runs longer to clear it, so
+  ask `range_from`/`shape_range_from`, never a fixed length. The lounge's
+  pieces are built by `_furnish_lounge` under a "LoungePieces" node and
+  merged (`Look.merge_pieces`), with collision as separate boxes
+  (`_lounge_solid`); its window view is one shader
+  (`assets/shaders/lounge_view.gdshader`) only when `Look` is on, never a
+  second world or camera. Which room stands where is the
   account's plan (`core/base/base_plan.gd`, static rules like
   `BaseUpgrades`; `Profile.base_plan` solo, the account's online, in the
   snapshot and in `StashRules.CARRIED`), always passed through
