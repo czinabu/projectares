@@ -640,6 +640,15 @@ func sheltered_at(_pos: Vector3) -> bool:
 	return false
 
 
+## How far anyone sees through the air at a point, in metres, or INF for
+## clear air: a bot sees no further than the worse of where it stands and
+## where its target does (`BotBrain._find_target`), as the view's close air
+## shuts a player's eyes in there (a planet's `close` mood; the Spore
+## Marsh's forests). Authority only, so it may read the map's layout.
+func sight_at(_pos: Vector3) -> float:
+	return INF
+
+
 ## Body heat a second a player at a point loses out in the open: `cold` by
 ## default. A world may make some places colder (higher, more exposed).
 func cold_at(_pos: Vector3) -> float:

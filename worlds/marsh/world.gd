@@ -33,6 +33,25 @@ const SHELLBACK_HEIGHT := 1.6
 const BLOATER_HEALTH := 50.0
 const BLOATER_HEIGHT := 2.1
 const BLOATER_CLOUD := {"radius": 4.5, "damage": 9.0, "seconds": 8.0, "kind": "spores"}
+## Lurkers (DESIGN.md "Spore Marsh"): ambushers that lie under the black
+## water at a pool's deepest spot ("lies_low"), see only close by and all
+## round, lunge and bite hard, and never leave their pool ("leash").
+const LURKER_HEALTH := 130.0
+const LURKER_HEIGHT := 1.4
+const LURKER_SIGHT := 8.0
+const LURKER_LEASH := 5.0
+## Brood keepers guard the hives, one in each forest but the Matriarch's:
+## big, armored and slow to turn. While one stands its hive is sealed and
+## spills broodlings at anyone near it (the guard marker's "brood").
+const KEEPER_HEALTH := 520.0
+const KEEPER_ARMOR := 40.0
+const KEEPER_HEIGHT := 2.4
+## Broodlings: little stalkers, quick and weak, that come in numbers.
+const BROODLING_HEALTH := 22.0
+const BROODLING_HEIGHT := 0.9
+## The brood's kin: keepers and broodlings are one kind, so neither hurts
+## the other, though they are told apart by faction.
+const KIN := {"keeper": "brood", "broodling": "brood"}
 ## The Grey Matriarch, the core's boss: the stalker pack's mother, twice a
 ## person's height, quick for her size, feinting most of the time. Made for
 ## one player; each other player near her makes her tougher.
@@ -71,6 +90,10 @@ const CONTRACTS := {
 			"scrip": 170},
 	"marsh_sacs": {"title": "Bring home 3 Spore Sacs", "stat": "item:spore_sac", "goal": 3,
 			"kind": "daily", "scrip": 170},
+	"marsh_keepers": {"title": "Bring down 2 brood keepers", "stat": "kills:keeper", "goal": 2, "kind": "daily",
+			"scrip": 220},
+	"marsh_lurkers": {"title": "Bring down 3 lurkers", "stat": "kills:lurker", "goal": 3, "kind": "daily",
+			"scrip": 180},
 	"marsh_matriarch": {"title": "Bring down the Grey Matriarch twice", "stat": "bosses", "goal": 2,
 			"kind": "weekly", "scrip": 900, "items": ["upgrade_data"], "reward_tag": "blueprint"},
 	"marsh_glowcaps": {"title": "Bring home 3 Glowcaps", "stat": "item:glowcap", "goal": 3,
@@ -133,6 +156,29 @@ const SHELLBACK_DROPS := [
 	{"id": "chitin_plate", "weight": 70.0},
 	{"id": "stalker_fang", "weight": 15.0},
 	{"id": "medkit", "weight": 15.0},
+]
+## A hive, once its keeper falls: the brood's store of the marsh's goods,
+## and the best of its blueprints and artifacts after the Matriarch's.
+const HIVE_TABLE := [
+	{"id": "glowcap", "weight": 20.0},
+	{"id": "spore_sac", "weight": 20.0},
+	{"id": "chitin_plate", "weight": 16.0},
+	{"id": "stalker_fang", "weight": 14.0},
+	{"id": "alloy_ingot", "weight": 10.0},
+	{"id": "bp_blade_hook", "weight": 3.0},
+	{"id": "bp_spear_reed", "weight": 3.0},
+	{"id": "upgrade_data", "weight": 3.0},
+]
+const HIVE_ARTIFACT := 0.08
+const LURKER_DROPS := [
+	{"id": "chitin_plate", "weight": 40.0},
+	{"id": "stalker_fang", "weight": 35.0},
+	{"id": "medkit", "weight": 25.0},
+]
+const KEEPER_DROPS := [
+	{"id": "chitin_plate", "weight": 40.0},
+	{"id": "spore_sac", "weight": 30.0},
+	{"id": "glowcap", "weight": 30.0},
 ]
 const BLOATER_DROPS := [
 	{"id": "spore_sac", "weight": 80.0},
@@ -222,9 +268,19 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 			table = HOLLOW_TABLE
 			count = rng.randi_range(3, 4)
 			relic_chance = DEN_ARTIFACT
+		"hive":
+			table = HIVE_TABLE
+			count = rng.randi_range(3, 4)
+			relic_chance = HIVE_ARTIFACT
 		"stalker":
 			table = STALKER_DROPS
 			count = rng.randi_range(1, 2)
+		"lurker":
+			table = LURKER_DROPS
+			count = rng.randi_range(1, 2)
+		"keeper":
+			table = KEEPER_DROPS
+			count = rng.randi_range(2, 3)
 		"shellback":
 			table = SHELLBACK_DROPS
 			count = rng.randi_range(1, 2)
@@ -247,21 +303,37 @@ func contract_jobs() -> Dictionary:
 ## A PvE world: nobody hurts their own kind, and every player is one kind.
 ## The wildlife hunts across kinds, so a stalker pack on a shellback is a
 ## chance to slip past.
+## Under the forests' caps the mist shuts sight in to about where the
+## view's close air hides a body (Caleb's call: close quarters); out on the
+## water the air is clear enough for a bot's own sight.
+const FOREST_SIGHT := 38.0
+func sight_at(pos: Vector3) -> float:
+	var close := MapScript.close_at(pos.x, pos.z)
+	if close <= 0.0:
+		return INF
+	return lerpf(FOREST_SIGHT * 4.0, FOREST_SIGHT, close)
+
+
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 	if attacker == target:
 		return false
 	var a := attacker as Actor
 	var t := target as Actor
-	if a and t and a.faction == t.faction:
+	if a and t and kin_of(a.faction) == kin_of(t.faction):
 		return false
 	return true
+
+
+## The kind a faction belongs to: the brood's keepers and broodlings are one.
+static func kin_of(faction: String) -> String:
+	return str(KIN.get(faction, faction))
 
 
 ## A bot from a marker that names its kind is one of those; any other is
 ## picked by chance, stalkers most often.
 func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	var kind := bot.faction
-	if not kind in ["stalker", "shellback", "bloater"]:
+	if not kind in ["stalker", "shellback", "bloater", "lurker", "keeper", "broodling"]:
 		var roll := rng.randf()
 		kind = "stalker" if roll < 0.5 else ("shellback" if roll < 0.75 else "bloater")
 	match kind:
@@ -269,6 +341,12 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 			_make_shellback(bot, rng)
 		"bloater":
 			_make_bloater(bot, rng)
+		"lurker":
+			_make_lurker(bot, rng)
+		"keeper":
+			_make_keeper(bot, rng)
+		"broodling":
+			_make_broodling(bot)
 		_:
 			_make_stalker(bot, rng)
 
@@ -319,6 +397,81 @@ func _make_shellback(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bash.light_stamina = 0.0
 	bash.reach = 2.6
 	bot.equip_weapon(bash)
+
+
+## An ambusher under the black water: it lies low at its post and sees
+## only what comes close, then comes up with a lunge and a heavy bite, and
+## never follows anyone out of its pool.
+func _make_lurker(bot: Actor, rng: RandomNumberGenerator) -> void:
+	bot.faction = "lurker"
+	bot.display_name = "Lurker"
+	bot.set_meta("look", "lurker")
+	bot.set_meta("lies_low", true)
+	bot.set_meta("sight", LURKER_SIGHT)
+	bot.set_meta("fov", 360.0)
+	bot.set_meta("leash", LURKER_LEASH)
+	bot.set_meta("dash", 0.6)
+	bot.body_color = Color(0.16, 0.2, 0.19)
+	bot.set_stand_height(LURKER_HEIGHT, 0.4)
+	bot.walk_speed = 3.5
+	bot.sprint_speed = 7.5
+	bot.health.max_health = LURKER_HEALTH
+	bot.health.health = LURKER_HEALTH
+	bot.health.set_armor(20.0)
+	for item in roll_loot("lurker", rng):
+		bot.inventory.add_item(item)
+	var jaws := MeleeWeapon.new()
+	jaws.display_name = "Lurker's Jaws"
+	jaws.light_damage = 30.0
+	jaws.light_windup = 0.4
+	jaws.light_stamina = 0.0
+	jaws.reach = 2.8
+	bot.equip_weapon(jaws)
+
+
+## A hive's keeper: big, armored and slow to turn, with long hooked arms.
+func _make_keeper(bot: Actor, rng: RandomNumberGenerator) -> void:
+	bot.faction = "keeper"
+	bot.display_name = "Brood Keeper"
+	bot.set_meta("look", "brood_keeper")
+	bot.set_meta("aim_turn", 120.0)
+	bot.set_meta("feint_chance", 0.25)
+	bot.body_color = Color(0.3, 0.27, 0.3)
+	bot.set_stand_height(KEEPER_HEIGHT, 0.4)
+	bot.walk_speed = 3.4
+	bot.sprint_speed = 5.2
+	bot.health.max_health = KEEPER_HEALTH
+	bot.health.health = KEEPER_HEALTH
+	bot.health.set_armor(KEEPER_ARMOR)
+	for item in roll_loot("keeper", rng):
+		bot.inventory.add_item(item)
+	var hooks := MeleeWeapon.new()
+	hooks.display_name = "Keeper's Hooks"
+	hooks.light_damage = 22.0
+	hooks.light_windup = 0.55
+	hooks.light_stamina = 0.0
+	hooks.reach = 3.2
+	bot.equip_weapon(hooks)
+
+
+## A broodling: a little stalker, quick and weak, carrying nothing.
+func _make_broodling(bot: Actor) -> void:
+	bot.faction = "broodling"
+	bot.display_name = "Broodling"
+	bot.set_meta("look", "broodling")
+	bot.body_color = Color(0.4, 0.36, 0.34)
+	bot.set_stand_height(BROODLING_HEIGHT, 0.2)
+	bot.walk_speed = 6.5
+	bot.sprint_speed = 9.0
+	bot.health.max_health = BROODLING_HEALTH
+	bot.health.health = BROODLING_HEALTH
+	var bite := MeleeWeapon.new()
+	bite.display_name = "Broodling's Bite"
+	bite.light_damage = 6.0
+	bite.light_windup = 0.3
+	bite.light_stamina = 0.0
+	bite.reach = 1.7
+	bot.equip_weapon(bite)
 
 
 ## Slow sacs of spores with a weak slap. A dead one bursts (`death_burst`).
