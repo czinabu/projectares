@@ -1087,7 +1087,7 @@ func _hub_shots(out_dir: String) -> void:
 	raid.start(plaza, 5)
 	var map: Node3D = raid.map
 	var camera := Camera3D.new()
-	camera.far = 1500.0
+	camera.far = maxf(1500.0, float(map.get_meta("view_far", 1500.0)))
 	camera.fov = 75.0
 	add_child(camera)
 	camera.make_current()
@@ -1100,6 +1100,9 @@ func _hub_shots(out_dir: String) -> void:
 		["civic", Vector3(108, 2.0, 4), Vector3(160, 4, 0)],
 		["residences", Vector3(-108, 2.0, -4), Vector3(-160, 4, 0)],
 		["lookout", Vector3(161, 1.7, -161), Vector3(0, 8, 0)],
+		["skyline", Vector3(0, 1.7, 40), Vector3(-40, 60, -200)],
+		["look_up", Vector3(60, 1.7, -60), Vector3(300, 380, -500)],
+		["rail", Vector3(-200, 1.7, 120), Vector3(-420, -120, 260)],
 		["overview", Vector3(260, 220, 260), Vector3(0, 0, 0)],
 	]
 	for v: Array in views:
