@@ -287,6 +287,13 @@ var pack_pick := 0
 ## (`Race.GHOST_PICKS`; view only, turned by `main.gd`).
 var race_pick := 0
 var ghost_pick := "mine"
+## The mission log on the contract icon: what it holds (`Hud.mission_entries`,
+## kept up to date by the HUD) and which one is picked out. A click turns
+## the picked one from on the visor to the main one to off it and back
+## (`GameSettings.cycle_mission`).
+## View only.
+var missions: Array[Dictionary] = []
+var mission_pick := 0
 ## The opened map's targets (`Hud.map_targets`), kept up to date by the HUD
 ## while the watch is up, so the wheel knows how many there are. View only.
 var map_targets: Array[Dictionary] = []
@@ -590,6 +597,10 @@ func click_watch() -> bool:
 			wrist_raised = false
 			watch_open = ""
 		return true
+	if is_on_missions() and _is_open("contract"):
+		var at := clampi(mission_pick if watch_open == "contract" else 0, 0, missions.size() - 1)
+		GameSettings.cycle_mission(str(missions[at].key))
+		return true
 	if is_watch_on("emote") and _is_open("emote"):
 		var picked: String = Emotes.IDS[clampi(emote_pick, 0, Emotes.IDS.size() - 1)]
 		if picked == emote_playing:
@@ -615,7 +626,14 @@ func watch_takes_fire() -> bool:
 			or (is_watch_on("helmet") and actor.visor.enabled) \
 			or (is_watch_on("map") and not map_targets.is_empty()) \
 			or (watch_open == "standing" and is_watch_on(watch_open)) \
-			or (is_watch_on("pack") and _is_open("pack") and not actor.inventory.items.is_empty()) or is_on_race()
+			or (is_watch_on("pack") and _is_open("pack") and not actor.inventory.items.is_empty()) or is_on_race() \
+			or is_on_missions()
+
+
+## True while the raised watch is on the mission log (the contract icon
+## anywhere but a race track) and it holds something to track.
+func is_on_missions() -> bool:
+	return is_watch_on("contract") and not (Raid.of(actor) is Race) and not missions.is_empty()
 
 
 ## True while the raised watch is on the sign-out icon out in a world, where
@@ -731,7 +749,7 @@ func watch_entries(id: String) -> int:
 		"pack":
 			return actor.inventory.items.size()
 		"contract":
-			return Hud.RACE_ACTIONS.size() if Raid.of(actor) is Race else 0
+			return Hud.RACE_ACTIONS.size() if Raid.of(actor) is Race else missions.size()
 	return 0
 
 
@@ -754,7 +772,7 @@ func _watch_pick(id: String) -> int:
 		"pack":
 			return pack_pick
 		"contract":
-			return race_pick
+			return race_pick if Raid.of(actor) is Race else mission_pick
 	return 0
 
 
@@ -777,7 +795,10 @@ func _set_watch_pick(id: String, pick: int) -> void:
 		"pack":
 			pack_pick = pick
 		"contract":
-			race_pick = pick
+			if Raid.of(actor) is Race:
+				race_pick = pick
+			else:
+				mission_pick = pick
 
 
 ## Moves the watch card's open icon `step` along (`Hud.Wrist.SLOTS`), tab

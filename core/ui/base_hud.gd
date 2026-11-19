@@ -10,6 +10,7 @@ extends CanvasLayer
 ##
 ## Load with `preload("res://core/ui/base_hud.gd")`.
 
+const GameSettings := preload("res://core/settings/game_settings.gd")
 var base: HomeBase
 ## Whose keys move the player; found under the base when not given.
 var controller: PlayerController
@@ -135,7 +136,11 @@ func _update_wrist(delta: float) -> void:
 	wrist.mount(p, controller, visible, delta)
 	var slots := Hud.base_watch_slots("Home base" if base.owner_name == "" else "%s's base" % base.owner_name, base.loadout,
 			contracts, controller.portal_pick if controller != null else 0, p if is_instance_valid(p) else null,
-			controller.emote_pick if controller != null else 0, controller.emote_playing if controller != null else "")
+			controller.emote_pick if controller != null else 0, controller.emote_playing if controller != null else "",
+			objective, controller.mission_pick if controller != null else 0,
+			controller != null and controller.watch_open == "contract")
+	if controller != null:
+		controller.missions = Hud.mission_entries(contracts, objective)
 	var focus := Hud.default_focus(slots)
 	if controller != null:
 		if controller.watch_focus_moved:
@@ -150,7 +155,7 @@ func _update_wrist(delta: float) -> void:
 	slots[Hud.Wrist.SLOTS.find("weapon")] = Hud.base_weapon_slot(p, weapons, weapon_pick)
 	slots[Hud.Wrist.SLOTS.find("vehicle")] = Hud.base_vehicle_slot(toys, toy_pick, controller != null and controller.pack_target() != null)
 	Hud.mark_open(slots, controller.watch_open if controller != null else "")
-	wrist.objective = objective
+	wrist.objective = objective if GameSettings.is_tracked(GameSettings.TOUR_KEY) else ""
 	wrist.show_card(slots, focus, "", p.health.health / maxf(p.health.max_health, 1.0), [] as Array[float])
 	var picking_toys := controller != null and controller.is_picking_toys()
 	var picking_weapons := controller != null and controller.is_picking_weapons()

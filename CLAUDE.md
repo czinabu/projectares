@@ -1345,7 +1345,10 @@ without Caleb, and update the gap list when a PR closes a row.
   round, the Ember a broad ceramic shell over its heat sinks, the scrap
   visor a patched pot with cracked goggles), framed glass that is dark
   and reflective, never a glowing panel; a Mk2 (`Visor.tier`) wears a lit
-  seam over the crown. Every helmet and armor piece is built from
+  seam over the crown. Worn with an armor frame, every helmet but the
+  scrap visor takes the frame's plate, trim and fabric colours in its
+  paint (`ActorSkin.helmet_colors`), so helmet and plates read as one kit.
+  Every helmet and armor piece is built from
   `GearShapes` (`core/visual/gear_shapes.gd`), merged into one mesh per
   material (`GearShapes.merge`: "Gear", and "Glass" with no shadow; the
   parts it was made of in its "parts" meta, `has_part`) and built once
@@ -2051,6 +2054,12 @@ without Caleb, and update the gap list when a PR closes a row.
   Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it,
   and the helmet, taken off or put on),
   Status (map, standing) and Mission (portal, contract, ping, sign-out).
+  The contract icon is the mission log (Caleb's ask): opened, the wheel
+  turns through the tour's step and each contract held
+  (`Hud.mission_entries`, `mission_slot`) and a click turns the picked one
+  from on the visor's objective block to the main one (first and lit) to
+  off it and back (`GameSettings.cycle_mission`, `untracked`,
+  `main_mission`: view only, read by `VisorHud.objective_lines`).
   The map icon, while read, draws a small holographic map beside it
   (`Hud.map_marks`, `Card._draw_map`): only what the player is told, never
   other people. The Status icons open with a click like a carousel (Caleb's
