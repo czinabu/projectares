@@ -433,6 +433,12 @@ without Caleb, and update the gap list when a PR closes a row.
   `BotBrain.noise_of`), a hit and a squadmate's callout (`_call_out`, a
   snapshot when the spotter raises its gun). What they learn is a place,
   never live tracking: a lost contact is searched for (`_lost`) and let go.
+  A world gives a kind its own senses with metas set in `equip_bot`
+  ("sight", "fov", "reach", "far_notice"; DESIGN.md "The enemy AI pass"),
+  never a second brain. Smoke hides people from bots as it hides them from
+  eyes: anything a player cannot see through is a cloud in `Raid.smoke`
+  (`Smoke.add`, authority only; a shell leaves one), and bot sight asks
+  `Smoke.blocks`, never a view.
   Only a few act on it, through `SquadBoard` claims (static, with an
   expiry, like the slots): `noise_lookers` go to look at one person's
   noise, `RING_HUNTERS` army bots may leave their ground to hunt one person
