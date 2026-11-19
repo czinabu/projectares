@@ -375,5 +375,7 @@ static func marsh() -> PlanetType:
 		{"kind": "boulder", "per_ha": 2.5, "size": Vector2(0.6, 2.0), "max_slope": 0.6},
 		{"kind": "crystal", "per_ha": 0.8, "size": Vector2(0.6, 1.6), "max_slope": 0.5, "high": -0.8},
 	]
+	# Mist lying low over the black water, thicker in the rain.
+	t.smoke = {"density": 0.02, "colour": Color(0.55, 0.66, 0.6), "depth": 9.0, "war": 0.0, "storm": 1.2}
 	t.rules = {"cold": 0.0, "surface_grip": 0.8, "shot_carry": 0.85}
 	return t

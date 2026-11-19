@@ -1,0 +1,391 @@
+extends WorldDef
+## The Spore Marsh: a drowned basin of moss, black water and fungus forests
+## (DESIGN.md "More worlds", "Spore Marsh"). A co-op PvE world with no PvP
+## (player melee lives in the Pit, Caleb's call): the enemy is the marsh's
+## wildlife, and blades are the natural choice against it. Gunshots wake the
+## marsh and guns foul under sustained fire; melee kills stay silent.
+## Gentle death: you keep what you wear and drop the pack. It is the main
+## source of artifacts (Caleb's call), and pays trophies, melee blueprints
+## and marsh cosmetics.
+
+const MapScript := preload("res://worlds/marsh/map.gd")
+
+## How much faster than still air a shot carries here (`WorldDef.shot_carry`):
+## the marsh is quiet, and a gunshot wakes everything in earshot.
+const SHOT_CARRY := 1.6
+## Guns foul in the damp (`WorldDef.gun_fouling`, `Gun.fouling`): spread
+## grows under sustained fire and a long burst can jam until a reload.
+const FOULING := 1.0
+
+## Stalkers (DESIGN.md "Spore Marsh"): fast, fragile pack hunters that
+## circle and feint before they strike (`feint_chance`, over a bot's ring).
+const STALKER_HEALTH := 70.0
+const STALKER_FEINT := 0.45
+## Shellbacks: slow, heavily plated grazers with a soft rear (hits from
+## behind do `SHELLBACK_REAR` times), a heavy bash and a slow turn.
+const SHELLBACK_HEALTH := 240.0
+const SHELLBACK_ARMOR := 80.0
+const SHELLBACK_REAR := 3.0
+const SHELLBACK_HEIGHT := 1.6
+## Bloaters: slow, soft sacs of spores. Killed, one bursts into a cloud
+## (`WorldDef.death_burst`) that hurts everyone in it, so a blade kill is a
+## step back after the cut.
+const BLOATER_HEALTH := 50.0
+const BLOATER_HEIGHT := 2.1
+const BLOATER_CLOUD := {"radius": 4.5, "damage": 9.0, "seconds": 8.0, "kind": "spores"}
+## The Grey Matriarch, the core's boss: the stalker pack's mother, twice a
+## person's height, quick for her size, feinting most of the time. Made for
+## one player; each other player near her makes her tougher.
+const MATRIARCH_HEIGHT := 2.9
+const MATRIARCH_HEALTH := 900.0
+const MATRIARCH_ARMOR := 30.0
+const MATRIARCH_PARTY := 0.6
+## The main source of artifacts (Caleb's call): the Matriarch carries one
+## more often than not, a world event's warlord or pod now and then, and the
+## forests' hollows and caps rarely.
+const MATRIARCH_ARTIFACT := 0.6
+const POD_ARTIFACT := 0.15
+const HOLLOW_ARTIFACT := 0.05
+const CAP_ARTIFACT := 0.03
+const DEN_ARTIFACT := 0.12
+## Her trophy, for the trophy shelf: never traded or sold.
+const TROPHY := "trophy_matriarch_fang"
+const TROPHY_CHANCE := 0.35
+## The marsh's earned paint (DESIGN.md "Armor paints"): Relic loot from the
+## Matriarch, never sold.
+const PAINT := "paint_spore"
+const PAINT_CHANCE := 0.12
+## The marsh's own blueprints: melee options, never a higher Mk.
+const BLUEPRINTS := ["bp_blade_hook", "bp_spear_reed"]
+const WARLORD_BLUEPRINT := 0.15
+
+## The marsh's own contracts, counted only here. Every one can be done alone.
+const CONTRACTS := {
+	"marsh_hollows": {"title": "Loot 2 forest hollows", "stat": "cache:hollow", "goal": 2, "kind": "daily",
+			"scrip": 200},
+	"marsh_caps": {"title": "Loot 2 caches up on the caps", "stat": "cache:cap", "goal": 2, "kind": "daily",
+			"scrip": 190},
+	"marsh_stalkers": {"title": "Bring down 8 stalkers", "stat": "kills:stalker", "goal": 8, "kind": "daily",
+			"scrip": 160},
+	"marsh_shellbacks": {"title": "Bring down 3 shellbacks", "stat": "kills:shellback", "goal": 3, "kind": "daily",
+			"scrip": 170},
+	"marsh_sacs": {"title": "Bring home 3 Spore Sacs", "stat": "item:spore_sac", "goal": 3,
+			"kind": "daily", "scrip": 170},
+	"marsh_matriarch": {"title": "Bring down the Grey Matriarch twice", "stat": "bosses", "goal": 2,
+			"kind": "weekly", "scrip": 900, "items": ["upgrade_data"], "reward_tag": "blueprint"},
+	"marsh_glowcaps": {"title": "Bring home 3 Glowcaps", "stat": "item:glowcap", "goal": 3,
+			"kind": "weekly", "scrip": 850, "items": ["upgrade_data"], "reward_tag": "blueprint"},
+}
+
+## A gentle world's gear is the basic tier; rare gear stays in the war. What
+## the marsh pays instead: its materials, its blueprints, artifacts.
+const CACHE_TABLE := [
+	{"id": "scrap_metal", "weight": 28.0},
+	{"id": "chitin_plate", "weight": 20.0},
+	{"id": "spore_sac", "weight": 14.0},
+	{"id": "medkit", "weight": 14.0},
+	{"id": "power_cell", "weight": 10.0},
+	{"id": "circuit_board", "weight": 10.0},
+	{"id": "knife_gutter", "weight": 3.0},
+	{"id": "axe_splitter", "weight": 2.5},
+	{"id": "hammer_breaker", "weight": 2.0},
+	{"id": "smg_stinger", "weight": 2.0},
+	{"id": "frame_runner", "weight": 2.5},
+	{"id": "boots_thruster", "weight": 2.0},
+]
+
+## The survey stations: what the expeditions left behind.
+const STATION_TABLE := [
+	{"id": "circuit_board", "weight": 24.0},
+	{"id": "power_cell", "weight": 22.0},
+	{"id": "medkit", "weight": 18.0},
+	{"id": "alloy_ingot", "weight": 10.0},
+	{"id": "frame_trooper", "weight": 6.0},
+	{"id": "chip_barrier", "weight": 5.0},
+	{"id": "optic_reflex", "weight": 4.0},
+	{"id": "grip_vertical", "weight": 3.0},
+	{"id": "mag_extended", "weight": 3.0},
+	{"id": "helm_spotter", "weight": 3.0},
+	{"id": "helm_seeker", "weight": 3.0},
+]
+
+## The hollows at each forest's heart and the caps over them: the marsh's
+## own goods, its blueprints and a trickle of upgrade data.
+const HOLLOW_TABLE := [
+	{"id": "glowcap", "weight": 22.0},
+	{"id": "spore_sac", "weight": 20.0},
+	{"id": "chitin_plate", "weight": 18.0},
+	{"id": "alloy_ingot", "weight": 12.0},
+	{"id": "medkit", "weight": 10.0},
+	{"id": "spear_lancer", "weight": 3.0},
+	{"id": "blade_arc", "weight": 3.0},
+	{"id": "bp_blade_hook", "weight": 2.0},
+	{"id": "bp_spear_reed", "weight": 2.0},
+	{"id": "upgrade_data", "weight": 2.0},
+]
+
+const STALKER_DROPS := [
+	{"id": "stalker_fang", "weight": 60.0},
+	{"id": "scrap_metal", "weight": 25.0},
+	{"id": "medkit", "weight": 15.0},
+]
+const SHELLBACK_DROPS := [
+	{"id": "chitin_plate", "weight": 70.0},
+	{"id": "stalker_fang", "weight": 15.0},
+	{"id": "medkit", "weight": 15.0},
+]
+const BLOATER_DROPS := [
+	{"id": "spore_sac", "weight": 80.0},
+	{"id": "medkit", "weight": 20.0},
+]
+
+
+func _init() -> void:
+	# The Spore Marsh planet (DESIGN.md "Planet kit"): its sky, moss and
+	# black water, mist and spores. Its rules are a start; the shot's carry
+	# below is the marsh's own.
+	take_planet("marsh")
+	id = "marsh"
+	display_name = "Spore Marsh"
+	description = "A drowned basin of black water and fungus forests. The wildlife hunts you and each other. Co-op, no PvP, gunshots wake the marsh, you keep your equipped gear when you die."
+	keep_gear_on_death = true
+	players_allied = true
+	war_scale = 0.0
+	# Power weapons belong to the war worlds.
+	power_weapon_rate = 0.0
+	# The main source of artifacts.
+	warlord_artifact_chance = MATRIARCH_ARTIFACT
+	pod_artifact_chance = POD_ARTIFACT
+	warlord_paint = PAINT
+	warlord_paint_chance = PAINT_CHANCE
+	# The slow route to the war's blueprints, as in every gentle world.
+	warlord_blueprint_chance = WARLORD_BLUEPRINT
+	warlord_upgrade_data = 1
+	boss_party_scale = MATRIARCH_PARTY
+	bot_count = 12
+	depot_hold_time = 6.0
+	shot_carry = SHOT_CARRY
+	gun_fouling = FOULING
+	contract_tag = "marsh"
+
+
+func register_items() -> void:
+	ItemDB.register(TROPHY, "Matriarch's Fang", ItemDB.Rarity.EPIC, 0, ["trophy"], {},
+			"A fang from the Grey Matriarch, longer than a knife. Earned, never sold.")
+
+
+func create_map() -> Node3D:
+	var map := MapScript.new()
+	map.planet = planet_type()
+	return map
+
+
+func prepare_map() -> void:
+	var map: Node3D = MapScript.new()
+	map.call("prepare_shared")
+	map.free()
+
+
+## The zones run from the southern shore (outer) through the drowned
+## middle to the Matriarch's forest in the north (core).
+func zone_at(pos: Vector3) -> int:
+	if pos.z <= MapScript.CORE_FROM_Z:
+		return 2
+	if pos.z <= MapScript.MIDDLE_FROM_Z:
+		return 1
+	return 0
+
+
+func zone_name(tier: int) -> String:
+	return ["The shore", "The drowned middle", "The Matriarch's forest"][tier] if tier >= 0 and tier <= 2 else ""
+
+
+func starter_loadout() -> Array[String]:
+	return ["rifle_scrap", "blade_scrap", "pistol_service", "jetpack_mk1", "plate_light", "visor_scav",
+			"field_dressing"]
+
+
+func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
+	var table := CACHE_TABLE
+	var count := rng.randi_range(2, 3)
+	var relic_chance := 0.0
+	match source:
+		"station":
+			table = STATION_TABLE
+		"hollow":
+			table = HOLLOW_TABLE
+			relic_chance = HOLLOW_ARTIFACT
+		"cap":
+			table = HOLLOW_TABLE
+			relic_chance = CAP_ARTIFACT
+		"den":
+			table = HOLLOW_TABLE
+			count = rng.randi_range(3, 4)
+			relic_chance = DEN_ARTIFACT
+		"stalker":
+			table = STALKER_DROPS
+			count = rng.randi_range(1, 2)
+		"shellback":
+			table = SHELLBACK_DROPS
+			count = rng.randi_range(1, 2)
+		"bloater", "bot":
+			table = BLOATER_DROPS
+			count = 1
+	var out: Array[String] = []
+	for i in count:
+		out.append(ItemDB.roll(table, rng))
+	var relic := roll_artifact(rng, relic_chance)
+	if relic != "":
+		out.append(relic)
+	return out
+
+
+func contract_jobs() -> Dictionary:
+	return CONTRACTS
+
+
+## A PvE world: nobody hurts their own kind, and every player is one kind.
+## The wildlife hunts across kinds, so a stalker pack on a shellback is a
+## chance to slip past.
+func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
+	if attacker == target:
+		return false
+	var a := attacker as Actor
+	var t := target as Actor
+	if a and t and a.faction == t.faction:
+		return false
+	return true
+
+
+## A bot from a marker that names its kind is one of those; any other is
+## picked by chance, stalkers most often.
+func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
+	var kind := bot.faction
+	if not kind in ["stalker", "shellback", "bloater"]:
+		var roll := rng.randf()
+		kind = "stalker" if roll < 0.5 else ("shellback" if roll < 0.75 else "bloater")
+	match kind:
+		"shellback":
+			_make_shellback(bot, rng)
+		"bloater":
+			_make_bloater(bot, rng)
+		_:
+			_make_stalker(bot, rng)
+
+
+## Fast, fragile pack hunters: they circle just out of reach, feint and dart
+## in with hooked claws.
+func _make_stalker(bot: Actor, rng: RandomNumberGenerator) -> void:
+	bot.faction = "stalker"
+	bot.display_name = "Marsh Stalker"
+	bot.set_meta("look", "marsh_stalker")
+	bot.set_meta("feint_chance", STALKER_FEINT)
+	bot.body_color = Color(0.28, 0.34, 0.3)
+	bot.walk_speed = 6.2
+	bot.sprint_speed = 9.5
+	bot.health.max_health = STALKER_HEALTH
+	bot.health.health = STALKER_HEALTH
+	for item in roll_loot("stalker", rng):
+		bot.inventory.add_item(item)
+	var claws := MeleeWeapon.new()
+	claws.display_name = "Hooked Claws"
+	claws.light_damage = 13.0
+	claws.light_windup = 0.3
+	claws.light_stamina = 0.0
+	claws.reach = 2.3
+	bot.equip_weapon(claws)
+
+
+## Slow, armored grazers: a heavy bash from the front, a soft rear behind.
+func _make_shellback(bot: Actor, rng: RandomNumberGenerator) -> void:
+	bot.faction = "shellback"
+	bot.display_name = "Shellback"
+	bot.set_meta("look", "shellback")
+	bot.set_meta("aim_turn", 90.0)
+	bot.body_color = Color(0.42, 0.38, 0.3)
+	bot.set_stand_height(SHELLBACK_HEIGHT, 0.4)
+	bot.walk_speed = 2.6
+	bot.sprint_speed = 3.8
+	bot.health.max_health = SHELLBACK_HEALTH
+	bot.health.health = SHELLBACK_HEALTH
+	bot.health.set_armor(SHELLBACK_ARMOR)
+	bot.rear_damage_mult = SHELLBACK_REAR
+	for item in roll_loot("shellback", rng):
+		bot.inventory.add_item(item)
+	var bash := MeleeWeapon.new()
+	bash.display_name = "Shell Bash"
+	bash.light_damage = 24.0
+	bash.light_windup = 0.65
+	bash.light_stamina = 0.0
+	bash.reach = 2.6
+	bot.equip_weapon(bash)
+
+
+## Slow sacs of spores with a weak slap. A dead one bursts (`death_burst`).
+func _make_bloater(bot: Actor, rng: RandomNumberGenerator) -> void:
+	bot.faction = "bloater"
+	bot.display_name = "Bloater"
+	bot.set_meta("look", "bloater")
+	bot.body_color = Color(0.55, 0.62, 0.32)
+	bot.set_stand_height(BLOATER_HEIGHT, 0.5)
+	bot.walk_speed = 2.0
+	bot.sprint_speed = 2.8
+	bot.health.max_health = BLOATER_HEALTH
+	bot.health.health = BLOATER_HEALTH
+	for item in roll_loot("bloater", rng):
+		bot.inventory.add_item(item)
+	var slap := MeleeWeapon.new()
+	slap.display_name = "Spore Slap"
+	slap.light_damage = 8.0
+	slap.light_windup = 0.8
+	slap.light_stamina = 0.0
+	slap.reach = 2.1
+	bot.equip_weapon(slap)
+
+
+## A bloater bursts where it dies, into a spore cloud that hurts every
+## player and beast in it but other bloaters (`Raid.burst_cloud`).
+func death_burst(bot: Actor) -> Dictionary:
+	return BLOATER_CLOUD.duplicate() if bot != null and bot.faction == "bloater" else {}
+
+
+## The Grey Matriarch at her den (its "spawn_boss" marker's meta "boss"),
+## else an event's warlord as anywhere. Runs on clients too, so it is free
+## of randomness.
+func make_warlord(bot: Actor) -> void:
+	if bot.get_meta("boss", "") != "matriarch":
+		super(bot)
+		return
+	bot.display_name = "Grey Matriarch"
+	bot.set_meta("look", "marsh_stalker")
+	bot.body_color = Color(0.32, 0.35, 0.34)
+	bot.set_stand_height(MATRIARCH_HEIGHT, 0.4)
+	bot.set_meta("feint_chance", 0.6)
+	bot.walk_speed = 5.5
+	bot.sprint_speed = 8.0
+	bot.health.max_health = MATRIARCH_HEALTH
+	bot.health.health = MATRIARCH_HEALTH
+	bot.health.set_armor(MATRIARCH_ARMOR)
+	var claws := bot.get_active_weapon() as MeleeWeapon
+	if claws:
+		claws.display_name = "Matriarch's Claws"
+		claws.light_damage = 26.0
+		claws.light_windup = 0.35
+		claws.reach = 3.2
+
+
+func boss_back_news(bot: Actor, _where: String) -> String:
+	if bot != null and bot.get_meta("boss", "") == "matriarch":
+		return "The Grey Matriarch is back in her den"
+	return super(bot, _where)
+
+
+## The Matriarch may carry her trophy, beside what every warlord carries.
+## Runs on the authority only (the `Raid` calls it as a bot is made there).
+func on_spawn(actor: Actor) -> void:
+	if actor == null or actor.get_meta("boss", "") != "matriarch":
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	if rng.randf() < TROPHY_CHANCE:
+		actor.inventory.add_item(TROPHY)
