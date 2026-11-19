@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 54
+const PROTOCOL := 55
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -1056,7 +1056,7 @@ func _on_server_container_spawned(container: LootContainer) -> void:
 	_container_ids[container] = id
 	container.changed.connect(func() -> void:
 		for peer in _joined_peers:
-			_container_items.rpc_id(peer, id, container.items))
+			_container_items.rpc_id(peer, id, container.items, container.scrip))
 	container.tree_exited.connect(func() -> void:
 		if not _containers.has(id):
 			return
@@ -1070,7 +1070,8 @@ func _on_server_container_spawned(container: LootContainer) -> void:
 
 func _send_container(peer: int, id: int) -> void:
 	var container: LootContainer = _containers[id]
-	_container.rpc_id(peer, id, container.items, container.is_bag, container.label, container.global_position)
+	_container.rpc_id(peer, id, container.items, container.is_bag, container.label, container.global_position,
+			container.scrip if container.pile else -1, container.bounty)
 
 
 func _on_server_vehicle_spawned(vehicle: Node3D) -> void:
@@ -3005,17 +3006,19 @@ func _receive_state(tick: int, entries: Array) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func _container(id: int, items: Array, is_bag: bool, label: String, at: Vector3) -> void:
+func _container(id: int, items: Array, is_bag: bool, label: String, at: Vector3, pile_scrip: int,
+		pile_bounty: int) -> void:
 	if raid == null or _containers.has(id):
 		return
-	_containers[id] = raid.spawn_container(items, is_bag, label, at)
+	# A scrip pile (`pile_scrip` 0 or more) comes with its scrip and bounty.
+	_containers[id] = raid.spawn_container(items, is_bag, label, at, pile_scrip, pile_bounty)
 
 
 @rpc("authority", "call_remote", "reliable")
-func _container_items(id: int, items: Array) -> void:
+func _container_items(id: int, items: Array, scrip: int) -> void:
 	var container: LootContainer = _containers.get(id)
 	if container != null and is_instance_valid(container):
-		container.set_items(items)
+		container.set_items(items, scrip if container.pile else -1)
 
 
 @rpc("authority", "call_remote", "reliable")
