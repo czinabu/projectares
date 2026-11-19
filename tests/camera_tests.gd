@@ -31,13 +31,14 @@ static func _check_head_follows_aim(t: Node) -> void:
 	p.set_physics_process(false)
 	var loco = skin.locomotion
 	var skel: Skeleton3D = loco.skeleton
-	var face := [Vector3.ZERO, Vector3.ZERO]
+	var face := [Vector3.ZERO, Vector3.ZERO, 0.0]
 	# Bone poses are only final inside the skeleton's update.
 	var read := func() -> void:
 		if loco._head_ahead != Vector3.ZERO:
 			face[0] = (skel.global_basis.orthonormalized() * loco._facing(loco._head, loco._head_ahead)).normalized()
 			var chest: int = loco._spine[loco._spine.size() - 1]
 			face[1] = (skel.global_basis.orthonormalized() * loco._facing(chest, loco._chest_ahead)).normalized()
+			face[2] = _tip_from_chest(loco, skel)
 	skel.skeleton_updated.connect(read)
 	for pitch: float in [0.6, -0.6, 0.0]:
 		p.cmd.pitch = pitch
@@ -50,6 +51,23 @@ static func _check_head_follows_aim(t: Node) -> void:
 	await t.frames(40)
 	t.check(face[0].angle_to(face[1]) < loco.look_reach + 0.1 and face[0].angle_to(face[1]) > loco.look_reach * 0.7,
 			"aimed behind, the head turns as far as it can and no further (%.2f rad)" % face[0].angle_to(face[1]))
+	# Aimed straight up, the head tips back only as far as a neck can.
+	p.cmd.aim_dir = Vector3.UP
+	await t.frames(40)
+	t.check(face[2] < loco.look_up + 0.12 and face[2] > loco.look_up * 0.6,
+			"aimed straight up, the head tips back no further than look_up (%.2f rad)" % face[2])
+	# Laid out flat as in flight, looking ahead lifts the head, never folds
+	# it back onto the shoulders (playtest feedback).
+	var model := skel.get_parent() as Node3D
+	var rest := model.transform
+	# Face down: the actor's forward tipped toward the ground.
+	model.global_basis = Basis(p.global_basis.x.normalized(), -1.4) * model.global_basis
+	p.cmd.aim_dir = p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, 0.5) * Vector3.FORWARD
+	await t.frames(40)
+	var laid: float = face[2]
+	t.check(laid < loco.look_up + 0.12 and laid > loco.look_up * 0.6,
+			"laid out flat, the head lifts toward the aim and stops at look_up (%.2f rad)" % laid)
+	model.transform = rest
 	p.cmd.aim_dir = p.global_basis.orthonormalized() * Vector3.FORWARD
 	await t.frames(20)
 	skel.skeleton_updated.disconnect(read)
@@ -63,6 +81,16 @@ static func _check_head_follows_aim(t: Node) -> void:
 	Look.enabled = false
 	raid.queue_free()
 	await t.frames(2)
+
+
+## How far the head is tipped back from the chest (radians), as posed.
+static func _tip_from_chest(loco, skel: Skeleton3D) -> float:
+	var chest: int = loco._spine[loco._spine.size() - 1]
+	var ahead: Vector3 = loco._facing(chest, loco._chest_ahead)
+	var up: Vector3 = loco._facing(chest, loco._chest_up)
+	up = (up - ahead * up.dot(ahead)).normalized()
+	var face: Vector3 = loco._facing(loco._head, loco._head_ahead)
+	return asin(clampf(face.dot(up), -1.0, 1.0))
 
 
 ## Over the shoulder, further out when aiming, so the head is never on the

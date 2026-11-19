@@ -1,6 +1,6 @@
 extends RefCounted
-## Meridian's surroundings, decoration only: eroded mesas standing out of
-## the salt in a ring past the circuits, the dead launch works on the skyline
+## Meridian's surroundings, decoration only (the land and mesas past the
+## circuits are the planet's, `Planet.horizon`): the dead launch works on the skyline
 ## (leaning launch towers with holo-ads, gantry cranes, a wrecked booster
 ## stage, a line of power pylons marching off), searchlights sweeping the
 ## haze over the stands and camera drones pacing the racers' lines. Nothing
@@ -11,11 +11,8 @@ const CYAN := Color(0.3, 0.85, 1.0)
 const AMBER := Color(1.0, 0.6, 0.2)
 const MAGENTA := Color(1.0, 0.3, 0.7)
 const RED := Color(1.0, 0.22, 0.12)
-## Where the land rises into mesas, measured from `CENTRE`.
+## The middle of the circuits, which the holo-ads face.
 const CENTRE := Vector3(-40, 0, 100)
-const MESA_FROM := 850.0
-const MESA_SPAN := 5200.0
-const MESA_CELLS := 140
 
 var stands: RefCounted
 var root: Node3D
@@ -29,7 +26,6 @@ func _init(p_stands: RefCounted, p_seed: int) -> void:
 
 
 func build(tracks: Array) -> void:
-	_mesas()
 	_launch_tower(Vector3(430, 0, 300), 175.0, Vector2(0.12, -0.05), "COILRUN  ·  3 LAPS", AMBER)
 	_launch_tower(Vector3(-560, 0, 230), 150.0, Vector2(-0.08, 0.1), "MERIDIAN CIRCUIT", CYAN)
 	_launch_tower(Vector3(160, 0, -470), 190.0, Vector2(0.05, 0.09), "RIDE THE SKYHOOK", MAGENTA)
@@ -50,53 +46,6 @@ func build(tracks: Array) -> void:
 			drone.track = track
 			drone.offset = 0.25 + 0.5 * k
 			root.add_child(drone)
-
-
-# --- The ring of mesas ----------------------------------------------------------
-
-## One mesh of eroded table land: flat tops at a few levels with steep
-## stepped sides, rising past `MESA_FROM`, lost in the haze far out. Past
-## the map's salt flats it is the ground too.
-func _mesas() -> void:
-	var noise := FastNoiseLite.new()
-	noise.seed = rng.randi()
-	noise.frequency = 0.0008
-	noise.fractal_octaves = 3
-	var cell := MESA_SPAN / MESA_CELLS
-	var half := MESA_SPAN * 0.5
-	var n := MESA_CELLS + 1
-	var heights := PackedFloat32Array()
-	heights.resize(n * n)
-	for iz in n:
-		for ix in n:
-			var x := ix * cell - half
-			var z := iz * cell - half
-			var r := Vector2(x, z).length()
-			var rise := smoothstep(MESA_FROM, MESA_FROM + 400.0, r)
-			var v := noise.get_noise_2d(x, z) * 0.5 + 0.5 + rise * 0.35 - 0.3
-			var h := 110.0 * smoothstep(0.18, 0.24, v) + 70.0 * smoothstep(0.42, 0.47, v) + 55.0 * smoothstep(0.62, 0.66, v)
-			# Inside the ring the land lies just under the salt flats, so the
-			# flats reach out to meet it.
-			heights[iz * n + ix] = h * rise - 2.0 * (1.0 - rise)
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for iz in MESA_CELLS:
-		for ix in MESA_CELLS:
-			var corners: Array[Vector3] = []
-			for c: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1)]:
-				var h := heights[(iz + c.y) * n + ix + c.x]
-				corners.append(CENTRE + Vector3((ix + c.x) * cell - half, h, (iz + c.y) * cell - half))
-			for v in [corners[0], corners[1], corners[2], corners[0], corners[2], corners[3]]:
-				st.set_uv(Vector2(v.x, v.z) * 0.01)
-				st.add_vertex(v)
-	st.generate_normals()
-	var mesh := MeshInstance3D.new()
-	mesh.name = "Mesas"
-	mesh.mesh = st.commit()
-	mesh.mesh.surface_set_material(0, Look.surface("concrete", {"tint": Color(0.72, 0.42, 0.3), "grime": 0.35,
-			"scale": 0.02}))
-	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(mesh)
 
 
 # --- The dead launch works -------------------------------------------------------

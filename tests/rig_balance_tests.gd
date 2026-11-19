@@ -342,6 +342,21 @@ static func _test_course(t: Node) -> void:
 		t.check(base.in_course(Vector3(base._tower_x(), 1.0, marks.tower_a)) and base.inside(Vector3(0, 1.0, marks.finish)),
 				"the course yard is part of the base")
 		if id == RIGS[0]:
+			# A hangar, not a yard open onto the dark: a roof over it and a wall
+			# over the range's roof, so nobody flies out (Caleb's call).
+			var space := base.get_world_3d().direct_space_state
+			var mid_z: float = (marks.start + marks.finish) * 0.5
+			var hits := func(from: Vector3, to: Vector3) -> bool:
+				var q := PhysicsRayQueryParameters3D.create(base.to_global(from), base.to_global(to))
+				return not space.intersect_ray(q).is_empty()
+			var h: float = base.course_size.y
+			t.check(hits.call(Vector3(0, h - 5.0, mid_z), Vector3(0, h + 20.0, mid_z)),
+					"the flight course has a roof over it")
+			t.check(hits.call(Vector3(0, base.range_size.y + 8.0, marks.start - 2.0), Vector3(0, base.range_size.y + 8.0, marks.start + 30.0)),
+					"and a wall over the range's roof, so it is closed all round")
+			t.check(h > 40.0 + p.roof_reach + 2.0,
+					"its roof stands past every rig's ceiling and the roof probe, so flying there is never indoors")
+		if id == RIGS[0]:
 			# Falling into the gap ends the run.
 			p.global_position = base.to_global(Vector3(base._tower_x(), 0.1, marks.start + 1.0))
 			p.cmd.yaw = 0.0

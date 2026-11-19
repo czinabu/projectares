@@ -53,7 +53,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - The head looks where its owner aims (Caleb's call, so others see where
   you look): `Locomotion._look_pose` turns the neck and head onto
   `Actor.get_aim_dir()` from whatever pose the body is in, no further than
-  `look_reach` from the chest, and gives way to the phone. View only, the
+  `look_reach` side to side from the chest and `look_up` back or
+  `look_down` down from it (measured in the chest's frame, so a body laid
+  out in flight lifts its head rather than folding it back), and gives
+  way to the phone. View only, the
   same body in both views; first person's eyes simply ride the turned head.
 - Bodies are shown between physics ticks (Caleb plays at 144 Hz):
   `ShownMotion` (`core/visual/shown_motion.gd`, added by `Look` to every
@@ -1614,8 +1617,9 @@ without Caleb, and update the gap list when a PR closes a row.
   its end wall, sealed at the far end by the firing range's bulkhead.
   Buying the range removes the lane. Nothing there is real damage either.
   Past the range's far end is the flight course (`HomeBase._build_course`,
-  `in_course`): an open-topped yard whose walls stand over every rig's
-  ceiling, with a climb tower (and a ramp for wings), a gap to a second
+  `in_course`): a tall lit hangar, walled and roofed so nobody flies out
+  (Caleb's call), its roof over every rig's ceiling and past
+  `Actor.roof_reach` of it, so it never flies as indoors, with a climb tower (and a ramp for wings), a gap to a second
   tower and a sprint, timed by `_tick_course` from the player's position
   alone and written on its board, never on the screen.
   The base grows with the account's upgrades (`core/base/base_upgrades.gd`,

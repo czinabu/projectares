@@ -85,7 +85,8 @@ uniform float bank_rise = 2.5;
 uniform vec3 bank_color : source_color = vec3(0.3, 0.4, 0.15);
 // Rock far off (the horizon's mountains) takes its scan again at
 // `vast_tile` times its tile, so cliffs a kilometre away keep their faces
-// instead of going smooth. It fades in from `vast_from` metres.
+// instead of going smooth. It fades in from `vast_from` metres, and only
+// where the ground already leans.
 uniform float vast_from = 350.0;
 uniform float vast_tile = 45.0;
 uniform float vast_relief = 1.6;
@@ -199,7 +200,10 @@ void fragment() {
 	float vast = textured.y > 0.5 ? smoothstep(vast_from * 0.6, vast_from, dist) : 0.0;
 	float vt = tile.y * vast_tile;
 	vec3 vn = vast > 0.001 ? bi_normal(rock_normal, wpos / vt, n, vast_relief) : n;
-	vec3 sn = normalize(mix(n, vn, vast));
+	// Only ground that already leans takes the coarse relief into its slope
+	// test, so a far flat (a salt pan, a lake bed) never turns to rock.
+	float lean = smoothstep(0.995, 0.93, n.y);
+	vec3 sn = normalize(mix(n, vn, vast * lean));
 	// Rock on slopes, banded by strata.
 	float rock = smoothstep(slope_range.x, slope_range.y, sn.y + (fine - 0.5) * 0.08);
 	// Layers of uneven thickness, gently warped, with thin dark seams.
