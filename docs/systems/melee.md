@@ -15,7 +15,8 @@ date in the same PR.
   `Look.is_two_handed` (the one place views ask) answers for the grip.
   Melee is made to answer guns (DESIGN.md "Melee against guns"): blades go
   past armor (`DamageInfo.armor_pierce`), a heavy started sprinting is a
-  dash-strike (`dash_range`), a light while moving back at a foe behind is a
+  dash-strike (`dash_range`; with `dash_through`, a charge that runs its
+  whole length past a foe who steps aside), a light while moving back at a foe behind is a
   back strike, and a fresh guard deflects small-arms rounds for
   `deflect_window`, rearming after `guard_rearm`; a gun's round carries its
   `DamageInfo.weapon_id` and `undeflectable_tags` (marksman, power) go
