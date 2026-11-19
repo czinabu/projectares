@@ -82,30 +82,13 @@ var _helmet_actor: Actor = null
 ## Crouched by the crouch key: a toggle, sent as the held `ActorCommand.crouch`.
 ## Sprinting, jumping or getting on a vehicle stands you back up.
 var crouch_toggled := false
-## Reading the phone in third person (Caleb's call, like the riding view: an
-## exception to the camera never moving on its own, made by opening the
-## phone): the camera eases in beside the head and looks square onto the
-## handheld's screen in the hand (Caleb's pick, so it reads), and eases back
-## out when the phone is put away. It stands this far (m) out from the
-## screen, along the screen's facing turned this much toward the right
-## shoulder and up, so the head stays out of the way. It looks at the same
-## device first person reads; nothing floats in front of the view.
-var phone_read_distance := 0.55
-var phone_read_side := 0.65
-var phone_read_lift := 0.25
-## How far (0..1) the reading view tips with the phone so its lines read level.
-var phone_read_tilt := 1.0
-## With the Mirror app up it reads from over the shoulder instead, this far
-## back from the eyes (m), out to the right and up, to keep the mirror in view.
-var phone_mirror_spot := Vector3(0.65, 0.35, 0.75)
-## How far (m) to aim left of the phone, so it sits right of the crosshair.
-var phone_read_offset := 0.03
+## Third person never moves the camera for the phone (Caleb's call): the
+## phone throws its screen up beside the character as a hologram
+## (`Phone.HoloScreen`), like the watch's card. Only first person drops the
+## eyes to the handheld and zooms in on it, at this rate.
 var phone_read_rate := 6.0
-## With the Mirror app up the view widens and aims this far (0..1) from the
-## phone toward the mirror's glass, so the reflection shows past the phone.
-var phone_mirror_fov := 62.0
-## While the phone is out the view zooms in on it (Caleb's pick over a
-## bigger screen layout), in both views, like aiming down sights: only the
+## While the phone is out the first-person view zooms in on it (Caleb's pick
+## over a bigger screen layout), like aiming down sights: only the
 ## field of view narrows, the hold and the camera stay put. It zooms until
 ## the phone stands this share of the view's height, whatever the player's
 ## field of view setting (Caleb's feedback: at a wide one a fixed zoom left it
@@ -114,11 +97,8 @@ var phone_mirror_fov := 62.0
 var phone_zoom := 0.6
 ## How much of the view's half height and width the phone may reach out to.
 var phone_zoom_edge := 0.94
-var phone_mirror_aim := 0.55
-## How far in to the phone the third-person camera is now (0..1).
-var phone_read := 0.0
 ## The eyes drop to the phone in the hand while it is out (radians of view
-## pitch), in both views, the same way the model's head bows to it. Only the
+## pitch), in first person, the same way the model's head bows to it. Only the
 ## view moves: `pitch`, and so the aim, is left where it was.
 var phone_view_pitch := -0.4
 ## With the Mirror app's mirror up the eyes drop less, to see yourself in it
@@ -126,7 +106,7 @@ var phone_view_pitch := -0.4
 var phone_mirror_pitch := -0.2
 var _phone_look := 0.0
 ## The mirror standing in front of you for the phone's Mirror app (`Main`),
-## or null; the third-person reading view keeps it in frame.
+## or null; the eyes drop less to see yourself in it.
 var phone_mirror: Node3D
 ## How far behind the eyes the third-person camera sits, in meters: a view
 ## over the right shoulder (the phone's "Camera distance" setting). Aiming
@@ -1371,7 +1351,8 @@ func _process(delta: float) -> void:
 	_update_recoil(delta)
 	_update_dip(delta)
 	_update_shake(delta)
-	_phone_look = move_toward(_phone_look, 1.0 if phone_out and not phone_preview and not actor.is_dead else 0.0, phone_read_rate * delta)
+	_phone_look = move_toward(_phone_look, 1.0 if phone_out and not phone_preview and not actor.is_dead \
+			and not _wants_third_person() else 0.0, phone_read_rate * delta)
 	var reading_pitch := phone_mirror_pitch if mirror_in_view() else phone_view_pitch
 	var view_pitch := lerpf(pitch, reading_pitch, smoothstep(0.0, 1.0, _phone_look))
 	var look := Basis.from_euler(Vector3(view_pitch + _shake.y, yaw + _shake.x, 0.0))
@@ -1380,7 +1361,6 @@ func _process(delta: float) -> void:
 	var desired := pivot + _third_person_offset(look, pivot, delta)
 	camera.global_transform = Transform3D(look, desired)
 	peek_fade.update(actor, camera, peek_rule_applies() and is_third_person(), delta)
-	_read_phone(delta)
 	if _thrust_audio:
 		var thrusting := actor.flight.is_thrusting and not actor.is_dead
 		if thrusting and not _thrust_audio.playing:
@@ -1424,8 +1404,6 @@ func _process(delta: float) -> void:
 	var fov := aim_fov(weapon) if aiming else wanted_base_fov() + _speed_fov_now
 	if _zoom() > 1.0:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
-	if phone_read > 0.0 and mirror_in_view():
-		fov = lerpf(fov, phone_mirror_fov, smoothstep(0.0, 1.0, phone_read))
 	if phone_zoomed():
 		fov = minf(fov, phone_fit_fov())
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
@@ -1781,42 +1759,10 @@ func is_third_person() -> bool:
 	return _cam_dist > 0.5
 
 
-## Eases the third-person camera in beside the head, square onto the
-## phone's screen in the hand, while it is out, and back out after. The view
-## is only moved, never switched. With the Mirror app's mirror up it reads
-## from over the shoulder and widens to keep the reflection in frame.
-func _read_phone(delta: float) -> void:
-	var face := phone_panel()
-	var wanted := 1.0 if phone_out and not phone_preview and face != null and _wants_third_person() \
-			and not actor.is_dead else 0.0
-	phone_read = move_toward(phone_read, wanted, phone_read_rate * delta)
-	if phone_read <= 0.0 or face == null:
-		return
-	var w := smoothstep(0.0, 1.0, phone_read)
-	var centre := face.global_position
-	var heading := Basis.from_euler(Vector3(0.0, yaw, 0.0))
-	# Aim a little past its left edge so the phone sits right of the
-	# crosshair, off the middle of the scene.
-	var aim_at := centre - heading * Vector3(phone_read_offset, 0.0, 0.0)
-	var spot: Vector3
-	var up := Vector3.UP
-	if mirror_in_view():
-		spot = actor.get_eye_position() + heading * phone_mirror_spot
-		aim_at = aim_at.lerp(phone_mirror.glass_centre(), phone_mirror_aim)
-	else:
-		var facing := face.global_basis.z.normalized()
-		var along := (facing + heading * Vector3.RIGHT * phone_read_side + Vector3.UP * phone_read_lift).normalized()
-		spot = centre + along * phone_read_distance
-		# The view tips with the phone so its lines read level, as a head
-		# tilts to read one.
-		up = face.global_basis.y.normalized().lerp(Vector3.UP, 1.0 - phone_read_tilt).normalized()
-	var reading := Transform3D(Basis.looking_at(aim_at - spot, up), spot)
-	camera.global_transform = camera.global_transform.interpolate_with(reading, w)
-
-
-## Whether the view is zoomed in on the phone in the hand (`phone_zoom`).
+## Whether the view is zoomed in on the phone in the hand (`phone_zoom`):
+## first person only, since third person reads the hologram.
 func phone_zoomed() -> bool:
-	return phone_out and not phone_preview and phone_panel() != null and not actor.is_dead and not mirror_in_view()
+	return phone_out and not phone_preview and not _wants_third_person() and phone_panel() != null and not actor.is_dead and not mirror_in_view()
 
 
 ## The field of view (degrees) from where the camera is now at which the

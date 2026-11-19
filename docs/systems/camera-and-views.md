@@ -7,13 +7,12 @@ date in the same PR.
 - The camera never changes view on its own. First/third-person switches only
   when the player presses the toggle (playtest feedback). The one exception:
   getting on a vehicle uses a separate riding view (third-person by default),
-  and getting off restores the on-foot view. And in third person, while the
-  phone is out, the camera eases in beside the head, square onto the
-  phone's screen and tipped with it so its lines read level, to read the
-  phone in the hand (`PlayerController._read_phone`, Caleb's call; over the
-  shoulder with the Mirror app's mirror up) and eases back after; the view
-  stays third person. In both views the eyes drop to the phone while it is
-  out (`phone_view_pitch`, less with the mirror up), the view only: `pitch`
+  and getting off restores the on-foot view. The phone never moves the
+  third-person camera (Caleb's call, replacing the old reading view and
+  zoom): its screen rises beside the character as a hologram
+  (`Phone.HoloScreen`, see `ui-phone-watch.md`), so the world stays in view.
+  In first person the eyes drop to the phone while it is out
+  (`phone_view_pitch`, less with the mirror up), the view only: `pitch`
   and the aim stay put, and the view zooms in on it like aiming down sights
   until the phone stands `phone_zoom` of the view's height, whatever the
   field of view setting, with all of it kept in frame (`phone_fit_fov`,
