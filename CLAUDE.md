@@ -1311,7 +1311,8 @@ without Caleb, and update the gap list when a PR closes a row.
   blueprints (DESIGN.md section 10), so no loot table may list them. Check the glass by eye with
   `visual_check.tscn -- <dir> --visors-only`.
   A worn helmet can come off onto the hip (Caleb's call, DESIGN.md
-  "Helmet off"): the watch's helmet icon (Summon tab) toggles the held
+  "Helmet off"): the watch's helmet icon (Summon tab) or its own key
+  (K, the "helmet" action, Caleb's ask) toggles the held
   `ActorCommand.helmet_off` (`PlayerController.toggle_helmet`), which
   `Actor.helmet_stow` follows (`_simulate_helmet`), so it predicts and
   everyone sees it. Off the face the visor does nothing
