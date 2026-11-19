@@ -35,8 +35,11 @@ date in the same PR.
   phone only). It stands just past the character from the camera
   (`behind`), so the body passes in front of it, right of the crosshair,
   `tall` of the view's height and square to the camera so its text reads,
-  on dark glass the world shows through (`backing`), with light running up
-  to it from the device; clicks are cast onto it (`HoloScreen.card_point`)
+  on dark glass the world shows through a little (`backing`, `TINT`,
+  Caleb's feedback). Its lower edge stands just over the device as the
+  camera sees it (`over_device`, shrinking to `least_tall` where the top
+  of the view is near), so the light opens upward from the hand into the
+  card, never slanting down to it (Caleb's feedback); clicks are cast onto it (`HoloScreen.card_point`)
   instead of the device. The Mirror app's mirror stands square in front of
   the body, never along the camera, and the eyes drop less to see it
   (`phone_mirror_pitch`). The Mirror app's wheel works like a watch icon:

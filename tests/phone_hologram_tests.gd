@@ -60,7 +60,9 @@ static func run(t: Node) -> void:
 	t.check(controller.is_third_person() and projection.showing(), "third person throws the screen up as a hologram")
 	var shown: Vector2 = cam.get_viewport().get_visible_rect().size
 	var rect: Rect2 = projection.on_screen(cam)
-	t.check(rect.size.y / shown.y > 0.5, "it stands over half the view tall, so its text reads (%.2f)" % (rect.size.y / shown.y))
+	t.check(rect.size.y / shown.y > 0.39, "it stands a big share of the view tall, so its text reads (%.2f)" % (rect.size.y / shown.y))
+	var hand := cam.unproject_position(Handheld.face_of(skin.held).global_position)
+	t.check(rect.end.y < hand.y, "its lower edge stands over the phone, so the light rises up into it (Caleb's feedback)")
 	t.check(rect.position.x > shown.x * 0.5 and rect.end.x <= shown.x + 1.0 and rect.position.y >= -1.0
 			and rect.end.y <= shown.y + 1.0, "right of the crosshair and all of it in frame")
 	var card: MeshInstance3D = projection.get_node("Card")

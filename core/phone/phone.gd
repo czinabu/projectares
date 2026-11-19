@@ -2543,7 +2543,7 @@ static func _preview(text: String) -> String:
 class HoloScreen extends Node3D:
 	## Seen from further than this (m) from the eyes, the view is third person.
 	const THIRD_PERSON_AT := 0.7
-	const TINT := Color(0.92, 1.0, 1.0, 0.97)
+	const TINT := Color(0.92, 1.0, 1.0, 0.88)
 	## How tall the card stands, as a share of the view's height.
 	var tall := 0.6
 	## How far (m) past the head, from the camera, it stands.
@@ -2552,7 +2552,13 @@ class HoloScreen extends Node3D:
 	## the crosshair, and how high its middle is, as a share of the half height.
 	var across := 0.08
 	var lift := 0.05
-	var backing := 0.75
+	## Its lower edge stands this share of the view's height over the device
+	## as the camera sees it, so the light rises from the hand up into the
+	## card, never slants down to it (Caleb's feedback). Where the top of the
+	## view is too near for that it shrinks, down to `least_tall`.
+	var over_device := 0.08
+	var least_tall := 0.4
+	var backing := 0.6
 	var open_time := 0.15
 	## 0 down, 1 fully up.
 	var open := 0.0
@@ -2617,10 +2623,19 @@ class HoloScreen extends Node3D:
 		var half_tall := depth * tan(deg_to_rad(cam.fov) * 0.5)
 		var shown := cam.get_viewport().get_visible_rect().size if cam.get_viewport() else Vector2(16.0, 9.0)
 		var half_wide := half_tall * (shown.x / maxf(shown.y, 1.0))
-		var size := Vector2(2.0 * half_tall * tall * _aspect, 2.0 * half_tall * tall)
-		var x := minf(half_wide * across + size.x * 0.5, half_wide * 0.97 - size.x * 0.5)
-		var spot := view * Vector3(x, half_tall * lift, -depth)
+		var high := 2.0 * half_tall * tall
+		var middle := half_tall * lift
 		var from := device.global_position
+		var seen := view.affine_inverse() * from
+		if seen.z < -0.01:
+			var bottom := seen.y * depth / -seen.z + 2.0 * half_tall * over_device
+			var top := half_tall * 0.97
+			high = clampf(top - bottom, 2.0 * half_tall * least_tall, high)
+			middle = maxf(middle, bottom + high * 0.5)
+			middle = minf(middle, top - high * 0.5)
+		var size := Vector2(high * _aspect, high)
+		var x := minf(half_wide * across + size.x * 0.5, half_wide * 0.97 - size.x * 0.5)
+		var spot := view * Vector3(x, middle, -depth)
 		var grow := ease(open, -2.0)
 		var at := from.lerp(spot, grow)
 		_card.global_transform = Transform3D(view.basis.orthonormalized().scaled(
