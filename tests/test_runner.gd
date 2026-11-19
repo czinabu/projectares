@@ -34,6 +34,7 @@ const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
 const CraftingTests := preload("res://tests/crafting_tests.gd")
 const SafetyNetTests := preload("res://tests/safety_net_tests.gd")
 const ScripPileTests := preload("res://tests/scrip_pile_tests.gd")
+const ArenaBladeTests := preload("res://tests/arena_blade_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const UpdaterTests := preload("res://tests/updater_tests.gd")
@@ -365,6 +366,7 @@ func _run() -> void:
 	await SafetyNetTests.run(self)
 	await ScripPileTests.run(self)
 	await _test_arena()
+	await _test_arena_blades()
 	await _test_arena_floor()
 	await _test_online_arena()
 	await TravelTests.run(self)
@@ -8723,6 +8725,10 @@ func _test_arena_floor() -> void:
 	await frames(2)
 
 
+func _test_arena_blades() -> void:
+	await ArenaBladeTests.run(self)
+
+
 func _test_arena() -> void:
 	print("Arena: wagers, duels and tournaments")
 	var bets := {"cara": [0, 100], "dax": [1, 50], "eve": [0, 50]}
@@ -8988,6 +8994,8 @@ func _test_online_arena() -> void:
 	await _wait_until(func() -> bool: return bex_arena.board.get("phase", "") == "calling", 240)
 	check(bex_arena.board.get("phase", "") == "calling" and bex_arena.board.bout.names == ["Ashe", "Brix"]
 			and bex_arena.board.bout.stake == 50, "the server calls the duel with both stakes in the purse")
+	check(str(bex_arena.board.get("bout", {}).get("rules", "")) == "open",
+			"the board carries the bout's rules, which a client holds its fighters to")
 	check(int(bex_arena.board.get("you", {}).get("scrip", 0)) == StashService.Economy.STARTING_SCRIP - 25,
 			"the stake is taken from the server's account")
 	OS.kill(pid)

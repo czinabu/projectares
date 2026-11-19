@@ -220,7 +220,7 @@ const KINDS := [
 	["ability", "ability chip"], ["artifact", "artifact"], ["vehicle", "vehicle"],
 	["blueprint", "blueprint"], ["upgrade_data", "crafting data"], ["heal", "healing item"],
 	["cosmetic", "clothing"], ["decor", "decoration"], ["furniture", "furniture"],
-	["relic", "relic"], ["augment", "salvage"], ["material", "crafting material"],
+	["relic", "relic"], ["trophy", "trophy"], ["augment", "salvage"], ["material", "crafting material"],
 ]
 
 
