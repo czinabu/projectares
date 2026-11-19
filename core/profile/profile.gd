@@ -186,6 +186,15 @@ func record_race(result: Dictionary) -> Dictionary:
 	return applied
 
 
+## Notes a lap on a track and machine (`RaceLeague.note_best`): true when it
+## is a new best, which is saved. Its ghost is kept by the race's bank.
+func keep_race_best(track_id: String, machine: String, lap: float) -> bool:
+	if not RaceLeague.note_best(racing, track_id, machine, lap):
+		return false
+	save()
+	return true
+
+
 func grant_welcome_crate() -> void:
 	if welcome_granted:
 		return

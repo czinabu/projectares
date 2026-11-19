@@ -20,6 +20,10 @@ extends RefCounted
 ## moment (`EVENTS`), their manner, and how you have done against them, so
 ## one you keep beating changes their tune.
 ##
+## It also keeps the racer's best lap on each track and machine ("bests",
+## `best_lap`, `note_best`), whose ghost the bank keeps beside it: any lap
+## counts, a time trial's or a race's.
+##
 ## Load with `const RaceLeague := preload("res://core/race/race_league.gd")`.
 
 ## The leagues, lowest first: the rating that reaches each and how good its
@@ -45,6 +49,8 @@ const DAILY_CAP := 120
 const RECENT := 5
 ## A rival you are this many wins up on is humbled and says so.
 const HUMBLED_AFTER := 3
+## The most best laps kept (track and machine pairs).
+const MAX_BESTS := 48
 
 ## The named rivals: league, skill above the league's own, manner and the
 ## machine they favour ("wheels" or "hover"). The last of each league is
@@ -126,7 +132,7 @@ const LINES := {
 ## A fresh racer: rookie, no rating, no races.
 static func fresh() -> Dictionary:
 	return {"rating": 0, "league": 0, "top_beaten": false, "races": 0, "wins": 0, "podiums": 0,
-			"rivals": {}, "recent": [], "day": 0, "paid": 0}
+			"rivals": {}, "recent": [], "day": 0, "paid": 0, "bests": {}}
 
 
 ## A saved state, made safe: anything missing or out of range is fixed.
@@ -155,7 +161,61 @@ static func clean(raw: Variant) -> Dictionary:
 						"field": clampi(int(row.get("field", 0)), 0, MAX_FIELD),
 						"points": clampi(int(row.get("points", 0)), -MAX_FIELD * LOSE_POINTS, MAX_FIELD * BEAT_POINTS),
 						"day": maxi(0, int(row.get("day", 0)))})
+	var bests: Variant = d.get("bests", {})
+	if typeof(bests) == TYPE_DICTIONARY:
+		for key: Variant in bests:
+			var time := float(bests[key]) if typeof(bests[key]) in [TYPE_FLOAT, TYPE_INT] else -1.0
+			if str(key).length() <= 64 and str(key).contains("|") and time > 0.0 and time < 3600.0 \
+					and out.bests.size() < MAX_BESTS:
+				out.bests[str(key)] = time
 	return out
+
+
+## The key a best lap and its ghost are kept under.
+static func ghost_key(track_id: String, machine: String) -> String:
+	return "%s|%s" % [track_id.left(32), machine.left(31)]
+
+
+## The racer's best lap on a track and machine, or -1. With no machine, the
+## best on the track on any machine.
+static func best_lap(state: Dictionary, track_id: String, machine := "") -> float:
+	var bests: Dictionary = state.get("bests", {})
+	if machine != "":
+		return float(bests.get(ghost_key(track_id, machine), -1.0))
+	var best := -1.0
+	for key: String in bests:
+		if key.get_slice("|", 0) == track_id and (best < 0.0 or float(bests[key]) < best):
+			best = float(bests[key])
+	return best
+
+
+## The machine of the racer's best lap on a track, or "".
+static func best_machine(state: Dictionary, track_id: String) -> String:
+	var bests: Dictionary = state.get("bests", {})
+	var best := -1.0
+	var machine := ""
+	for key: String in bests:
+		if key.get_slice("|", 0) == track_id and (best < 0.0 or float(bests[key]) < best):
+			best = float(bests[key])
+			machine = key.get_slice("|", 1)
+	return machine
+
+
+## Notes a lap: true (and `state` changed) when it is a new best there. A
+## full list keeps its bests and takes no new pair.
+static func note_best(state: Dictionary, track_id: String, machine: String, time: float) -> bool:
+	if time <= 0.0 or time >= 3600.0 or track_id == "" or machine == "":
+		return false
+	if not state.has("bests") or typeof(state.bests) != TYPE_DICTIONARY:
+		state["bests"] = {}
+	var key := ghost_key(track_id, machine)
+	var was := float(state.bests.get(key, -1.0))
+	if was > 0.0 and was <= time:
+		return false
+	if was < 0.0 and state.bests.size() >= MAX_BESTS:
+		return false
+	state.bests[key] = time
+	return true
 
 
 ## A race's result for one racer, made safe: {"track", "place", "field",
