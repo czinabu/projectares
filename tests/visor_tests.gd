@@ -3,6 +3,8 @@ extends RefCounted
 ## the test runner (`-- --only visors` runs just these).
 
 const SkinScript := preload("res://core/visual/actor_skin.gd")
+const GearShapes := preload("res://core/visual/gear_shapes.gd")
+const Human := preload("res://core/visual/human.gd")
 
 const StashRules := preload("res://core/account/stash_rules.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
@@ -160,15 +162,21 @@ static func _wear(t: Node) -> void:
 	var built := true
 	for mode: String in fittings:
 		var model := SkinScript.build_helmet(mode, Color.WHITE, Vector3(0.27, 0.31, 0.31), Color.GRAY)
-		built = built and model.get_node_or_null("Shell") != null and model.get_node_or_null("Glass") != null \
-				and model.get_node_or_null(fittings[mode]) != null
+		built = built and GearShapes.has_part(model, "Shell") and GearShapes.has_part(model, "Glass") \
+				and GearShapes.has_part(model, fittings[mode]) and model.get_node_or_null("Glass") != null
 		model.free()
 	t.check(built, "every visor mode has a helmet model: a shell, its glass and its own fitting")
 	var plain := SkinScript.build_helmet("scan", Color.WHITE, Vector3(0.27, 0.31, 0.31), Color.GRAY)
 	var mk2 := SkinScript.build_helmet("scan", Color.WHITE, Vector3(0.27, 0.31, 0.31), Color.GRAY, 2)
-	t.check(plain.get_node_or_null("Mk2Trim") == null and mk2.get_node_or_null("Mk2Trim") != null
-			and plain.get_node_or_null("Hood") != null,
+	t.check(not GearShapes.has_part(plain, "Mk2Trim") and GearShapes.has_part(mk2, "Mk2Trim")
+			and GearShapes.has_part(plain, "Hood"),
 			"a helmet covers the head with a hood, and a Mk2 wears its lit trim")
+	# The same helmet on two heads is one mesh, built once.
+	var again := SkinScript.build_helmet("scan", Color.WHITE, Vector3(0.27, 0.31, 0.31), Color.GRAY)
+	t.check(again.get_node("Gear").mesh == plain.get_node("Gear").mesh and plain.get_child_count() <= 2
+			and (plain.get_node("Glass") as GeometryInstance3D).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
+			"a helmet is merged into a mesh per material, glass apart and casting no shadow, and shared between heads")
+	again.free()
 	plain.free()
 	mk2.free()
 	var tiers := true
@@ -218,29 +226,30 @@ static func _frames(t: Node) -> void:
 	var reach := []
 	for weight: String in ["light", "medium", "heavy"]:
 		var model := SkinScript.build_frame(weight)
-		built = built and model.get_node_or_null("Chest") != null \
-				and (model.get_node_or_null("Belly") != null) == (weight != "light") \
-				and (model.get_node_or_null("Collar") != null) == (weight == "heavy")
-		# Fitted, not blocky: every plate rides within a few centimetres of
-		# the torso (about 0.13 m to each side and 0.1 m in front of the bone),
-		# a heavy one further out than a light one.
-		var plates := 0
+		built = built and GearShapes.has_part(model, "Chest") and GearShapes.has_part(model, "Carrier") \
+				and GearShapes.has_part(model, "Pouch") and GearShapes.has_part(model, "Strap") \
+				and GearShapes.has_part(model, "Side") == (weight != "light") \
+				and GearShapes.has_part(model, "Belly") == (weight == "heavy") \
+				and GearShapes.has_part(model, "Collar") == (weight == "heavy")
+		# Fitted, not blocky: the carrier and what hangs on it ride within a
+		# few centimetres of the torso (about 0.15 m to each side and 0.125 m
+		# in front of the bone), a heavy one further out than a light one.
 		var front := 0.0
 		for part: MeshInstance3D in model.find_children("*", "MeshInstance3D", false, false):
 			var box := part.transform * part.get_aabb()
-			fitted = fitted and box.position.z > -0.2 and absf(box.position.x) < 0.21 and box.end.x < 0.21
+			fitted = fitted and box.position.z > -0.23 and box.position.x > -0.22 and box.end.x < 0.22
 			front = minf(front, box.position.z)
-			# Coverage is the plates themselves, not the details on them.
-			if part.name in ["Chest", "Back", "Collar"] or part.name.begins_with("Belly"):
-				plates += 1
-		coverage.append(plates)
+		# Coverage is the plates and carrier, not the details on them.
+		coverage.append(Array(model.get_meta("parts")).filter(func(p: String) -> bool:
+				return p in ["Chest", "Back", "Collar", "Side"] or p.begins_with("Belly")).size())
 		reach.append(front)
 		model.free()
-	t.check(fitted, "the plates are curved to the body and ride close to it")
+	t.check(fitted, "the carrier and plates are curved to the body and ride close to it")
 	t.check(coverage[0] < coverage[1] and coverage[1] < coverage[2], "each heavier frame covers more")
-	t.check(reach[0] > reach[1] and reach[1] > reach[2], "each heavier frame stands further off the body")
+	t.check(reach[0] > reach[2], "a heavy frame stands further off the body than a light one")
 	t.check(built and SkinScript.frame_weight("frame_bulwark") == "heavy"
-			and SkinScript.frame_weight("plate_light") == "light", "each frame weight has its own plates")
+			and SkinScript.frame_weight("plate_light") == "light",
+			"each frame weight has its own kit: a carrier, plates, straps and pouches")
 	# Every frame wears a look of its own (a new frame gets a `FRAME_LOOKS`
 	# entry), and a skin's own plates wear their weight's.
 	var looks := {}
@@ -253,12 +262,93 @@ static func _frames(t: Node) -> void:
 		SkinScript.build_frame(id).free()
 	t.check(listed and looks.size() == SkinScript.FRAME_LOOKS.size() and SkinScript.frame_look("skin:heavy") == "bulwark",
 			"each frame has its own look, and a skin's own plates wear their weight's")
-	var pad := SkinScript.build_pad("frame_bulwark", 1.0)
-	var tasset := SkinScript.build_tasset("frame_trooper", -1.0)
-	t.check(pad.get_node_or_null("Pad2") != null and tasset.get_node_or_null("Tasset") != null,
-			"heavy shoulders are layered and medium frames hang a tasset")
-	pad.free()
-	tasset.free()
+	var styled := true
+	for look: String in SkinScript.FRAME_STYLES:
+		for key: String in ["plate", "plate2", "fabric", "strap", "suit", "accent", "metal", "details"]:
+			styled = styled and SkinScript.FRAME_STYLES[look].has(key)
+	t.check(styled, "every look names its plates, carrier, straps, undersuit, accent and metal")
+	# Merging keeps every triangle, whatever order indexed and plain pieces come in.
+	var mixed := Node3D.new()
+	var finish := GearShapes.mat(Color.GRAY)
+	var box := GearShapes.box(mixed, "Box", Vector3.ONE * 0.1, finish, Vector3.ZERO).mesh
+	var dome := GearShapes.add(mixed, "Dome", GearShapes.cap(Vector3.ONE * 0.1, GearShapes.const_of(0.0),
+			GearShapes.const_of(1.4), -PI, PI, 0.01), finish).mesh
+	var want := 0
+	for mesh: Mesh in [box, dome]:
+		var tool := SurfaceTool.new()
+		tool.create_from(mesh, 0)
+		tool.deindex()
+		want += (tool.commit_to_arrays()[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3
+	GearShapes.merge(mixed)
+	var arrays := (mixed.get_node("Gear") as MeshInstance3D).mesh.surface_get_arrays(0)
+	t.check((arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3 == want,
+			"merging a piece's parts into one mesh keeps every triangle")
+	mixed.free()
+	var heavy_pad := SkinScript.build_pad("frame_bulwark", 1.0)
+	var light_pad := SkinScript.build_pad("frame_runner", 1.0)
+	var tasset := SkinScript.build_tasset("frame_trooper", 1.0)
+	var shin := SkinScript.build_shin("frame_bulwark", -1.0)
+	t.check(GearShapes.has_part(heavy_pad, "Pad%d" % int(SkinScript.FRAME_BULK["heavy"]["pads"]))
+			and not GearShapes.has_part(light_pad, "Pad2") and GearShapes.has_part(light_pad, "Pad1"),
+			"shoulder pads are segmented, with more lames the heavier the frame")
+	t.check(GearShapes.has_part(tasset, "Tasset") and GearShapes.has_part(tasset, "LegStrap")
+			and GearShapes.has_part(shin, "Knee") and GearShapes.has_part(shin, "Greave"),
+			"thighs wear a plate and a drop-leg pouch, shins a knee pad and a greave")
+	for piece: Node in [heavy_pad, light_pad, tasset, shin]:
+		piece.free()
+	await _worn_kit(t)
+
+
+## Worn, a frame is the whole kit on the bones it moves with, over the
+## undersuit: the person's clothes go for their build's suit outfit, given
+## back when it comes off.
+static func _worn_kit(t: Node) -> void:
+	Look.enabled = true
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 318, ["frame_trooper"] as Array[String])
+	await t.frames(4)
+	var p := raid.player
+	Look.set_appearance(p, {"build": "m", "head": "Casual_2", "body": "Casual_2", "legs": "Casual_2", "feet": "Casual_2"})
+	await t.frames(6)
+	var skin := p.get_node_or_null("Skin")
+	var skeleton: Skeleton3D = skin.get("_skeleton") if skin else null
+	t.check(skeleton != null, "the player wears a model")
+	if skeleton == null:
+		Look.enabled = false
+		raid.queue_free()
+		return
+	var hung := {}
+	for node in skeleton.get_children():
+		if node is BoneAttachment3D:
+			hung[node.name] = (node as BoneAttachment3D).bone_name
+	t.check(hung.get("Frame") == "Chest" and hung.get("Belt") == "Hips",
+			"the carrier hangs on the chest and the belt on the hips")
+	var limbs := ["UpperArm.L", "UpperArm.R", "LowerArm.L", "LowerArm.R", "UpperLeg.L", "UpperLeg.R", "LowerLeg.L", "LowerLeg.R"]
+	t.check(limbs.all(func(b: String) -> bool: return b in hung.values()),
+			"every upper arm, forearm, thigh and shin wears its piece, hung on its bone")
+	var parts := {}
+	for node in skeleton.get_children():
+		if node is MeshInstance3D and node.has_meta("slot"):
+			parts[node.get_meta("slot")] = node
+	var street: Mesh = parts["body"].mesh
+	var donor: Node3D = Look._instance(Human.outfit_path("m", SkinScript.SUIT_OUTFITS["m"]))
+	var source := donor.find_child(Human.SLOT_NODES["body"], true, false) as MeshInstance3D
+	var suit_body := Human.shaped(source.mesh, source.skin)
+	donor.free()
+	t.check(suit_body != null and street == suit_body,
+			"under a frame a person wears the fitted suit outfit, not their street clothes")
+	var mats: Array = skin.get("_materials")
+	t.check(mats.all(func(m: ShaderMaterial) -> bool: return is_instance_valid(m) and float(m.get_shader_parameter("suit")) == 1.0)
+			and mats.any(func(m: ShaderMaterial) -> bool: return m.get_shader_parameter("suit_color") == SkinScript.FRAME_STYLES["trooper"]["suit"]),
+			"the undersuit wears the frame's own colour")
+	Loadout.wear_frame(p, "")
+	await t.frames(3)
+	t.check(parts["body"].mesh != suit_body and not str(skeleton.get_children().map(func(n: Node) -> String: return n.name)).contains("Belt"),
+			"taken off, the clothes come back and the kit goes")
+	Look.enabled = false
+	raid.queue_free()
+	await t.frames(2)
 
 
 static func _zoom(t: Node) -> void:
