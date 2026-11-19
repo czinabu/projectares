@@ -172,8 +172,20 @@ static func _bounty_and_wanted(t: Node) -> void:
 	var bounty := hunter.bounty
 	hunter.kill("bullet", avenger)
 	await t.frames(2)
-	t.check(avenger.scrip - before == Economy.PLAYER_KILL_SCRIP + Economy.bounty_scrip(bounty),
-			"the bounty goes into the killer's carried scrip (%d)" % (avenger.scrip - before))
+	# Ashfront drops scrip piles (DESIGN.md "Scrip piles"): the bounty lies
+	# in the dead player's pile, a bounty pile, for whoever grabs it.
+	var piles := raid.piles.filter(func(n: Variant) -> bool:
+		return is_instance_valid(n) and (n as LootContainer).bounty > 0)
+	t.check(avenger.scrip - before == Economy.PLAYER_KILL_SCRIP and piles.size() == 1
+			and (piles[0] as LootContainer).bounty == Economy.bounty_scrip(bounty)
+			and (piles[0] as LootContainer).scrip >= Economy.bounty_scrip(bounty),
+			"the bounty drops in the dead player's pile, not straight into the killer's scrip (%d)" % (avenger.scrip - before))
+	if piles.size() == 1:
+		avenger.global_position = (piles[0] as Node3D).global_position
+		var held := avenger.scrip
+		var worth := (piles[0] as LootContainer).scrip
+		raid._tick_piles()
+		t.check(avenger.scrip == held + worth, "running over the pile takes the bounty")
 	t.check(not raid.wanted().any(func(w: Dictionary) -> bool: return w.name == "Hunter"),
 			"and the name comes off the list")
 	raid.queue_free()

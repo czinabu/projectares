@@ -15,7 +15,10 @@ extends RefCounted
 ##   - Scrip is safe in the bank, but it only turns into power as gear,
 ##     and bought gear is lost on death like any other.
 ##   - Shops sell base-level gear only (see `MAX_SHOP_RARITY`). Anything
-##     better has to be found.
+##     better has to be found. The one exception is the back room
+##     (`BLACK_MARKET`): a couple of Rare pieces a day, picked by the date,
+##     at several times their value, so scrip has a top-end use without
+##     making rare gear easy to get (DESIGN.md "Scrip piles").
 ##   - Selling gear back pays less than buying it, so trading with a shop can
 ##     never make money.
 
@@ -43,6 +46,17 @@ const KILL_BOUNTY := 10
 const PLAYER_KILL_SCRIP := 60
 const WARLORD_SCRIP := 150
 const STRONGPOINT_SCRIP := 75
+
+## The plaza's back room (Caleb's call): the one shop that sells Rare gear.
+## Its stock is `BLACK_MARKET_PICKS` pieces a day from `black_market_pool`,
+## the same for everyone all day, at `BLACK_MARKET_MARKUP` times their value.
+const BLACK_MARKET := "black_market"
+const BLACK_MARKET_PICKS := 2
+const BLACK_MARKET_MARKUP := 3.0
+## What the back room deals in: gear only, never trade goods, heavy weapons
+## or artifacts.
+const BLACK_MARKET_TAGS := ["weapon", "armor", "helmet", "flight_rig", "ability", "attachment"]
+const DAY_SECONDS := 86400
 
 
 ## What a player's bounty pays whoever takes them down (Caleb's call: one
@@ -77,6 +91,56 @@ static func buy_price(id: String) -> int:
 	return ItemDB.item_value(id)
 
 
+## What the shop `shop_id` charges for the item: the back room's markup, or
+## the usual price anywhere else.
+static func price_in(shop_id: String, id: String) -> int:
+	if shop_id == BLACK_MARKET:
+		return int(ceil(buy_price(id) * BLACK_MARKET_MARKUP))
+	return buy_price(id)
+
+
+## Today as a day number (UTC days since the epoch, like `Contracts.today`).
+static func today(unix: float = -1.0) -> int:
+	if unix < 0.0:
+		unix = Time.get_unix_time_from_system()
+	return int(floor(unix / DAY_SECONDS))
+
+
+## Everything the back room may ever offer: Rare gear (`BLACK_MARKET_TAGS`)
+## that can be stored, never a heavy weapon, an artifact, a vehicle or a
+## crafted Mk2 or Mk3 (those come only from blueprints). Sorted, so every
+## machine picks the same.
+static func black_market_pool() -> Array[String]:
+	var out: Array[String] = []
+	for id: String in ItemDB.all_ids():
+		if ItemDB.item_rarity(id) != ItemDB.Rarity.RARE or not StashRules.storable(id):
+			continue
+		if ItemDB.has_tag(id, "power") or ItemDB.has_tag(id, "artifact") or is_trade_good(id):
+			continue
+		if int(ItemDB.item_stats(id).get("tier", 1)) > 1 or buy_price(id) <= 0:
+			continue
+		for tag: String in BLACK_MARKET_TAGS:
+			if ItemDB.has_tag(id, tag):
+				out.append(id)
+				break
+	out.sort()
+	return out
+
+
+## The back room's stock on `day`: `BLACK_MARKET_PICKS` different pieces
+## from the pool, picked by the date.
+static func black_market_stock(day: int) -> Array[String]:
+	var pool := black_market_pool()
+	var out: Array[String] = []
+	var k := 0
+	while out.size() < mini(BLACK_MARKET_PICKS, pool.size()) and k < 64:
+		var id: String = pool[absi(hash(["black_market", day, k])) % pool.size()]
+		if id not in out:
+			out.append(id)
+		k += 1
+	return out
+
+
 ## True if any shop may sell the item: tagged for vendors, base level, and not
 ## part of the free scrap kit.
 static func is_shop_item(id: String) -> bool:
@@ -86,6 +150,8 @@ static func is_shop_item(id: String) -> bool:
 
 ## True if the shop `shop_id` sells the item.
 static func for_sale(shop_id: String, id: String) -> bool:
+	if shop_id == BLACK_MARKET:
+		return id in black_market_stock(today())
 	if not is_shop_item(id):
 		return false
 	for tag: String in ShopDB.shop(shop_id).get("tags", []):
@@ -97,6 +163,10 @@ static func for_sale(shop_id: String, id: String) -> bool:
 ## Everything the shop sells, cheapest first.
 static func stock(shop_id: String) -> Array[String]:
 	var out: Array[String] = []
+	if shop_id == BLACK_MARKET:
+		out = black_market_stock(today())
+		out.sort()
+		return out
 	for id: String in ItemDB.all_ids():
 		if for_sale(shop_id, id):
 			out.append(id)
@@ -110,7 +180,7 @@ static func stock(shop_id: String) -> Array[String]:
 static func buy(stash: Array[String], scrip: int, shop_id: String, item_id: String) -> Dictionary:
 	if not for_sale(shop_id, item_id):
 		return _fail("That is not for sale here.", scrip)
-	var price := buy_price(item_id)
+	var price := price_in(shop_id, item_id)
 	if scrip < price:
 		return _fail("Not enough scrip.", scrip)
 	stash.append(item_id)

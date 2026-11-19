@@ -3,6 +3,8 @@ extends RefCounted
 ## play the way a player does. Their kits, how they drop in, loot, fly, sign
 ## out and die. Kept in its own file and called from the test runner.
 
+const Economy := preload("res://core/economy/economy.gd")
+
 
 static func run(t: Node) -> void:
 	_kits(t)
@@ -165,8 +167,15 @@ static func _death(t: Node, raid: Raid) -> void:
 	var dropped: Array[String] = []
 	for bag: LootContainer in bags:
 		dropped.append_array(bag.items)
-	t.check(bags.size() == bags_before + 1 and gear.all(func(id: String) -> bool: return dropped.has(id)),
-			"a dead raider drops its whole kit in a bag")
+	var worth := 0
+	for id: String in gear:
+		worth += Economy.sell_price(id)
+	var pile: LootContainer = bags.back() if bags.size() == bags_before + 1 else null
+	# Ashfront drops a scrip pile (DESIGN.md "Scrip piles"): a bot's at its
+	# share of what its kit sells for.
+	t.check(pile != null and pile.pile and gear.all(func(id: String) -> bool: return not dropped.has(id))
+			and pile.scrip >= int(round(worth * raid.world.bot_pile_share)),
+			"a dead raider drops a scrip pile for its kit, not the kit (%d of %d)" % [pile.scrip if pile else -1, worth])
 	t.check(raid.raiders.is_empty() and raid._bot_respawns.size() == respawns,
 			"it is not replaced by the army")
 	t.check(raid._raider_in >= raid.world.raider_gap - 1.0, "another raider drops in after the usual gap")

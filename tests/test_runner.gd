@@ -33,6 +33,7 @@ const SidearmTests := preload("res://tests/sidearm_tests.gd")
 const BaseUpgradeTests := preload("res://tests/base_upgrade_tests.gd")
 const CraftingTests := preload("res://tests/crafting_tests.gd")
 const SafetyNetTests := preload("res://tests/safety_net_tests.gd")
+const ScripPileTests := preload("res://tests/scrip_pile_tests.gd")
 const AttachmentTests := preload("res://tests/attachment_tests.gd")
 const PowerWeaponTests := preload("res://tests/power_weapon_tests.gd")
 const UpdaterTests := preload("res://tests/updater_tests.gd")
@@ -354,6 +355,7 @@ func _run() -> void:
 	await MarketTests.run(self)
 	await CraftingTests.run(self)
 	await SafetyNetTests.run(self)
+	await ScripPileTests.run(self)
 	await _test_arena()
 	await _test_arena_floor()
 	await _test_online_arena()
@@ -1227,11 +1229,16 @@ func _test_death() -> void:
 	check(results.size() == 1 and results[0].outcome == "died" and results[0].killed_by == bot.display_name,
 			"the life ends as died and names the killer")
 	check(Profile.stash.is_empty(), "nothing reaches the stash on death")
+	# Ashfront drops a scrip pile, not the gear (DESIGN.md "Scrip piles"):
+	# the shard is either the pile's bonus item or sold into its scrip.
 	var bags := raid.get_children().filter(func(n: Node) -> bool:
 		return n is LootContainer and (n as LootContainer).is_bag)
-	check(bags.size() == 1 and "lattice_shard" in (bags[0] as LootContainer).items
-			and "rifle_scrap" in (bags[0] as LootContainer).items,
-			"the player's gear and loot drop in a bag")
+	var pile: LootContainer = bags[0] if bags.size() == 1 else null
+	check(pile != null and pile.pile and "rifle_scrap" not in pile.items
+			and (pile.items == ["lattice_shard"] and pile.scrip == 0
+				or pile.items.is_empty() and pile.scrip == StashService.Economy.sell_price("lattice_shard")),
+			"the player's gear is gone and a scrip pile lies where they fell (%s, %d scrip)"
+			% [pile.items if pile else [], pile.scrip if pile else -1])
 	check(Hud.death_text(results[0], 0.0).contains(bot.display_name) and Hud.death_text(results[0], 0.0).contains("Enter")
 			and not Hud.death_text(results[0], 2.0).contains("Enter"),
 			"the death screen names the killer and offers to drop back in once the wait is over")
@@ -1242,8 +1249,8 @@ func _test_death() -> void:
 	check(raid.player == again and not again.is_dead and raid.players.size() == 1,
 			"dropping back in starts a new life in the same world")
 	check(not is_instance_valid(p) or p.is_queued_for_deletion(), "the old body is cleared away")
-	check(is_instance_valid(bags[0]) and "lattice_shard" in (bags[0] as LootContainer).items,
-			"the bag is still where you fell")
+	check(is_instance_valid(bags[0]) and (bags[0] as LootContainer).pile,
+			"the pile is still where you fell")
 	check(again.protected_left > 0.0 and not Combat.deal(again, DamageInfo.make(10.0, bot, "bullet"))
 			and is_equal_approx(again.health.health, again.health.max_health),
 			"a player who just dropped in cannot be hurt")
@@ -4821,7 +4828,43 @@ func _test_online() -> void:
 				looted_weapon = id
 				if differs:
 					break
-		check(looted_weapon != "", "the bag held a weapon to summon (%s)" % looted_weapon)
+		if looted_weapon == "" and back.call():
+			# Ashfront drops a scrip pile, not the dead player's guns (DESIGN.md
+			# "Scrip piles"), so nothing in the pack is a gun of theirs: store
+			# the gun in hand, then summon it back out of the pack.
+			var held_at := Loadout.worn_index(me, "primary")
+			var held: String = me.weapons[held_at].item_id if held_at >= 0 else ""
+			check(held != "", "the client holds a primary to store")
+			if held != "":
+				await _wait_until(func() -> bool: return me.materialize_left <= 0.0, 180)
+				var put := [0, 0]
+				me.weapon_stored.connect(func(_id: String, _m: int, _r: int) -> void: put[0] += 1)
+				me.weapon_swapped.connect(func(_id: String, _m: int, _r: int) -> void: put[1] += 1)
+				var pack_now := me.inventory.items.size()
+				alpha.store(held)
+				var stowed := func() -> bool:
+					return put[0] > 0 and Loadout.worn_index(me, "primary") < 0 and me.inventory.items.size() == pack_now + 1
+				await _wait_until(stowed, 240)
+				check(stowed.call() and held not in me.gear_items and me.inventory.has_item(held),
+						"the server stores the weapon in hand: it fades out and is in the pack")
+				var seen_put := func() -> bool:
+					var there := bravo.actor_for(alpha.my_actor_id)
+					return there != null and Loadout.worn_index(there, "primary") < 0
+				await _wait_until(seen_put, 180)
+				check(seen_put.call(), "the other client sees it put away")
+				await _wait_until(func() -> bool: return me.dematerialize_left <= 0.0 and alpha.raid.summon_wait(me) <= 0.0, 240)
+				alpha.summon(held)
+				var out := func() -> bool:
+					var at := Loadout.worn_index(me, "primary")
+					return put[1] > 0 and at >= 0 and me.weapons[at].item_id == held and not me.inventory.has_item(held)
+				await _wait_until(out, 180)
+				check(out.call() and held in me.gear_items, "the server summons it back out of the pack, into the hand")
+				check(me.materialize_time > 0.0, "it materializes on the summoner's screen (%.1f s)" % me.materialize_time)
+				var seen_out := func() -> bool:
+					var there := bravo.actor_for(alpha.my_actor_id)
+					return there != null and Loadout.worn_index(there, "primary") >= 0
+				await _wait_until(seen_out, 180)
+				check(seen_out.call(), "the other client sees the summoned weapon on them")
 		if looted_weapon != "" and back.call():
 			var slot := Loadout.weapon_slot(looted_weapon)
 			var worn_before: String = me.weapons[Loadout.worn_index(me, slot)].item_id
@@ -4868,6 +4911,7 @@ func _test_online() -> void:
 				return there != null and Loadout.worn_index(there, slot) < 0
 			await _wait_until(seen_store, 180)
 			check(seen_store.call(), "the other client sees it put away")
+		if back.call():
 			# A ping reaches the pinger; a stranger on another side hears nothing.
 			var ping_heard := [0, 0]
 			alpha.raid.pinged.connect(func(_a: Actor, _at: Vector3) -> void: ping_heard[0] += 1)

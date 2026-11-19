@@ -258,8 +258,10 @@ func _init() -> void:
 	# The Ashland (DESIGN.md "Planet kit"): its sky, ground and horizon.
 	take_planet("ashland")
 	id = "ashfront"
+	# Deaths drop scrip, not gear (Caleb's call, DESIGN.md "Scrip piles").
+	death_drops_scrip = true
 	display_name = "Ashfront"
-	description = "Open battlefield where two armies fight over the wrecks. Always-on PvP, full loot. Safe only at the gate outposts; the burning core pays best."
+	description = "Open battlefield where two armies fight over the wrecks. Always-on PvP. The fallen drop scrip, not gear. Safe only at the gate outposts; the burning core pays best."
 	# A garrison of four at each of the five landmarks, and patrols between them.
 	# Thirty to an army: two garrisons of four, patrols, and a camp at the rim.
 	bot_count = 60
