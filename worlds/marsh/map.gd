@@ -289,7 +289,7 @@ func _build_shore() -> void:
 		var z := SHORE_Z + 18.0 + (i % 2) * 8.0
 		_add_marker("spawn_player", _ground(Vector2(x, z)))
 	for side: float in [-1.0, 1.0]:
-		_add_depot(_ground(Vector2(side * 45.0, SHORE_Z + 4.0)))
+		_add_depot(_ground(Vector2(side * 45.0, SHORE_Z + 4.0)), Vector2(side, 0.0))
 
 
 ## The fungus forests: stalks stood a few metres apart, each a trunk and a
@@ -406,7 +406,7 @@ func _build_stations() -> void:
 				[Vector3(7.4, 0.3, 6.6), Vector3(0, 3.55, 0)]]:
 			_box(part[0], part[1], HUT, hut)
 		_add_marker("spawn_cache", base + Vector3(0, 0.1, 0)).set_meta("loot_source", "station")
-		_add_depot(_ground(at + Vector2(0, 9.0).rotated(-hut.rotation.y)))
+		_add_depot(_ground(at + Vector2(0, 9.0).rotated(-hut.rotation.y)), Vector2(0, 1.0).rotated(-hut.rotation.y))
 		_bot_spot(_ground(at + Vector2(16.0, 0).rotated(i * 2.0)), "shellback", 0 if i == 0 else 2)
 		_bot_spot(_ground(at + Vector2(-14.0, 6.0).rotated(i * 2.0)), "bloater", 4)
 
@@ -566,10 +566,14 @@ func _place_bot_spots() -> void:
 		_add_marker("spawn_bot", spot.at).set_meta("faction", spot.faction)
 
 
-func _add_depot(at: Vector3) -> void:
+## A depot whose uplink terminal stands on the `back` side of its pad (a
+## direction on the ground; zero leaves it on the +Z side).
+func _add_depot(at: Vector3, back := Vector2.ZERO) -> void:
 	var zone := Depot.new()
 	zone.add_to_group("depot")
 	zone.position = at + Vector3(0, 2.0, 0)
+	if back != Vector2.ZERO:
+		zone.rotation.y = atan2(back.x, back.y)
 	add_child(zone)
 
 

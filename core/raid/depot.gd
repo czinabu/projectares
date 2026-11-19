@@ -9,6 +9,9 @@ signal actor_banked(actor: Actor)
 
 var hold_time := 4.0
 var size := Vector3(8.0, 4.0, 8.0)
+## The uplink terminal at the back of the pad, and the mast that rises off it.
+const TERMINAL_SIZE := Vector3(1.8, 1.7, 0.9)
+const MAST_HEIGHT := 9.0
 ## Set by the Raid: true for an actor who has a stash to bank into (a player
 ## who is still in the world).
 var can_bank := Callable()
@@ -23,30 +26,52 @@ func _ready() -> void:
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	add_child(col)
+	_build_station()
 
+
+## The station itself, in plain greybox for `Look` to dress: a pad that is the
+## bank area (deep, so it sits on a slope), and an uplink terminal at
+## its back edge (local +Z) with a mast on it, the beacon you find it by. The
+## terminal is solid; the pad and the middle stay open to stand on. A map turns
+## the depot to point the terminal's back where it wants it.
+func _build_station() -> void:
+	var floor_y := -size.y * 0.5
+	var pad := MeshInstance3D.new()
+	pad.name = "Pad"
+	var slab := BoxMesh.new()
+	# Deep enough below that a pad on a slope never shows a gap under it.
+	slab.size = Vector3(size.x, 1.3, size.z)
+	pad.mesh = slab
+	pad.position.y = floor_y + 0.1 - 0.65
+	pad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(pad)
+
+	var terminal := StaticBody3D.new()
+	terminal.name = "Terminal"
+	terminal.collision_layer = Actor.LAYER_WORLD
+	terminal.collision_mask = 0
+	terminal.position = Vector3(0, floor_y, size.z * 0.5 - TERMINAL_SIZE.z * 0.5 - 0.3)
+	add_child(terminal)
+	var body_shape := BoxShape3D.new()
+	body_shape.size = TERMINAL_SIZE
+	var body_col := CollisionShape3D.new()
+	body_col.shape = body_shape
+	body_col.position.y = TERMINAL_SIZE.y * 0.5
+	terminal.add_child(body_col)
+	var body := MeshInstance3D.new()
+	body.name = "Body"
 	var box := BoxMesh.new()
-	box.size = size
-	var mat := StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(0.2, 1.0, 0.5, 0.18)
-	mat.emission_enabled = true
-	mat.emission = Color(0.2, 1.0, 0.5)
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	box.material = mat
-	var mesh := MeshInstance3D.new()
-	mesh.mesh = box
-	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mesh)
-
-	# A tall beacon so depots can be found from across the map.
-	var beam := BoxMesh.new()
-	beam.size = Vector3(0.4, 60.0, 0.4)
-	beam.material = mat
-	var beam_node := MeshInstance3D.new()
-	beam_node.mesh = beam
-	beam_node.position.y = 30.0
-	beam_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(beam_node)
+	box.size = TERMINAL_SIZE
+	body.mesh = box
+	body.position.y = TERMINAL_SIZE.y * 0.5
+	terminal.add_child(body)
+	var mast := MeshInstance3D.new()
+	mast.name = "Mast"
+	var pole := BoxMesh.new()
+	pole.size = Vector3(0.22, MAST_HEIGHT, 0.22)
+	mast.mesh = pole
+	mast.position = Vector3(TERMINAL_SIZE.x * 0.5 - 0.2, MAST_HEIGHT * 0.5, TERMINAL_SIZE.z * 0.5 - 0.15)
+	terminal.add_child(mast)
 
 
 ## What an actor would bank here: everything in the backpack except healing,

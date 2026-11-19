@@ -730,7 +730,7 @@ func _build_sites() -> void:
 				_build_carrier(at)
 		# The depot sits on the side facing the middle of the map, or north at the middle.
 		var inward := -at.normalized() if at.length() > 1.0 else Vector2(0, -1)
-		_add_depot(_open(at + inward * (radius - 10.0), 6.0))
+		_add_depot(_open(at + inward * (radius - 10.0), 6.0), inward)
 		# The army that starts here, its garrison, and a bike for whoever takes the place.
 		var army: String = site["army"]
 		if army != "":
@@ -886,9 +886,23 @@ func _build_outpost(at: Vector2, dir: Vector2, title: String) -> void:
 		var post := at - dir * (OUTPOST_RADIUS + 0.6) + dir.orthogonal() * side * 4.6
 		var base := _ground(post)
 		_box(Vector3(1.0, 7.0, 1.0), base + Vector3(0, 3.0, 0), COVER_CONCRETE)
-	_add_depot(_ground(at + dir * 7.0))
+	# A beam across the post tops: the gate's sign hangs from it.
+	var beam := _box(Vector3(10.2, 0.8, 1.0), _gate_beam_at(at, dir), COVER_CONCRETE)
+	beam.rotation.y = atan2(dir.x, dir.y)
+	# The depot at the back of the yard, its terminal against the back wall.
+	_add_depot(_ground(at + dir * 7.0), dir)
 	for spot: Vector2 in [at + dir.orthogonal() * 4.0, at - dir.orthogonal() * 4.0, at - dir * 3.0]:
 		_add_marker("spawn_player", _ground(spot))
+
+
+## The middle of the beam over an outpost's gate, a little under the lower
+## of the two post tops so it sits on both.
+func _gate_beam_at(at: Vector2, dir: Vector2) -> Vector3:
+	var gate := at - dir * (OUTPOST_RADIUS + 0.6)
+	var low := INF
+	for side: float in [-1.0, 1.0]:
+		low = minf(low, _ground(gate + dir.orthogonal() * side * 4.6).y)
+	return Vector3(gate.x, low + 6.1, gate.y)
 
 
 ## Risk zones: caches pay by the zone they stand in (rooftops keep their own
@@ -1435,10 +1449,14 @@ func _add_ramp_lot(center: Vector3, yaw: float, park: Vector3) -> void:
 	marker.rotation.y = yaw
 
 
-func _add_depot(at: Vector3) -> void:
+## A depot whose uplink terminal stands on the `back` side of its pad (a
+## direction on the ground; zero leaves it on the +Z side).
+func _add_depot(at: Vector3, back := Vector2.ZERO) -> void:
 	var zone := Depot.new()
 	zone.add_to_group("depot")
 	zone.position = at + Vector3(0, 2.0, 0)
+	if back != Vector2.ZERO:
+		zone.rotation.y = atan2(back.x, back.y)
 	add_child(zone)
 
 
@@ -1735,30 +1753,151 @@ func _dress_core(art: Node3D) -> void:
 		art.add_child(piece)
 
 
-## Gate outposts are lit in a calm green, with their name and rule on the gate.
+## Gate outposts read as a sheltered yard without any overlay: a sign hung
+## from the gate beam, its name and rule on the outer face and what waits
+## outside on the inner one; shield emitters on the post tops and lamps along
+## the walls, all in a calm green; and the line where the bubble ends, laid
+## across the gate's mouth as a lit, striped threshold between two emitter
+## bollards. The line follows the bubble's own radius, so crossing it is
+## exactly where protection stops.
 func _dress_outposts(art: Node3D) -> void:
+	var green := Color(0.4, 1.0, 0.6)
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = green * 0.3
+	glow.emission_enabled = true
+	glow.emission = green
+	glow.emission_energy_multiplier = 2.0
+	var plate_mat := Look.surface("metal", {"tint": Color(0.22, 0.24, 0.23), "scale": 0.5, "grime": 0.6})
 	for node in get_children():
 		if not node.is_in_group("outpost"):
 			continue
 		var at := Vector2(node.position.x, node.position.z)
-		var inward := -at.normalized()
-		var gate := at + inward * (OUTPOST_RADIUS + 0.6)
-		var plate := Label3D.new()
-		plate.text = "%s\nSAFE ZONE · WEAPONS LOCKED" % str(node.get_meta("name", "Outpost")).to_upper()
-		plate.font_size = 96
-		plate.pixel_size = 0.01
-		plate.modulate = Color(0.6, 1.0, 0.75)
-		plate.outline_size = 16
-		plate.position = _ground(gate) + Vector3(0, 8.6, 0)
-		plate.rotation.y = atan2(inward.x, inward.y)
-		art.add_child(plate)
+		var dir := at.normalized()
+		var title := str(node.get_meta("name", "Outpost")).to_upper()
+		var radius := float(node.get_meta("radius", OUTPOST_RADIUS))
+		# The sign under the beam.
+		var beam := _gate_beam_at(at, dir)
+		var panel := MeshInstance3D.new()
+		var board := BoxMesh.new()
+		board.size = Vector3(7.6, 1.5, 0.16)
+		board.material = plate_mat
+		panel.mesh = board
+		panel.position = beam - Vector3(0, 1.3, 0)
+		panel.rotation.y = atan2(dir.x, dir.y)
+		art.add_child(panel)
+		for strip_y: float in [0.71, -0.71]:
+			var trim := MeshInstance3D.new()
+			var edge := BoxMesh.new()
+			edge.size = Vector3(7.6, 0.06, 0.2)
+			edge.material = glow
+			trim.mesh = edge
+			trim.position = panel.position + Vector3(0, strip_y, 0)
+			trim.rotation.y = panel.rotation.y
+			trim.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(trim)
+		# Outside (facing the field, -dir) and inside (facing the yard, +dir).
+		for face: Array in [
+				[-dir, title, "SAFE ZONE · WEAPONS LOCKED"],
+				[dir, title, "LEAVING SAFE ZONE · WEAPONS FREE PAST THE LINE"]]:
+			var normal: Vector2 = face[0]
+			var yaw := atan2(normal.x, normal.y)
+			var front := panel.position + Vector3(normal.x, 0, normal.y) * 0.1
+			art.add_child(_gate_label(face[1], front + Vector3(0, 0.25, 0), yaw, 56, Color(0.7, 1.0, 0.8)))
+			art.add_child(_gate_label(face[2], front + Vector3(0, -0.4, 0), yaw, 30, Color(0.9, 0.92, 0.88)))
+		# Shield emitters on the post tops: a lit head on each.
+		var ortho := dir.orthogonal()
 		for side: float in [-1.0, 1.0]:
-			var lamp := OmniLight3D.new()
-			lamp.light_color = Color(0.45, 1.0, 0.6)
-			lamp.light_energy = 2.0
-			lamp.omni_range = 14.0
-			lamp.position = _ground(gate + inward.orthogonal() * side * 4.6) + Vector3(0, 6.8, 0)
+			var post := at - dir * (radius + 0.6) + ortho * side * 4.6
+			var top := _ground(post) + Vector3(0, 6.6, 0)
+			var head := MeshInstance3D.new()
+			var cell := CylinderMesh.new()
+			cell.top_radius = 0.35
+			cell.bottom_radius = 0.5
+			cell.height = 0.5
+			cell.material = glow
+			head.mesh = cell
+			head.position = top
+			head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(head)
+			var lamp := Look.lamp(green, 2.0, 14.0)
+			lamp.position = top + Vector3(0, 0.4, 0)
 			art.add_child(lamp)
+		# Lamps along the wall tops, on the yard side, every other segment.
+		for k in 12:
+			var angle := TAU * (k + 0.5) / 12.0
+			var out := Vector2.from_angle(angle)
+			if out.dot(-dir) > 0.8 or k % 2 == 1:
+				continue
+			var spot := at + out * (radius + 0.6 - 0.5)
+			var fitting := MeshInstance3D.new()
+			var box := BoxMesh.new()
+			box.size = Vector3(0.6, 0.18, 0.22)
+			box.material = glow
+			fitting.mesh = box
+			fitting.position = _ground(spot) + Vector3(0, 2.25, 0)
+			fitting.rotation.y = -angle + PI * 0.5
+			fitting.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(fitting)
+		# The line where the bubble ends, across the open gate: hazard stripes
+		# with a lit edge on the yard side, laid on the ground along the arc.
+		var reach := deg_to_rad(32.0)
+		var middle := (-dir).angle()
+		var pieces := 14
+		for k in pieces + 1:
+			var angle := middle - reach + 2.0 * reach * k / pieces
+			var out := Vector2.from_angle(angle)
+			var spot := at + out * radius
+			var stripe := MeshInstance3D.new()
+			var slab := BoxMesh.new()
+			slab.size = Vector3(radius * 2.0 * reach / pieces + 0.05, 0.08, 0.5)
+			slab.material = Look.trim("hazard")
+			stripe.mesh = slab
+			stripe.position = _ground(spot) + Vector3(0, 0.03, 0)
+			stripe.rotation.y = -angle + PI * 0.5
+			stripe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(stripe)
+			var lit := MeshInstance3D.new()
+			var line := BoxMesh.new()
+			line.size = Vector3(slab.size.x, 0.06, 0.12)
+			line.material = glow
+			lit.mesh = line
+			lit.position = _ground(at + out * (radius - 0.35)) + Vector3(0, 0.04, 0)
+			lit.rotation.y = stripe.rotation.y
+			lit.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(lit)
+		# A bollard with an emitter cap at each end of the line.
+		for end: float in [-1.0, 1.0]:
+			var spot := at + Vector2.from_angle(middle + end * (reach + 0.04)) * radius
+			var foot := _ground(spot)
+			var bollard := MeshInstance3D.new()
+			var pole := BoxMesh.new()
+			pole.size = Vector3(0.35, 1.3, 0.35)
+			pole.material = Look.trim("hazard")
+			bollard.mesh = pole
+			bollard.position = foot + Vector3(0, 0.6, 0)
+			art.add_child(bollard)
+			var cap := MeshInstance3D.new()
+			var lens := BoxMesh.new()
+			lens.size = Vector3(0.4, 0.2, 0.4)
+			lens.material = glow
+			cap.mesh = lens
+			cap.position = foot + Vector3(0, 1.35, 0)
+			cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(cap)
+
+
+## One face of a gate sign: printed on the board, readable from its front only.
+func _gate_label(text: String, at: Vector3, yaw: float, size: int, color: Color) -> Label3D:
+	var label := Label3D.new()
+	label.text = text
+	label.font_size = size
+	label.pixel_size = 0.01
+	label.outline_size = 0
+	label.modulate = color
+	label.double_sided = false
+	label.position = at
+	label.rotation.y = yaw
+	return label
 
 
 ## Whether a point is within `margin` metres of a building's footprint.

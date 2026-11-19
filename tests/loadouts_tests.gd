@@ -107,7 +107,7 @@ static func run(t: Node) -> void:
 	Loadout._setup_weapon(shotgun, "shotgun_breacher", ItemDB.item_stats("shotgun_breacher"))
 	p.equip_weapon(shotgun)
 	p.cmd.switch_weapon = p.weapons.size() - 1
-	var arena := raid.depots[0].global_position
+	var arena: Vector3 = t._open_ground(raid)
 	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	var target := raid.bots[0]
 	target.global_position = p.global_position + Vector3(0, 0, -3.0)

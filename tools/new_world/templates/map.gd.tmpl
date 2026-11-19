@@ -255,10 +255,14 @@ func _near_site(at: Vector2, margin: float) -> bool:
 	return at.distance_to(BOSS_AT) < margin
 
 
-func _add_depot(at: Vector3) -> void:
+## A depot whose uplink terminal stands on the `back` side of its pad (a
+## direction on the ground; zero leaves it on the +Z side).
+func _add_depot(at: Vector3, back := Vector2.ZERO) -> void:
 	var zone := Depot.new()
 	zone.add_to_group("depot")
 	zone.position = at + Vector3(0, 2.0, 0)
+	if back != Vector2.ZERO:
+		zone.rotation.y = atan2(back.x, back.y)
 	add_child(zone)
 
 

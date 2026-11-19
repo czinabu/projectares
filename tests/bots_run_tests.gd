@@ -13,7 +13,7 @@ static func run(t: Node) -> void:
 	var p := raid.player
 	await t.frames(40)
 	var bot := raid.bots[0]
-	var arena := raid.depots[0].global_position
+	var arena: Vector3 = t._open_ground(raid)
 	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	bot.global_position = Vector3(arena.x, arena.y - 1.9, arena.z - 5.0)
 	var health_before := p.health.health + p.health.armor

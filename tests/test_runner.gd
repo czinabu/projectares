@@ -495,10 +495,26 @@ func _check_crouch(p: Actor) -> void:
 	await frames(20)
 
 
+## The middle of a depot (its Area's centre, about 2 m over the ground)
+## whose pad is open along world Z for several metres both ways: groups
+## that need clear, flat ground stage a fight there. A depot's terminal
+## stands at its back edge, so this picks the one turned furthest to the
+## side, which keeps the terminal off that line (and never one in a gate).
+func _open_ground(raid: Raid) -> Vector3:
+	var best: Depot = raid.depots[0]
+	for depot: Depot in raid.depots:
+		# Not one in a gate outpost: weapons are locked there.
+		if raid.outpost_at(depot.global_position - Vector3(0, 2, 0)) != null:
+			continue
+		if absf(depot.global_basis.z.x) > absf(best.global_basis.z.x) + 0.01:
+			best = depot
+	return best.global_position
+
+
 func _duel(raid: Raid) -> Array:
 	var p := raid.player
 	await frames(40)
-	var arena := raid.depots[0].global_position
+	var arena := _open_ground(raid)
 	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
