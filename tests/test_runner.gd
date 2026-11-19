@@ -425,6 +425,17 @@ func _test_racing_online() -> void:
 	print("Racing online: a time trial on a race server")
 	var port := 24921
 	_wipe_dir(NET_ACCOUNTS)
+	# A friend who has raced here before: their best lap's ghost is kept
+	# beside their account.
+	var accounts := StashService.new()
+	accounts.save_dir = NET_ACCOUNTS
+	_net_secrets["Theo"] = StashService.new_secret()
+	var theo_id: String = accounts.sign_in("Theo", _net_secrets["Theo"]).account_id
+	var theo_lap := RaceGhost.new()
+	for k in 300:
+		theo_lap.record(k * 0.1, Vector3(k, 0, 0), 0.0)
+	accounts.keep_ghost(theo_id, "coilrun", "bike_scrapper", 61.5, theo_lap.to_packed())
+	accounts.close()
 	var pid := _start_server(port, ["--bots", "0"], "meridian")
 	var rhea := await _join("Rhea", port)
 	check(rhea != null and rhea.raid is Race, "a client joins the race world, run by a Race")
@@ -472,6 +483,29 @@ func _test_racing_online() -> void:
 	await frames(30)
 	check(me.vehicle != null and bool(me.vehicle.get("held")) and absf(float(me.vehicle.get("speed"))) < 0.5,
 			"the client holds its machine for the lights like the server")
+	# Ghosts: none of your own yet; a saved friend's best is on the board
+	# and comes to chase.
+	race.want_ghost("mine", race.track.id, "bike_scrapper")
+	await _wait_until(func() -> bool: return not race.ghosts.get("mine|%s|bike_scrapper" % race.track.id, {"waiting": true}).has("waiting"), 240)
+	check(race.ghosts.has("mine|%s|bike_scrapper" % race.track.id) and race.ghost_shown("mine", race.track.id,
+			"bike_scrapper").is_empty(), "the server answers that there is no ghost of your own yet")
+	# Met on this server, then saved as a contact.
+	var theo := await _sign_in("Theo", port)
+	await _wait_until(func() -> bool: return rhea.social_state.get("contacts", []).any(
+			func(c: Dictionary) -> bool: return c.id == theo_id), 240)
+	rhea.change_contact("add", theo_id)
+	await _wait_until(func() -> bool: return not race.friends_on(race.track.id).is_empty(), 240)
+	await _leave(theo)
+	var friends := race.friends_on(race.track.id)
+	check(friends.size() == 1 and friends[0].name == "Theo" and is_equal_approx(float(friends[0].time), 61.5),
+			"a saved friend's best lap reaches the pit board")
+	check(RaceView.board_text(race.board_for(race.track.id), {}, friends).contains("FRIENDS"),
+			"and is written under the board's own times")
+	race.want_ghost("friend", race.track.id, "bike_scrapper")
+	await _wait_until(func() -> bool: return not race.ghost_shown("friend", race.track.id, "bike_scrapper").is_empty(), 240)
+	var friend_ghost := race.ghost_shown("friend", race.track.id, "bike_scrapper")
+	check(not friend_ghost.is_empty() and friend_ghost.name == "Theo" and is_equal_approx(float(friend_ghost.lap), 61.5)
+			and (friend_ghost.ghost as RaceGhost).samples() == 300, "the friend's ghost comes from the server to chase")
 	await _wait_until(func() -> bool: return str(race.remote_run.get("phase", "")) == "racing", 400)
 	await frames(40)
 	check(str(race.remote_run.get("phase", "")) == "racing" and me.vehicle != null
@@ -504,6 +538,14 @@ func _test_racing_online() -> void:
 		return int(rhea.account.get("racing", {}).get("races", 0)) > races_before, 240)
 	check(int(rhea.account.get("racing", {}).get("races", 0)) == races_before + 1,
 			"leaving a race counts as a finish that did not finish, on the server's account")
+	# A desk sign-up reaches the server, which decides it: away from race
+	# control it is turned away with the reason.
+	var notices: Array = []
+	me.notice.connect(func(text: String) -> void: notices.append(text))
+	race.ask("signup:%s:bike_raider" % race.track.id)
+	await _wait_until(func() -> bool: return not notices.is_empty(), 240)
+	check(notices.has("Sign up at race control's desk") and me.vehicle == null,
+			"a desk sign-up is the server's to decide (%s)" % str(notices))
 	await _leave(rhea)
 	OS.kill(pid)
 

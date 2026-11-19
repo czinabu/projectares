@@ -74,6 +74,8 @@ var time_override := -1.0
 
 ## Account id -> Account. Loaded lazily from disk.
 var _accounts := {}
+## Account id -> kept race ghosts (`keep_ghost`), read from disk when first asked.
+var _ghosts := {}
 ## The open store, made on first use (`_store_ready`).
 var _store: RefCounted = null
 ## While a `transaction` runs: account id -> its save from before it, and the
@@ -941,6 +943,89 @@ func record_race(account_id: String, result: Dictionary) -> Dictionary:
 	account.scrip = Economy.add(account.scrip, int(applied.scrip))
 	_save(account)
 	return {"ok": true, "points": applied.points, "scrip": applied.scrip, "promoted": applied.promoted}
+
+
+## Keeps a lap's ghost (`RaceGhost.to_packed`) on the account when it is
+## its best on that track and machine (`RaceLeague.note_best`): the best
+## time goes in the account's racing state, the ghost beside the account in
+## a file of its own (`ghosts/<id>.json`, never in the account's row, so a
+## save stays small). Only a `Race` on the authority sends one.
+func keep_ghost(account_id: String, track_id: String, machine: String, lap: float, packed: String) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	if RaceGhost.from_packed(packed) == null:
+		return _fail("That is not a lap.")
+	if not RaceLeague.note_best(account.racing, track_id, machine, lap):
+		return {"ok": true, "kept": false}
+	var ghosts := _ghosts_of(account_id)
+	ghosts[RaceLeague.ghost_key(track_id, machine)] = {"lap": lap, "ghost": packed}
+	# Pairs that lost their best (a full list) lose their ghost too.
+	for key: String in ghosts.keys():
+		if not account.racing.bests.has(key):
+			ghosts.erase(key)
+	if persist:
+		DirAccess.make_dir_recursive_absolute(save_dir.path_join("ghosts"))
+		SafeFile.write(_ghost_path(account_id), JSON.stringify(ghosts))
+	_save(account)
+	return {"ok": true, "kept": true}
+
+
+## The fastest kept ghost on a track among the accounts `ids` (on
+## `machine`, or any machine with none): {"ok", "id", "name", "machine",
+## "lap", "ghost"}, or {"ok": false} when none of them has one.
+func race_ghost(ids: Array, track_id: String, machine := "") -> Dictionary:
+	var best := {}
+	for id: Variant in ids.slice(0, 64):
+		var account := load_account(str(id))
+		if account == null:
+			continue
+		var on := machine if machine != "" else RaceLeague.best_machine(account.racing, track_id)
+		var lap := RaceLeague.best_lap(account.racing, track_id, on)
+		if lap <= 0.0 or (not best.is_empty() and lap >= float(best.lap)):
+			continue
+		var kept: Dictionary = _ghosts_of(account.id).get(RaceLeague.ghost_key(track_id, on), {})
+		if kept.is_empty():
+			continue
+		best = {"ok": true, "id": account.id, "name": account.shown_name, "machine": on, "lap": lap,
+				"ghost": str(kept.get("ghost", ""))}
+	return best if not best.is_empty() else _fail("No lap kept there yet.")
+
+
+## Each of the accounts `ids`' best lap on every track they have one:
+## [{"name", "track", "machine", "time"}], fastest first (the pit boards'
+## friends' times).
+func race_bests(ids: Array) -> Array:
+	var rows: Array = []
+	for id: Variant in ids.slice(0, 64):
+		var account := load_account(str(id))
+		if account == null:
+			continue
+		var tracks := {}
+		for key: String in account.racing.get("bests", {}):
+			tracks[key.get_slice("|", 0)] = true
+		for track_id: String in tracks:
+			var machine := RaceLeague.best_machine(account.racing, track_id)
+			rows.append({"name": account.shown_name, "track": track_id, "machine": machine,
+					"time": RaceLeague.best_lap(account.racing, track_id, machine)})
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.time) < float(b.time))
+	return rows
+
+
+func _ghosts_of(account_id: String) -> Dictionary:
+	if not _ghosts.has(account_id):
+		var read: Variant = SafeFile.read_json(_ghost_path(account_id)) if persist else null
+		var kept := {}
+		if read is Dictionary:
+			for key: Variant in read:
+				if read[key] is Dictionary:
+					kept[str(key)] = read[key]
+		_ghosts[account_id] = kept
+	return _ghosts[account_id]
+
+
+func _ghost_path(account_id: String) -> String:
+	return save_dir.path_join("ghosts").path_join(account_id.validate_filename() + ".json")
 
 
 ## Calls off a deploy that never became a real run: the gear goes back.

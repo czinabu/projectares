@@ -1,21 +1,34 @@
 class_name RaceView
 extends Node
+
+const RaceLeague := preload("res://core/race/race_league.gd")
+
 ## The local racer's view of a `Race` (DESIGN.md section 9), all in the
 ## world: the gantry's lights counting the run down, the split written big
 ## on each checkpoint's arch as you pass it (green ahead of your best, amber
-## behind), the best laps on the pit board, and the ghost of your best lap
-## on this machine running beside you. Reads only `Race.view_run` and
-## `Race.board`, so it is the same solo and online, and changes nothing in
-## the race. Never made on a headless server.
+## behind), the best laps and your friends' on the pit board, and the ghost
+## you picked on the race icon (`ghost_pick`: your best lap on this machine,
+## a friend's, the board leader's) running beside you. Reads only
+## `Race.view_run`, `Race.board`, `Race.friend_bests` and the ghosts the
+## race was sent (`Race.want_ghost`, `ghost_shown`), so it is the same solo
+## and online, and changes nothing in the race. Never made on a headless
+## server. Solo, the board starts with the profile's best laps.
 ##
-## Ghosts are kept per track and machine in `GHOST_PATH`, written only while
-## `Profile.persist` is on; solo, the board starts with the bests they hold.
+## Race control's desks are here too: standing at one shows what it does
+## and how the next race stands (its "Status" label and a prompt), and the
+## interact key signs up (`Race.ask("signup:...")`, the race decides) or,
+## at a watch desk, watches: the view follows the racers on that track
+## from behind (`watching`, `watching_changed`), the wheel picks another,
+## and the interact key or Esc comes back. Watching is a view only; `Main`
+## holds the player still while it lasts.
 ##
 ## With several tracks each gantry, arch and board carries the meta "track"
 ## (a track id; none means the first track), and only the run's own track's
 ## gantry and arches answer it.
 
-const GHOST_PATH := "user://race_ghosts.json"
+## The view went to watching a track's racers, or came back.
+signal watching_changed(on: bool)
+
 ## Seconds a split stays on an arch.
 const SPLIT_TIME := 4.0
 const AHEAD := Color(0.35, 1.0, 0.55)
@@ -24,11 +37,13 @@ const NEUTRAL := Color(0.6, 0.9, 1.0)
 const LIGHT_ON := Color(1.0, 0.12, 0.08)
 const LIGHT_GO := Color(0.3, 1.0, 0.45)
 const LIGHT_OFF := Color(0.15, 0.05, 0.05)
+## Friends' best laps shown under a board's own.
+const FRIENDS_SHOWN := 3
 const GHOST_COLOR := Color(0.45, 0.85, 1.0)
 
 var race: Race
-## Shown or not (the race icon's ghost pick).
-var ghost_on := true
+## Which ghost is shown (`Race.GHOST_PICKS`, the race icon's ghost pick).
+var ghost_pick := "mine"
 
 var _lights: Array[MeshInstance3D] = []
 var _light_mats: Array[StandardMaterial3D] = []
@@ -36,13 +51,23 @@ var _light_tracks: Array[String] = []
 var _splits := {}       # "track:gate" -> Label3D
 var _split_left := {}   # "track:gate" -> seconds still shown
 var _boards: Array[Label3D] = []
-## Track id -> machine id -> RaceGhost, the best laps on disk.
-var _ghosts := {}
-## The lap being driven, recorded as it goes.
-var _recording := RaceGhost.new()
-var _recording_lap := -1
 var _ghost_node: Node3D
 var _ghost_machine := ""
+## The track being watched from a watch desk, or "".
+var watching := ""
+var _desks: Array[Node3D] = []
+var _desk_in := 0.0
+var _hud: CanvasLayer
+var _prompt: Label
+var _caption: Label
+var _camera: Camera3D
+var _previous: Camera3D
+var _watched: Node3D
+var _watch_list: Array = []
+var _watch_pick := 0
+var _list_in := 0.0
+## The frame watching stopped on, so the same press does not start it again.
+var _stopped_frame := -1
 var _go_flash := 0.0
 var _board_in := 0.0
 var _was_phase := ""
@@ -56,7 +81,6 @@ func setup(p_race: Race) -> void:
 func _ready() -> void:
 	if race == null or race.track == null:
 		return
-	_load_ghosts()
 	for node: Node in race.map.find_children("*", "", true, false) if race.map != null else []:
 		if node.is_in_group("race_light") and node is MeshInstance3D:
 			_lights.append(node)
@@ -66,6 +90,8 @@ func _ready() -> void:
 				_splits[_key(_track_of(node), int(node.get_meta("gate", 0)))] = label
 		elif node.is_in_group("race_board") and node is Label3D:
 			_boards.append(node)
+		elif node.is_in_group("race_desk") and node is Node3D:
+			_desks.append(node)
 	_lights.sort_custom(func(a: MeshInstance3D, b: MeshInstance3D) -> bool:
 		return int(a.get_meta("index", 0)) < int(b.get_meta("index", 0)))
 	for light in _lights:
@@ -77,13 +103,13 @@ func _ready() -> void:
 		light.material_override = mat
 		_light_mats.append(mat)
 	race.run_changed.connect(_on_run_changed)
-	race.lap_finished.connect(_on_lap_finished)
 	race.board_changed.connect(_draw_board)
 	race.heat_changed.connect(_draw_board)
 	if race.mode != Raid.Mode.CLIENT:
 		# Solo: your saved bests are the board's first times.
 		_seed_board()
 	_draw_board()
+	_make_hud()
 
 
 ## The track a gantry light, arch or board belongs to.
@@ -111,8 +137,9 @@ func _process(delta: float) -> void:
 			_split_left.erase(g)
 			if _splits.has(g):
 				_splits[g].text = ""
-	_record(view)
 	_update_ghost(view)
+	_update_desks(delta)
+	_update_watch(delta)
 	# A forming race's countdown on the board.
 	_board_in -= delta
 	if _board_in <= 0.0:
@@ -122,6 +149,197 @@ func _process(delta: float) -> void:
 				_draw_board()
 				break
 	_was_phase = str(view.get("phase", ""))
+
+
+# --- Race control's desks and watching --------------------------------------------
+
+func _make_hud() -> void:
+	_hud = CanvasLayer.new()
+	_hud.layer = 2
+	add_child(_hud)
+	_prompt = _label(22, Color(1.0, 0.8, 0.45), 110.0)
+	_caption = _label(24, Color(0.75, 0.95, 1.0), -160.0, 1.0)
+
+
+func _label(font_size: int, color: Color, y: float, anchor_y := 0.5) -> Label:
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	label.add_theme_constant_override("outline_size", 5)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.anchor_left = 0.5
+	label.anchor_right = 0.5
+	label.anchor_top = anchor_y
+	label.anchor_bottom = anchor_y
+	label.offset_left = -500.0
+	label.offset_right = 500.0
+	label.offset_top = y
+	label.offset_bottom = y + 64.0
+	_hud.add_child(label)
+	return label
+
+
+## The desk the local player stands at, or null.
+func desk_here() -> Node3D:
+	var me := race.player
+	if me == null or not is_instance_valid(me) or me.vehicle != null or me.is_dead:
+		return null
+	for desk in _desks:
+		if Vector2(desk.global_position.x - me.global_position.x,
+				desk.global_position.z - me.global_position.z).length() <= Race.DESK_REACH:
+			return desk
+	return null
+
+
+## What a desk says now: its own words and the next race there.
+static func desk_text(title: String, heat: Dictionary) -> String:
+	match str(heat.get("phase", "")):
+		"forming":
+			var since := (Time.get_ticks_msec() - int(heat.get("made", 0))) / 1000.0
+			return "%s\nNext race %s · %d/%d riders" % [title, Race.format_countdown(float(heat.get("starts_in", 0.0)) - since),
+					int(heat.get("people", 0)), Race.GRID_SIZE]
+		"racing":
+			return "%s\nRace on · %d on the grid" % [title, int(heat.get("field", 0))]
+	return "%s\nNo race yet: start one" % title
+
+
+## The prompt at a desk.
+static func desk_prompt(machine: String, heat: Dictionary) -> String:
+	if machine == "":
+		return "E  Watch the racers here"
+	if str(heat.get("phase", "")) == "racing":
+		return "A race is on: the next forms once it is over"
+	if str(heat.get("phase", "")) == "forming":
+		return "E  Join the next race on the grid"
+	return "E  Start the next race (AI fill the grid)"
+
+
+func _update_desks(delta: float) -> void:
+	_desk_in -= delta
+	if _desk_in <= 0.0:
+		_desk_in = 0.5
+		for desk in _desks:
+			var label := desk.get_node_or_null("Status") as Label3D
+			if label == null:
+				continue
+			if not desk.has_meta("title"):
+				desk.set_meta("title", label.text)
+			var heat := race.heat_view(str(desk.get_meta("track", "")))
+			label.text = desk_text(str(desk.get_meta("title")), heat) if str(desk.get_meta("machine", "")) != "" \
+					else str(desk.get_meta("title"))
+	var desk := desk_here() if watching == "" else null
+	_prompt.text = desk_prompt(str(desk.get_meta("machine", "")), race.heat_view(str(desk.get_meta("track", "")))) \
+			if desk != null else ""
+	if desk != null and Input.is_action_just_pressed("interact") and not get_viewport().gui_get_focus_owner() \
+			and Engine.get_process_frames() != _stopped_frame:
+		use_desk(desk)
+
+
+## Uses a desk: signs up for its race, or watches its track.
+func use_desk(desk: Node3D) -> void:
+	var track_id := str(desk.get_meta("track", ""))
+	var machine := str(desk.get_meta("machine", ""))
+	if machine == "":
+		watch(track_id)
+	else:
+		race.ask("signup:%s:%s" % [track_id, machine])
+
+
+## Starts (a track id) or stops ("") watching a track's racers.
+func watch(track_id: String) -> void:
+	if track_id == watching:
+		return
+	watching = track_id
+	_watched = null
+	_watch_pick = 0
+	_list_in = 0.0
+	if track_id != "":
+		if _camera == null:
+			_camera = Camera3D.new()
+			_camera.name = "WatchCamera"
+			_camera.top_level = true
+			_camera.fov = 70.0
+			_camera.far = 4000.0
+			add_child(_camera)
+		_previous = get_viewport().get_camera_3d()
+		var desk_at := race.track_by_id(track_id).pit_spot()
+		_camera.global_transform = Transform3D(Basis.looking_at(Vector3.FORWARD, Vector3.UP), desk_at + Vector3(0, 12, 20))
+		_camera.make_current()
+	else:
+		if _previous != null and is_instance_valid(_previous) and _previous.is_inside_tree():
+			_previous.make_current()
+		_caption.text = ""
+		_stopped_frame = Engine.get_process_frames()
+	watching_changed.emit(track_id != "")
+
+
+## Who can be watched on a track: the riders on its road, people first.
+func watch_list(track_id: String) -> Array:
+	var rt := race.track_by_id(track_id)
+	var people: Array = []
+	var ai: Array = []
+	for v: Variant in race.vehicles:
+		if not is_instance_valid(v):
+			continue
+		var vehicle := v as Node3D
+		var rider: Variant = vehicle.get("rider")
+		if rider == null or not is_instance_valid(rider) or rider == race.player or race.track_near(vehicle.global_position) != rt:
+			continue
+		(ai if (rider as Node).has_meta("race_ai") else people).append(vehicle)
+	return people + ai
+
+
+func _update_watch(delta: float) -> void:
+	if watching == "":
+		return
+	_list_in -= delta
+	if _list_in <= 0.0 or _watched == null or not is_instance_valid(_watched) or _watched.get("rider") == null:
+		_list_in = 1.0
+		_watch_list = watch_list(watching)
+		if _watched == null or not is_instance_valid(_watched) or _watched not in _watch_list:
+			_watched = _watch_list[clampi(_watch_pick, 0, _watch_list.size() - 1)] if not _watch_list.is_empty() else null
+	var rt := race.track_by_id(watching)
+	if _watched == null:
+		_caption.text = "WATCHING %s · nobody on the track yet\nE or Esc: back" % rt.display_name.to_upper()
+		return
+	var rider: Actor = _watched.get("rider")
+	var velocity: Vector3 = _watched.get("velocity") if _watched.get("velocity") is Vector3 else Vector3.ZERO
+	var back := -_watched.global_basis.z
+	if Vector2(velocity.x, velocity.z).length() > 3.0:
+		back = Vector3(velocity.x, 0, velocity.z).normalized()
+	var want := _watched.global_position - back * 9.0 + Vector3(0, 3.6, 0)
+	var weight := 1.0 - exp(-delta * 4.0)
+	_camera.global_position = _camera.global_position.lerp(want, weight)
+	var look := _watched.global_position + Vector3(0, 1.2, 0) + back * 4.0
+	if _camera.global_position.distance_to(look) > 0.5:
+		_camera.look_at(look, Vector3.UP)
+	_caption.text = "WATCHING %s · %s · %s  (%d/%d)\nWheel: another racer · E or Esc: back" % [rt.display_name.to_upper(),
+			rider.display_name if is_instance_valid(rider) else "?", _machine_tag(str(_watched.get("item_id"))),
+			_watch_list.find(_watched) + 1, _watch_list.size()]
+
+
+## Another racer to watch (`step` +1 or -1).
+func watch_next(step: int) -> void:
+	if _watch_list.is_empty():
+		return
+	var at := _watch_list.find(_watched)
+	_watch_pick = posmod(at + step, _watch_list.size())
+	_watched = _watch_list[_watch_pick]
+
+
+func _input(event: InputEvent) -> void:
+	if watching == "":
+		return
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			watch_next(1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1)
+			get_viewport().set_input_as_handled()
+	elif (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE) \
+			or event.is_action_pressed("interact"):
+		watch("")
+		get_viewport().set_input_as_handled()
 
 
 # --- The gantry -----------------------------------------------------------------
@@ -178,23 +396,29 @@ func _split_time(view: Dictionary) -> float:
 func _draw_board() -> void:
 	for board in _boards:
 		var on := _track_of(board)
-		board.text = board_text(race.board_for(on), race.heat_view(on))
+		board.text = board_text(race.board_for(on), race.heat_view(on), race.friends_on(on))
 
 
 ## A board's rows as its screen shows them: a live race forming or running
 ## on top, its results while they are up, else the best laps.
-static func board_text(rows: Array[Dictionary], heat := {}) -> String:
+## Your friends' best laps there follow under FRIENDS (`FRIENDS_SHOWN`).
+static func board_text(rows: Array[Dictionary], heat := {}, friends: Array[Dictionary] = []) -> String:
 	var text := heat_text(heat)
 	if str(heat.get("phase", "")) == "done":
 		return text
 	if text != "":
 		text += "\n"
 	if rows.is_empty():
-		text = "No times yet\nTake a machine from the pit bays"
+		text = "No times yet\nTake a machine from the pit bays\n"
 	for i in rows.size():
 		var row: Dictionary = rows[i]
 		text += "%d   %-14s %-8s %s\n" % [i + 1, str(row.name).left(14), _machine_tag(str(row.machine)),
 				Race.format_time(float(row.time))]
+	if not friends.is_empty():
+		text += "FRIENDS\n"
+		for row: Dictionary in friends.slice(0, FRIENDS_SHOWN):
+			text += "    %-14s %-8s %s\n" % [str(row.name).left(14), _machine_tag(str(row.machine)),
+					Race.format_time(float(row.time))]
 	return text.strip_edges(false, true)
 
 
@@ -230,59 +454,29 @@ static func _machine_tag(id: String) -> String:
 
 # --- Ghosts ---------------------------------------------------------------------
 
-## Records the local racer's lap as it is driven.
-func _record(view: Dictionary) -> void:
-	var me := race.player
-	if view.is_empty() or str(view.get("phase", "")) != "racing" or me == null or not is_instance_valid(me) \
-			or me.vehicle == null:
-		_recording.clear()
-		_recording_lap = -1
-		return
-	var lap := int(view.get("lap", 1))
-	if lap != _recording_lap:
-		_recording.clear()
-		_recording_lap = lap
-	var vehicle: Node3D = me.vehicle
-	_recording.machine = str(view.get("machine", ""))
-	_recording.record(Race.run_lap_time(view), vehicle.global_position, vehicle.global_rotation.y)
-
-
-func _on_lap_finished(actor: Actor, lap_time: float, counted: bool) -> void:
-	if actor != race.player:
-		return
-	var ghost := _recording
-	_recording = RaceGhost.new()
-	_recording_lap = -1
-	if not counted or ghost.samples() < 10:
-		return
-	ghost.lap_time = lap_time
-	var on := _run_track(race.view_run())
-	var best := ghost_for(ghost.machine, on)
-	if best != null and best.lap_time <= lap_time:
-		return
-	if not _ghosts.has(on):
-		_ghosts[on] = {}
-	_ghosts[on][ghost.machine] = ghost
-	_save_ghosts()
-
-
-## The best lap kept for `machine` on a track (the first with none), or null.
-func ghost_for(machine: String, track_id := "") -> RaceGhost:
-	return _ghosts.get(track_id if track_id != "" else race.track.id, {}).get(machine)
+## The ghost picked for the local racer's run, asked for when first
+## needed: {"name", "machine", "lap", "ghost"} or {} (none, or on its way).
+func shown_ghost(view: Dictionary) -> Dictionary:
+	var machine := str(view.get("machine", ""))
+	if view.is_empty() or ghost_pick == "off" or machine == "":
+		return {}
+	var on := _run_track(view)
+	race.want_ghost(ghost_pick, on, machine)
+	return race.ghost_shown(ghost_pick, on, machine)
 
 
 func _update_ghost(view: Dictionary) -> void:
-	var machine := str(view.get("machine", ""))
-	var ghost := ghost_for(machine, _run_track(view)) if ghost_on and str(view.get("phase", "")) == "racing" else null
-	if ghost == null:
+	var shown := shown_ghost(view) if str(view.get("phase", "")) == "racing" else {}
+	if shown.is_empty():
 		if _ghost_node != null:
 			_ghost_node.visible = false
 		return
-	if _ghost_node == null or _ghost_machine != machine:
+	var ghost: RaceGhost = shown.ghost
+	if _ghost_node == null or _ghost_machine != ghost.machine:
 		if _ghost_node != null:
 			_ghost_node.queue_free()
-		_ghost_node = build_ghost(machine)
-		_ghost_machine = machine
+		_ghost_node = build_ghost(ghost.machine)
+		_ghost_machine = ghost.machine
 		race.add_child(_ghost_node)
 	var time := Race.run_lap_time(view)
 	_ghost_node.visible = time <= ghost.lap_time
@@ -329,40 +523,9 @@ static func build_ghost(machine: String) -> Node3D:
 
 func _seed_board() -> void:
 	var name := race.player.display_name if race.player != null and is_instance_valid(race.player) else "You"
-	for t in race.circuits:
-		for machine: String in _ghosts.get(t.id, {}):
-			var ghost: RaceGhost = _ghosts[t.id][machine]
-			if ghost.lap_time > 0.0:
-				race.add_record(name, machine, ghost.lap_time, "", t.id)
-
-
-func _load_ghosts() -> void:
-	_ghosts.clear()
-	if not FileAccess.file_exists(GHOST_PATH):
-		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(GHOST_PATH))
-	if not data is Dictionary:
-		return
-	for track_id: Variant in data:
-		if not data[track_id] is Dictionary:
-			continue
-		var by_machine := {}
-		for machine: Variant in data[track_id]:
-			var ghost := RaceGhost.from_data(data[track_id][machine])
-			if ghost != null:
-				ghost.machine = str(machine)
-				by_machine[str(machine)] = ghost
-		_ghosts[str(track_id)] = by_machine
-
-
-func _save_ghosts() -> void:
-	if not Profile.persist:
-		return
-	var data := {}
-	for track_id: String in _ghosts:
-		data[track_id] = {}
-		for machine: String in _ghosts[track_id]:
-			data[track_id][machine] = (_ghosts[track_id][machine] as RaceGhost).to_data()
-	var file := FileAccess.open(GHOST_PATH, FileAccess.WRITE)
-	if file != null:
-		file.store_string(JSON.stringify(data))
+	if race.league_bank is Race.ProfileLeagueBank:
+		(race.league_bank as Race.ProfileLeagueBank).load_kept()
+	var state := race.league_bank.state("") if race.league_bank != null else RaceLeague.fresh()
+	var bests: Dictionary = state.get("bests", {})
+	for key: String in bests:
+		race.add_record(name, key.get_slice("|", 1), float(bests[key]), "", key.get_slice("|", 0))

@@ -183,6 +183,19 @@ static func _in_process(t: Node) -> void:
 	t.check(service.stash.scrip_of(ada) == before + 20 and a.scrip_of(ada) == before + 20 and a.queued() == 0,
 			"and the service's balance follows")
 
+	# Race ghosts: kept through one server, found through another.
+	var lap := RaceGhost.new()
+	for k in 50:
+		lap.record(k * 0.1, Vector3(k, 0, 0), 0.0)
+	a.keep_ghost(ada, "coilrun", "bike_raider", 64.0, lap.to_packed())
+	await _until(t, func() -> bool: return a.queued() == 0, 2.0)
+	var ghost: Dictionary = await b.race_ghost([ada], "coilrun", "bike_raider")
+	var bests: Array = await b.race_bests([ada])
+	t.check(ghost.get("ok", false) and is_equal_approx(float(ghost.get("lap", 0.0)), 64.0)
+			and RaceGhost.from_packed(ghost.get("ghost"), "bike_raider", 64.0).samples() == 50
+			and bests.size() == 1 and is_equal_approx(float(bests[0].time), 64.0),
+			"a race ghost kept through one server is found, with its time, through another")
+
 	# The market: the board is the service's, shared by every server.
 	var bo_signed: Dictionary = await b.sign_in_with({"method": "secret", "name": "Bodil", "secret": Accounts.new_secret()})
 	var bo: String = bo_signed.get("account_id", "")

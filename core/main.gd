@@ -433,7 +433,7 @@ func _attach_base_view() -> void:
 	controller.portal_requested.connect(_on_portal_requested)
 	controller.race_requested.connect(_on_race_requested)
 	if race_view != null and is_instance_valid(race_view):
-		controller.ghost_on = race_view.ghost_on
+		controller.ghost_pick = race_view.ghost_pick
 	if phone != null:
 		# The phone is held by this body's own hand, in every view.
 		phone.set_holder(controller.actor)
@@ -885,7 +885,16 @@ func _attach_player_view() -> void:
 			(raid as Race).league_bank = Race.ProfileLeagueBank.new()
 		race_view = RaceView.new()
 		race_view.setup(raid)
+		race_view.watching_changed.connect(_on_race_watching)
 		raid.add_child(race_view)
+
+
+## Watching a race from its desk: the character stands still and the HUD
+## steps aside while the race view's chase camera follows the racers.
+func _on_race_watching(on: bool) -> void:
+	_show_overlays(not on)
+	if controller != null and is_instance_valid(controller):
+		controller.input_blocked = on or phone.is_open
 
 
 ## A pick on the race icon: the ghost is this view's own, the rest are
@@ -894,9 +903,11 @@ func _on_race_requested(action: String) -> void:
 	if not raid is Race:
 		return
 	if action == "ghost":
-		controller.ghost_on = not controller.ghost_on
+		# Turns through your best, a friend's, the board leader's and none.
+		var at := Race.GHOST_PICKS.find(controller.ghost_pick)
+		controller.ghost_pick = Race.GHOST_PICKS[(at + 1) % Race.GHOST_PICKS.size()]
 		if race_view != null and is_instance_valid(race_view):
-			race_view.ghost_on = controller.ghost_on
+			race_view.ghost_pick = controller.ghost_pick
 		return
 	(raid as Race).ask(action)
 
