@@ -53,7 +53,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - The head looks where its owner aims (Caleb's call, so others see where
   you look): `Locomotion._look_pose` turns the neck and head onto
   `Actor.get_aim_dir()` from whatever pose the body is in, no further than
-  `look_reach` from the chest, and gives way to the phone. View only, the
+  `look_reach` side to side from the chest and `look_up` back or
+  `look_down` down from it (measured in the chest's frame, so a body laid
+  out in flight lifts its head rather than folding it back), and gives
+  way to the phone. View only, the
   same body in both views; first person's eyes simply ride the turned head.
 - Bodies are shown between physics ticks (Caleb plays at 144 Hz):
   `ShownMotion` (`core/visual/shown_motion.gd`, added by `Look` to every
@@ -166,7 +169,20 @@ without Caleb, and update the gap list when a PR closes a row.
   powers it for everyone for `lift_powered_for`, and a player who stands
   `lift_wait` in one stop is set down in the other; clients hear the power
   (`Raid.lift_changed`, `NetSession._lift`) and the map lights it from the
-  "lift_power" meta. Check by eye with `visual_check.tscn -- <dir> --engine-only`.
+  "lift_power" meta. Its last fight is a keeper (the Heart Warden): a
+  "spawn_boss" marker with the meta "keeper" (and "arena", "respawn"),
+  run by the authority's `Raid._tick_keeper` from `WorldDef.keeper_*`:
+  above `keeper_split` it calls its faction out of the map's "boss_socket"
+  markers (outside the armies, `_is_extra`), below it vents the "purge"
+  lanes, each warning before it hurts through `Combat.deal`. It carries
+  nothing; when it falls (`_keeper_fell`) everyone who hurt it or stood in
+  its arena gets a share from its "vault" (`WorldDef.roll_vault`), a
+  `LootContainer` only its owner may loot (`reserved`), cleared when it
+  wakes again, and markers that wait on it (a "beacon" or "warmth" with
+  its kind as meta "keeper", `Raid.waits_on_keeper`) light. Clients get
+  the phase (`Raid.keepers`, `NetSession._keeper`, the map's "keepers"
+  meta) and the lanes (`Raid.purge_changed`, `NetSession._purge`, drawn
+  by the map's `show_purge`). Check by eye with `visual_check.tscn -- <dir> --engine-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -211,6 +227,18 @@ without Caleb, and update the gap list when a PR closes a row.
   (`Look.weather_cover`, `soften_weather`: gone by about 70 m at the heart,
   Caleb's pick). Told in the world only: the visor's heading tape
   ("storm"), the watch map's ring and zone line, the plaza's heat signs.
+- The planet kit (DESIGN.md "Planet kit", `core/world/planet/`): a
+  `PlanetType` is a kind of planet as data (sky, calm and storm light,
+  ground shape and surface, horizon, weather, props) and never names a
+  world. A world stands on one with `WorldDef.take_planet(id)` first in
+  its `_init`, which sets `WorldDef.planet` and the type's rule defaults
+  (`PlanetType.rules`: `cold`, `shot_carry`, `planet_grip`, which
+  `surface_grip` falls back to); only those and the ground's shape
+  (`PlanetTerrain`, thread safe) reach the simulation, the rest is view
+  only through `Planet` and a no-op headless. Each ground layer wears a
+  CC0 scan named in `PlanetType.surfaces` (detail only: the recipe's
+  colours keep the hue). Check by eye with `planet_check.tscn -- <dir>
+  [type ids]`.
 - Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
   collision and a mesh that knows nothing about any world. A map on one
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
@@ -528,7 +556,9 @@ without Caleb, and update the gap list when a PR closes a row.
   closed, since an open pack cannot be replaced; release builds refuse
   `--main-pack`), then restarts. It never runs in the editor, a test, a
   server or headless, and anything that changes the engine or a native
-  library needs a fresh install. Its state shows on the start screen's
+  library needs a fresh install. Release builds also refuse `--path`, so a
+  game starts its own server with `Main.server_process_args`, which leaves
+  it out of an exported game. Its state shows on the start screen's
   corner and the phone's Servers app, nowhere else. The installer
   (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
   `ProjectAres-Setup.exe`) installs per user into
@@ -1591,8 +1621,9 @@ without Caleb, and update the gap list when a PR closes a row.
   its end wall, sealed at the far end by the firing range's bulkhead.
   Buying the range removes the lane. Nothing there is real damage either.
   Past the range's far end is the flight course (`HomeBase._build_course`,
-  `in_course`): an open-topped yard whose walls stand over every rig's
-  ceiling, with a climb tower (and a ramp for wings), a gap to a second
+  `in_course`): a tall lit hangar, walled and roofed so nobody flies out
+  (Caleb's call), its roof over every rig's ceiling and past
+  `Actor.roof_reach` of it, so it never flies as indoors, with a climb tower (and a ramp for wings), a gap to a second
   tower and a sprint, timed by `_tick_course` from the player's position
   alone and written on its board, never on the screen.
   The base grows with the account's upgrades (`core/base/base_upgrades.gd`,
@@ -1670,7 +1701,15 @@ without Caleb, and update the gap list when a PR closes a row.
   (`facts`) and the screen's own notes (price, what you are short of).
   A new list hands each row over with `card.track(row, id)`; a new kind
   of item gets a line in `ItemCard.KINDS` and its facts. Check by eye with
-  `visual_check.tscn -- <dir> --panels-only`.
+  `visual_check.tscn -- <dir> --panels-only`. Those screens wear the
+  terminal style (`core/ui/terminal_style.gd`, view only): the station
+  screens (`Hub`) and the Concourse's terminals (`Main.ShopView`) set its
+  `theme()` on their root, stand on its `Backdrop` (a lit terminal's
+  glass: grid, scanlines, a slow sweep, amber corner brackets) and call
+  `dress(root)` once built, which lights every title as a heading. Plates
+  have cut corners (`TerminalStyle.plate`), amber where you can act, cyan
+  where something is shown; a new screen of this kind uses them, never
+  plain boxes.
 - The watch and the phone split the job (Caleb's rule, revised: the watch no
   longer carries vitals, heat and ammo; see DESIGN.md section 3). Vitals,
   flight heat and ammo are always in view on the visor and the gear (health

@@ -78,6 +78,7 @@ const PlazaViewScript := preload("res://core/social/plaza_view.gd")
 const ClanPanel := preload("res://core/social/clan_panel.gd")
 const ContractPanel := preload("res://core/economy/contract_panel.gd")
 const MarketPanel := preload("res://core/economy/market_panel.gd")
+const TerminalStyle := preload("res://core/ui/terminal_style.gd")
 const Contracts := preload("res://core/economy/contracts.gd")
 ## The plaza holds more people than a raid.
 const PLAZA_PLAYERS := 32
@@ -1748,13 +1749,27 @@ func _run_cluster(args: PackedStringArray) -> void:
 
 ## Starts (again) one world's program of a cluster.
 func _cluster_start(program: Dictionary) -> void:
-	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--only", str(program.id), "--port", str(program.port),
-			"--server-id", str(program.id)])
+	var args := server_process_args(PackedStringArray(["--server", "--only", str(program.id),
+			"--port", str(program.port), "--server-id", str(program.id)]))
 	args.append_array(program.args)
 	program["pid"] = OS.create_process(OS.get_executable_path(), args)
 	program["started"] = Time.get_ticks_msec()
 	print("Cluster: %s on port %d (process %d)" % [program.id, program.port, program.pid])
+
+
+## The command line that starts this program again as a headless server
+## with the game's own arguments `user_args`. From the editor or a checkout
+## it names the project with `--path`; an exported game never does, because
+## release templates refuse `--path` and stop at once (the installed game's
+## "server stopped before it was ready"), and it finds its pack beside the
+## exe without one.
+static func server_process_args(user_args: PackedStringArray, exported := OS.has_feature("template")) -> PackedStringArray:
+	var args := PackedStringArray(["--headless"])
+	if not exported:
+		args.append_array(["--path", ProjectSettings.globalize_path("res://")])
+	args.append("--")
+	args.append_array(user_args)
+	return args
 
 
 ## Starts a server on this machine as a second process, then joins it.
@@ -1780,10 +1795,9 @@ func _start_local_server(world_id: String) -> void:
 	if port < 0:
 		hub.set_online_status("Could not start a server: its ports are in use on this computer.")
 		return
-	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--port", str(port),
+	var args := server_process_args(PackedStringArray(["--server", "--port", str(port),
 			# The server stops when this game does, however this game ends.
-			"--heartbeat", ProjectSettings.globalize_path(HOST_HEARTBEAT)])
+			"--heartbeat", ProjectSettings.globalize_path(HOST_HEARTBEAT)]))
 	_beat()
 	args.append_array(host_args)
 	if world_id != "":
@@ -2722,10 +2736,9 @@ class ShopView:
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var glass := ColorRect.new()
-		glass.color = Color(0.025, 0.03, 0.035)
-		glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(glass)
+		# A lit terminal's glass, in the house style, like the base's stations.
+		theme = TerminalStyle.theme()
+		add_child(TerminalStyle.Backdrop.new())
 		var margin := MarginContainer.new()
 		margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		for side: String in ["left", "right"]:
@@ -2740,6 +2753,12 @@ class ShopView:
 		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		box.add_child(scroll)
+		var kicker := Label.new()
+		kicker.text = "THE CONCOURSE  //  TERMINAL"
+		kicker.add_theme_font_size_override("font_size", 13)
+		kicker.add_theme_color_override("font_color", TerminalStyle.CYAN)
+		box.add_child(kicker)
+		box.move_child(kicker, 0)
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		scroll.add_child(panel)
 		var leave := Button.new()
@@ -2747,6 +2766,7 @@ class ShopView:
 		leave.custom_minimum_size = Vector2(0, 44)
 		leave.pressed.connect(func() -> void: closed.emit())
 		box.add_child(leave)
+		TerminalStyle.dress(self)
 
 	func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:

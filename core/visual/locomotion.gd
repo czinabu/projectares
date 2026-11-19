@@ -69,9 +69,14 @@ var _still_delta := 0.0
 ## views and for everyone watching, read from the command (`get_aim_dir`),
 ## so another player sees where you are looking. The neck takes `look_neck`
 ## of the turn and the head the rest; it turns no further than `look_reach`
-## (radians) from the way the chest faces. `look_follow` smooths the aim a
+## (radians) side to side from the way the chest faces, and tips back no
+## further than `look_up` and down no further than `look_down` from it, so
+## a body laid out in flight lifts its head the way a neck can rather than
+## folding it back (playtest feedback). `look_follow` smooths the aim a
 ## little, mostly for remote players whose aim arrives in steps.
 var look_reach := deg_to_rad(70.0)
+var look_up := deg_to_rad(45.0)
+var look_down := deg_to_rad(55.0)
 var look_neck := 0.45
 var look_follow := 30.0
 var look_rate := 5.0
@@ -84,6 +89,7 @@ var _head := -1
 var _model_ahead := Vector3.ZERO
 var _head_ahead := Vector3.ZERO
 var _chest_ahead := Vector3.ZERO
+var _chest_up := Vector3.ZERO
 ## How quickly the velocity the legs follow catches up with the actor's. Online
 ## states land a few times a second; this hides the steps between them.
 var velocity_follow := 14.0
@@ -771,7 +777,7 @@ func _facing(bone: int, ahead: Vector3) -> Vector3:
 
 
 ## Turns the neck and head so the face looks along the aim, kept within
-## `look_reach` of the chest. Works from wherever the body has been put
+## `look_reach`, `look_up` and `look_down` of the chest. Works from wherever the body has been put
 ## (a crouch, a lean, a seat, flying), so the eyes end up on the aim.
 func _look_pose() -> void:
 	if look_weight <= 0.0 or _head < 0 or _neck < 0 or _spine.is_empty() or actor == null:
@@ -787,12 +793,22 @@ func _look_pose() -> void:
 		_model_ahead = (skeleton_in_skin.inverse() * (skin.basis.orthonormalized().inverse() * Vector3.FORWARD)).normalized()
 		_head_ahead = (skeleton.get_bone_global_rest(_head).basis.orthonormalized().inverse() * _model_ahead).normalized()
 		_chest_ahead = (skeleton.get_bone_global_rest(chest).basis.orthonormalized().inverse() * _model_ahead).normalized()
+		var model_up := (skeleton_in_skin.inverse() * (skin.basis.orthonormalized().inverse() * Vector3.UP)).normalized()
+		_chest_up = (skeleton.get_bone_global_rest(chest).basis.orthonormalized().inverse() * model_up).normalized()
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
 	var want := (to_skeleton * _look_dir).normalized()
+	# The aim as a turn and a tip in the chest's own frame, each held to
+	# what a neck can do.
 	var chest_ahead := _facing(chest, _chest_ahead)
-	var off := chest_ahead.angle_to(want)
-	if off > look_reach and off < PI - 0.01:
-		want = Quaternion(chest_ahead, want).slerp(Quaternion.IDENTITY, 1.0 - look_reach / off) * chest_ahead
+	var chest_up := _facing(chest, _chest_up)
+	chest_up = (chest_up - chest_ahead * chest_up.dot(chest_ahead)).normalized()
+	var chest_side := chest_ahead.cross(chest_up)
+	var yaw := atan2(want.dot(chest_side), want.dot(chest_ahead))
+	var tip := asin(clampf(want.dot(chest_up), -1.0, 1.0))
+	var held_yaw := clampf(yaw, -look_reach, look_reach)
+	var held_tip := clampf(tip, -look_down, look_up)
+	if held_yaw != yaw or held_tip != tip:
+		want = (chest_ahead * cos(held_yaw) + chest_side * sin(held_yaw)) * cos(held_tip) + chest_up * sin(held_tip)
 	var w := smoothstep(0.0, 1.0, look_weight)
 	var now := _facing(_head, _head_ahead)
 	if now.dot(want) > 0.99999:

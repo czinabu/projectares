@@ -77,7 +77,18 @@ extends RefCounted
 ##     Optional metas: "faction" (as on "spawn_bot"), "radius" (the ground it
 ##     guards) and "boss" (a kind of boss of the world's own, set on the bot
 ##     as meta "boss" before `equip_bot` and `make_warlord`, and sent to
-##     clients so they build the same one).
+##     clients so they build the same one), "respawn" (seconds before it
+##     comes back, in place of `boss_respawn_time`), and "keeper" (true: a
+##     dungeon's last fight, see below; it carries no loot of its own) with
+##     "arena" (metres round the marker its fight runs in).
+##   - A keeper's fight, markers naming its kind (the "boss" meta) in meta
+##     "keeper": "boss_socket" markers in its walls that it calls its
+##     "faction" out of while it is above `keeper_split` of its health;
+##     "purge" lanes (meta "toward", the lane's far end; "width", "damage")
+##     that warn and then vent across the floor once it is below; a "vault"
+##     where a share for each player who fought it (`roll_vault`) is laid
+##     out along the marker's x when it falls; and a "beacon" or "warmth"
+##     with the meta stays dark while it stands.
 ##   - Marker3D nodes in group "spawn_guard": a dungeon's garrison. A bot of
 ##     the marker's "faction" stands guard over "radius" metres (10 by
 ##     default) round it, outside the armies, and another comes back
@@ -136,6 +147,14 @@ var vehicle_toys := true
 var bag_lifetime := 300.0
 ## Seconds to stand in a depot to bank what you carry.
 var depot_hold_time := 4.0
+## The planet this world stands on (DESIGN.md "Planet kit"): a
+## `PlanetTypes` id, or "" for a world that builds its own look. Set it with
+## `take_planet` at the top of `_init`, which also gives the world the
+## planet's rule defaults (`PlanetType.rules`: `cold`, `shot_carry` and
+## `planet_grip`); anything the world sets after that is its own.
+var planet := ""
+## The ground's grip where the world's own `surface_grip` does not say.
+var planet_grip := 1.0
 ## Body heat (of 100) a player loses each second out in the open; 0 for a
 ## world with no cold. See "The cold" above and `cold_at`.
 var cold := 0.0
@@ -302,6 +321,20 @@ var outpost_sign_out_time := 3.0
 ## `Actor.toughness` (hits are divided by it). Authority only.
 var boss_party_scale := 0.0
 var boss_party_range := 45.0
+## A keeper's fight (see "spawn_boss" above): seconds between Wardens called
+## from its sockets and how many may be out at once (one more for each
+## other player in its arena), the share of its health below which it turns
+## to its purges, seconds between volleys, how many lanes a volley vents and
+## how long each warns first, and the first wait of each once someone comes
+## in.
+var keeper_socket_every := 14.0
+var keeper_socket_max := 3
+var keeper_socket_first := 4.0
+var keeper_split := 0.5
+var keeper_purge_every := 5.5
+var keeper_purges_at_once := 2
+var keeper_purge_warn := 1.6
+var keeper_purge_first := 2.0
 ## Linked factions (DESIGN.md "Frostline", the defence grid): faction to
 ## range in metres. A bot of one that is hurt and lives calls every other
 ## bot of its faction within range to where the hit came from, the way a
@@ -356,6 +389,24 @@ var portal_home := true
 ## Safe zones, the arena and a world with no power weapons leave it on the wall.
 func carries_power_weapons() -> bool:
 	return power_weapon_rate > 0.0 and not safe_zone and gear_at_risk
+
+
+## Stands the world on planet type `id` and takes its rule defaults. Call
+## it first in `_init`, before the world's own settings. An unknown id
+## leaves the world as it was.
+func take_planet(id: String) -> void:
+	var type := PlanetTypes.get_type(id)
+	if type == null:
+		return
+	planet = id
+	cold = float(type.rules.get("cold", cold))
+	shot_carry = float(type.rules.get("shot_carry", shot_carry))
+	planet_grip = float(type.rules.get("surface_grip", planet_grip))
+
+
+## The planet type this world stands on, or null.
+func planet_type() -> PlanetType:
+	return PlanetTypes.get_type(planet) if planet != "" else null
 
 
 func create_map() -> Node3D:
@@ -496,8 +547,9 @@ func cold_at(_pos: Vector3) -> float:
 ## vehicle: 1 on dry ground, less on snow and ice, where wheels break loose
 ## and slide (`Vehicle._surface_grip`; a hover's cushion ignores it). Run on
 ## every machine that simulates a ride, so keep it free of randomness.
+## By default the planet's grip (`take_planet`), the same everywhere.
 func surface_grip(_pos: Vector3) -> float:
-	return 1.0
+	return planet_grip
 
 
 ## Whether the ground at a point is thin ice (see `thin_ice`).
@@ -549,6 +601,18 @@ func make_warlord(bot: Actor) -> void:
 ## the Raid ("near Echo Post").
 func boss_back_news(_bot: Actor, where: String) -> String:
 	return "A warlord has taken %s again" % where
+
+
+## One player's share of a fallen keeper's vault (`kind`, its "boss" meta).
+func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
+	return roll_war_loot("cache", rng, 1.0)
+
+
+## What the world hears of a keeper: everyone in its arena when it turns to
+## its second phase (`phase` 2), the war feed when it falls (0, `bot` may be
+## gone). "" says nothing.
+func keeper_news(_bot: Actor, phase: int) -> String:
+	return "A keeper has fallen" if phase == 0 else ""
 
 
 func on_spawn(_actor: Actor) -> void:

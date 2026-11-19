@@ -4,7 +4,11 @@ extends RefCounted
 ## and the Descent have room for a squad to fight in and a way through, a
 ## garrison stands guard, the cable lift is powered by one player and carries
 ## everyone, and inside is out of the weather: no storm, no trail, a cold that
-## grows with depth and bites on the coolant. Kept in its own file and called
+## grows with depth and bites on the coolant. Past the Descent the Heart
+## is an arena with room to spare and a way up to its balcony, and its keeper
+## fights in two phases (sockets, then purges that warn before they hurt),
+## opens a share of its vault for each player who fought it, lights the deep
+## beacon and comes back on its own timer. Kept in its own file and called
 ## from the test runner.
 
 const MapScript := preload("res://worlds/frostline/map.gd")
@@ -15,6 +19,7 @@ static func run(t: Node) -> void:
 	await _inside(t)
 	await _deeper(t)
 	await _lift(t)
+	await _heart(t)
 
 
 ## The layout's numbers: room for a squad (DESIGN.md: no way narrower than
@@ -220,7 +225,7 @@ static func _deeper(t: Node) -> void:
 		if at.y > deck_y and MapScript.engine_depth(at) == 1:
 			high += 1
 	t.check(high >= 1, "and one up on the walkway")
-	var per_depth := [0, 0, 0]
+	var per_depth := [0, 0, 0, 0]
 	for guard: Dictionary in guards:
 		per_depth[MapScript.engine_depth((guard.marker as Node3D).global_position)] += 1
 	t.check(per_depth[1] >= 8 and per_depth[2] >= 4, "Wardens hold the galleries and the Descent (%s)" % str(per_depth))
@@ -292,6 +297,201 @@ static func _lift(t: Node) -> void:
 	# A client's copy follows the server.
 	raid.set_lift(MapScript.LIFT_ID, 30.0)
 	t.check(raid.lift_left(MapScript.LIFT_ID) == 30.0, "a client copies the lift's power from the server")
+	raid.queue_free()
+	await t.frames(2)
+
+
+## The Heart: the chamber, its keeper's two phases, the vault's shares, the
+## deep beacon and the keeper's return.
+static func _heart(t: Node) -> void:
+	print("Engine: the Heart")
+	var frost := Worlds.get_world("frostline")
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(frost, 4245)
+	await t.frames(2)
+	var frame := MapScript.engine_frame()
+	var bottom := MapScript.DESCENT_FLOOR
+	var c := MapScript.HEART_Z
+	var kind := MapScript.HEART_KEEPER
+	var space := raid.get_world_3d().direct_space_state
+	t.check(MapScript.HEART_RADIUS * 2.0 >= 64.0 and MapScript.HEART_UP >= 30.0,
+			"the Heart is a round chamber %.0f m across and %.0f m high" % [MapScript.HEART_RADIUS * 2.0, MapScript.HEART_UP])
+	t.check(MapScript.HEART_DOOR >= 9.0, "its door is 9 m wide or more")
+	var blocked := []
+	for x: float in [-MapScript.HEART_DOOR * 0.5 + 0.6, 0.0, MapScript.HEART_DOOR * 0.5 - 0.6]:
+		for y: float in [1.0, MapScript.HEART_DOOR_UP - 1.0]:
+			var hit := _ray(space, frame * Vector3(x, bottom + y, 173.5), frame * Vector3(x, bottom + y, c - 26.0))
+			if not hit.is_empty():
+				blocked.append(MapScript.engine_local(hit.position).snappedf(0.1))
+	t.check(blocked.is_empty(), "the Descent's door opens on the Heart, clear its whole width %s" % str(blocked))
+	t.check(not _ray(space, frame * Vector3(0, bottom + 2.0, c), frame * Vector3(0, bottom + 2.0, c + MapScript.HEART_RADIUS + 3.0)).is_empty()
+			and not _ray(space, frame * Vector3(0, bottom + 20.0, c), frame * Vector3(MapScript.HEART_RADIUS + 3.0, bottom + 20.0, c)).is_empty()
+			and not _ray(space, frame * Vector3(0, bottom + 20.0, c - 20.0), frame * Vector3(0, bottom + 20.0, c - MapScript.HEART_RADIUS - 3.0)).is_empty(),
+			"and its wall closes round it, over the door too")
+	var ledge := MapScript.HEART_RADIUS - MapScript.HEART_LEDGE * 0.5
+	var up := MapScript.HEART_BALCONY
+	for spot: Array in [[Vector3(0, bottom, c - 8.0), "the Heart's floor"], [Vector3(0, bottom, 180.0), "the way on to it"],
+			[Vector3(0, bottom, c + 30.0), "the vault's floor"], [Vector3(0, bottom + up, c + ledge), "the balcony"],
+			[Vector3(-ledge * 0.7071, bottom + up, c - ledge * 0.7071), "the balcony over the door's side"],
+			[Vector3(30.0, bottom + up, c + 11.0), "a ramp's landing"]]:
+		var top: Vector3 = frame * ((spot[0] as Vector3) + Vector3(0, 3.0, 0))
+		var hit := _ray(space, top, top + Vector3(0, -6.0, 0))
+		var floor_y: float = (frame * (spot[0] as Vector3)).y
+		t.check(not hit.is_empty() and absf(hit.position.y - floor_y) < 0.3,
+				"%s has a floor to stand on (%s)" % [spot[1], "none" if hit.is_empty() else "%.2f off" % (hit.position.y - floor_y)])
+	var middle := frame * Vector3(0, bottom + 1.0, c - 6.0)
+	var well := frame * Vector3(8.0, bottom + 1.0, 168.0)
+	t.check(MapScript.in_heart(middle) and MapScript.inside_engine(middle) and MapScript.engine_depth(middle) == 3,
+			"the Heart is inside the Engine, its deepest part")
+	t.check(frost.sheltered_at(middle) and frost.cold_at(middle) > frost.cold_at(well), "sheltered, and colder than the Descent")
+	var nav := raid.get_world_3d().navigation_map
+	for i in 600:
+		if NavigationServer3D.map_get_iteration_id(nav) > 0 \
+				and NavigationServer3D.map_get_closest_point(nav, Vector3(0, 0, 250)) != Vector3.ZERO:
+			break
+		await t.frames(1)
+	var foot := NavigationServer3D.map_get_closest_point(nav, frame * Vector3(8.0, bottom, 168.0))
+	var goal := frame * Vector3(0, bottom, c - 6.0)
+	var path := NavigationServer3D.map_get_path(nav, foot, goal, true)
+	t.check(path.size() > 1 and path[path.size() - 1].distance_to(goal) < 2.0,
+			"a path runs from the Descent's foot into the Heart (%d points)" % path.size())
+	var balcony := frame * Vector3(0, bottom + up, c + ledge)
+	var climb := NavigationServer3D.map_get_path(nav, NavigationServer3D.map_get_closest_point(nav, goal), balcony, true)
+	t.check(climb.size() > 1 and climb[climb.size() - 1].distance_to(balcony) < 1.5,
+			"and up a ramp to the balcony")
+	# The keeper.
+	var found := raid._bosses.filter(func(entry: Dictionary) -> bool:
+		return (entry.marker as Node3D).get_meta("boss", "") == kind)
+	t.check(found.size() == 1, "the Heart has its keeper")
+	if found.is_empty():
+		raid.queue_free()
+		return
+	var boss: Dictionary = found[0]
+	var keeper := boss.bot as Actor
+	t.check(keeper != null and keeper.display_name == "Heart Warden" and keeper.rear_damage_mult > 1.5
+			and keeper.body_height() > 3.5, "the Heart Warden stands there, tall, its back its weak spot")
+	t.check(keeper.inventory.items.is_empty(), "it carries nothing: its vault pays")
+	t.check(int(raid.keepers.get(kind, -1)) == 1 and (raid.map.get_meta("keepers", {}) as Dictionary).get(kind) == 1,
+			"it starts standing, and the map is told")
+	var beacon: Node3D = null
+	for marker in raid.beacons:
+		if marker.get_meta("keeper", "") == kind:
+			beacon = marker
+	t.check(beacon != null and raid.beacon_at(beacon.global_position) == null, "the deep beacon is dark while it stands")
+	var me := raid.add_player([], {}, "Delver", "delver")
+	var mate := raid.add_player([], {}, "Second", "second")
+	var late := raid.add_player([], {}, "Late", "late")
+	await t.frames(2)
+	for actor: Actor in [me, mate, late]:
+		actor.protected_left = 0.0
+	me.global_position = beacon.global_position + Vector3(0, 0.1, 0)
+	t.check(raid.warmth_at(me) == 0.0, "and gives no warmth")
+	me.global_position = frame * Vector3(0, bottom + 0.2, c - 20.0)
+	mate.global_position = frame * Vector3(0, bottom + 0.2, 160.0)
+	late.global_position = frame * Vector3(0, bottom + 0.2, 150.0)
+	# Phase one: Wardens out of the sockets, a few at a time.
+	raid._tick_keeper(boss, frost.keeper_socket_first + 0.1)
+	var adds: Array = boss.adds
+	t.check(adds.size() == 1, "with someone in the Heart, it calls a Warden out of a wall socket")
+	if adds.size() == 1:
+		var add := adds[0] as Actor
+		var by_socket := raid._sockets.any(func(socket: Node3D) -> bool:
+			return socket.global_position.distance_to(add.global_position) < 3.0)
+		t.check(add.faction == "warden" and by_socket and raid._is_extra(add), "a Warden, at a socket, outside the armies")
+	for i in 12:
+		raid._tick_keeper(boss, frost.keeper_socket_every + 0.1)
+	t.check(adds.size() == frost.keeper_socket_max, "no more than %d out at once for one player" % frost.keeper_socket_max)
+	# Phase two: the purges.
+	var phases := []
+	var lanes := []
+	raid.keeper_changed.connect(func(k: String, phase: int) -> void: phases.append([k, phase]))
+	raid.purge_changed.connect(func(index: int, state: int) -> void: lanes.append([index, state]))
+	keeper.health.health = keeper.health.max_health * 0.4
+	raid._tick_keeper(boss, 0.05)
+	t.check(phases.size() == 1 and phases[0] == [kind, 2], "below half, the core thaws: its second phase")
+	raid._tick_keeper(boss, frost.keeper_purge_first + 0.05)
+	var warned := lanes.filter(func(e: Array) -> bool: return e[1] == 1)
+	t.check(warned.size() == frost.keeper_purges_at_once, "the pylons' lanes warn first (%d)" % warned.size())
+	if not warned.is_empty():
+		var lane := raid.purges[int(warned[0][0])]
+		var to: Vector3 = lane.get_meta("toward")
+		me.global_position = lane.global_position.lerp(to, 0.3) + Vector3(0, 0.1, 0)
+		mate.global_position = frame * Vector3(0, bottom + 0.2, c - 28.0)
+		var mine := me.health.health
+		var theirs := mate.health.health
+		raid._tick_keeper(boss, frost.keeper_purge_warn * 0.5)
+		t.check(me.health.health == mine, "nothing hurts while a lane only warns")
+		raid._tick_keeper(boss, frost.keeper_purge_warn * 0.6)
+		t.check(me.health.health < mine and mate.health.health == theirs,
+				"then it vents: whoever stands in it is hurt, nobody outside it")
+		t.check(lanes.any(func(e: Array) -> bool: return e[1] == 2), "and everyone sees it vent")
+		raid._tick_keeper(boss, Raid.PURGE_VENT + 0.1)
+		t.check(lanes.filter(func(e: Array) -> bool: return e[1] == 0).size() == warned.size(), "then each lane goes quiet")
+	t.check(Raid.in_lane(Vector3(0, 0, 5), Vector3.ZERO, Vector3(0, 0, 10), 4.0)
+			and not Raid.in_lane(Vector3(4, 0, 5), Vector3.ZERO, Vector3(0, 0, 10), 4.0)
+			and not Raid.in_lane(Vector3(0, 6, 5), Vector3.ZERO, Vector3(0, 0, 10), 4.0),
+			"a lane is its floor, its width across, never over it")
+	# The fall: one who hurt it from outside, one in the Heart, one neither.
+	mate.global_position = frame * Vector3(0, bottom + 0.2, 160.0)
+	me.global_position = frame * Vector3(0, bottom + 0.2, c - 20.0)
+	var info := DamageInfo.new()
+	info.amount = 5.0
+	info.source = mate
+	raid._on_keeper_hurt(info, boss)
+	keeper.kill("test", me)
+	raid._tick_bosses(0.1)
+	t.check(int(raid.keepers.get(kind, -1)) == 0 and phases[phases.size() - 1] == [kind, 0], "it falls, and clients hear of it")
+	var shares: Array = boss.shares
+	var labels := shares.map(func(share: LootContainer) -> String: return share.label)
+	t.check(shares.size() == 2 and labels.has("Delver's share") and labels.has("Second's share"),
+			"the vault opens a share for each who fought it, none for anyone else (%s)" % str(labels))
+	me.global_position = beacon.global_position + Vector3(0, 0.1, 0)
+	t.check(raid.beacon_at(beacon.global_position) == beacon and raid.warmth_at(me) > 0.0, "the deep beacon lights, and warms")
+	var theirs_share: LootContainer = null
+	for share: LootContainer in shares:
+		if share.label == "Second's share":
+			theirs_share = share
+	if theirs_share != null:
+		var held := theirs_share.items.size()
+		theirs_share.interact(me)
+		t.check(held > 0 and theirs_share.items.size() == held, "nobody takes another's share")
+		var before := mate.inventory.items.size()
+		theirs_share.interact(mate)
+		t.check(mate.inventory.items.size() == before + held, "its owner takes it all")
+	# What a share pays.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var relics := 0
+	var blueprints := 0
+	var data := true
+	var tiers := false
+	for i in 1000:
+		var roll := frost.roll_vault(kind, rng)
+		if not roll.has("upgrade_data"):
+			data = false
+		for id: String in roll:
+			if ItemDB.has_tag(id, "artifact"):
+				relics += 1
+			if ItemDB.has_tag(id, "blueprint"):
+				blueprints += 1
+			if id.contains("mk2") or id.contains("mk3"):
+				tiers = true
+	t.check(data and blueprints > 150 and not tiers, "a share holds upgrade data, often a blueprint, never a crafted Mk")
+	var ashfront := Worlds.get_world("ashfront")
+	t.check(relics > 0 and relics / 1000.0 < ashfront.warlord_artifact_chance,
+			"rarely an artifact (%.1f%%), rarer than an Ashfront warlord's" % (relics / 10.0))
+	# It comes back on its own timer, the vault closed and the beacon dark.
+	t.check(float(boss.back_in) == MapScript.HEART_RESPAWN and MapScript.HEART_RESPAWN > frost.boss_respawn_time,
+			"it comes back on its own, longer timer")
+	raid._tick_bosses(MapScript.HEART_RESPAWN + 0.1)
+	var back: Variant = boss.bot
+	t.check(back != null and is_instance_valid(back) and not (back as Actor).is_dead and int(raid.keepers[kind]) == 1,
+			"and wakes again")
+	t.check((boss.shares as Array).is_empty() and raid.beacon_at(beacon.global_position) == null,
+			"its vault closes and the deep beacon goes dark")
+	raid.set_keeper(kind, 0)
+	t.check((raid.map.get_meta("keepers", {}) as Dictionary).get(kind) == 0, "a client copies the keeper's phase")
 	raid.queue_free()
 	await t.frames(2)
 

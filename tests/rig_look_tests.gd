@@ -271,10 +271,19 @@ static func run(t: Node) -> void:
 	_equip(p, "boots_thruster")
 	p.flight.skim_speed = 15.0
 	p.flight.air_dash_speed = 20.0
-	await t.frames(2)
+	# The skin rebuilds its rig on a posed frame, which may be a few frames
+	# off while the body is out of the camera's frame: wait for the boots'
+	# own flames rather than a set number of frames.
+	var boot_flames := func() -> Array:
+		return skin.find_children("Flame", "Node3D", true, false).filter(
+				func(n: Node) -> bool: return not n.is_queued_for_deletion() \
+						and "Boot" in str(skin.get_path_to(n)))
+	for i in skin.offscreen_step + 4:
+		await t.frames(1)
+		if boot_flames.call().size() == 2:
+			break
 	var heel_flames: Array[Node3D] = []
-	heel_flames.assign(skin.find_children("Flame", "Node3D", true, false).filter(
-			func(n: Node) -> bool: return not n.is_queued_for_deletion()))
+	heel_flames.assign(boot_flames.call())
 	var exhaust := func() -> Vector3:
 		return p.global_basis.inverse() * -(heel_flames[0].global_basis.y.normalized())
 	var body_pitch := func() -> float:
@@ -334,10 +343,17 @@ static func run(t: Node) -> void:
 	t.check((skin as Node3D).transform.basis.y.y > 0.99 and skin._boot_w < 0.01, "letting go of the boots stands the body up")
 
 	_equip(p, "wings_glide")
-	await t.frames(2)
+	# The skin shows a new rig with its next pose, which a camera left in
+	# the tree (another group's) can space up to `offscreen_step` frames out.
+	var boots_left := func() -> bool:
+		return not skin.find_children("Boot*", "Node3D", true, false).filter(
+				func(n: Node) -> bool: return not n.is_queued_for_deletion()).is_empty()
+	for i in skin.offscreen_step + 4:
+		await t.frames(1)
+		if skin.find_child("WingPack", true, false) != null and not boots_left.call():
+			break
 	var pack_node := skin.find_child("WingPack", true, false) as Node3D
-	t.check(pack_node != null and skin.find_children("Boot*", "Node3D", true, false).filter(
-			func(n: Node) -> bool: return not n.is_queued_for_deletion()).is_empty(), "glide wings replace the boots")
+	t.check(pack_node != null and not boots_left.call(), "glide wings replace the boots")
 	if pack_node:
 		_check_clamped(t, p, skin, pack_node)
 		var wing_tip := pack_node.get_node("WingR/Panel/TipLight") as Node3D

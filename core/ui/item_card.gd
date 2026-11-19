@@ -19,6 +19,7 @@ const VehicleScript := preload("res://core/vehicle/vehicle.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
 const Crafting := preload("res://core/progression/crafting.gd")
 const Economy := preload("res://core/economy/economy.gd")
+const TerminalStyle := preload("res://core/ui/terminal_style.gd")
 
 const WIDTH := 360.0
 const MUTED := Color(0.68, 0.68, 0.68)
@@ -45,6 +46,7 @@ var _about: Label
 var _facts: VBoxContainer
 var _notes: VBoxContainer
 var _empty: Label
+var _bay: Bay
 var _body: VBoxContainer
 ## Row -> item id, for the rows the screen handed over.
 var _rows := {}
@@ -53,19 +55,18 @@ var _rows := {}
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDTH, 0)
 	size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	var frame := StyleBoxFlat.new()
-	frame.bg_color = Color(0.06, 0.065, 0.07, 0.95)
-	frame.border_color = Color(0.3, 0.3, 0.32)
-	frame.set_border_width_all(1)
-	frame.set_corner_radius_all(4)
-	frame.set_content_margin_all(12)
-	add_theme_stylebox_override("panel", frame)
+	add_theme_stylebox_override("panel", TerminalStyle.card_plate(TerminalStyle.EDGE))
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 	add_child(box)
+	# The model stands in a lit bay: a glow in the item's colour, a grid
+	# and corner brackets behind it.
+	_bay = Bay.new()
+	box.add_child(_bay)
 	preview = Preview.new()
 	preview.build = model_for
-	box.add_child(preview)
+	preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_bay.add_child(preview)
 	_empty = _label(empty_text, 14, MUTED)
 	box.add_child(_empty)
 	_body = VBoxContainer.new()
@@ -102,6 +103,10 @@ func show_item(id: String) -> void:
 			(row as CanvasItem).queue_redraw()
 		else:
 			_rows.erase(row)
+	var tint: Color = ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)] if id != "" else TerminalStyle.EDGE
+	add_theme_stylebox_override("panel", TerminalStyle.card_plate(tint))
+	_bay.tint = tint
+	_bay.queue_redraw()
 	if id == "":
 		return
 	_name.text = ItemDB.item_name(id)
@@ -146,6 +151,13 @@ func track(row: Control, id: String) -> void:
 		return
 	row.set_meta("card_tracked", true)
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	# Room for the rarity strip down the row's left.
+	var strip := Control.new()
+	strip.name = "Strip"
+	strip.custom_minimum_size = Vector2(8, 0)
+	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(strip)
+	row.move_child(strip, 0)
 	var pick := func() -> void:
 		var now := str(row.get_meta("card_item", ""))
 		if item_id != now or now == "":
@@ -156,8 +168,16 @@ func track(row: Control, id: String) -> void:
 		button.mouse_entered.connect(pick)
 		button.focus_entered.connect(pick)
 	row.draw.connect(func() -> void:
-		if _rows.has(row) and item_id == str(row.get_meta("card_item", "")) and item_id != "":
-			row.draw_rect(Rect2(Vector2(-4, -1), row.size + Vector2(8, 2)), PICKED))
+		var shown := str(row.get_meta("card_item", ""))
+		var lit := _rows.has(row) and item_id == shown and item_id != ""
+		if lit:
+			row.draw_rect(Rect2(Vector2(0, -1), row.size + Vector2(4, 2)), PICKED)
+		# A strip of the item's rarity colour down its left, brighter picked,
+		# and a faint rule under the row.
+		if shown != "" and ItemDB.has_item(shown):
+			var tint: Color = ItemDB.RARITY_COLORS[ItemDB.item_rarity(shown)]
+			row.draw_rect(Rect2(0, 2, 3, row.size.y - 4), Color(tint, 1.0 if lit else 0.55))
+		row.draw_line(Vector2(0, row.size.y + 1), Vector2(row.size.x, row.size.y + 1), Color(1, 1, 1, 0.05)))
 
 
 ## Keeps the item on show if a row still has it, else shows the first row's
@@ -509,6 +529,43 @@ static func _mat(color: Color, lit := false) -> StandardMaterial3D:
 	return mat
 
 
+## The lit bay the preview stands in: a dark well with a glow of the item's
+## colour rising from the floor, a faint grid and amber corner brackets.
+class Bay:
+	extends Control
+
+	var tint := Color(0.5, 0.5, 0.5)
+
+	func _init() -> void:
+		name = "Bay"
+		custom_minimum_size = Preview.SIZE
+		mouse_filter = Control.MOUSE_FILTER_PASS
+
+	func _draw() -> void:
+		var w := size.x
+		var h := size.y
+		draw_rect(Rect2(0, 0, w, h), Color(0.015, 0.02, 0.026))
+		var bands := 32
+		for i in bands:
+			var a := float(i) / bands
+			# The glow, rising from the floor and fading upward.
+			draw_rect(Rect2(0, h * (0.3 + 0.7 * a), w, h * 0.7 / bands + 1), Color(tint, 0.07 * a * a))
+		var x := 24.0
+		while x < w:
+			draw_line(Vector2(x, 0), Vector2(x, h), Color(1, 1, 1, 0.025), 1.0)
+			x += 24.0
+		var y := 24.0
+		while y < h:
+			draw_line(Vector2(0, y), Vector2(w, y), Color(1, 1, 1, 0.025), 1.0)
+			y += 24.0
+		var arm := 14.0
+		for corner: Vector2 in [Vector2(1, 1), Vector2(w - 1, 1), Vector2(1, h - 1), Vector2(w - 1, h - 1)]:
+			var sx := 1.0 if corner.x < w * 0.5 else -1.0
+			var sy := 1.0 if corner.y < h * 0.5 else -1.0
+			draw_line(corner, corner + Vector2(arm * sx, 0), TerminalStyle.AMBER, 2.0)
+			draw_line(corner, corner + Vector2(0, arm * sy), TerminalStyle.AMBER, 2.0)
+
+
 ## The item's model in a small lit window of its own world, framed to fit,
 ## seen from three quarters. It stays still (Caleb's call: nothing on show
 ## turns by itself); drag across it to turn it. View only.
@@ -560,7 +617,7 @@ class Preview:
 		viewport.add_child(rim)
 		var camera := Camera3D.new()
 		camera.fov = 30.0
-		camera.position = Vector3(0, 0, 4.2)
+		camera.position = Vector3(0, -0.12, 4.2)
 		camera.current = true
 		viewport.add_child(camera)
 		_pivot = Node3D.new()
@@ -580,7 +637,39 @@ class Preview:
 			return
 		var fitted := _frame(model, id)
 		_pivot.add_child(fitted)
+		_pivot.add_child(_plinth(ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)]))
 		_place()
+
+	## A ring of light the model hovers over, in its rarity's colour, like
+	## the lit mounts in the armory.
+	static func _plinth(color: Color) -> Node3D:
+		var ring := MeshInstance3D.new()
+		ring.name = "Plinth"
+		var torus := TorusMesh.new()
+		torus.inner_radius = 0.95
+		torus.outer_radius = 1.0
+		torus.ring_segments = 6
+		torus.rings = 64
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = color
+		torus.material = mat
+		ring.mesh = torus
+		ring.scale = Vector3(0.85, 0.25, 0.85)
+		ring.position = Vector3(0, -0.82, 0)
+		var disc := MeshInstance3D.new()
+		var cylinder := CylinderMesh.new()
+		cylinder.top_radius = 0.95
+		cylinder.bottom_radius = 0.95
+		cylinder.height = 0.01
+		var glass := StandardMaterial3D.new()
+		glass.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		glass.albedo_color = Color(color, 0.12)
+		cylinder.material = glass
+		disc.mesh = cylinder
+		ring.add_child(disc)
+		return ring
 
 	## The model centred on the pivot and scaled to fill the window, laid
 	## so it shows its best side: a long weapon side on, gear facing you.
@@ -603,7 +692,7 @@ class Preview:
 		var holder := Node3D.new()
 		holder.add_child(lay)
 		var longest := maxf(box.get_longest_axis_size(), 0.01)
-		holder.scale = Vector3.ONE * (3.0 if gear else 1.75) / longest
+		holder.scale = Vector3.ONE * (2.5 if gear else 1.55) / longest
 		return holder
 
 	static func _bounds(model: Node3D, top: Node3D) -> AABB:
