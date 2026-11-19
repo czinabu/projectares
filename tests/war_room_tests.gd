@@ -8,13 +8,7 @@ extends RefCounted
 
 const PlazaMap := preload("res://worlds/plaza/map.gd")
 const WarRoomPanel := preload("res://core/social/war_room_panel.gd")
-const VisualCheck := preload("res://tests/visual_check.gd")
-
-
-## A raid whose armies keep grudges, as the grudge pass adds them.
-class GrudgeRaid:
-	extends Raid
-	var grudges := {}
+const VisualCheck := preload("res://tests/visual/war_room.gd")
 
 
 static func run(t: Node) -> void:
@@ -83,7 +77,7 @@ static func _hunted(t: Node) -> void:
 	plain.world = Worlds.get_world("ashfront")
 	t.check(plain.hunted().is_empty(), "with no grudges kept nobody is hunted")
 	plain.free()
-	var raid := GrudgeRaid.new()
+	var raid := Raid.new()
 	raid.world = Worlds.get_world("ashfront")
 	var marked := Actor.new()
 	marked.display_name = "Marked One"
