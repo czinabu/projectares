@@ -17,6 +17,12 @@ extends Node
 ## machine into a drift where the bend it is in is tighter than it can turn
 ## at its speed, and lets go on the throttle for the exit boost. Comparing
 ## the two runs shows what drifting is worth on each track.
+##
+## With `-- --ai` each machine is also driven by the AI racers' driver
+## (`RaceDriver`) at a rookie's, a middling and the best skill, and the
+## bench is flagged if any AI laps faster than the bench's own driver, which
+## drives at the limit: an AI racer must never beat a perfect run by more
+## than a lap's own noise (`AI_NOISE`).
 
 const WORLDS: Array[String] = ["meridian"]
 const CLASSES := {"street": ["bike_scrapper", "bike_raider"]}
@@ -26,10 +32,15 @@ const RUN_LIMIT := 420.0
 
 var _failed := false
 static var _drift := false
+static var _ai := false
+const AI_SKILLS: Array[float] = [0.0, 0.5, 1.0]
+## The share of a lap two runs at the limit can differ by.
+const AI_NOISE := 0.005
 
 
 func _ready() -> void:
 	_drift = OS.get_cmdline_user_args().has("--drift")
+	_ai = OS.get_cmdline_user_args().has("--ai")
 	for world_id in WORLDS:
 		var world := Worlds.get_world(world_id)
 		for track_index in _track_count(world):
@@ -66,6 +77,16 @@ func _bench_class(world: WorldDef, track_index: int, race_class: String) -> void
 			print("  drifting %.1f s of the run" % (int(result.get("drift_ticks", 0)) / float(Engine.physics_ticks_per_second)))
 		if not result.finished:
 			_failed = true
+		if _ai:
+			for skill in AI_SKILLS:
+				var driven := await drive(self, world, machine, track_index, RaceDriver.make(skill, 7))
+				var faster: bool = driven.best > 0.0 and result.best > 0.0 and driven.best < float(result.best) * (1.0 - AI_NOISE)
+				print("  AI skill %.1f    laps %s  best %s%s" % [skill,
+						", ".join(driven.laps.map(func(l: Array) -> String:
+							return Race.format_time(l[0]) + ("" if l[1] else " (off)"))),
+						Race.format_time(driven.best),
+						"  FASTER THAN THE LIMIT" if faster else ("" if driven.finished else "  DID NOT FINISH")])
+				_failed = _failed or faster or not driven.finished
 	var times: Array = bests.values().filter(func(b: float) -> bool: return b > 0.0)
 	if times.is_empty():
 		return
@@ -81,7 +102,8 @@ func _bench_class(world: WorldDef, track_index: int, race_class: String) -> void
 ## Drives `machine` round `world`'s track `track_index` for a full run, from
 ## a bay of that track. Returns {"laps": [[time, counted]], "best": seconds
 ## or -1, "finished": bool, "track": its id}.
-static func drive(host: Node, world: WorldDef, machine: String, track_index := 0) -> Dictionary:
+static func drive(host: Node, world: WorldDef, machine: String, track_index := 0,
+		driver: RaceDriver = null) -> Dictionary:
 	var race: Race = world.new_raid()
 	host.add_child(race)
 	race.start(world, 1, [Loadout.BARE] as Array[String])
@@ -112,9 +134,12 @@ static func drive(host: Node, world: WorldDef, machine: String, track_index := 0
 			break
 		hint = track.locate(bike.global_position, hint)
 		var drive := steer_for(bike, track, hint)
-		me.cmd.move = Vector2(drive.x, drive.y)
-		me.cmd.sprint = true
-		me.cmd.jump = _drift and drift_for(bike, track, hint)
+		if driver != null:
+			driver.drive(me, bike, track, view.phase == "racing", [], 1.0 / Engine.physics_ticks_per_second)
+		else:
+			me.cmd.move = Vector2(drive.x, drive.y)
+			me.cmd.sprint = true
+			me.cmd.jump = _drift and drift_for(bike, track, hint)
 		if bool(bike.get("drifting")):
 			out["drift_ticks"] = int(out.get("drift_ticks", 0)) + 1
 		if view.phase == "racing" and absf(float(bike.get("speed"))) < 1.0:
@@ -136,65 +161,12 @@ static func drive(host: Node, world: WorldDef, machine: String, track_index := 0
 	return out
 
 
-## The driver: x is the steer (+1 right), y the throttle (-1 brakes).
+## The driver: the AI racers' own at full skill (`RaceDriver.steer`), so
+## the bench's lap is the fastest clean lap an AI can drive.
 static func steer_for(bike: Node3D, track: RaceTrack, hint: int) -> Vector2:
-	var n := track.points.size()
-	var speed := absf(float(bike.get("speed")))
-	# A drift turns tighter than the grip does, so it brakes later.
-	var drift_mult := float(bike.get("drift_turn")) if _drift and bool(bike.get("handbrake")) else 1.0
-	var brake := float(bike.get("brake_decel"))
-	var at: Vector3 = bike.global_position
-	# Aim a little ahead on the line, further at speed.
-	var ahead := 3 + int(speed * 0.35 / RaceTrack.STEP)
-	var ti := (hint + ahead) % n
-	var target := track.points[ti] + track.side(ti) * track.line_offset(ti, bool(bike.get("hovers")))
-	var heading := float(bike.get("heading")) + float(bike.get("slip"))
-	var facing := Basis(Vector3.UP, heading) * Vector3.FORWARD
-	var want := Vector3(target.x - at.x, 0.0, target.z - at.z).normalized()
-	var angle := facing.signed_angle_to(want, Vector3.UP)
-	var steer := clampf(-angle * 3.0, -1.0, 1.0)
-	# Brake for a corner ahead tighter than this speed allows.
-	var throttle := 1.0
-	var reach := int((speed * speed / (2.0 * maxf(brake, 1.0)) + 20.0) / RaceTrack.STEP)
-	for j in range(2, reach, 2):
-		var i := (hint + j) % n
-		var radius := _radius(track, i)
-		var allowed := corner_speed(bike, radius, drift_mult) * 0.9
-		var dist := j * RaceTrack.STEP
-		if speed * speed - allowed * allowed > 2.0 * brake * dist:
-			throttle = -1.0
-			break
-	return Vector2(steer, throttle)
+	return RaceDriver.steer(bike, track, hint, RaceDriver.PACE_BEST, 0.0, _drift)
 
 
-## The drifting driver's handbrake: held through a bend tighter than the
-## machine can turn at its speed, and through the drift until the course has
-## come round onto the line ahead.
+## The drifting driver's handbrake (`RaceDriver.drift_for`).
 static func drift_for(bike: Node3D, track: RaceTrack, hint: int) -> bool:
-	var speed := float(bike.get("speed"))
-	if speed < float(bike.get("drift_min_speed")) + 2.0:
-		return false
-	var n := track.points.size()
-	var tightest := INF
-	for j in range(0, 8, 2):
-		tightest = minf(tightest, _radius(track, (hint + j) % n))
-	var grip := corner_speed(bike, tightest, 1.0)
-	if bool(bike.get("drifting")):
-		# Hold it until the line ahead is open enough to drive.
-		return grip < speed * 0.9
-	return grip < speed * 0.95
-
-
-## The fastest a machine takes a bend of `radius` at its turn rate; `mult`
-## widens it for a drift.
-static func corner_speed(bike: Node3D, radius: float, mult: float) -> float:
-	return radius * float(bike.get("turn_rate")) * mult
-
-
-## The track's turning radius about point `i`, from the bend over 10 m.
-static func _radius(track: RaceTrack, i: int) -> float:
-	var n := track.points.size()
-	var a := track.forward((i - 3 + n) % n)
-	var b := track.forward((i + 3) % n)
-	var bend := absf(Vector2(a.x, a.z).angle_to(Vector2(b.x, b.z)))
-	return 6.0 * RaceTrack.STEP / maxf(bend, 0.001)
+	return RaceDriver.drift_for(bike, track, hint)
