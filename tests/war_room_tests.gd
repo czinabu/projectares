@@ -8,13 +8,7 @@ extends RefCounted
 
 const PlazaMap := preload("res://worlds/plaza/map.gd")
 const WarRoomPanel := preload("res://core/social/war_room_panel.gd")
-const VisualCheck := preload("res://tests/visual_check.gd")
-
-
-## A raid whose armies keep grudges, as the grudge pass adds them.
-class GrudgeRaid:
-	extends Raid
-	var grudges := {}
+const VisualCheck := preload("res://tests/visual/war_room.gd")
 
 
 static func run(t: Node) -> void:
@@ -83,20 +77,26 @@ static func _hunted(t: Node) -> void:
 	plain.world = Worlds.get_world("ashfront")
 	t.check(plain.hunted().is_empty(), "with no grudges kept nobody is hunted")
 	plain.free()
-	var raid := GrudgeRaid.new()
+	var raid := Raid.new()
 	raid.world = Worlds.get_world("ashfront")
 	var marked := Actor.new()
 	marked.display_name = "Marked One"
 	marked.clan_tag = "ARES"
 	var other := Actor.new()
 	other.display_name = "Bystander"
-	raid.grudges = {marked: {"legion": 40.0, "tide": 5.0}, other: {"tide": 10.0}}
+	var faint := Actor.new()
+	faint.display_name = "Passer-by"
+	# Grudges past half the hunt bar count; a faint one does not.
+	var bar := raid.world.grudge_hunt
+	raid.grudges = {marked: {"legion": bar * 1.3, "tide": bar * 0.2}, other: {"tide": bar * 0.7},
+			faint: {"legion": bar * 0.1}}
 	var rows := raid.hunted()
 	t.check(rows.size() == 2 and rows[0].name == "Marked One" and rows[0].by == "legion" and rows[0].clan == "ARES"
 			and rows[1].by == "tide", "the hunted list names each player and the army after them, biggest first (%s)" % [rows])
 	t.check(rows.all(func(row: Dictionary) -> bool: return row.keys().size() == 3), "it says who and by whom, never where")
 	marked.free()
 	other.free()
+	faint.free()
 	raid.free()
 
 

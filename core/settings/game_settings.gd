@@ -65,46 +65,142 @@ const VIEW_DISTANCE := [
 ]
 const VIEW_DISTANCE_DEFAULT := 1
 
+## Every setting, in the order the phone's Settings app shows it (Caleb's
+## call: a new setting is one row here and its var below, never new code in
+## the phone). Each row: "key" (the var and the save file's key), "tab" (one
+## of `Phone.SETTINGS_TABS`), "section" (a heading drawn above the first row
+## of each section), "kind" ("slider", "toggle" or "choice"), "label",
+## "default", and by kind: a slider's "range", "step" and "format" (see
+## `shown`), a choice's "choices" (rows whose first field is the name on the
+## phone). "preview" marks a view setting whose slider lets the view go while
+## dragged. A row whose "tab" is "" is kept and saved but never drawn on the
+## phone: a "list" (of strings) or a "text".
+const SCHEMA := [
+	{"key": "mouse_sensitivity", "tab": "input", "kind": "slider", "label": "Mouse sensitivity",
+			"default": 0.0022, "range": SENSITIVITY_RANGE, "step": 0.0001, "format": "sensitivity"},
+	{"key": "invert_y", "tab": "input", "kind": "toggle", "label": "Invert mouse up and down", "default": false},
+	{"key": "fullscreen", "tab": "view", "section": "DISPLAY", "kind": "toggle", "label": "Fullscreen",
+			"default": false},
+	{"key": "anti_aliasing", "tab": "view", "section": "DISPLAY", "kind": "choice", "label": "Smooth edges",
+			"default": ANTI_ALIASING_DEFAULT, "choices": ANTI_ALIASING},
+	{"key": "edge_ink", "tab": "view", "section": "DISPLAY", "kind": "toggle",
+			"label": "Outline far shapes (not with MSAA)", "default": true},
+	{"key": "shadows", "tab": "view", "section": "PERFORMANCE", "kind": "choice", "label": "Shadows",
+			"default": 0, "choices": SHADOWS},
+	{"key": "render_scale", "tab": "view", "section": "PERFORMANCE", "kind": "choice", "label": "Render scale",
+			"default": 0, "choices": RENDER_SCALE},
+	{"key": "view_distance", "tab": "view", "section": "PERFORMANCE", "kind": "choice", "label": "View distance",
+			"default": VIEW_DISTANCE_DEFAULT, "choices": VIEW_DISTANCE},
+	{"key": "ambient_occlusion", "tab": "view", "section": "PERFORMANCE", "kind": "toggle",
+			"label": "Ambient occlusion", "default": true},
+	{"key": "ground_smoke", "tab": "view", "section": "PERFORMANCE", "kind": "toggle",
+			"label": "Battle smoke over the ground", "default": true},
+	{"key": "field_of_view", "tab": "view", "section": "CAMERA", "kind": "slider",
+			"label": "Field of view, first person", "default": 80.0, "range": FOV_RANGE, "step": 1.0,
+			"format": "whole", "preview": true},
+	{"key": "field_of_view_third", "tab": "view", "section": "CAMERA", "kind": "slider",
+			"label": "Field of view, third person", "default": 80.0, "range": FOV_RANGE, "step": 1.0,
+			"format": "whole", "preview": true},
+	{"key": "camera_distance", "tab": "view", "section": "CAMERA", "kind": "slider",
+			"label": "Camera distance, third person", "default": 2.0, "range": CAMERA_DISTANCE_RANGE,
+			"step": 0.1, "format": "metres", "preview": true},
+	{"key": "eye_pullback", "tab": "view", "section": "CAMERA", "kind": "slider",
+			"label": "Camera pulled back, first person", "default": 0.15, "range": EYE_PULLBACK_RANGE,
+			"step": 0.01, "format": "centimetres", "preview": true},
+	{"key": "show_nameplates", "tab": "view", "section": "CAMERA", "kind": "toggle",
+			"label": "Names over other players", "default": true},
+	{"key": "master_volume", "tab": "system", "kind": "slider", "label": "Volume", "default": 0.8,
+			"range": Vector2(0.0, 1.0), "step": 0.05, "format": "percent"},
+	# Kept but not on a Settings tab ("tab" ""): the watch's mission log.
+	{"key": "untracked", "tab": "", "kind": "list", "default": []},
+	{"key": "main_mission", "tab": "", "kind": "text", "default": ""},
+]
+
 ## Tests turn this off so they never touch a real settings file.
 static var persist := true
-static var mouse_sensitivity := 0.0022
-static var invert_y := false
+## The values, by `SCHEMA` key. The typed vars below read and write here.
+static var _values := {}
+static var _loaded := false
+
+static var mouse_sensitivity: float:
+	get: return _values["mouse_sensitivity"]
+	set(v): _values["mouse_sensitivity"] = v
+static var invert_y: bool:
+	get: return _values["invert_y"]
+	set(v): _values["invert_y"] = v
 ## Field of view in first person, and in third person. Each applies only while
 ## that view is active. (The first-person one keeps the old saved key.)
-static var field_of_view := 80.0
-static var field_of_view_third := 80.0
-static var camera_distance := 2.0
-static var eye_pullback := 0.15
+static var field_of_view: float:
+	get: return _values["field_of_view"]
+	set(v): _values["field_of_view"] = v
+static var field_of_view_third: float:
+	get: return _values["field_of_view_third"]
+	set(v): _values["field_of_view_third"] = v
+## How far behind the character the third-person camera sits, in meters.
+static var camera_distance: float:
+	get: return _values["camera_distance"]
+	set(v): _values["camera_distance"] = v
+## How far the first-person camera sits back from the face, in meters.
+static var eye_pullback: float:
+	get: return _values["eye_pullback"]
+	set(v): _values["eye_pullback"] = v
 ## 0 to 1, applied to the master audio bus.
-static var master_volume := 0.8
-static var fullscreen := false
-static var show_nameplates := true
+static var master_volume: float:
+	get: return _values["master_volume"]
+	set(v): _values["master_volume"] = v
+static var fullscreen: bool:
+	get: return _values["fullscreen"]
+	set(v): _values["fullscreen"] = v
+static var show_nameplates: bool:
+	get: return _values["show_nameplates"]
+	set(v): _values["show_nameplates"] = v
 ## An index into `ANTI_ALIASING`.
-static var anti_aliasing := ANTI_ALIASING_DEFAULT
+static var anti_aliasing: int:
+	get: return _values["anti_aliasing"]
+	set(v): _values["anti_aliasing"] = v
 ## A thin dark outline on far shapes out in a world (`Look.edge_ink`), so
 ## they read against the haze. Not drawn in the MSAA modes (`ink_shown`).
-static var edge_ink := true
+static var edge_ink: bool:
+	get: return _values["edge_ink"]
+	set(v): _values["edge_ink"] = v
 ## An index into `SHADOWS`.
-static var shadows := 0
+static var shadows: int:
+	get: return _values["shadows"]
+	set(v): _values["shadows"] = v
 ## An index into `RENDER_SCALE`.
-static var render_scale := 0
+static var render_scale: int:
+	get: return _values["render_scale"]
+	set(v): _values["render_scale"] = v
 ## Ambient occlusion (the soft shade in corners and under things).
-static var ambient_occlusion := true
+static var ambient_occlusion: bool:
+	get: return _values["ambient_occlusion"]
+	set(v): _values["ambient_occlusion"] = v
 ## Low battle smoke over the ground where a planet has some
 ## (`PlanetType.smoke`, `Planet.GroundSmoke`): volumetric fog, so it costs
 ## frame time and can be switched off.
-static var ground_smoke := true
+static var ground_smoke: bool:
+	get: return _values["ground_smoke"]
+	set(v): _values["ground_smoke"] = v
 ## The watch's mission log: what the player took off the visor's objective
 ## block (a contract's id, or `TOUR_KEY` for the new player's tour). Every
 ## mission is tracked until it is picked off. View only.
-static var untracked: Array[String] = []
+static var untracked: Array[String]:
+	get: return _values["untracked"]
+	set(v): _values["untracked"] = v
 const TOUR_KEY := "tour"
 ## The one mission pinned as the main one (a key as in `untracked`, "" for
 ## none): listed first and lit on the visor. View only.
-static var main_mission := ""
+static var main_mission: String:
+	get: return _values["main_mission"]
+	set(v): _values["main_mission"] = v
 ## An index into `VIEW_DISTANCE`.
-static var view_distance := VIEW_DISTANCE_DEFAULT
-static var _loaded := false
+static var view_distance: int:
+	get: return _values["view_distance"]
+	set(v): _values["view_distance"] = v
+
+
+static func _static_init() -> void:
+	reset()
 
 
 ## Loads once and applies. Safe to call any number of times.
@@ -123,83 +219,83 @@ static func ensure_loaded() -> void:
 
 
 static func reset() -> void:
-	mouse_sensitivity = 0.0022
-	invert_y = false
-	field_of_view = 80.0
-	field_of_view_third = 80.0
-	camera_distance = 2.0
-	eye_pullback = 0.15
-	master_volume = 0.8
-	fullscreen = false
-	show_nameplates = true
-	anti_aliasing = ANTI_ALIASING_DEFAULT
-	edge_ink = true
-	shadows = 0
-	render_scale = 0
-	ambient_occlusion = true
-	ground_smoke = true
-	untracked.clear()
-	main_mission = ""
-	view_distance = VIEW_DISTANCE_DEFAULT
+	for row: Dictionary in SCHEMA:
+		if row["kind"] == "list":
+			var list: Array[String] = []
+			_values[row["key"]] = list
+		else:
+			_values[row["key"]] = row["default"]
+
+
+## The `SCHEMA` row for a key, or an empty one.
+static func row_of(key: String) -> Dictionary:
+	for row: Dictionary in SCHEMA:
+		if row["key"] == key:
+			return row
+	return {}
+
+
+## The rows one Settings tab shows, in order.
+static func rows_in(tab: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for row: Dictionary in SCHEMA:
+		if row["tab"] == tab:
+			out.append(row)
+	return out
+
+
+## What a setting is now, as the phone shows it. Fullscreen is read off the
+## window itself (`window_is_full`).
+static func value_of(key: String) -> Variant:
+	if key == "fullscreen":
+		return window_is_full()
+	return _values.get(key)
+
+
+## A slider's value as the phone writes it beside the slider, by the row's
+## "format".
+static func shown(row: Dictionary, value: float) -> String:
+	match row.get("format", ""):
+		"sensitivity":
+			return "%.1f" % (value * 1000.0)
+		"whole":
+			return "%d" % roundi(value)
+		"metres":
+			return "%.1f m" % value
+		"centimetres":
+			return "%d cm" % roundi(value * 100.0)
+		"percent":
+			return "%d%%" % roundi(value * 100.0)
+	return "%.2f" % value
 
 
 static func set_value(key: String, value: Variant) -> void:
-	match key:
-		"mouse_sensitivity":
-			mouse_sensitivity = clampf(float(value), SENSITIVITY_RANGE.x, SENSITIVITY_RANGE.y)
-		"invert_y":
-			invert_y = bool(value)
-		"field_of_view":
-			field_of_view = clampf(float(value), FOV_RANGE.x, FOV_RANGE.y)
-		"field_of_view_third":
-			field_of_view_third = clampf(float(value), FOV_RANGE.x, FOV_RANGE.y)
-		"camera_distance":
-			camera_distance = clampf(float(value), CAMERA_DISTANCE_RANGE.x, CAMERA_DISTANCE_RANGE.y)
-		"eye_pullback":
-			eye_pullback = clampf(float(value), EYE_PULLBACK_RANGE.x, EYE_PULLBACK_RANGE.y)
-		"master_volume":
-			master_volume = clampf(float(value), 0.0, 1.0)
-		"fullscreen":
-			fullscreen = bool(value)
-		"show_nameplates":
-			show_nameplates = bool(value)
-		"anti_aliasing":
-			anti_aliasing = clampi(int(value), 0, ANTI_ALIASING.size() - 1)
-		"edge_ink":
-			edge_ink = bool(value)
-		"shadows":
-			shadows = clampi(int(value), 0, SHADOWS.size() - 1)
-		"render_scale":
-			render_scale = clampi(int(value), 0, RENDER_SCALE.size() - 1)
-		"ambient_occlusion":
-			ambient_occlusion = bool(value)
-		"ground_smoke":
-			ground_smoke = bool(value)
-		"untracked":
-			untracked.clear()
+	var row := row_of(key)
+	if row.is_empty():
+		return
+	match row["kind"]:
+		"slider":
+			var range_: Vector2 = row["range"]
+			_values[key] = clampf(float(value), range_.x, range_.y)
+		"toggle":
+			_values[key] = bool(value)
+		"choice":
+			_values[key] = clampi(int(value), 0, (row["choices"] as Array).size() - 1)
+		"text":
+			_values[key] = str(value)
+		"list":
+			var list: Array[String] = []
 			if value is Array:
 				for each: Variant in value:
-					if str(each) != "" and str(each) not in untracked:
-						untracked.append(str(each))
-		"main_mission":
-			main_mission = str(value)
-		"view_distance":
-			view_distance = clampi(int(value), 0, VIEW_DISTANCE.size() - 1)
-		_:
-			return
+					if str(each) != "" and str(each) not in list:
+						list.append(str(each))
+			_values[key] = list
 	apply()
 	save()
 
 
 static func to_dict() -> Dictionary:
-	return {"mouse_sensitivity": mouse_sensitivity, "invert_y": invert_y, "field_of_view": field_of_view,
-			"field_of_view_third": field_of_view_third, "camera_distance": camera_distance,
-			"eye_pullback": eye_pullback,
-			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates,
-			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink, "shadows": shadows,
-			"render_scale": render_scale, "ambient_occlusion": ambient_occlusion, "ground_smoke": ground_smoke,
-			"untracked": untracked.duplicate(), "main_mission": main_mission,
-			"view_distance": view_distance}
+	return _values.duplicate(true)
 
 
 ## Pushes the settings that live outside the game's own nodes: volume, the
@@ -316,8 +412,6 @@ static func big_reach() -> float:
 	return float(VIEW_DISTANCE[view_distance][3])
 
 
-## Whether the edge ink is drawn: switched on, and no MSAA, which leaves the
-## ink no depth to read.
 ## Whether mission `key` shows in the visor's objective block.
 static func is_tracked(key: String) -> bool:
 	return key not in untracked
@@ -359,6 +453,8 @@ static func cycle_mission(key: String) -> String:
 	return mission_state(key)
 
 
+## Whether the edge ink is drawn: switched on, and no MSAA, which leaves the
+## ink no depth to read.
 static func ink_shown() -> bool:
 	return edge_ink and ANTI_ALIASING[anti_aliasing][1] == Viewport.MSAA_DISABLED
 

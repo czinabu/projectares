@@ -1,6 +1,6 @@
 name: Tests
 
-# Two tiers (see "Picking groups for CI" in tests/test_runner.gd):
+# Two tiers (see "Finding and picking groups" in tests/test_runner.gd):
 #   offline  every group that never starts a server. Runs on every push with
 #            --fixed-fps, so it skips the real-time waits (about a minute).
 #   net      the online groups (a real server process plus clients). They need
