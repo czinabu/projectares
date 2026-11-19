@@ -49,6 +49,21 @@ const RENDER_SCALE := [
 	["Balanced (67%)", 0.67],
 	["Performance (50%)", 0.5],
 ]
+## How far and in how much detail a world is drawn, best first: [name on the
+## phone, share of the world's own view reach (`view_far_for`), how far small
+## things are drawn (a share of `Look`'s size rule), how far anything bigger
+## is drawn (0: as far as the camera sees), mesh detail (the main view's
+## `mesh_lod_threshold`: lower keeps more of a model's detail further out)].
+## "High" is each world as it was made; "Ultra" draws the small things
+## nearly twice as far and keeps model detail longer; "Medium" and "Low" are
+## for a slower graphics card. (Caleb's ask: a short view spoils it.)
+const VIEW_DISTANCE := [
+	["Ultra", 1.0, 1.8, 0.0, 0.4],
+	["High", 1.0, 1.0, 0.0, 1.0],
+	["Medium", 0.75, 0.75, 1200.0, 1.5],
+	["Low", 0.5, 0.5, 700.0, 2.5],
+]
+const VIEW_DISTANCE_DEFAULT := 1
 
 ## Tests turn this off so they never touch a real settings file.
 static var persist := true
@@ -87,6 +102,8 @@ const TOUR_KEY := "tour"
 ## The one mission pinned as the main one (a key as in `untracked`, "" for
 ## none): listed first and lit on the visor. View only.
 static var main_mission := ""
+## An index into `VIEW_DISTANCE`.
+static var view_distance := VIEW_DISTANCE_DEFAULT
 static var _loaded := false
 
 
@@ -123,6 +140,7 @@ static func reset() -> void:
 	ground_smoke = true
 	untracked.clear()
 	main_mission = ""
+	view_distance = VIEW_DISTANCE_DEFAULT
 
 
 static func set_value(key: String, value: Variant) -> void:
@@ -165,6 +183,8 @@ static func set_value(key: String, value: Variant) -> void:
 						untracked.append(str(each))
 		"main_mission":
 			main_mission = str(value)
+		"view_distance":
+			view_distance = clampi(int(value), 0, VIEW_DISTANCE.size() - 1)
 		_:
 			return
 	apply()
@@ -178,7 +198,8 @@ static func to_dict() -> Dictionary:
 			"master_volume": master_volume, "fullscreen": fullscreen, "show_nameplates": show_nameplates,
 			"anti_aliasing": anti_aliasing, "edge_ink": edge_ink, "shadows": shadows,
 			"render_scale": render_scale, "ambient_occlusion": ambient_occlusion, "ground_smoke": ground_smoke,
-			"untracked": untracked.duplicate(), "main_mission": main_mission}
+			"untracked": untracked.duplicate(), "main_mission": main_mission,
+			"view_distance": view_distance}
 
 
 ## Pushes the settings that live outside the game's own nodes: volume, the
@@ -237,6 +258,9 @@ static func apply_graphics() -> void:
 		fit_atmosphere(atmosphere as WorldEnvironment)
 	for smoke: Node in tree.get_nodes_in_group("ground_smoke"):
 		smoke.call("show_smoke", ground_smoke)
+	tree.root.mesh_lod_threshold = VIEW_DISTANCE[view_distance][4]
+	for map: Node in tree.get_nodes_in_group(DRAWN_MAP_GROUP):
+		Look.fit_draw_distance(map as Node3D)
 
 
 ## A world's sun and atmosphere (`Look.atmosphere`) are in these groups, so
@@ -267,6 +291,29 @@ static func fit_atmosphere(atmosphere: WorldEnvironment) -> void:
 	if atmosphere == null or atmosphere.environment == null:
 		return
 	atmosphere.environment.ssao_enabled = ambient_occlusion
+
+
+## A map whose props `Look` gave a draw distance (`Look._limit_draw_distance`)
+## is in this group, so a changed View distance reaches it at once.
+const DRAWN_MAP_GROUP := "drawn_map"
+
+
+## How far the player's view draws in a world that asks for `world_far`
+## metres (its "view_far" or its planet's "horizon_far" meta), never under
+## `floor`, at the View distance setting.
+static func view_far_for(world_far: float, floor: float) -> float:
+	return maxf(floor, world_far * float(VIEW_DISTANCE[view_distance][1]))
+
+
+## How far small things are drawn, as a share of how `Look` would draw them.
+static func detail_reach() -> float:
+	return float(VIEW_DISTANCE[view_distance][2])
+
+
+## How far anything too big for `detail_reach` is drawn: 0 for as far as
+## the camera sees.
+static func big_reach() -> float:
+	return float(VIEW_DISTANCE[view_distance][3])
 
 
 ## Whether the edge ink is drawn: switched on, and no MSAA, which leaves the

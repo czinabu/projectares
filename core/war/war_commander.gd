@@ -30,6 +30,9 @@ var held_weight := 0.25
 ## it is worth only `losing_weight` as much, and teams go elsewhere.
 var losing_odds := 2.0
 var losing_weight := 0.2
+## A site that waits on the war (its `Strongpoint.hot_at`) is worth this
+## much more to an elite team once the war is hot enough.
+var hot_weight := 3.0
 
 
 ## The orders for one army: {bot: Strongpoint}, and each bot's fireteam
@@ -37,8 +40,12 @@ var losing_weight := 0.2
 ## strongpoints; `strength` is how many soldiers of each side stand near
 ## each site ({Strongpoint: {faction: count}}); `storm` the sites a storm
 ## covers. Garrisons take `garrison` bots per held site, nearest first.
+## A site with a `hot_at` waits on the war: below that `intensity` nobody
+## is sent at it, and above it only teams of the army's elite (bots whose
+## meta "kind" is in `elite_kinds`), who go there before anywhere else.
 func plan(faction: String, army: Array, sites: Array, strength: Dictionary, storm: Array,
-		garrison: int, teams: Dictionary, first_team: int) -> Dictionary:
+		garrison: int, teams: Dictionary, first_team: int, intensity := 0.0,
+		elite_kinds: Array = []) -> Dictionary:
 	var orders := {}
 	var spare: Array = army.duplicate()
 	var mine := "faction:" + faction
@@ -50,7 +57,18 @@ func plan(faction: String, army: Array, sites: Array, strength: Dictionary, stor
 					< b.global_position.distance_squared_to(point.global_position))
 		for i in mini(garrison, spare.size()):
 			orders[spare.pop_front()] = point
-	var groups := fireteams(spare)
+	# Elites make teams of their own only while a site waits on them.
+	var hot_open := false
+	for point: Strongpoint in sites:
+		if point.hot_at > 0.0 and intensity >= point.hot_at:
+			hot_open = true
+	var elites: Array = []
+	if hot_open and not elite_kinds.is_empty():
+		elites = spare.filter(func(bot: Actor) -> bool:
+			return str(bot.get_meta("kind", "")) in elite_kinds)
+		spare = spare.filter(func(bot: Actor) -> bool: return bot not in elites)
+	var elite_groups := fireteams(elites)
+	var groups := elite_groups + fireteams(spare)
 	if groups.is_empty():
 		return orders
 	var cap := maxi(1, ceili(groups.size() * objective_share))
@@ -63,11 +81,16 @@ func plan(faction: String, army: Array, sites: Array, strength: Dictionary, stor
 		centre /= group.size()
 		var best: Strongpoint = null
 		var best_score := 0.0
+		var elite := group in elite_groups
 		for point: Strongpoint in sites:
 			var count := int(taken.get(point, 0))
 			if count >= cap:
 				continue
+			if point.hot_at > 0.0 and (intensity < point.hot_at or not elite):
+				continue
 			var score := worth(faction, point, centre, strength.get(point, {}), point in storm) / (1.0 + count)
+			if point.hot_at > 0.0:
+				score *= hot_weight
 			if score > best_score:
 				best_score = score
 				best = point

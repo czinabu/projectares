@@ -865,6 +865,7 @@ func _draw() -> void:
 		_draw_ash()
 	_draw_vitals(p, ink)
 	_draw_landing(p)
+	_draw_hunted(p)
 	_draw_weapon(p, ink)
 	_draw_ident(v, ink)
 	if v.mode == "":
@@ -1672,6 +1673,27 @@ func _draw_landing(p: Actor) -> void:
 	if altitude >= 0.0:
 		words += "   GROUND %d m" % roundi(altitude)
 	_text(at + Vector2(0.0, -wide * 1.6), words, color, HORIZONTAL_ALIGNMENT_CENTER, 420.0, 14)
+
+
+## What the tag says while an army hunts the wearer for a grudge
+## (`Actor.hunted_by`), or "" for none.
+static func hunted_text(p: Actor) -> String:
+	if p == null or p.hunted_by == "":
+		return ""
+	var world := Worlds.of(p)
+	var army := world.faction_title(p.hunted_by) if world else p.hunted_by
+	return "%s IS HUNTING YOU" % army.to_upper()
+
+
+## A small tag under the heading tape while an army hunts the wearer, beating
+## slowly: told, never where they are.
+func _draw_hunted(p: Actor) -> void:
+	var words := hunted_text(p)
+	if words == "":
+		return
+	var beat := 0.7 + 0.3 * sin(_time * 3.0)
+	var color := Color(TAG_INK.r, TAG_INK.g, TAG_INK.b, boot * beat)
+	_text(Vector2(size.x * 0.5, size.y * 0.15) + sway, words, color, HORIZONTAL_ALIGNMENT_CENTER, 420.0, 13)
 
 
 ## Faint pitch ticks up both edges of the glass, sliding as the head tips,

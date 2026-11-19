@@ -333,6 +333,26 @@ without Caleb, and update the gap list when a PR closes a row.
   world doorway (`heat_signs`) and the wanted on the most-wanted board
   (`wanted_text`, the map's "wanted_board" label). Anything else that
   advertises a world reads `world_status`, not a second channel.
+- The War Room (DESIGN.md section 2, "Spectating screens"): the plaza's
+  big screen is `WarRoom` (`core/social/war_room.gd`, view only, made by
+  `PlazaView` only where `Look` is on, drawn into a `SubViewport` on the
+  map's "screen_wall"). It reads only `world_status`: each world's
+  landmarks and who holds them (`Raid.front`: an army's faction,
+  "players" or "", never a side key), its big moments (`Raid.note_moment`,
+  authority only, a warlord or boss brought down and a landmark changing
+  hands; `live_moments`; a world's wall-clock set pieces are
+  `WorldDef.clock_moments`, Ashfront's Colossus), who its armies hunt
+  (`Raid.hunted`, from the grudges where a world keeps them: who and by
+  which army, never where) and a race world's AI-only race (`Race.race_feed`,
+  shot by the screen's `TrackCam` from `WorldDef.feed_tracks`; with no race
+  on it shows exhibition laps and says so). A client checks all of it
+  (`NetSession.clean_front`, `clean_moments`, `clean_hunted`,
+  `clean_race`). Segments turn on the wall clock (`SEGMENT_TIME`) so every
+  watcher sees the same one; a side's colour is `WorldDef.faction_color`.
+  The console before it (the "war_room" portal, `WarRoomPanel`,
+  `main.gd open_war_room`) puts a picked world on the screen for that
+  viewer only (`WarRoom.focus`) and deploys through `use_portal`, the way
+  its gate does. Check by eye with `visual_check.tscn -- <dir> --war-room-only`.
 - The Concourse's people (DESIGN.md section 2, "Locals"):
   `core/social/plaza_locals.gd`, made by `PlazaView` only where `Look` is
   on, so a server runs none and sends nothing for them. Every client makes
@@ -394,7 +414,11 @@ without Caleb, and update the gap list when a PR closes a row.
   and drawn one MultiMesh per pose (`extras.gdshader`, dithered fade). A
   round from the local player's gun or a shell drops one on that screen
   only. Check by eye with `visual_check.tscn -- <dir> --battle-only` (with
-  `--fixed-fps 60`).
+  `--fixed-fps 60`). The busy low sky over it is view only too
+  (`worlds/ashfront/lowsky.gd`, the map's `make_low_sky`): gunships rake
+  only scenery fights (`may_rake`: as far from everyone as a fight is
+  placed) and wrecks come down only past the rim; check with
+  `--sky-only`.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
@@ -417,7 +441,14 @@ without Caleb, and update the gap list when a PR closes a row.
   A world caps rare kinds with `WorldDef.bot_allowed` (authority only: the
   `Raid` rolls a turned-away bot again from a new seed, so clients only hear
   of the kept seed). Ashfront's kinds (meta "kind": soldier, heavy, exo,
-  walker; DESIGN.md "Heavy units") come from the seed in `equip_bot`; a big
+  walker, and each army's own, the Legion marksman and the Tide runner;
+  DESIGN.md "Heavy units", "The enemy AI pass") come from the seed in
+  `equip_bot`, and each army fights its own way (`DOCTRINE`, as metas:
+  "range" the distance it keeps, "fall_back", "hunters" added to the
+  ring's, "flankers" 2 for a pincer from both sides, `SquadBoard.flank`'s
+  cap, and "breaks_at", the share of its fireteam lost before the rest
+  break off, counted by `BotBrain.set_team` and `ally_down`, which the
+  `Raid` calls on a death, `_tell_team`); a big
   body is `Actor.set_stand_height` (capsule, hit tests and eyes follow
   `body_height()`), a weak spot `Actor.rear_damage_mult`, and a gun that
   must hold a lock first `BotBrain.lock_time` (meta "lock_time"), whose
@@ -451,11 +482,35 @@ without Caleb, and update the gap list when a PR closes a row.
   snapshot when the spotter raises its gun). What they learn is a place,
   never live tracking: a lost contact is searched for (`_lost`) and let go.
   A world gives a kind its own senses with metas set in `equip_bot`
-  ("sight", "fov", "reach", "far_notice"; DESIGN.md "The enemy AI pass"),
-  never a second brain. Smoke hides people from bots as it hides them from
+  ("sight", "fov", "reach", "far_notice"; how it fires, "burst" and
+  "slots"; and how it hunts, "tracker", "preys_on_cold", "shuns_warmth";
+  DESIGN.md "The enemy AI pass"), never a second brain. A tracker follows
+  the freshest mark in `Raid.tracks` near it to where the mark was laid,
+  never to the person (`BotBrain._sniff`, through `_sensed`), and a bot
+  that shuns warmth neither targets anyone in a "warmth" ring nor walks
+  into one (`BotBrain.in_warmth`, `_outside_warmth`). Any gun with a
+  "lock_time" meta draws its tracking beam. Smoke hides people from bots as it hides them from
   eyes: anything a player cannot see through is a cloud in `Raid.smoke`
   (`Smoke.add`, authority only; a shell leaves one), and bot sight asks
-  `Smoke.blocks`, never a view.
+  `Smoke.blocks`, never a view. An army remembers a player for one life
+  (`WorldDef.grudge_factions`, `Raid.grudges`, authority only): hurting
+  its bots raises its grudge, time fades it, death clears it, and over
+  `grudge_hunt` the `Raid` sends its nearest few after where that player
+  roughly is (`BotBrain.hunt_grudge`, through `_sensed`, so the hunter and
+  leash limits hold). The player is told only which army
+  (`Actor.hunted_by`, `NetSession._hunted`, the visor's tag
+  `VisorHud.hunted_text`).
+  Battles follow the ground (DESIGN.md "The enemy AI pass", step 4): with
+  its orders the `Raid` sets each soldier's style from
+  `WorldDef.ground_at` and `ground_styles` (`BotBrain.set_ground`, always
+  laid over the bot's own numbers), keeps `line_share` of an army on its
+  "line_post" markers (`_man_lines`, "line"), has a team ring a manned
+  enemy site for `siege_time` before storming it (`_besieging`,
+  `_siege_spot`, "siege"), and a strongpoint marker's "hot_at"
+  (`Strongpoint.hot_at`) keeps every team off it until the war is that
+  hot, then sends only `WorldDef.elite_kinds` (`WarCommander.plan`). A
+  bot on foot that gets nowhere jumps and steps aside
+  (`BotBrain._climb_out`).
   Only a few act on it, through `SquadBoard` claims (static, with an
   expiry, like the slots): `noise_lookers` go to look at one person's
   noise, `RING_HUNTERS` army bots may leave their ground to hunt one person
@@ -862,7 +917,18 @@ without Caleb, and update the gap list when a PR closes a row.
   Shadows (`GameSettings.SHADOWS`: High is the world as made), Render
   scale (FSR 1) and Ambient occlusion; a world's sun and atmosphere take
   them through `GameSettings.fit_sun(sun, reach)` and `fit_atmosphere`,
-  so set a sun's shadow reach only through `fit_sun`.
+  so set a sun's shadow reach only through `fit_sun`. View distance
+  (`GameSettings.VIEW_DISTANCE`, Caleb's ask: a short view spoils it;
+  High is each world as made, Ultra and Medium and Low either side) sets
+  how far the player's camera reaches (`PlayerController._view_far`: the
+  map's "view_far" meta or its planet's far land ring, "horizon_far" from
+  `Planet.atmosphere`, by `view_far_for`), how far map props are drawn
+  (`Look._limit_draw_distance` keeps each mesh's own reach in
+  `Look.DRAW_BASE` and `fit_draw_distance` scales it, live) and mesh
+  detail (`mesh_lod_threshold`). A map gives something a far reach of its
+  own with a visibility range, which the setting scales too; compare by
+  eye with `visual_check.tscn -- <dir> --sightlines-only [levels]`, which
+  writes each shot's draw calls beside it.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
