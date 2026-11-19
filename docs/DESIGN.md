@@ -1356,7 +1356,9 @@ built in this order, cheapest and most connected first:
    Part one is built (below, "The Spore Marsh"): the world, its map, three
    of the five kinds of wildlife, fouling, spore clouds and its loot. Part
    two is built too: the lurkers, the brood keepers and their hives, and
-   the forests' close air. The Rootways come next.
+   the forests' close air. Part three (atmosphere and scale) is built, and
+   the first of three Rootways, under the Westwood (below, "The Spore
+   Marsh (the Rootways)"); the other two come next.
 3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
    map several times Ashfront's width, salvage crates too big for a pack
    that ride in a vehicle's cargo space, sandstorms that bury and uncover
@@ -1464,8 +1466,8 @@ and a fight is short. The planet's mist lies low over everything (its
   "banks", Forward+ only, like all volumetric fog). Bots see no further
   than the mist lets a player (`WorldDef.sight_at`: 38 m deep in a
   forest), so it is fair both ways.
-- **Still to come.** The Rootways and their keepers, and the rain storms
-  the planet already has a look for.
+- **Still to come.** The Rootways and their keepers (the first is built,
+  below), and the rain storms the planet already has a look for.
 
 ### The Spore Marsh (part three, built: atmosphere and scale)
 
@@ -1501,6 +1503,46 @@ olive moss, black water, ochre as the warm accent). All of it is view only
   barbels from the jaw and lie on fins; a keeper's eggs glow softly under
   a skin of hide, with tendrils trailing under it; a bloater has lit spore
   vents round its crown and veins of glow down its sac.
+
+### The Spore Marsh (the Rootways)
+
+Caleb's call: three short Rootways, one under each of three forests, each
+with its own keeper, built one at a time. They are the marsh's dungeons,
+part of the one running world like the Engine, never an instance. The
+first is built: the Westwood Rootway, entered from the western shore, the
+gentlest zone, so it is the first a new player finds. The next two go
+under forests further in (the Gillwood or the Deepwood in the drowned
+middle, then the Rotwood near the core), each keeper harder than the last.
+
+- **Down, not along.** A Rootway is cut into the ground: its mouth is an
+  open cut on dry ground, a ramp 12 m wide falling 36 m between root walls
+  to 10 m under the marsh, open to the sky (the ground there is a hole,
+  `Terrain.holes`, and the black water is not drawn over it). At its foot
+  the way runs on under the ground and the pools' beds, roofed: a throat,
+  a gallery that loops round a root pillar (two ways round, so a fight
+  there can be flanked), a passage down and the keeper's round chamber,
+  32 m across and 8 m high. No way is narrower than 9 m (Caleb's squad
+  rule), and nothing needs two people.
+- **Inside.** Out of the weather (`WorldDef.sheltered_at`) and in the
+  forests' close air all the way, the mist and dark at their deepest; bots
+  see no further than in a forest (`sight_at`). Roots hang from the roof
+  and climb the walls, glowcaps grow along the walls' feet and jade lights
+  glow in the dark. A garrison of the marsh's beasts stands in the throat
+  and the gallery (stalkers and a bloater), and the gallery holds two
+  caches of the marsh's goods ("rootway").
+- **The Rootmother.** The Westwood Rootway's keeper: the brood's mother, a
+  brood keeper grown to 3.4 m, 1,200 health, 45 armor, slow, her hooks on
+  a long windup you can parry, and the egg sacs on her back her weak spot
+  (twice the damage from behind). Made for one player, she grows tougher
+  with company like every boss. Her fight runs on the Engine's keeper
+  machinery: while she is above half health broodlings come out of four
+  root sockets in her chamber's wall, a few at a time; below half the
+  floor's four spore vents open, two at a time, each glowing ochre before
+  it gushes (22 damage to anyone standing in it). She carries nothing.
+  When she falls her vault opens a share for everyone who hurt her or
+  stood in her chamber: the marsh's goods, upgrade data, often one of its
+  blueprints, now and then an artifact (15%) or the Spore paint. She comes
+  back after 10 minutes, her vault closed.
 
 ## 3. The watch
 

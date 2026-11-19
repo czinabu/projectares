@@ -1,6 +1,6 @@
 # The Spore Marsh and Ashfront's scenery
 
-Rules for the Spore Marsh's wildlife, fouling and spores, and Ashfront's scenery army and low sky. These are part of the rules in `CLAUDE.md` that must not be
+Rules for the Spore Marsh's wildlife, fouling, spores and Rootways, and Ashfront's scenery army and low sky. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -42,6 +42,30 @@ date in the same PR.
   every "creature" kind needs an entry in), patterned in the piece's own
   space so it stays on the body. Check by eye with
   `visual_check.tscn -- <dir> --marsh-only`.
+- The Rootways (DESIGN.md "The Spore Marsh (the Rootways)",
+  `worlds/marsh/rootway.gd`): the marsh's dungeons, part of the one
+  running world, laid out alike in each one's own frame (`Rootway.frame`:
+  x across, z inward from the mouth, y the world's height) from
+  `Rootway.ROOTWAYS`, whose mouths sit on whole even metres so the cut
+  lies on the ground's samples. The cut is a hole in the ground
+  (`Rootway.holes`, set on the `Terrain` before its collision and mesh are
+  made, also off the main thread in `prepare_shared`), the black water is
+  drawn round it (`water_pieces`), and nothing of the floor's dressing
+  grows in it (the map's `in_cut`). Everything under the ground stays
+  under the deepest pool's bed (`ROOF` plus its thickness). Each Rootway
+  is its own `NavigationRegion3D` holding only what is walked on and round
+  (floors, the pillar's foot, the knots); its walls and roof sit beside it
+  so no mesh is baked over their tops (baking them with the open ground
+  tangles the layers), and a `NavigationLink3D` joins the ground at the
+  mouth to the ramp. Inside (`Rootway.inside`) is sheltered and in close
+  air for the view (the map's "close_here") and for bots (`sight_at`). Its
+  keeper runs on the `Raid`'s keeper machinery (see `frostline.md`): its
+  sockets, vents and vault are markers named by its kind in "keeper", the
+  world builds it in `make_warlord` from the "boss" meta, `roll_vault`
+  pays its shares, and the map draws the vents (`show_purge`, indexes
+  in "purge" marker order) and lights the chamber from the "keepers" meta
+  (`Rootway.animate`), view only. Every gap in it is 9 m or more. Check
+  by eye with `visual_check.tscn -- <dir> --rootway-only`.
 - The scenery army (DESIGN.md "The scenery army", Caleb's call): Ashfront's
   far fights are view only (`worlds/ashfront/battle.gd`, added by the map's
   `make_battle` only where `Look` is on): no collision, no `Combat.deal`,
