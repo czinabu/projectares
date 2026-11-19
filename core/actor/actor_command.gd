@@ -43,8 +43,8 @@ var secondary_pressed := false
 ## A weapon's special action (heavy attack for melee).
 var tertiary_pressed := false
 var reload_pressed := false
-## Melee stance, a `MeleeWeapon.Dir`: 0 overhead, 1 left, 2 right. Attacks and
-## guards take the stance they start in. It stays until changed.
+## Unused since melee became timing based (the blade picks its own sides,
+## `MeleeWeapon.next_stance`); kept so the packet layout stays the same.
 var stance := 0
 
 var interact_pressed := false

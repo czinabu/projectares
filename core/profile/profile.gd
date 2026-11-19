@@ -54,8 +54,6 @@ var fresh_start := FRESH_START
 var crates_granted: Array[String] = []
 ## Weapon, ability and frame mastery. Never lost on death.
 var mastery := MasteryBook.new()
-## How the melee side is picked: "mouse" (flick) or "move" (movement keys).
-var melee_control := "move"
 ## Shown to other players online, and the last server address joined.
 var player_name := "Raider"
 var last_server := "127.0.0.1"
@@ -131,7 +129,7 @@ func use_save(path: String) -> void:
 	save()
 	var keep := {"player_name": player_name, "last_server": last_server, "home_server": home_server,
 			"online_secret": online_secret,
-			"melee_control": melee_control, "appearance": appearance}
+			"appearance": appearance}
 	save_path = path
 	reset()
 	load_profile()
@@ -141,7 +139,6 @@ func use_save(path: String) -> void:
 	last_server = keep.last_server
 	home_server = keep.home_server
 	online_secret = keep.online_secret
-	melee_control = keep.melee_control
 	appearance = keep.appearance
 	save()
 
@@ -423,7 +420,6 @@ func to_dict() -> Dictionary:
 		"fresh_start": fresh_start,
 		"crates_granted": crates_granted,
 		"mastery": mastery.to_dict(),
-		"melee_control": melee_control,
 		"player_name": player_name,
 		"last_server": last_server,
 		"home_server": home_server,
@@ -462,7 +458,7 @@ func load_profile() -> void:
 ## you are. The welcome crate follows (`grant_welcome_crate`).
 func start_fresh() -> void:
 	var keep := {"player_name": player_name, "last_server": last_server, "home_server": home_server,
-			"online_secret": online_secret, "melee_control": melee_control, "appearance": appearance}
+			"online_secret": online_secret, "appearance": appearance}
 	reset()
 	for key: String in keep:
 		set(key, keep[key])
@@ -492,7 +488,6 @@ func load_dict(data: Dictionary) -> void:
 		if typeof(crate) == TYPE_STRING:
 			crates_granted.append(crate)
 	mastery.load_dict(data.get("mastery", {}))
-	melee_control = "mouse" if data.get("melee_control", "move") == "mouse" else "move"
 	player_name = str(data.get("player_name", "Raider")).left(20)
 	last_server = str(data.get("last_server", "127.0.0.1")).left(80)
 	home_server = str(data.get("home_server", "")).left(80)

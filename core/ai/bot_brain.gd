@@ -22,7 +22,10 @@ var give_up_time := 7.0
 var march_distance := 12.0
 ## How far the place a bot is heading for must move before it plans a new path.
 var repath_distance := 1.5
-## Chance that a melee bot reads the side of an incoming swing in time.
+## Chance that a melee bot reads an incoming swing and raises its guard to
+## meet it (`guard_reaction` after it shows: a timed block, or a parry
+## against a slow heavy). Guards turn to the swing by themselves; a bot,
+## like a person, pays for a guard held up (`MeleeWeapon.hold_drain`).
 var guard_skill := 0.4
 ## Scales the pause between swings. A world sets `melee_tempo` on the bot
 ## (a heavy that should land more than one swing in the time a gun takes to
@@ -31,8 +34,8 @@ var melee_tempo := 1.0
 var guard_reaction := 0.22
 ## Melee bots fight like people (DESIGN.md "Melee bots"): a share of their
 ## attacks are held heavies (more against a raised guard, which a heavy
-## breaks), some charges are feints that switch side and release as a quick
-## light, a sprinting bot opens with a dash-strike from out of reach, and a
+## breaks), some charges are feints that hang on the charge to draw an
+## early guard and then release as a light, a sprinting bot opens with a dash-strike from out of reach, and a
 ## bot strikes at once into a foe's recovery, stagger or its own riposte.
 ## Heavies, feints and dash-strikes come with the ring (`RING_HEAVY`,
 ## `RING_FEINT`, `RING_DASH`): the outer ring never dash-strikes.
@@ -53,7 +56,7 @@ var feint_chance := 0.15
 var dash_chance := 0.6
 ## The least time between dash-strike tries, seconds.
 var dash_every := 3.0
-## How long a feint shows its first side before it switches, seconds
+## How long a feint hangs on its charge before it lets go, seconds
 ## (under `MeleeWeapon.hold_time`, so the release is a light).
 var feint_show := 0.15
 
@@ -141,12 +144,8 @@ var _strafe_sign := 1.0
 var _strafe_left := 0.0
 var _melee_wait := 0.0
 ## A charge in progress: hold the attack button this much longer, then
-## let go (a heavy turns by itself past `hold_time`). A feint switches to
-## `_feint_to` when `_hold_left` falls to `_feint_at`.
+## let go (a heavy turns by itself past `hold_time`).
 var _hold_left := 0.0
-var _hold_stance := 0
-var _feint_at := -1.0
-var _feint_to := 0
 var _dash_wait := 0.0
 var _flinch_left := 0.0
 ## Recoil reaches a bot's aim too (`Gun.recoil_for`): it pulls against
@@ -161,9 +160,9 @@ var _recoil_seen := 0
 var _recoil := Vector2.ZERO
 var _recoil_rest := 0.0
 var _guard_delay := 0.0
-var _guard_dir := 0
-var _read_left := 0.0
-var _read_dir := 0
+## Counting down to raising the guard against a swing read in time; below
+## zero, nothing to raise for.
+var _read_left := -1.0
 var _threat_seen := false
 var _aim := Vector3.ZERO
 var _aim_target: Actor
@@ -632,10 +631,11 @@ func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delt
 	cmd.aim_dir = _aim
 
 
-## Rush the target and swing from a random side when in reach. Between swings
-## the bot guards one side on a guess, and sometimes reads an incoming swing
-## and moves its guard to meet it. Swings have a visible windup, so a
-## well-timed parry on the right side turns the fight.
+## Rush the target and swing when in reach. A bot that reads an incoming
+## swing (`guard_skill`) raises its guard `guard_reaction` after it shows,
+## and lowers it once the swing is spent, so it pays for timing rather than
+## for holding. Swings have a visible windup, so a well-timed parry turns
+## the fight.
 func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	var dist := _flat_dist(target.global_position)
 	_melee_wait = maxf(0.0, _melee_wait - delta)
@@ -656,44 +656,46 @@ func _attack_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 		return
 
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
-	var threatened := foe_blade != null and foe_blade.threat_dir() >= 0 and dist <= foe_blade.reach * 1.5
-	if threatened and not _threat_seen and _rng.randf() < guard_skill:
-		_read_left = guard_reaction
-		_read_dir = MeleeWeapon.mirror(foe_blade.threat_dir())
-	_threat_seen = threatened
-	if _read_left > 0.0:
-		_read_left -= delta
-		if _read_left <= 0.0 and _guard_dir != _read_dir:
-			# Drop the guard for a tick so it comes back up on the right side.
-			_guard_dir = _read_dir
-			return
+	if _guard_against(cmd, blade, foe_blade, dist, delta):
+		return
 
 	# An opening: the foe is recovering from a swing, staggered, or this bot
 	# just parried. Strike now rather than wait out the tempo.
 	var opening := actor.riposte_left > 0.0 or target.stagger_left > 0.0 \
 			or (foe_blade != null and foe_blade.recover_progress() >= 0.0 and foe_blade.recover_progress() < 0.6)
 	var may_swing := _melee_wait <= 0.0 or opening
-	if dist <= blade.reach * 0.9 and may_swing and _seen_time >= reaction_time and not threatened \
-			and not blade.is_busy():
+	if dist <= blade.reach * 0.9 and may_swing and _seen_time >= reaction_time and not blade.is_busy():
 		_start_attack(cmd, blade, opening)
-		return
-	if dist <= blade.reach * 1.6 and _guard_delay <= 0.0 and _seen_time >= reaction_time \
-			and not blade.is_winding_up():
-		cmd.stance = _guard_dir
-		cmd.secondary = true
+
+
+## Reads a swing coming from `foe_blade` and keeps the guard up through it.
+## True while guarding (nothing else this tick).
+func _guard_against(cmd: ActorCommand, blade: MeleeWeapon, foe_blade: MeleeWeapon,
+		dist: float, delta: float) -> bool:
+	var threatened := foe_blade != null and foe_blade.threat_dir() >= 0 and dist <= foe_blade.reach * 1.5
+	if threatened and not _threat_seen:
+		_read_left = guard_reaction if _rng.randf() < guard_skill else -1.0
+	_threat_seen = threatened
+	if not threatened:
+		_read_left = -1.0
+		return false
+	if _read_left < 0.0 or blade.is_winding_up() or _guard_delay > 0.0:
+		return false
+	_read_left = maxf(0.0, _read_left - delta)
+	if _read_left > 0.0:
+		return false
+	cmd.secondary = true
+	return true
 
 
 ## Picks the next swing: a light tap, a held heavy (likelier into a raised
 ## guard or a stagger), or a feint.
 func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void:
-	var stance := _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
-	cmd.stance = stance
 	_melee_wait = _rng.randf_range(1.0, 1.7) * melee_tempo
 	if uses_kit:
 		# A person chains the three-hit combo, then breathes.
 		_melee_wait = _rng.randf_range(0.3, 0.45) if blade.combo_step < 2 else _rng.randf_range(0.8, 1.2)
-	_guard_delay = 0.75
-	_guard_dir = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
+	_guard_delay = 0.3
 	var guarded := false
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
 	if foe_blade != null:
@@ -704,30 +706,21 @@ func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void
 	if actor.stamina >= blade.heavy_stamina and _rng.randf() < heavy_odds:
 		# Hold through the turn into a heavy: its charge and windup show.
 		_hold_left = blade.hold_time + 0.05
-		_hold_stance = stance
-		_feint_at = -1.0
 		cmd.primary_pressed = true
 		cmd.primary = true
 		return
 	if not opening and _rng.randf() < feint_chance:
-		# Show one side, then switch and let go as a quick light.
+		# Hang on the charge to draw an early guard, then let go as a light.
 		_hold_left = feint_show + 0.02
-		_hold_stance = stance
-		_feint_at = 0.02
-		_feint_to = (stance + _rng.randi_range(1, MeleeWeapon.Dir.size() - 1)) % MeleeWeapon.Dir.size()
 		cmd.primary_pressed = true
 		cmd.primary = true
 		return
 	cmd.primary_pressed = true
 
 
-## Keeps a charge held (and switches a feint's side) until it is let go.
+## Keeps a charge held until it is let go.
 func _carry_charge(cmd: ActorCommand, blade: MeleeWeapon, delta: float, dist: float) -> void:
 	_hold_left -= delta
-	if _feint_at >= 0.0 and _hold_left <= _feint_at:
-		_hold_stance = _feint_to
-		_feint_at = -1.0
-	cmd.stance = _hold_stance
 	if dist > blade.reach * 0.6:
 		_move_toward(cmd, target.global_position, delta, false)
 	if _hold_left > 0.0:
@@ -750,7 +743,6 @@ func _try_dash_strike(cmd: ActorCommand, blade: MeleeWeapon, dist: float) -> boo
 	_dash_wait = dash_every
 	if _rng.randf() >= dash_chance:
 		return false
-	cmd.stance = _rng.randi_range(0, MeleeWeapon.Dir.size() - 1)
 	cmd.tertiary_pressed = true
 	_melee_wait = _rng.randf_range(1.0, 1.7) * melee_tempo
 	_guard_delay = 0.75
@@ -1412,7 +1404,7 @@ func _wait_turn(cmd: ActorCommand, delta: float, dist: float) -> void:
 	cmd.move = Vector2(_strafe_sign * 0.7, 0)
 
 
-## Waiting for a slot with a blade: circle just out of reach, guard up.
+## Waiting for a slot with a blade: circle just out of reach, ready to guard.
 func _wait_turn_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> void:
 	var dist := _flat_dist(target.global_position)
 	if dist > blade.reach * 2.5:
@@ -1422,8 +1414,8 @@ func _wait_turn_melee(cmd: ActorCommand, blade: MeleeWeapon, delta: float) -> vo
 		cmd.move = Vector2(0, -1)
 	else:
 		cmd.move = Vector2(_strafe_sign, 0)
-	cmd.stance = _guard_dir
-	cmd.secondary = true
+	# Guard only against a swing read in time: a guard held up drains.
+	_guard_against(cmd, blade, target.get_active_weapon() as MeleeWeapon, dist, delta)
 
 
 ## Cover from the target, chosen by the angle it is attacking from: a spot

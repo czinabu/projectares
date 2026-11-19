@@ -135,6 +135,19 @@ var block_arc_deg := 130.0
 ## A guard raised this recently counts as a parry.
 var parry_window := 0.22
 var block_stamina_per_damage := 0.6
+## Blocking rewards timing over holding (Caleb's call): a guard raised
+## within `timed_window` of a hit is a timed block and pays only
+## `timed_block_cost` of the stamina; a guard held longer drains
+## `hold_drain` stamina a second, growing by `hold_drain_ramp` of it for
+## every second held, and pays full price for every hit.
+var timed_window := 0.4
+var timed_block_cost := 0.15
+var hold_drain := 5.0
+var hold_drain_ramp := 0.6
+## Every light shows this long more windup than its weapon's own, so a
+## defender can see it coming and time a guard (counted from the press, the
+## hold of the tap included).
+var light_tell := 0.2
 ## A blade only turns aside part of a bullet.
 var bullet_block_fraction := 0.5
 ## Bullets from the front within this long of raising the guard are deflected
@@ -145,10 +158,15 @@ var deflect_stamina := 4.0
 ## deflects or blocks them (Caleb's call: no deflecting sniper rounds or
 ## explosives; blasts are not "bullet" hits at all).
 var undeflectable_tags: Array[String] = ["power", "marksman", "sniper"]
-## A guard raised within this long of the last one dropping gets no parry or
-## deflect window.
-var guard_rearm := 0.5
+## A guard raised within this long of the last one dropping gets no parry,
+## deflect or timed block, so mashing the guard is not timing. A guard that
+## met a hit in time (`_guard_paid`) is rearmed at once.
+var guard_rearm := 0.4
 var parry_stagger := 1.1
+## A blow that lands on someone winding up or charging a swing cuts it off
+## and holds them this long: the quicker blade wins a trade. A guard or a
+## body at rest is never held, so a landed light never locks anyone up.
+var interrupt_stagger := 0.3
 var guard_break_stagger := 0.9
 var riposte_window := 1.6
 var riposte_mult := 1.5
@@ -223,6 +241,8 @@ var _block_time := 0.0
 var _since_guard := 99.0
 ## The guard now up was raised in time to parry or deflect.
 var _parry_ready := true
+## The guard up now met a hit with a parry or timed block.
+var _guard_paid := false
 ## The command asked to sprint this tick: a heavy now is a dash-strike.
 var _sprinting := false
 ## The lunge in progress is a dash-strike (status and tests).
@@ -324,14 +344,8 @@ static func mirror(dir: int) -> int:
 	return dir
 
 
-## True when a guard facing `p_guard_dir` covers a hit thrown from `p_attack_dir`.
-## Hits with no direction (below zero) can be stopped by any guard.
-static func guard_covers(p_guard_dir: int, p_attack_dir: int) -> bool:
-	return p_attack_dir < 0 or p_guard_dir == mirror(p_attack_dir)
-
-
 func controls_hint() -> String:
-	return "Tap left mouse to swing toward your side, hold it for a heavy (a dive slam in the air)   Right mouse guards that side, tap just before a hit to parry"
+	return "Tap left mouse to swing, hold it for a heavy (a dive slam in the air)   Right mouse just before a hit parries, a little earlier blocks cheaply; held, the guard drains stamina"
 
 
 func is_blocking() -> bool:
@@ -365,16 +379,21 @@ func tick(delta: float) -> void:
 
 
 func handle_input(cmd: ActorCommand, delta: float) -> void:
-	stance = clampi(cmd.stance, 0, Dir.size() - 1) as Dir
+	# Sides are the blade's own (Caleb's call: melee is timing, not
+	# matching a side): lights run through the combo's sides, and the guard
+	# turns to meet whatever comes.
+	if not is_busy():
+		stance = next_stance() as Dir
 	_sprinting = cmd.sprint
 	_backing = cmd.move.y < -0.5
 	var wants_block := cmd.secondary and not _slamming and _windup_left <= 0.0 and actor.stamina > 0.0
 	if wants_block and not _blocking:
 		_block_time = 0.0
-		guard_dir = stance
+		_guard_paid = false
+		guard_dir = _guard_toward() as Dir
 		_parry_ready = _since_guard >= guard_rearm
 	if _blocking and not wants_block:
-		_since_guard = 0.0
+		_since_guard = guard_rearm if _guard_paid else 0.0
 	_blocking = wants_block
 	if not _blocking:
 		_since_guard += delta
@@ -382,6 +401,7 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		_charge = -1.0
 		_queued = false
 		_block_time += delta
+		_drain_held_guard(delta)
 		actor.pause_stamina_regen()
 		return
 	if is_busy():
@@ -418,6 +438,43 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		_heavy_or_slam()
 
 
+## The side the next swing goes toward: a combo runs left, right, then
+## overhead (each swing starting on the other side, `swing_from`).
+func next_stance() -> int:
+	return [Dir.LEFT, Dir.RIGHT, Dir.OVERHEAD][combo_step % 3]
+
+
+## The side a guard raised now turns to: to meet the nearest foe's swing
+## that is coming, else across the middle.
+func _guard_toward() -> int:
+	var best := -1
+	var nearest := INF
+	for other in _other_actors():
+		var blade := other.get_active_weapon() as MeleeWeapon
+		if blade == null or blade.threat_dir() < 0:
+			continue
+		var dist := other.global_position.distance_to(actor.global_position)
+		if dist < nearest and dist <= blade.reach * 1.5:
+			nearest = dist
+			best = mirror(blade.threat_dir())
+	return best if best >= 0 else Dir.OVERHEAD
+
+
+## A guard held past `timed_window` costs stamina for every moment it stays
+## up, more the longer it is held; once the stamina is gone the guard drops.
+func _drain_held_guard(delta: float) -> void:
+	if _block_time <= timed_window or hold_drain <= 0.0:
+		return
+	var held := _block_time - timed_window
+	actor.stamina = maxf(0.0, actor.stamina - hold_drain * (1.0 + hold_drain_ramp * held) * delta)
+
+
+## True while the guard up now still counts as timed: raised just now, and
+## not mashed.
+func in_timed_window() -> bool:
+	return _blocking and _parry_ready and _block_time <= timed_window
+
+
 ## True while a swing, its recovery or a slam keeps the blade from attacking.
 func is_busy() -> bool:
 	return _cooldown > 0.0 or _slamming or _windup_left > 0.0
@@ -432,7 +489,10 @@ func _queue_press(cmd: ActorCommand, delta: float) -> void:
 		return
 	if not _queued:
 		return
-	_queued_age += delta
+	# A press made during a windup is kept until its strike: only the
+	# recovery after it counts toward forgetting a tap.
+	if _windup_left <= 0.0:
+		_queued_age += delta
 	if _queued_held >= 0.0:
 		_queued_held = _queued_held + delta if cmd.primary else -1.0
 	# A tap is forgotten once it is old; a press still held is a charge.
@@ -528,9 +588,9 @@ func modify_incoming(info: DamageInfo) -> void:
 	to.y = 0.0
 	if to.length() > 0.01 and forward.normalized().angle_to(to.normalized()) > deg_to_rad(block_arc_deg) * 0.5:
 		return
-	if info.kind == "melee" and not guard_covers(guard_dir, info.direction):
-		actor.notice.emit("Wrong side")
-		return
+	if info.kind == "melee" and info.direction >= 0:
+		# The guard turns to meet the swing, whichever side it comes from.
+		guard_dir = mirror(info.direction) as Dir
 
 	if info.kind == "bullet" and in_parry_window("bullet") and actor.spend_stamina(deflect_stamina):
 		# A fresh guard turns every round from the front aside.
@@ -546,6 +606,7 @@ func modify_incoming(info: DamageInfo) -> void:
 	if info.kind == "melee" and in_parry_window("melee"):
 		info.amount = 0.0
 		info.parried = true
+		_guard_paid = true
 		actor.riposte_left = riposte_window
 		actor.notice.emit("Parry!")
 		var attacker := source as Actor
@@ -556,9 +617,16 @@ func modify_incoming(info: DamageInfo) -> void:
 		return
 
 	var stopped := info.amount if info.kind == "melee" else info.amount * bullet_block_fraction
-	if actor.spend_stamina(stopped * block_stamina_per_damage * info.guard_mult):
+	var cost := stopped * block_stamina_per_damage * info.guard_mult
+	var timed := in_timed_window()
+	if timed:
+		cost *= timed_block_cost
+	if actor.spend_stamina(cost):
 		info.amount -= stopped
 		info.blocked = true
+		info.timed = timed
+		if timed:
+			_guard_paid = true
 		blocked_hit.emit(info)
 		Sfx.play("block", null if actor.is_player else actor.global_position)
 	else:
@@ -574,7 +642,7 @@ func _light_attack(held: float) -> void:
 	combo_step = combo_step % 3 + 1
 	var finisher := combo_step == 3
 	# The hold before the release was already part of the windup.
-	var windup := maxf(light_windup - held, light_windup * light_windup_floor)
+	var windup := maxf(light_windup + light_tell - held, light_windup * light_windup_floor)
 	_combo_timer = combo_window + windup
 	_cooldown = windup + light_recover * (1.6 if finisher else 1.0)
 	_begin_windup("light", light_damage * (combo_finisher_mult if finisher else 1.0), windup)
@@ -746,7 +814,8 @@ func _begin_windup(kind: String, amount: float, time: float) -> void:
 	var weight := TWO_HAND_SWING if is_two_handed() else 1.0
 	_swing_lead = minf(SWING_LEAD * weight, _windup_left * SWING_LEAD_SHARE)
 	_back_shown = false
-	attack_dir = swing_from(stance) as Dir
+	# A heavy comes from the middle, over the top; a light from its side.
+	attack_dir = Dir.OVERHEAD if kind == "heavy" else swing_from(stance) as Dir
 
 
 func _start_slam() -> void:
@@ -811,9 +880,15 @@ func _strike(amount: float, kind: String) -> void:
 		if kind == "heavy":
 			info.armor_break = armor_break_now()
 		var stagger := heavy_stagger_now()
-		if Combat.deal(other, info) and kind == "heavy" and stagger > 0.0 \
-				and not info.blocked and not info.parried and not other.is_dead:
+		var foe_blade := other.get_active_weapon() as MeleeWeapon
+		var swinging := foe_blade != null and (foe_blade.is_winding_up() or foe_blade.is_charging())
+		if not Combat.deal(other, info) or info.blocked or info.parried or other.is_dead:
+			continue
+		if kind == "heavy" and stagger > 0.0:
 			other.stagger(stagger)
+		if swinging:
+			other.stagger(interrupt_stagger)
+			other.notice.emit("Interrupted")
 
 
 ## The strike reached `other`: guess what their guard does with it, and let
@@ -845,8 +920,6 @@ func guess_outcome(other: Actor) -> String:
 	to.y = 0.0
 	if facing.length() > 0.01 and to.length() > 0.01 \
 			and facing.normalized().angle_to(to.normalized()) > deg_to_rad(blade.block_arc_deg) * 0.5:
-		return "hit"
-	if not guard_covers(blade.guard_dir, attack_dir):
 		return "hit"
 	return "parry" if blade.in_parry_window("melee") else "block"
 
