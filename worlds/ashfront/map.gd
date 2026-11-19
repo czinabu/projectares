@@ -179,6 +179,7 @@ const VIEW_FAR := 1400.0
 ## The Colossus and the capital ship past the rim (view only).
 const GIANTS := preload("res://worlds/ashfront/giants.gd")
 const SKYFIRE := preload("res://worlds/ashfront/skyfire.gd")
+const BATTLE := preload("res://worlds/ashfront/battle.gd")
 const SUNSHAFTS := preload("res://worlds/ashfront/sunshafts.gd")
 ## The burning horizon: a ring of fire-glow this far out, behind the
 ## skyline, glowing this much when quiet and in all-out war.
@@ -290,7 +291,19 @@ func _ready() -> void:
 		var shafts: Node3D = SUNSHAFTS.new()
 		shafts.floor_y = RIM_HEIGHT - 8.0
 		add_child(shafts)
+		add_child(make_battle())
 	set_process(Look.enabled)
+
+
+## The scenery army (view only): kept off the field's rim, out of every
+## landmark and out of the Works.
+func make_battle() -> Node3D:
+	var battle: Node3D = BATTLE.new()
+	battle.field = FIELD - 22.0
+	for site: Dictionary in SITES:
+		battle.avoid.append([site["at"], float(site["radius"])])
+	battle.avoid.append([Vector2(0.0, (WORKS_FROM + WORKS_TO) * 0.5), (WORKS_FROM - WORKS_TO) * 0.5 + WORKS_REACH])
+	return battle
 
 
 func _seed_layout() -> void:

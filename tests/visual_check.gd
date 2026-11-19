@@ -242,6 +242,13 @@ func _ready() -> void:
 	# Ashfront from where a player stands, from the red marks to the dirt
 	# column left after (shells_1_marked.png to shells_5_after.png). Run with
 	# `--fixed-fps 60`.
+	# `-- <output_dir> --battle-only`: Ashfront's scenery army from where a
+	# player stands, wide and through a narrow view (battle_1_wide.png,
+	# battle_2_close.png, battle_3_later.png). Run with `--fixed-fps 60`.
+	if "--battle-only" in args:
+		await _battle_shots(out_dir)
+		get_tree().quit()
+		return
 	if "--shells-only" in args:
 		await _shell_shots(out_dir)
 		get_tree().quit()
@@ -3223,6 +3230,58 @@ func _shell_shots(out_dir: String) -> void:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		var file := "shells_%d_%s.png" % [i + 1, beat[0]]
+		get_viewport().get_texture().get_image().save_png(out_dir.path_join(file))
+		print("saved ", file)
+	raid.queue_free()
+
+
+func _battle_shots(out_dir: String) -> void:
+	var raid := Raid.new()
+	add_child(raid)
+	raid.start(Worlds.get_world("ashfront"), 42)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.visible = false
+	# From the top of Signal Hill, out over the field.
+	var eye := raid._stand(Vector3(-140, 0, -108)) + Vector3(0, 2.0, 0)
+	raid.player.global_position = eye - Vector3(0, 1.7, 0)
+	raid.player.visible = false
+	var cam := Camera3D.new()
+	cam.fov = 75.0
+	cam.far = 3000.0
+	raid.add_child(cam)
+	cam.make_current()
+	var aim := raid._stand(Vector3(-60, 0, -30)) + Vector3(0, 6, 0)
+	cam.look_at_from_position(eye, aim)
+	var shots := [["wide", 75.0, 420], ["close", 22.0, 460], ["later", 75.0, 640]]
+	var frame := 0
+	for i in shots.size():
+		var shot: Array = shots[i]
+		while frame < int(shot[2]):
+			frame += 1
+			raid.war.intensity = 0.8
+			raid.war.centre = Vector3(-60, 0, -30)
+			await get_tree().process_frame
+		cam.fov = float(shot[1])
+		var battle := raid.map.get_node_or_null("Battle")
+		if battle != null:
+			# Framed on the nearest fight.
+			var nearest := Vector3.INF
+			for fight: Dictionary in battle.fight_list():
+				if not nearest.is_finite() or eye.distance_to(fight.centre) < eye.distance_to(nearest):
+					nearest = fight.centre
+			if nearest.is_finite():
+				cam.look_at_from_position(eye, raid._stand(nearest) + Vector3(0, 1.5 if float(shot[1]) < 40.0 else 8.0, 0))
+		await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		if battle != null:
+			var shown := 0
+			for soldier: Dictionary in battle.soldiers():
+				shown += 1 if float(soldier.fade) > 0.0 else 0
+			print("battle: baked ", battle.baked.keys(), ", fights ", battle.fight_list().map(func(f: Dictionary) -> Vector3: return f.centre),
+					", extras shown ", shown, " of ", battle.soldiers().size())
+		var file := "battle_%d_%s.png" % [i + 1, shot[0]]
 		get_viewport().get_texture().get_image().save_png(out_dir.path_join(file))
 		print("saved ", file)
 	raid.queue_free()

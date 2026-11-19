@@ -351,6 +351,17 @@ without Caleb, and update the gap list when a PR closes a row.
   (view only, added by the `Raid` only where `Look` is on), timed from what
   it was told; the jolt is `PlayerController.feel_blast`. Check by eye with
   `visual_check.tscn -- <dir> --shells-only` (with `--fixed-fps 60`).
+- The scenery army (DESIGN.md "The scenery army", Caleb's call): Ashfront's
+  far fights are view only (`worlds/ashfront/battle.gd`, added by the map's
+  `make_battle` only where `Look` is on): no collision, no `Combat.deal`,
+  nothing sent online, and never nearer a player or the camera than
+  `keep_off`, so up close every soldier is a real bot. Its soldiers are far
+  copies of the armies' own riflemen (the world's `dress_extra`), baked
+  once per run in a world of their own (`_Baker`) into one mesh per pose
+  and drawn one MultiMesh per pose (`extras.gdshader`, dithered fade). A
+  round from the local player's gun or a shell drops one on that screen
+  only. Check by eye with `visual_check.tscn -- <dir> --battle-only` (with
+  `--fixed-fps 60`).
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
