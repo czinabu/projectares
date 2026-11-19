@@ -201,6 +201,7 @@ const GIANTS := preload("res://worlds/ashfront/giants.gd")
 const SKYFIRE := preload("res://worlds/ashfront/skyfire.gd")
 const BATTLE := preload("res://worlds/ashfront/battle.gd")
 const SUNSHAFTS := preload("res://worlds/ashfront/sunshafts.gd")
+const LOWSKY := preload("res://worlds/ashfront/lowsky.gd")
 ## The burning horizon: a ring of fire-glow this far out, behind the
 ## skyline, glowing this much when quiet and in all-out war.
 const GLOW_RING := 560.0
@@ -311,7 +312,9 @@ func _ready() -> void:
 		var shafts: Node3D = SUNSHAFTS.new()
 		shafts.floor_y = RIM_HEIGHT - 8.0
 		add_child(shafts)
-		add_child(make_battle())
+		var battle := make_battle()
+		add_child(battle)
+		add_child(make_low_sky(battle))
 	set_process(Look.enabled)
 
 
@@ -324,6 +327,18 @@ func make_battle() -> Node3D:
 		battle.avoid.append([site["at"], float(site["radius"])])
 	battle.avoid.append([Vector2(0.0, (WORKS_FROM + WORKS_TO) * 0.5), (WORKS_FROM - WORKS_TO) * 0.5 + WORKS_REACH])
 	return battle
+
+
+## The busy low sky (view only): gunships raking the scenery army, fighters
+## going over and dropships coming down past the rim.
+func make_low_sky(battle: Node3D) -> Node3D:
+	var sky: Node3D = LOWSKY.new()
+	sky.floor_y = RIM_HEIGHT - 8.0
+	sky.field = FIELD
+	sky.battle = battle
+	sky.soundscape = _soundscape
+	sky.plume_maker = _plume
+	return sky
 
 
 func _seed_layout() -> void:
