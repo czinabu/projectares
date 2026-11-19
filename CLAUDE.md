@@ -568,15 +568,29 @@ without Caleb, and update the gap list when a PR closes a row.
   it is simulated on, with a local guess at the guard; the attacker's view
   answers that (sound, `PlayerController.kick_view`, a hitstop of the blade's
   pose) at once, and the server's `hit_confirmed` only drives the hit marker.
-- Melee is directional. The stance travels in `ActorCommand.stance` (picked
-  by default from the movement keys, Jedi Academy style, Caleb's call; B
-  switches to the mouse flick), attacks
-  set `DamageInfo.direction`, and `MeleeWeapon.guard_covers` decides whether a
-  guard stops a hit. A swing goes toward its stance (Caleb's call): a left
-  swing starts on the right and ends on the left, so `attack_dir` (the side
-  it comes from) is `MeleeWeapon.swing_from(stance)`. A guard covers its
-  stance's side, so a left swing meets a left guard. Windup and guard poses
-  must show their side; `threat_dir()` is what a defender reads.
+- Melee is timing, not sides (Caleb's call, DESIGN.md "Melee duels"): the
+  blade picks its own sides (`MeleeWeapon.next_stance`: a light combo runs
+  right, left, over the top; a heavy comes over the top, or from the side
+  straight off a light), and a guard turns to meet whatever comes from the
+  front (`_guard_toward`, `guard_dir` set by the hit), so nothing matches a
+  side and `ActorCommand.stance` is unused. A swing still goes toward its
+  stance (`attack_dir` is `swing_from(stance)`), and windup and guard poses
+  must show their side; `threat_dir()` is what a defender reads. What a
+  guard does is timing: a parry in `parry_window`, a timed block in
+  `timed_window` for `timed_block_cost` of the stamina, and a guard held
+  longer drains (`_drain_held_guard`); a guard raised straight after one
+  that met nothing is not timed (`guard_rearm`), one that met its hit in
+  time rearms at once (`_guard_paid`). A blow landing on a windup
+  interrupts it (`interrupt_stagger`); strikes landing together clash
+  (`clashes_with`); the kick (`ActorCommand.kick_pressed`, V,
+  `MeleeWeapon.kick`) goes through a guard and breaks it open but loses to
+  a swing; aim early in a heavy's windup feints it (`_try_feint`). The
+  dodge is the dash (Alt, `Actor.dodge_style`: a roll with no rig, the
+  rig's own dodge otherwise): swings pass through it (`evade_left`), rounds
+  do not, and the weapon waits out `dodge_recover`. What a guarded strike,
+  a reel and the feet look like is view only: `ActionPose.bind` (both
+  blades meet at `ActorSkin.bind_point`), `reel`, `footwork`; check with
+  `visual_check.tscn -- <dir> --bind-only`.
 - The game updates itself (`core/update/updater.gd`, the `Updater`
   autoload, second after `Boot` and, like it, free of project classes). The
   Windows client keeps its pack beside the exe (`embed_pck` off); the

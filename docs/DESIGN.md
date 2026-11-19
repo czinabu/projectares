@@ -1336,7 +1336,7 @@ Every player brings a modular loadout. Five slots define the combat role:
 1. **Primary weapon.** Rifles, carbines, SMGs, shotguns, marksman and sniper
    rifles. Takes attachments (optic, muzzle, grip, magazine).
 2. **Sidearm.** A quick-draw backup, and the gun you can fire while gliding.
-3. **Melee weapon.** Close quarters, directional, parryable. Every melee
+3. **Melee weapon.** Close quarters, timing-based, parryable. Every melee
    weapon has a short **magnetic air-lunge** for mid-air duels (below).
 4. **Flight rig.** The player's movement identity (section 5).
 5. **Gadget** (the `ability` slot in code). A tactical tool that complements
@@ -1490,11 +1490,9 @@ a rig's top flight speed (section 5).
 ### Melee against guns
 
 A world full of guns needs melee to be the best answer in some moments, not a
-backup (Caleb's call). Controls follow a Jedi Academy style baseline (Caleb's
-call, mechanics only): the movement keys pick the swing's side by default
-(strafe left or right for a side swing, forward for overhead; B switches to
-the mouse flick), a tap is a light, a hold is a heavy, and move-and-attack
-combinations are the special moves.
+backup (Caleb's call). A tap is a light, a hold is a heavy, and
+move-and-attack combinations are the special moves. How a fight between
+blades is won is the next section.
 
 - **Dash-strike.** A heavy started while sprinting closes up to about 9 m on
   the foe in front within the heavy's windup, for extra stamina. It keeps the
@@ -1542,8 +1540,14 @@ deflect). Bots fight to that rule, and like people:
   stagger. An Ashfront heavy's own heavy winds up for 0.9 s and hits a
   quarter harder, so it is the easiest swing of all to read.
 - **Feints.** In the middle and core rings (15% and 30% of swings,
-  `RING_FEINT`), a bot starts a charge showing one side, switches, and lets
-  go as a quick light from another.
+  `RING_FEINT`), a bot hangs on a charge to draw an early guard and lets go
+  as a light; as many of its heavies again are feinted into a guard part way
+  (`RING_HEAVY_FEINT`).
+- **Kicks and dodges.** A bot facing a raised guard kicks it open (25% in
+  the middle ring, 40% in the core, `RING_KICK`), and one that reads a heavy
+  coming may dodge it instead of guarding (`RING_DODGE`). Its guard comes up
+  only against a swing it reads (`guard_skill`), so it pays for timing like
+  a person rather than turtling.
 - **Dash-strikes.** A bot sprinting in from out of reach opens with one
   (never in the outer ring; 40% of chances in the middle, 70% in the core,
   at most one try every 3 s, `RING_DASH`).
@@ -1567,10 +1571,18 @@ heavies.
 
 | Scrap blade against | Start 3 m away | Start 12 m away |
 | --- | --- | --- |
-| Outer soldier | 90% win in 2.9 s | 78% win in 4.4 s |
-| Core soldier | 68% win in 3.3 s | 57% win in 4.4 s |
-| Outer heavy | 35% win | 55% win |
-| Rival raider (gun, no flinch) | 32% win | 20% win |
+| Outer soldier | 100% win in 2.7 s | 80% win in 4.3 s |
+| Core soldier | 78% win in 3.4 s | 52% win in 5.1 s |
+| Outer heavy | 45% win | 38% win |
+| Rival raider (gun, no flinch) | 38% win | 22% win |
+
+After the timing pass (the table above): the reference times its guard as
+a person does, raising it `BotBrain.guard_lead` before a swing it read
+lands rather than holding it through a heavy's windup, answers a kick it
+reads with a swing, and keeps its guard up between swings only against a
+gun (no held drain there). Against the core heavy at 12 and 25 m it now
+wins about a quarter of its duels (2-10% before), since a bot no longer
+holds a free guard.
 
 Before the pass a blade won none of these against soldiers, even from 3 m:
 a rifle killed in 2.6 s while the bot reference swung about once a second.
@@ -1580,6 +1592,62 @@ heavy.
 
 **Later:** a melee pass on the stances and animations (Caleb), and bands
 for the melee bench once it has been played.
+
+### Melee duels: timing, not sides (Caleb's calls, the melee pass)
+
+Melee is defence-heavy and rewards timing (Caleb's call). It used to be
+directional (a Jedi Academy style side picked with the movement keys or a
+mouse flick, and a guard had to match it); that is gone (Caleb's pick):
+reading two things at once in a split second was too much, and the
+movement keys are for moving and dodging.
+
+- **Sides are the blade's own.** A light combo runs right, left, then over
+  the top on its own, each swing starting where the last ended, so the
+  string flows; a heavy comes over the top. A guard turns to meet whatever
+  comes from the front. A guard never covers the back.
+- **Three ways to meet a swing.** A guard raised in the last moment before
+  a hit is a **parry** (free; the attacker reels open and the defender's
+  next strike is a riposte, half again as hard). A guard raised a little
+  earlier, inside about 0.4 s (`timed_window`), is a **timed block**: it
+  stops the hit for a sliver of the stamina (`timed_block_cost`). A guard
+  held up longer is a **held block**: it drains stamina every second it
+  stays up, faster the longer it is held (`hold_drain`, `hold_drain_ramp`),
+  and pays full price for every hit. A guard raised again straight after
+  one that met nothing gets no parry or timed block (`guard_rearm`), so
+  mashing is not timing; one that met its hit in time is rearmed at once.
+- **Readable swings.** Every light shows about 0.2 s more windup than
+  before (`light_tell`), so it can be seen and timed.
+- **Interrupts.** A blow that lands on someone winding up or charging a
+  swing cuts it off and holds them a moment (`interrupt_stagger`): the
+  quicker blade wins a trade. A blow on someone standing ready never holds
+  them, so a landed light never locks anyone up.
+- **Clashes.** Two strikes about to land together clash: neither cuts,
+  both are knocked back and the blades meet.
+- **The kick (V).** Unblockable and breaks a held guard open, but its
+  windup is slower than a light's, so a swing beats it, and a missed kick
+  leaves its kicker open. Attack beats kick, kick beats guard, guard beats
+  attack.
+- **Feints.** Aim pressed early in a heavy's windup lets it go and raises
+  the guard, for stamina (`feint_stamina`), to bait an early parry.
+- **Strings.** A heavy thrown straight off a light comes quicker and from
+  the side the next cut would (`combo_heavy_speed`).
+- **The dodge (Alt).** Each rig dodges its own way: with no rig a roll
+  along the ground (the pack's Roll clip), boots a jet sidestep (still with
+  its graze window against rounds), a jetpack a thrust burst, wings a flap
+  hop. Swings pass through a dodging body; rounds do not (except the boots'
+  graze), so melee players do not shrug off gunfire. A short recovery after
+  it keeps the weapon quiet (`dodge_recover`), and it draws on the same
+  stamina as the guard, so defence is a stamina game won by timing.
+- **It looks like a fight** (Caleb's ask, view only, the same in both
+  views): a guarded strike holds a moment while both blades meet at one
+  point between the fighters, chest high on the swing's side, with the
+  spark struck there (`ActionPose.bind`, `ActorSkin.bind_point`); a
+  parried or kicked-open fighter reels, the weapon arm knocked out wide and
+  the chest twisted open (`ActionPose.reel`); the feet settle back through
+  a windup, drive in with the strike and step back in a reel
+  (`ActionPose.footwork`); a cut already asked for flows from where the
+  last one ended. Check with `visual_check.tscn -- <dir> --bind-only` and
+  `--technique-only <item id>`.
 
 ### Melee technique (Caleb's call: each weapon is used the way it really is)
 

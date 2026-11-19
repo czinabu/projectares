@@ -451,7 +451,7 @@ func _ready() -> void:
 			var found := _find_animation(def["anims"][key])
 			if found != "":
 				_anims[key] = found
-				if key != "death" and key != "attack":
+				if key not in ["death", "attack", "roll", "kick"]:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
 		_play("idle")
 		_player.advance(0.0)
@@ -714,7 +714,21 @@ func _update(delta: float) -> void:
 	if actor.is_dead:
 		_play("death")
 		return
-	if melee and melee.is_winding_up() and _attack_left <= 0.0:
+	if actor.dodge_left > 0.0 and actor.dodge_shown == "roll" and _anims.has("roll"):
+		# The evade with no rig: a roll along the ground, the clip timed to it.
+		if _current != "roll":
+			var length := _player.get_animation(_anims["roll"]).length
+			_play("roll", length / maxf(actor.roll_time, 0.05))
+			_player.seek(0.0, true)
+		return
+	if melee and melee.is_kicking() and _current != "kick" and _anims.has("kick"):
+		# The kick is the body's: the clip has the legs, timed to land with it.
+		var kick_time := melee.kick_windup + melee.kick_recover
+		_attack_left = kick_time
+		_current = ""
+		_play("kick", _player.get_animation(_anims["kick"]).length / maxf(kick_time, 0.05))
+		_player.seek(0.0, true)
+	if melee and melee.is_winding_up() and not melee.is_kicking() and _attack_left <= 0.0:
 		_attack_left = 0.6
 		_current = ""
 		_play("attack", 1.3)
@@ -1020,6 +1034,35 @@ func is_airborne() -> bool:
 
 ## A touchdown: starts the landing squat. Called for remote players too,
 ## whose landing this game simulates from their commands.
+## A strike from this body met a guard: both blades are drawn meeting at
+## one point between the two (`ActionPose.bind`), chest high and out on the
+## side the swing comes from, and the spark is struck there. View only.
+func _on_blade_contact(target: Actor, outcome: String, _at: Vector3, blade: MeleeWeapon) -> void:
+	if outcome == "hit" or target == null or not is_instance_valid(target) or not is_instance_valid(actor):
+		return
+	var at := bind_point(actor, target, blade.attack_dir)
+	ActionPose.of(actor).bind(at)
+	ActionPose.of(target).bind(at)
+	if actor.is_inside_tree():
+		Fx.burst(actor.get_parent(), at, 0.1 if outcome == "block" else 0.16,
+				Color(1.0, 0.85, 0.4) if outcome == "parry" else Color(0.55, 0.75, 1.0))
+
+
+## Where two fighters' blades meet for a strike from `dir`: half way between
+## them, chest high, out to the side the swing comes from (higher for one
+## over the top), so every guarded strike meets in the same place.
+static func bind_point(attacker: Actor, defender: Actor, dir: int) -> Vector3:
+	var a := attacker.global_position
+	var b := defender.global_position
+	var across := b - a
+	across.y = 0.0
+	var right := across.normalized().cross(Vector3.UP) if across.length() > 0.01 else attacker.global_basis.x
+	var height := minf(attacker.body_height(), defender.body_height()) * 0.72
+	var side := -MeleeWeapon._side(dir) * 0.22
+	var lift := 0.22 if dir == MeleeWeapon.Dir.OVERHEAD else 0.0
+	return (a + b) * 0.5 + right * side + Vector3(0.0, height + lift, 0.0)
+
+
 func _on_landed(impact_speed: float) -> void:
 	if impact_speed < 1.0 or actor.is_dead or actor.vehicle != null:
 		return
@@ -1095,6 +1138,10 @@ func _dress_weapons() -> void:
 		if gun and not _wired.has(gun):
 			_wired[gun] = true
 			gun.fired.connect(_on_fired.bind(gun))
+		var blade := weapon as MeleeWeapon
+		if blade and not _wired.has(blade):
+			_wired[blade] = true
+			blade.contact.connect(_on_blade_contact.bind(blade))
 		if weapon.visual.has_meta("dressed"):
 			continue
 		weapon.visual.set_meta("dressed", true)

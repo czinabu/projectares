@@ -877,6 +877,9 @@ func _fight_pose() -> void:
 		var forward := (to_skeleton * Vector3.FORWARD).normalized() * meter
 		var side := (to_skeleton * Vector3.RIGHT).normalized() * meter
 		var amount := weight * still
+		# Footwork (`ActionPose.footwork`): a step in moves the lead foot, a
+		# step back the trailing one, so the stance opens or gathers.
+		var step := ActionPose.of(actor).footwork
 		for i in 2:
 			var foot: int = _lead[2] if i == 0 else _trail[2]
 			var pose := skeleton.get_bone_global_pose(foot)
@@ -884,8 +887,13 @@ func _fight_pose() -> void:
 			# The lead (left) foot steps forward and a touch out to its side,
 			# the trailing (right) one back and out to its own.
 			pose.origin += (forward * fight_stagger * way - side * fight_width * way) * amount
+			var moved := maxf(step, 0.0) if i == 0 else minf(step, 0.0)
+			pose.origin += forward * moved * amount
 			skeleton.set_bone_global_pose(foot, pose)
-	_sink(fight_drop, fight_lean, weight)
+	# Driving in, the hips drop and the chest leans into it; stepping back,
+	# it rocks back.
+	var stepped := ActionPose.of(actor).footwork
+	_sink(fight_drop + absf(stepped) * 0.15, fight_lean + stepped * 0.6, weight)
 
 
 ## Sinks the body onto bent knees, feet planted where they were: the hips
