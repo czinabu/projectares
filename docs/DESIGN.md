@@ -651,6 +651,24 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   when; the blast is a flash that lights the ground, a fireball throwing a
   fan of dirt and a column of smoke left drifting, heard and felt (the view
   jolts) once its sound arrives. Ashfront only for now.
+- **The scenery army (Caleb's call: view only, cannot be shot).** Squads of
+  both armies fight each other out in the mid distance, two to five fights
+  at once by how hot the war is, each two squads of 10 to 16 facing across
+  a line, placed toward the war's centre (`worlds/ashfront/battle.gd`, the
+  map's `make_battle`). They run up in hops, kneel or stand to fire
+  (orange Legion and cyan Tide tracers and muzzle flashes that cut through
+  the haze, heard as far gunfire once the sound arrives), fall, lie a
+  while and fade, and fresh ones come up from behind. They are the armies'
+  own riflemen: once per run of the game a dressed soldier of each army is
+  posed in a world of its own (a run cycle, aiming, kneeling, fallen) and
+  each pose is baked into a far copy of under 900 triangles, drawn one
+  MultiMesh per pose. Nothing of it is ever nearer a player or the camera
+  than `keep_off` (48 m; it dissolves in over the next 12 m), a fight is
+  placed at least 85 m from everyone, and one a player comes within 62 m
+  of ends and starts again elsewhere, so up close every soldier is a real
+  bot. A round from the player's own gun through an extra, or a shell
+  landing by it, drops it, on that screen only and for nothing. View only:
+  no collision, no `Combat.deal`, nothing sent online, none on a server.
 - Everything lost on death, but the body drops a scrip pile worth it, not
   the gear itself (section 10, "Scrip piles").
 - The only place heavy weapons are found.
@@ -1121,7 +1139,13 @@ the Ashland: its sky, light and ash-storm mood (the war mood is Ashfront's
 own), the Ashland's burnt ground and glowing cracks on the field, and its
 land and mountains past the rim to the horizon, kept low near the map so
 the skyline, the giants and the burning ring stand on it; the planet's
-rocks only on the rim's slope and past it, out of the fight.
+rocks only on the rim's slope and past it, out of the fight. The Ashland's
+air is ash grey and its light neutral (Caleb's look pass, after his
+references: grey smoke with hot lights burning through it), so the red
+lives in the sky's glow, the fires, the cracks and the tracers, and stands
+out. Low battle smoke lies over its ground (`PlanetType.smoke`, drawn by
+`Planet.GroundSmoke`), thicker as the war heats up and in a storm, and
+switched off with the "Battle smoke" graphics setting.
 
 ## 3. The watch
 
@@ -2221,9 +2245,12 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   objective line carries the lap.
 - **Live races (Caleb's go-ahead).** The race icon's first pick is Race:
   it puts you on the grid of the track's next race, and anyone who gets on
-  a machine there while it forms joins it. A race forms for 30 s (8 s once
-  the grid is full of people), then AI racers take every slot left, so a
-  grid of 8 always goes, and everyone starts under one set of lights. The
+  a machine there while it forms joins it. AI racers take every slot left
+  on the grid at once (Caleb's report: starting a race looked like nothing
+  happened), and each person who joins later takes one's place, so a grid
+  of 8 always goes. A race forms for 30 s, 10 s once everyone in the world
+  is on its grid and 8 s once the grid is full of people, and everyone
+  starts under one set of lights. The
   watch and the visor carry your place ("P3/8"), the pit board the next
   race's countdown and then the results. Once the winner is home the rest
   have 20 s to cross the line, and a lap off the track costs 3 s on the
@@ -2292,7 +2319,19 @@ nothing of your own and take nothing home, and nobody can hurt anybody.
   visor say "head to the pits" and a column of light marks pit row;
   driving into it sets you down there and the machine goes, and if you
   ride on you are set down anyway 40 s after the finish. A machine a desk
-  made goes when you get off it.
+  made goes when you get off it. Getting off out on the track, or
+  stopping a run from the watch there, sets you down on pit row too
+  (Caleb's report) and the machine goes; in the pits nothing moves. The
+  desks' prompts name the interact key as it is bound.
+- **The tracks are never empty (Caleb's ask).** While anyone is in the
+  world, a track with no race and nobody riding it gets an AI race of its
+  own: six AI racers, the first a few seconds after someone arrives and
+  the next 20 s after one's results come down, at the league of the best
+  person there. It is shown on the pit board and the desks like any race
+  and moves nobody's league. Asking to race there, at a desk or from the
+  watch, calls its field back to the grid to race you; a time trial just
+  shares the track with them. With nobody in the world none run, so an
+  empty server pays nothing.
 
 The first track is Coilrun, a Street circuit of about 1.6 km: the long
 straight past the pits, the Crest, the Capacitor Yard's esses, the

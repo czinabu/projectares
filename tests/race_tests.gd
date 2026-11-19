@@ -47,6 +47,8 @@ class MemoryBank:
 
 static func run(t: Node) -> void:
 	print("Race world: Meridian time trials, live races and the league")
+	# Quiet tracks, unless a check asks for the AI's own races.
+	Race.ambient_races = false
 	_test_world(t)
 	_test_track(t)
 	_test_formatting(t)
@@ -63,6 +65,15 @@ static func run(t: Node) -> void:
 	_test_crowd(t)
 	_test_works(t)
 	_test_ghost_data(t)
+	await _test_off_the_machine(t)
+	await _test_ambient_races(t)
+	Race.ambient_races = true
+
+
+## Machines on the track that no AI racer rides: the bays and people's.
+static func _machines(race: Race) -> int:
+	return race.vehicles.filter(func(v: Variant) -> bool:
+		return is_instance_valid(v) and not race.is_ai_racer((v as Node3D).get("rider"))).size()
 
 
 static func _test_world(t: Node) -> void:
@@ -320,15 +331,21 @@ static func _test_live_race(t: Node) -> void:
 	await t.frames(2)
 	t.check(race.view_run().get("phase") == "grid" and str(race.view_run().get("heat")) == "",
 			"getting on a machine is a time trial until you ask to race")
+	var bays_before := race.vehicles.size()
 	race.ask("race")
 	await t.frames(2)
 	var view := race.view_run()
 	t.check(view.get("phase") == "waiting" and view.get("heat") == "forming" and bool(bike.get("held")),
 			"asking to race puts you on the grid of the next race, held")
+	var forming: Race.Heat = race.heats.get(track.id)
+	t.check(forming != null and forming.runs.size() == Race.GRID_SIZE and forming.runs.all(func(r: Race.Run) -> bool:
+			return r.phase == "waiting" and bool(r.vehicle.get("held"))),
+			"the AI line up on the grid at once, held with you (Caleb's \"nothing happened\")")
+	t.check(forming != null and forming.starts_at - race.clock <= Race.ALL_IN_FORM + 0.1,
+			"with everyone here on the grid, the lights come on in %d s, not %d" % [int(Race.ALL_IN_FORM), int(Race.FORM_TIME)])
 	t.check(Race.run_line(view).begins_with("Next race in"), "the watch says when it starts")
 	t.check(RaceView.heat_text(race.heat_view(track.id)).begins_with("NEXT RACE"),
 			"and so does the pit board")
-	var bays_before := race.vehicles.size()
 	# Let it go now rather than in half a minute.
 	(race.heats[track.id] as Race.Heat).starts_at = race.clock
 	await t.frames(3)
@@ -458,12 +475,12 @@ static func _test_desks_and_pits(t: Node) -> void:
 	me.global_position = raider_desk.global_position + Vector3(1.0, 0.2, 0.0)
 	await t.frames(2)
 	t.check(not race.request(me, "signup:%s:jet_hawk" % track.id).get("ok", false), "only the track's own machines")
-	var bays := race.vehicles.size()
+	var bays := _machines(race)
 	t.check(race.request(me, "signup:%s:bike_raider" % track.id).get("ok", false), "standing at a desk, you sign up")
 	await t.frames(2)
 	var view := race.view_run()
 	var bike: Node3D = me.vehicle
-	t.check(bike != null and bike.get("item_id") == "bike_raider" and race.vehicles.size() == bays + 1,
+	t.check(bike != null and bike.get("item_id") == "bike_raider" and _machines(race) == bays + 1,
 			"on a fresh machine of the desk's kind")
 	t.check(view.get("phase") == "waiting" and view.get("heat") == "forming" and bool(bike.get("held")),
 			"straight onto the grid of the next race")
@@ -475,13 +492,13 @@ static func _test_desks_and_pits(t: Node) -> void:
 	t.check(race.request(me, "signup:%s:bike_scrapper" % track.id).get("ok", false), "you can change machine at the next desk")
 	await t.frames(2)
 	t.check(not is_instance_valid(bike) and me.vehicle != null and me.vehicle.get("item_id") == "bike_scrapper"
-			and race.vehicles.size() == bays + 1 and race.view_run().get("heat") == "forming",
+			and _machines(race) == bays + 1 and race.view_run().get("heat") == "forming",
 			"the old desk machine goes and you keep your place in the race")
 	# Desks say how the next race stands.
 	var forming := race.heat_view(track.id)
 	t.check(RaceView.desk_text("COILRUN", forming).contains("1/%d riders" % Race.GRID_SIZE)
-			and RaceView.desk_prompt("bike_raider", forming).begins_with("E  Join"), "a desk shows the next race and who is on it")
-	t.check(RaceView.desk_prompt("bike_raider", {}).begins_with("E  Start")
+			and RaceView.desk_prompt("bike_raider", forming).begins_with(RaceView.key() + "  Join"), "a desk shows the next race and who is on it")
+	t.check(RaceView.desk_prompt("bike_raider", {}).begins_with(RaceView.key() + "  Start")
 			and RaceView.desk_prompt("", forming).contains("Watch"), "and what it does")
 	var rv := RaceView.new()
 	rv.setup(race)
@@ -599,7 +616,7 @@ static func _test_tuning_rules(t: Node) -> void:
 			and RaceView.bench_text("bike_raider", club).contains("Grip tyres · Pro"),
 			"a pit bench shows the fitted kit and where the rest open")
 	t.check(RaceView.bench_prompt("bike_raider", rookie).contains("Club")
-			and RaceView.bench_prompt("bike_scrapper", club).begins_with("E  Fit Short gearing"), "and what pressing E fits")
+			and RaceView.bench_prompt("bike_scrapper", club).begins_with(RaceView.key() + "  Fit Short gearing"), "and what pressing the interact key fits")
 	# On the account, only the server's own call fits one.
 	var service := StashService.new()
 	service.persist = false
@@ -949,3 +966,133 @@ static func _test_works(t: Node) -> void:
 	t.check(on_road == 0, "nothing from the works stands on the road (%d points)" % on_road)
 	holder.free()
 	map.free()
+
+
+## Getting off out on the track (Caleb: "I wasn't put back in the starting
+## area"): set down on pit row and the machine goes; getting off in the
+## pits leaves you and a bay machine where you are; stopping a run from the
+## watch out on the track does the same as getting off.
+static func _test_off_the_machine(t: Node) -> void:
+	var world := Worlds.get_world("meridian")
+	var race: Race = world.new_raid()
+	t.add_child(race)
+	race.start(world, 17, [Loadout.BARE] as Array[String])
+	await t.frames(5)
+	var me := race.player
+	var track := race.track
+	var pit := track.pit_spot()
+	var bays: Array = race.vehicles.filter(func(v: Node3D) -> bool:
+		return v.get("rider") == null and race.track_near(v.global_position) == track)
+	if bays.size() < 3:
+		t.check(false, "the pit bays hold machines to ride")
+		race.queue_free()
+		return
+	var near_pit := func() -> bool:
+		return Vector2(me.global_position.x - pit.x, me.global_position.z - pit.z).length() < 4.0
+	# A time trial out on the track, then off the machine.
+	var bike: Node3D = bays[0]
+	me.global_position = bike.global_position + Vector3(2.0, 0.2, 0.0)
+	await t.frames(2)
+	bike.call("mount", me)
+	await t.frames(2)
+	t.check(race.view_run().get("phase") == "grid", "a bay machine starts a time trial")
+	var far_spot: Vector3 = track.points[track.points.size() / 2]
+	t.check(Vector2(far_spot.x - pit.x, far_spot.z - pit.z).length() > Race.PIT_WALK, "half way round is far from the pits")
+	bike.global_position = far_spot + Vector3(0, 0.6, 0)
+	await t.frames(2)
+	bike.call("dismount")
+	await t.frames(3)
+	t.check(me.vehicle == null and race.view_run().is_empty() and near_pit.call(),
+			"getting off out on the track puts you back on pit row")
+	t.check(not is_instance_valid(bike), "and the machine goes, the bay fills again")
+	# In the pits, getting off leaves things be.
+	var other: Node3D = bays[1]
+	me.global_position = other.global_position + Vector3(2.0, 0.2, 0.0)
+	await t.frames(2)
+	other.call("mount", me)
+	await t.frames(2)
+	other.call("dismount")
+	await t.frames(3)
+	var apart := me.global_position.distance_to(other.global_position) if is_instance_valid(other) else INF
+	t.check(apart < 4.0, "getting off on the grid by the pits, you and the bay machine stay (%.1f m)" % apart)
+	# Stopping the run from the watch, out on the track.
+	var third: Node3D = bays[2]
+	me.global_position = third.global_position + Vector3(2.0, 0.2, 0.0)
+	await t.frames(2)
+	third.call("mount", me)
+	await t.frames(2)
+	third.global_position = far_spot + Vector3(0, 0.6, 0)
+	await t.frames(2)
+	race.ask("retire")
+	await t.frames(3)
+	t.check(me.vehicle == null and race.view_run().is_empty() and near_pit.call() and not is_instance_valid(third),
+			"stopping a run out on the track sets you down on pit row too")
+	race.queue_free()
+	await t.frames(2)
+
+
+## Ambient races (Caleb: "the racing world seems dead"): with someone here,
+## each track nobody rides gets an AI-only race; asking to race calls its
+## field back to the grid to race you; with nobody here they stop.
+static func _test_ambient_races(t: Node) -> void:
+	Race.ambient_races = true
+	var world := Worlds.get_world("meridian")
+	var race: Race = world.new_raid()
+	t.add_child(race)
+	race.start(world, 19, [Loadout.BARE] as Array[String])
+	await t.frames(5)
+	var me := race.player
+	await t.frames(int((Race.AMBIENT_FIRST + 0.5) * Engine.physics_ticks_per_second))
+	var track := race.track
+	var first: Race.Heat = race.heats.get(track.id)
+	t.check(first != null and first.ambient and first.phase == "racing" and first.runs.size() == Race.AMBIENT_FIELD
+			and first.people() == 0, "soon after you arrive, the track by you has an AI race of %d on it" % Race.AMBIENT_FIELD)
+	t.check(race.heats.size() == Race.AMBIENT_TRACKS, "one at a time, so the server pays little")
+	var view := race.heat_view(track.id)
+	t.check(bool(view.get("ambient", false)) and RaceView.heat_text(view).begins_with("AI RACE ON")
+			and RaceView.desk_prompt("bike_raider", view).begins_with(RaceView.key() + "  Race the AI"),
+			"the boards and desks say so, and a desk offers to race them")
+	await t.frames(6 * Engine.physics_ticks_per_second)
+	var heat: Race.Heat = race.heats.get(track.id)
+	var moving := heat.runs.filter(func(r: Race.Run) -> bool:
+		return is_instance_valid(r.vehicle) and absf(float(r.vehicle.get("speed"))) > 8.0)
+	t.check(moving.size() == Race.AMBIENT_FIELD, "the AI race round on their own (%d moving)" % moving.size())
+	var bike: Node3D = null
+	for v: Node3D in race.vehicles:
+		if v.get("item_id") == "bike_raider" and v.get("rider") == null and race.track_near(v.global_position) == track:
+			bike = v
+			break
+	if bike == null:
+		t.check(false, "a Raider waits in the pit bays")
+		race.queue_free()
+		Race.ambient_races = false
+		return
+	me.global_position = bike.global_position + Vector3(2.0, 0.2, 0.0)
+	await t.frames(2)
+	bike.call("mount", me)
+	await t.frames(2)
+	t.check(race.heats.get(track.id) == heat and heat.ambient, "a time trial shares the track with the AI's race")
+	race.ask("race")
+	await t.frames(2)
+	heat = race.heats.get(track.id)
+	t.check(heat != null and not heat.ambient and heat.phase == "forming" and heat.people() == 1
+			and heat.runs.size() == Race.GRID_SIZE and race.view_run().get("phase") == "waiting",
+			"asking to race calls the AI back to the grid, filled to %d with you on it" % Race.GRID_SIZE)
+	t.check(heat != null and heat.runs.all(func(r: Race.Run) -> bool:
+			return (r.phase == "waiting" and bool(r.vehicle.get("held"))
+					and r.vehicle.global_position.distance_to(track.start_slots[r.slot].origin) < 2.0)),
+			"every machine waits at its slot, held for the lights")
+	var other: RaceTrack = race.circuits[1]
+	await t.frames(3)
+	var moved: Race.Heat = race.heats.get(other.id)
+	t.check(moved != null and moved.ambient and moved.phase == "racing", "and the AI's own race goes on at the other track")
+	# Nobody here: the AI's races stop, so an empty server pays nothing.
+	bike.call("dismount")
+	await t.frames(2)
+	me.is_dead = true
+	await t.frames(3)
+	t.check(not race.heats.has(other.id) and race.drivers.is_empty(), "with nobody here the AI's races stop")
+	me.is_dead = false
+	race.queue_free()
+	await t.frames(2)
+	Race.ambient_races = false

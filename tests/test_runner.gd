@@ -75,6 +75,7 @@ const IceTests := preload("res://tests/ice_tests.gd")
 const PlanetKitTests := preload("res://tests/planet_kit_tests.gd")
 const GridTests := preload("res://tests/grid_tests.gd")
 const ShellingTests := preload("res://tests/shelling_tests.gd")
+const BattleTests := preload("res://tests/battle_tests.gd")
 const WhiteoutTests := preload("res://tests/whiteout_tests.gd")
 const EngineTests := preload("res://tests/engine_tests.gd")
 const RaiderTests := preload("res://tests/raider_tests.gd")
@@ -396,6 +397,7 @@ func _run() -> void:
 	await _test_planet_kit()
 	await _test_grid()
 	await _test_shelling()
+	await _test_battle()
 	await _test_whiteout()
 	await _test_engine()
 	await _test_raiders()
@@ -457,7 +459,7 @@ func _test_racing_online() -> void:
 	check(me.weapons_locked and race.track != null, "weapons are locked and the client has the track")
 	var bike: Node3D = null
 	for v: Node3D in race.vehicles:
-		if v.get("item_id") == "bike_scrapper" and (bike == null
+		if v.get("item_id") == "bike_scrapper" and v.get("rider") == null and (bike == null
 				or v.global_position.distance_to(me.global_position) < bike.global_position.distance_to(me.global_position)):
 			bike = v
 	check(bike != null and is_equal_approx(float(bike.get("max_speed")), float(ItemDB.RACE_SCRAPPER.max_speed)),
@@ -530,11 +532,13 @@ func _test_racing_online() -> void:
 	check(str(race.remote_run.get("heat", "")) == "forming" and str(race.heat_view(race.track.id).get("phase", "")) == "forming",
 			"asking to race puts the client on the grid of the next race, and its board hears of it")
 	await _wait_until(func() -> bool: return str(race.remote_run.get("heat", "")) == "racing", int((Race.FORM_TIME + 5.0) * 60))
-	await _wait_until(func() -> bool:
-		return race.vehicles.filter(func(v: Node3D) -> bool:
-			return is_instance_valid(v) and v.get("rider") != null and v.get("rider") != me).size() >= Race.GRID_SIZE - 1, 240)
-	var riders := race.vehicles.filter(func(v: Node3D) -> bool:
-		return is_instance_valid(v) and v.get("rider") != null and v.get("rider") != me)
+	# Only this track's: the other track runs an AI race of its own.
+	var on_grid := func() -> Array:
+		return race.vehicles.filter(func(v: Variant) -> bool:
+			return (is_instance_valid(v) and (v as Node3D).get("rider") != null and (v as Node3D).get("rider") != me
+					and race.track_near((v as Node3D).global_position) == race.track))
+	await _wait_until(func() -> bool: return on_grid.call().size() >= Race.GRID_SIZE - 1, 240)
+	var riders: Array = on_grid.call()
 	check(riders.size() == Race.GRID_SIZE - 1, "the client sees AI racers fill the grid (%d)" % riders.size())
 	await _wait_until(func() -> bool: return int(race.remote_run.get("place", 0)) > 0, 600)
 	check(int(race.remote_run.get("place", 0)) > 0 and Race.place_tag(race.remote_run).begins_with("P"),
@@ -711,6 +715,10 @@ func _test_grid() -> void:
 
 func _test_shelling() -> void:
 	await ShellingTests.run(self)
+
+
+func _test_battle() -> void:
+	await BattleTests.run(self)
 
 
 func _test_whiteout() -> void:
@@ -7351,6 +7359,21 @@ func _test_game_settings() -> void:
 	GameSettings.set_value("anti_aliasing", 3)
 	check(ink_smaa and not GameSettings.ink_shown() and GameSettings.to_dict().has("edge_ink"),
 			"the far-shape outline is saved, and left out with MSAA, which gives it no depth to read")
+	# Battle smoke (PlanetType.smoke): a setting that switches the volume and
+	# the volumetric fog it needs, thicker with the war and in a storm.
+	var smoke_env := Environment.new()
+	var smoke := Planet.GroundSmoke.make(PlanetTypes.get_type("ashland").smoke, smoke_env)
+	add_child(smoke)
+	GameSettings.set_value("ground_smoke", false)
+	GameSettings.apply_graphics()
+	var smoke_off := not smoke.visible and not smoke_env.volumetric_fog_enabled
+	GameSettings.set_value("ground_smoke", true)
+	GameSettings.apply_graphics()
+	check(smoke_off and smoke.visible and smoke_env.volumetric_fog_enabled and GameSettings.to_dict().has("ground_smoke"),
+			"battle smoke is a saved setting that switches the smoke and its volumetric fog")
+	check(smoke.density_for(0.0, 0.0) < smoke.density_for(1.0, 0.0) and smoke.density_for(1.0, 0.0) < smoke.density_for(1.0, 1.0),
+			"battle smoke thickens with the war and thicker still in a storm")
+	smoke.queue_free()
 	# Far ground and walls shimmer without mipmaps, so every world texture
 	# keeps them (and is not re-imported without them when seen in 3D).
 	var bare: Array[String] = []

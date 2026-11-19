@@ -149,6 +149,11 @@ const BOARD_RESEND_TICKS := 60
 const TICKS_PER_SNAPSHOT := 2
 ## Actors per state packet, to keep each one under the network's packet size.
 const ACTORS_PER_PACKET := 5
+## Vehicles per ride state packet, for the same reason (a race world's
+## bays and AI racers came to over the MTU in one), and how often a parked
+## vehicle nobody rides is sent again (snapshots).
+const VEHICLES_PER_PACKET := 12
+const PARKED_EVERY := 15
 ## Interest: a player hears about what is near them in every state update,
 ## and about the rest of a big field less often. Actors within NEAR_RANGE
 ## metres are sent every update, within MID_RANGE every DETAIL_EVERY[1]
@@ -357,6 +362,8 @@ var _latest := {}        # actor id -> newest state entry (client)
 var _containers := {}    # container id -> LootContainer
 var _container_ids := {} # LootContainer -> id
 var _vehicles := {}      # vehicle id -> vehicle node
+## Vehicle id -> whether it was parked, nobody aboard, when last sent.
+var _vehicle_parked := {}
 var _vehicle_ids := {}   # vehicle node -> id
 var _vehicle_targets := {} # vehicle id -> newest state entry (client)
 var _ride_history := {}  # input number -> [position, heading, speed] of the ride after it (client)
@@ -1111,6 +1118,7 @@ func _on_server_vehicle_removed(vehicle: Node3D) -> void:
 	var id: int = _vehicle_ids[vehicle]
 	_vehicle_ids.erase(vehicle)
 	_vehicles.erase(id)
+	_vehicle_parked.erase(id)
 	for peer in _joined_peers:
 		_vehicle_gone.rpc_id(peer, id)
 
@@ -2048,18 +2056,29 @@ func _server_late_tick(_delta: float) -> void:
 		_send_states()
 		if not _vehicles.is_empty():
 			var rides: Array = []
+			var snapshot := _tick / TICKS_PER_SNAPSHOT
 			for id: int in _vehicles:
 				var vehicle: Node3D = _vehicles[id]
 				var rider: Actor = vehicle.get("rider")
 				var rider_id: int = _ids.get(rider, -1) if rider != null else -1
 				# Who sits on each passenger seat, in seat order (-1 for empty).
 				var aboard: Array = []
+				var anyone := rider_id >= 0
 				for passenger in vehicle.get("passengers"):
 					aboard.append(_ids.get(passenger, -1) if passenger != null else -1)
+					anyone = anyone or passenger != null
+				# A parked vehicle nobody rides is sent now and then, in turn
+				# (at once when someone just got off it).
+				var parked := not anyone and absf(float(vehicle.get("speed"))) < 0.05
+				if parked and _vehicle_parked.get(id, false) and (snapshot + id) % PARKED_EVERY != 0:
+					continue
+				_vehicle_parked[id] = parked
 				rides.append([id, vehicle.global_position, vehicle.get("heading"), vehicle.get("speed"),
 						rider_id, _applied_seq.get(rider_id, 0), aboard, vehicle.get("slip")])
-			for peer in _joined_peers:
-				_vehicle_state.rpc_id(peer, rides)
+			for at in range(0, rides.size(), VEHICLES_PER_PACKET):
+				var part := rides.slice(at, at + VEHICLES_PER_PACKET)
+				for peer in _joined_peers:
+					_vehicle_state.rpc_id(peer, part)
 	_send_boards()
 	for state in raid.players:
 		var id: int = _ids.get(state.actor, -1)
