@@ -482,7 +482,8 @@ without Caleb, and update the gap list when a PR closes a row.
   without a slot keeps its gun on the target and holds fire, crouched in
   cover from the target's eyes (`_find_cover`, a few ray probes every
   1.5 s) or, past the outer ring, working round a flank. Return fire
-  (`return_fire_time`) and anything inside `point_blank` skip the queue,
+  (`return_fire_time`, not for a kind with the meta "holds_turn",
+  Frostline's Wardens) and anything inside `point_blank` skip the queue,
   and bots fighting bots are never rationed (`BotBrain.is_person`). Spotting
   takes longer far off and against a crouch (`notice_mult`), and the gun
   comes up halfway through the reaction with a bark heard nearby

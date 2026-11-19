@@ -80,6 +80,10 @@ static func run(t: Node) -> void:
 	waiting._hit_by = player
 	waiting._hit_at = Engine.get_physics_frames()
 	t.check(waiting._may_attack(20.0), "a bot that was just shot always shoots back")
+	waiting.holds_turn = true
+	t.check(not waiting._may_attack(20.0), "unless its kind holds its turn when hit")
+	t.check(waiting._may_attack(4.0), "which still fights back at point blank")
+	waiting.holds_turn = false
 	waiting._hit_at = -1000000
 	t.check(waiting._may_attack(4.0), "a bot always fights someone at point blank")
 	t.check(not waiting._may_attack(20.0), "otherwise it waits its turn")
