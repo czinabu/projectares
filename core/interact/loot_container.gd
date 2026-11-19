@@ -1,12 +1,18 @@
 class_name LootContainer
 extends Interactable
-## A world cache, or the bag a dead actor drops (`is_bag`).
+## A world cache, or the bag a dead actor drops (`is_bag`), or the scrip
+## pile one drops where `WorldDef.death_drops_scrip` (`pile`): scrip worth
+## what they lost, grabbed by running over it (`Raid._tick_piles`), with a
+## bonus item from their pack in `items`.
 ##
 ## A container labelled `RACK_LABEL` is a power rack (`PowerArmory`): using
 ## it scans its heavy (power) weapon into your watch's heavy chamber instead
 ## of your pack, to be summoned from the watch.
 
 const RACK_LABEL := "Power rack"
+## A scrip pile's glow, and a bounty pile's.
+const PILE_COLOR := Color(1.0, 0.72, 0.2)
+const PILE_BOUNTY_COLOR := Color(1.0, 0.35, 0.15)
 
 ## The contents changed (someone looted it).
 signal changed
@@ -28,6 +34,10 @@ var scrip := 0
 ## cache anyone may loot. A share goes once it is emptied.
 var reserved := ""
 var reserved_name := ""
+## A scrip pile (see above). `bounty` is the share of `scrip` that was the
+## dead player's bounty: a pile with one burns brighter.
+var pile := false
+var bounty := 0
 
 var _mesh: MeshInstance3D
 
@@ -38,9 +48,21 @@ func setup(p_items: Array, p_is_bag: bool, p_label: String) -> void:
 	label = p_label
 
 
+## Makes this a scrip pile holding `p_scrip`, `p_bounty` of it a bounty.
+func make_pile(p_scrip: int, p_bounty: int) -> void:
+	pile = true
+	is_bag = true
+	scrip = p_scrip
+	bounty = p_bounty
+
+
 func _ready() -> void:
 	add_to_group("loot_containers")
+	if pile:
+		add_to_group("scrip_piles")
 	var size := Vector3(0.7, 0.5, 0.7) if is_bag else Vector3(1.1, 0.8, 0.8)
+	if pile:
+		size = Vector3(0.8, 0.25, 0.8)
 	var shape := BoxShape3D.new()
 	shape.size = size
 	var col := CollisionShape3D.new()
@@ -68,6 +90,10 @@ func get_prompt() -> String:
 		var prompt := _rack_prompt(raid.player if raid != null else null)
 		if prompt != "":
 			return prompt
+	if pile:
+		if items.is_empty():
+			return "%d scrip: run over it" % scrip if scrip > 0 else label
+		return "[F] Take %s%s" % [ItemDB.item_name(items[0]), ", %d scrip" % scrip if scrip > 0 else ""]
 	# A bag is cleared away once it is emptied, so one that is still here
 	# holds something, if only scrip.
 	if items.is_empty() and is_bag:
@@ -89,6 +115,7 @@ func interact(actor: Actor) -> void:
 	if scrip > 0:
 		var got := scrip
 		scrip = 0
+		bounty = 0
 		scrip_taken.emit(actor, got)
 	var taken: Array[String] = []
 	while not items.is_empty() and not actor.inventory.is_full():
@@ -104,10 +131,28 @@ func interact(actor: Actor) -> void:
 	elif not items.is_empty():
 		actor.notice.emit("Backpack full")
 	changed.emit()
-	if items.is_empty() and (is_bag or reserved != ""):
+	if items.is_empty() and scrip <= 0 and (is_bag or reserved != ""):
 		queue_free()
 	else:
 		_refresh_color()
+
+
+## A body ran over the pile: the scrip is theirs (`scrip_taken`), and the
+## bonus item too if their pack has room. Authority only (`Raid._tick_piles`).
+func grab(actor: Actor) -> void:
+	if not pile or (scrip <= 0 and items.is_empty()):
+		return
+	if not items.is_empty() and not actor.inventory.is_full():
+		interact(actor)
+		return
+	if scrip > 0:
+		var got := scrip
+		scrip = 0
+		bounty = 0
+		scrip_taken.emit(actor, got)
+		changed.emit()
+		if items.is_empty():
+			queue_free()
 
 
 ## The power weapon a rack would hand you, or "" if it holds none.
@@ -161,8 +206,12 @@ func _rack_swap(actor: Actor) -> bool:
 
 
 ## Replaces the contents, for a client showing what the server reports.
-func set_items(p_items: Array) -> void:
+func set_items(p_items: Array, p_scrip: int = -1) -> void:
 	items.assign(p_items)
+	if p_scrip >= 0:
+		scrip = p_scrip
+		if scrip <= 0:
+			bounty = 0
 	_refresh_color()
 
 
@@ -170,8 +219,19 @@ func set_items(p_items: Array) -> void:
 func _refresh_color() -> void:
 	if _mesh == null:
 		return
+	# A pile's heap (dressed by `Look`) goes with its scrip.
+	var heap := get_node_or_null("Crate") as Node3D
+	if pile and heap != null:
+		heap.visible = scrip > 0
 	var mat := StandardMaterial3D.new()
-	if items.is_empty():
+	if pile and items.is_empty():
+		# Scrip alone: amber, a bounty's red-gold brighter.
+		var amber := PILE_BOUNTY_COLOR if bounty > 0 else PILE_COLOR
+		mat.albedo_color = amber
+		mat.emission_enabled = true
+		mat.emission = amber
+		mat.emission_energy_multiplier = 1.5 if bounty > 0 else 0.9
+	elif items.is_empty():
 		mat.albedo_color = Color(0.2, 0.2, 0.2)
 	else:
 		var best := 0

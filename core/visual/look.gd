@@ -2770,6 +2770,9 @@ func _dress_cache(cache: LootContainer) -> void:
 	if cache.is_rack():
 		_dress_power_rack(cache, marker, size)
 		return
+	if cache.pile:
+		_dress_pile(cache, marker, size)
+		return
 	var crate := prop("Backpack.glb" if cache.is_bag else "Lootbox.glb", maxf(size.x, size.z) * (0.9 if cache.is_bag else 1.15), 0.7)
 	crate.name = "Crate"
 	cache.add_child(crate)
@@ -2779,6 +2782,72 @@ func _dress_cache(cache: LootContainer) -> void:
 	band.size = Vector3(size.x * 1.08, 0.05, size.z * 1.08)
 	marker.mesh = band
 	marker.position.y = size.y * (0.2 if cache.is_bag else 0.55)
+	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## A scrip pile (DESIGN.md "Scrip piles"): a heap of glowing amber chits
+## with a short column of light over it, so a fresh kill draws eyes; a
+## bounty's heap is bigger, redder and taller. The game's marker stays as a
+## band round it in the bonus item's rarity. View only.
+func _dress_pile(pile: LootContainer, marker: MeshInstance3D, size: Vector3) -> void:
+	var heap := Node3D.new()
+	heap.name = "Crate"
+	pile.add_child(heap)
+	var hot := pile.bounty > 0
+	var color := LootContainer.PILE_BOUNTY_COLOR if hot else LootContainer.PILE_COLOR
+	var chit := StandardMaterial3D.new()
+	chit.albedo_color = color
+	chit.metallic = 0.8
+	chit.roughness = 0.3
+	chit.emission_enabled = true
+	chit.emission = color
+	chit.emission_energy_multiplier = 1.4 if hot else 0.8
+	var dice := RandomNumberGenerator.new()
+	dice.seed = hash(pile.label)
+	var count := 22 if hot else 14
+	var spread := size.x * (0.6 if hot else 0.45)
+	for k in count:
+		var coin := MeshInstance3D.new()
+		var disc := CylinderMesh.new()
+		disc.top_radius = 0.07
+		disc.bottom_radius = 0.07
+		disc.height = 0.02
+		disc.radial_segments = 10
+		disc.rings = 1
+		disc.material = chit
+		coin.mesh = disc
+		var reach := spread * sqrt(dice.randf())
+		var turn := dice.randf() * TAU
+		coin.position = Vector3(cos(turn) * reach, 0.02 + (1.0 - reach / spread) * 0.16 + dice.randf() * 0.03,
+				sin(turn) * reach)
+		coin.rotation = Vector3(dice.randf_range(-0.5, 0.5), dice.randf() * TAU, dice.randf_range(-0.5, 0.5))
+		coin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		heap.add_child(coin)
+	var column := MeshInstance3D.new()
+	var beam := CylinderMesh.new()
+	beam.top_radius = 0.03
+	beam.bottom_radius = 0.09 if hot else 0.06
+	beam.height = 6.0 if hot else 3.5
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glow.albedo_color = Color(color.r, color.g, color.b, 0.4 if hot else 0.28)
+	beam.material = glow
+	column.mesh = beam
+	column.position.y = 0.2 + beam.height * 0.5
+	column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	heap.add_child(column)
+	if hot:
+		# Only a bounty's heap casts light: the war leaves many piles, and a
+		# lamp each would cost the frame.
+		var light := lamp(color, 1.6, 4.0)
+		light.position.y = 0.6
+		heap.add_child(light)
+	heap.visible = pile.scrip > 0
+	var band := BoxMesh.new()
+	band.size = Vector3(size.x * 0.5, 0.04, size.z * 0.5)
+	marker.mesh = band
+	marker.position.y = 0.03
 	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 

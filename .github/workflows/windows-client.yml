@@ -68,9 +68,19 @@ jobs:
           unzip -q -j "$RUNNER_TEMP/templates.tpz" templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe templates/version.txt -d "$dest"
       - name: Stamp the build number
         # Read by the game's updater (Updater.BUILD_SETTING); never committed.
+        # Builds of main also carry the bug report webhook
+        # (BugReport.WEBHOOK_SETTING) from the repository secret; a pull
+        # request's build keeps its reports on the tester's computer.
+        env:
+          REPORT_WEBHOOK: ${{ github.event_name == 'push' && secrets.BUG_REPORT_WEBHOOK || '' }}
         run: |
           printf '\n[ares]\n\nbuild/number=%s\nbuild/commit="%s"\n' \
             "$GITHUB_RUN_NUMBER" "$(git rev-parse --short HEAD)" >> project.godot
+          case "$REPORT_WEBHOOK" in
+            https://discord.com/api/webhooks/*) printf 'report/webhook="%s"\n' "$REPORT_WEBHOOK" >> project.godot ;;
+            "") echo "No bug report webhook for this build" ;;
+            *) echo "::warning::BUG_REPORT_WEBHOOK is not a Discord webhook URL; reports stay on the tester's computer" ;;
+          esac
       - name: Export
         run: |
           mkdir -p build/windows

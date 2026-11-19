@@ -159,6 +159,10 @@ var speed_fov_at := 26.0
 ## `land_dip_max` m) and springs back.
 var land_dip := 0.016
 var land_dip_max := 0.25
+## A shell landing jolts the view (`feel_blast`): this much (degrees) right
+## beside it, falling away to nothing at `blast_feel_reach` metres.
+var blast_kick_deg := 2.4
+var blast_feel_reach := 70.0
 ## Recoil. A shot's kick reaches the view over a few frames, not in one
 ## (`recoil_snap`, per second). Once the trigger rests for
 ## `recoil_settle_delay`, the view comes back down by `recoil_return` of the
@@ -305,6 +309,7 @@ func setup(p_actor: Actor) -> void:
 
 func _ready() -> void:
 	process_physics_priority = -10
+	add_to_group("player_controllers")
 	var live := LiveAim.new()
 	live.name = "LiveAim"
 	live.run = _live_aim
@@ -1246,6 +1251,17 @@ func _on_blade_contact(_target: Actor, outcome: String, _at: Vector3, blade: Mel
 			# The view follows through: sideways for a side cut, down for overhead.
 			var down := 1.0 if blade.attack_dir == MeleeWeapon.Dir.OVERHEAD else 0.25
 			kick_view(Vector2(side, -down) * deg_to_rad(melee_kick_deg))
+
+
+## A blast at `at` (a shell, `ShellView`) jolts the view, harder the
+## nearer it is. View only.
+func feel_blast(at: Vector3) -> void:
+	if camera == null or not is_instance_valid(camera):
+		return
+	var near := 1.0 - camera.global_position.distance_to(at) / blast_feel_reach
+	if near <= 0.0:
+		return
+	kick_view(Vector2(_rng.randf_range(-0.6, 0.6), -1.0) * deg_to_rad(blast_kick_deg) * near * near)
 
 
 ## Jolts the view by `kick` (yaw, pitch in radians); it springs back.

@@ -293,11 +293,12 @@ static func run(t: Node) -> void:
 				and (n as Node3D).global_position.distance_to(death_spot) < 1.5))
 	var racks_after := raid.get_children().filter(func(n: Node) -> bool:
 		return n is LootContainer and (n as LootContainer).is_rack()).size()
-	t.check(not in_bags and racks_after == racks_before + 1 and dropped.size() == 1,
-			"a dead player's power weapon is left on a rack, not in the bag")
-	if dropped.size() == 1:
-		t.check((dropped[0] as LootContainer).ammo.get("power_storm_cannon", [[0, 0]])[0][0] == 40,
-				"with the shots it had left")
+	# Ashfront drops a scrip pile (DESIGN.md "Scrip piles"): the heavy
+	# weapon is sold into it rather than left on a rack.
+	var piles := bags.filter(func(n: Node) -> bool: return (n as LootContainer).pile)
+	t.check(not in_bags and racks_after == racks_before and dropped.is_empty() and piles.size() == 1
+			and (piles[0] as LootContainer).scrip >= Economy.sell_price("power_storm_cannon"),
+			"a dead player's power weapon goes into their scrip pile, never a bag or a rack")
 	t.check(finished.size() == 1 and "power_storm_cannon" in finished[0].lost
 			and not "power_storm_cannon" in finished[0].brought_home,
 			"dying loses the heavy weapon: it stays in the world and does not come home")
