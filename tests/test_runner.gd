@@ -1838,6 +1838,8 @@ func _test_melee_defense() -> void:
 	var victim: Actor = duel[0]
 	var brute: Actor = duel[1]
 	brute.global_position = victim.global_position + Vector3(0, 0, -7.0)
+	# Posted where it stands, so it is not off back to its own post.
+	(brute.get_node("Brain") as BotBrain).post_to(brute.global_position, 4.0)
 	var victim_before := victim.health.health + victim.health.armor
 	await frames(300)
 	check(victim.health.health + victim.health.armor < victim_before, "a melee bot closes in and hits")

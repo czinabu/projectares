@@ -251,6 +251,12 @@ var max_hunters := 4
 ## How far past its patrol radius a bot follows anything before it turns
 ## back to its post (a bot that plays like a person, or on an errand, roams).
 var leash := 35.0
+## The ground it fights on (the enemy AI pass, step 4): its kind and how
+## much slower it is to notice someone there. `set_ground` sets both.
+var ground := ""
+var ground_notice := 1.0
+var _base_ground := {}
+var _own_patrol := -1.0
 ## How many bots go to look at one person's noise; the rest turn to face it.
 var noise_lookers := 3
 ## A person sprinting is heard this far off (through walls too), a jog
@@ -309,6 +315,9 @@ var _cover_left := 0.0
 var _lock := 0.0
 var _stuck_for := 0.0
 var _lift_left := 0.0
+var _side_left := 0.0
+var _climb_for := 0.0
+var _climb_from := Vector3.ZERO
 var _hop_in := 3.0
 var _hop_left := 0.0
 var _contact_id := 0
@@ -413,9 +422,30 @@ func _ready() -> void:
 ## then on. Fights along the way still come first.
 func post_to(point: Vector3, radius: float) -> void:
 	_home = point
-	patrol_radius = minf(patrol_radius, maxf(radius * 0.8, 4.0))
+	# Never wider than the bot's own round, and a tight post (a line, a
+	# siege ring) does not keep it tight at the next one.
+	if _own_patrol < 0.0:
+		_own_patrol = patrol_radius
+	patrol_radius = minf(_own_patrol, maxf(radius * 0.8, 4.0))
 	_has_dest = false
 	_wait_left = 0.0
+
+
+## Fights the way its ground asks (`WorldDef.ground_styles`): "range"
+## scales the distance it keeps, "hunters" is added to how many may hunt
+## one person, "leash" is how far it chases and "notice" scales how long
+## it takes to spot someone. Each style is laid over the bot's own numbers,
+## never over the last style, so moving ground to ground never drifts.
+func set_ground(kind: String, style: Dictionary) -> void:
+	if kind == ground:
+		return
+	if _base_ground.is_empty():
+		_base_ground = {"range": preferred_range, "hunters": max_hunters, "leash": leash}
+	ground = kind
+	preferred_range = float(_base_ground["range"]) * float(style.get("range", 1.0))
+	max_hunters = maxi(0, int(_base_ground["hunters"]) + int(style.get("hunters", 0)))
+	leash = float(style.get("leash", _base_ground["leash"]))
+	ground_notice = float(style.get("notice", 1.0))
 
 
 ## Where the bot is posted.
@@ -706,7 +736,8 @@ func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delt
 		_seen_time = 0.0
 		_lock = 0.0
 		_reaction = reaction_time * _rng.randf_range(0.8, 1.3) * (1.4 - 0.8 * sharp) \
-				* notice_mult(dist, sight_range, target.crouched, far_notice_mult, crouch_notice_mult)
+				* notice_mult(dist, sight_range, target.crouched, far_notice_mult, crouch_notice_mult) \
+				* ground_notice
 		if _hit_by == target and _since_hit() < return_fire_time:
 			_reaction *= 0.5
 		_wander_left = 0.0
@@ -1185,6 +1216,36 @@ func _dodge(cmd: ActorCommand, delta: float) -> void:
 	cmd.move = Vector2(local.x, -local.z)
 	if flies:
 		_unstick(cmd, delta)
+	else:
+		_climb_out(cmd, delta)
+
+
+## A bot on foot pressing on and getting nowhere (a crater's lip, a wall
+## its path runs into) jumps and steps aside, as a person would: the same
+## keys a player presses.
+func _climb_out(cmd: ActorCommand, delta: float) -> void:
+	if _side_left > 0.0:
+		_side_left -= delta
+		cmd.move = (cmd.move + Vector2(_strafe_sign, 0.0)).normalized()
+		return
+	# Measured by ground covered, not speed: a bot sliding back down a
+	# slope it cannot climb is moving, and going nowhere. Pressing into
+	# the person it is fighting is not being stuck.
+	if target != null and _flat_dist(target.global_position) < 4.0:
+		_climb_for = 0.0
+		_climb_from = actor.global_position
+		return
+	_climb_for += delta
+	if _climb_for < stuck_time * 2.0:
+		return
+	var gone := actor.global_position - _climb_from
+	gone.y = 0.0
+	_climb_for = 0.0
+	_climb_from = actor.global_position
+	if gone.length() < 1.0 and actor.is_on_floor():
+		cmd.jump_pressed = true
+		_side_left = 0.7
+		_strafe_sign = -_strafe_sign
 
 
 func _patrol(cmd: ActorCommand, delta: float) -> void:
@@ -1245,6 +1306,8 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 	cmd.move = Vector2(local.x, -local.z)
 	if flies:
 		_unstick(cmd, delta)
+	else:
+		_climb_out(cmd, delta)
 
 
 ## A flier pushing against something it cannot walk over lifts off: a jump

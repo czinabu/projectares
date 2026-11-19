@@ -6,6 +6,7 @@ extends RefCounted
 ## duel bench. Kept in its own file and called from the test runner.
 
 const KIT: Array[String] = ["rifle_scrap", "blade_scrap"]
+const Strongpoint := preload("res://core/war/strongpoint.gd")
 
 
 static func run(t: Node) -> void:
@@ -14,6 +15,7 @@ static func run(t: Node) -> void:
 	_pincer_and_break(t)
 	await _doctrines(t)
 	await _grudges(t)
+	await _battles_by_ground(t)
 
 
 static func _smoke_shape(t: Node) -> void:
@@ -296,5 +298,101 @@ static func _grudges(t: Node) -> void:
 	t.check(VisorHud.hunted_text(me) == "THE LEGION IS HUNTING YOU", "the visor says who is after you")
 	Combat.deal(me, DamageInfo.make(99999.0, hunter, "bullet"))
 	t.check(not raid.grudges.has(me) and me.hunted_by == "", "and death clears the grudge")
+	raid.queue_free()
+	await t.frames(2)
+
+
+static func _battles_by_ground(t: Node) -> void:
+	print("Enemy AI: battles by ground")
+	# A style is laid over the bot's own numbers, never over the last style.
+	var lone := Actor.new()
+	t.add_child(lone)
+	var brain := BotBrain.new()
+	brain.name = "Brain"
+	lone.add_child(brain)
+	brain.set_physics_process(false)
+	await t.frames(1)
+	var own := Vector3(brain.preferred_range, brain.max_hunters, brain.leash)
+	brain.set_ground("line", {"range": 1.4, "leash": 8.0, "hunters": -2})
+	t.check(is_equal_approx(brain.preferred_range, own.x * 1.4) and brain.leash == 8.0
+			and brain.max_hunters == maxi(0, int(own.y) - 2), "a trench line keeps its distance and its post")
+	brain.set_ground("works", {"range": 0.55, "notice": 0.85})
+	t.check(is_equal_approx(brain.preferred_range, own.x * 0.55) and brain.leash == own.z
+			and brain.max_hunters == int(own.y) and brain.ground_notice == 0.85,
+			"and the next ground starts from the bot's own numbers")
+	var wide := brain.patrol_radius
+	brain.post_to(Vector3.ZERO, 3.0)
+	brain.post_to(Vector3.ZERO, 200.0)
+	t.check(brain.patrol_radius == wide, "a tight post does not keep the next one tight")
+	lone.queue_free()
+	# Ashfront names its ground.
+	var world := Worlds.get_world("ashfront")
+	var named := {
+		"works": Vector3(0, 0, 150), "foundry": Vector3(5, 0, 5), "landmark": Vector3(-150, 0, -118),
+		"front": Vector3(-20, 0, -76), "rim": Vector3(250, 0, 250), "field": Vector3(-60, 0, 0),
+	}
+	var all_named := true
+	for kind: String in named:
+		if world.ground_at(named[kind]) != kind:
+			all_named = false
+			print("  ground at %s is %s, not %s" % [named[kind], world.ground_at(named[kind]), kind])
+	t.check(all_named, "Ashfront tells the Works, the Foundry, landmarks, the front, the rim and the field apart")
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(world, 75)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+	await t.frames(2)
+	var sides := {}
+	for post: Node3D in raid.line_posts:
+		sides[str(post.get_meta("faction", ""))] = int(sides.get(str(post.get_meta("faction", "")), 0)) + 1
+	t.check(int(sides.get("legion", 0)) >= 6 and int(sides.get("tide", 0)) >= 6 and sides.size() == 2,
+			"both armies have line posts in the front's trenches")
+	var legion: Array = raid.bots.filter(func(b: Actor) -> bool: return b.faction == "legion" and not raid._is_extra(b))
+	var on_line := {}
+	raid._man_lines("legion", legion, on_line)
+	var manned := raid._line_of.duplicate()
+	var own_posts := true
+	for bot: Actor in on_line:
+		own_posts = own_posts and str(raid._line_of[bot].get_meta("faction")) == "legion"
+	t.check(on_line.size() == roundi(legion.size() * world.line_share) and own_posts,
+			"a share of the army mans its own line posts")
+	on_line.clear()
+	raid._man_lines("legion", legion, on_line)
+	t.check(raid._line_of == manned, "and keeps them from one round to the next")
+	# The Foundry waits on the war, and then on the elites.
+	var foundry: Strongpoint = null
+	for point in raid.strongpoints:
+		if point.hot_at > 0.0:
+			foundry = point
+	t.check(foundry != null, "the Foundry waits on a hot war")
+	var army: Array = legion.slice(0, 15)
+	for i in army.size():
+		(army[i] as Actor).set_meta("kind", "exo" if i < 5 else "soldier")
+		(army[i] as Actor).global_position = raid._stand(Vector3(-60 + i, 0, 10))
+	var teams := {}
+	var cold := raid.commander.plan("legion", army, raid.strongpoints, {}, [], 0, teams, 1, 0.1, world.elite_kinds)
+	t.check(not cold.values().has(foundry), "nobody is sent at it while the war is cool")
+	teams.clear()
+	var hot := raid.commander.plan("legion", army, raid.strongpoints, {}, [], 0, teams, 1, 0.9, world.elite_kinds)
+	var elites_there := 0
+	var others_there := 0
+	for bot: Actor in hot:
+		if hot[bot] == foundry:
+			if str(bot.get_meta("kind")) == "exo":
+				elites_there += 1
+			else:
+				others_there += 1
+	t.check(elites_there == 5 and others_there == 0, "and once it runs hot the elites go for it, nobody else")
+	# A held site with its holders standing is rung before it is stormed.
+	var held: Strongpoint = raid.strongpoints[1]
+	held.hold("faction:tide", "the Tide", false)
+	t.check(raid._besieging("legion", held, {"tide": 3}) and not raid._besieging("legion", held, {"tide": 1})
+			and not raid._besieging("tide", held, {"legion": 3}), "a held, manned site is besieged")
+	var ring := raid._siege_spot(held, held.global_position + Vector3(100, 0, 0), 0, 1)
+	var off := Vector2(ring.x - held.global_position.x, ring.z - held.global_position.z)
+	t.check(absf(off.length() - (held.radius + world.siege_reach)) < 0.5 and off.x > 0.0,
+			"from a ring past its edge, on the side the team comes from")
 	raid.queue_free()
 	await t.frames(2)

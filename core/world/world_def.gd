@@ -386,6 +386,33 @@ var grudge_per_kill := 60.0
 var grudge_fade := 3.0
 var grudge_hunt := 300.0
 var grudge_cap := 700.0
+## Battles by ground (DESIGN.md "The enemy AI pass", step 4): how an army
+## fights where it stands. `ground_at` names a place's kind of ground and
+## `ground_styles` says how a soldier there fights, {kind: {key: value}}:
+## "range" scales the distance it keeps, "hunters" is added to how many may
+## leave their ground to hunt one person, "leash" (metres) is how far past
+## its ground it may chase, and "notice" scales how long it takes to spot
+## someone. The `Raid` sets them on each soldier with its orders
+## (`BotBrain.set_ground`), so they are authority only; empty changes
+## nothing. Kinds the `Raid` names itself: "line" for a soldier on a
+## "line_post" marker and "siege" for a team ringing a held site.
+var ground_styles := {}
+## The share of an army's soldiers the `Raid` keeps on its "line_post"
+## markers (meta "faction"), a standing skirmish line, before the
+## commander sends the rest out. 0 leaves the posts empty.
+var line_share := 0.0
+## Sieges: a team sent at a site the other side holds with at least
+## `siege_holders` near it first rings it from `siege_reach` metres past
+## its edge for `siege_time` seconds, trading fire, before it goes in.
+## 0 seconds goes straight in.
+var siege_time := 0.0
+var siege_reach := 22.0
+var siege_holders := 2
+## The bot kinds (meta "kind") that are an army's elite. A strongpoint
+## marker with the meta "hot_at" (war intensity, 0 to 1) is fought over
+## only once the war is that hot, and then only by elites, who go there
+## first (`WarCommander.plan`).
+var elite_kinds: Array[String] = []
 ## Contracts of its own (DESIGN.md section 10, "World-tagged contracts"):
 ## a world with a `contract_tag` ("expedition") puts `contract_jobs` on the
 ## board beside the jobs that count anywhere, and they count only in a world
@@ -562,6 +589,11 @@ func faction_title(faction: String) -> String:
 
 func zone_at(_pos: Vector3) -> int:
 	return -1
+
+
+## The kind of ground at a point, for `ground_styles` ("" for none).
+func ground_at(_pos: Vector3) -> String:
+	return ""
 
 
 ## What a zone tier is called on the watch.

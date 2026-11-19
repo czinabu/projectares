@@ -459,6 +459,17 @@ without Caleb, and update the gap list when a PR closes a row.
   leash limits hold). The player is told only which army
   (`Actor.hunted_by`, `NetSession._hunted`, the visor's tag
   `VisorHud.hunted_text`).
+  Battles follow the ground (DESIGN.md "The enemy AI pass", step 4): with
+  its orders the `Raid` sets each soldier's style from
+  `WorldDef.ground_at` and `ground_styles` (`BotBrain.set_ground`, always
+  laid over the bot's own numbers), keeps `line_share` of an army on its
+  "line_post" markers (`_man_lines`, "line"), has a team ring a manned
+  enemy site for `siege_time` before storming it (`_besieging`,
+  `_siege_spot`, "siege"), and a strongpoint marker's "hot_at"
+  (`Strongpoint.hot_at`) keeps every team off it until the war is that
+  hot, then sends only `WorldDef.elite_kinds` (`WarCommander.plan`). A
+  bot on foot that gets nowhere jumps and steps aside
+  (`BotBrain._climb_out`).
   Only a few act on it, through `SquadBoard` claims (static, with an
   expiry, like the slots): `noise_lookers` go to look at one person's
   noise, `RING_HUNTERS` army bots may leave their ground to hunt one person

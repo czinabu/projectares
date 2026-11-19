@@ -1077,7 +1077,7 @@ plan in five steps (the plan doc, "Enemy AI pass: a plan per world"):
    the Tide swarms (blades and runners, closes to 10 to 25 m, pincers,
    breaks off when it loses a third). Two new kinds: the Legion marksman
    and the Tide runner. Both stay inside the existing bands.
-4. **Ashfront's battles follow the ground.** Quiet patrols at the rim,
+4. **Ashfront's battles follow the ground (built).** Quiet patrols at the rim,
    fireteams meeting in the open field, standing skirmish lines along the
    front lines, sieges at the landmarks, close quarters in the Works, and
    both armies' elites at the Foundry only when the war runs hot.
@@ -1139,6 +1139,31 @@ at 12 m (90%, band 65-85) and a core soldier at 12 m (87%, where a Legion
 rifleman now steps back). A marksman is easy up close (83-97%) and wins
 about half its duels at 50 m. The battle bench: 9.8 ms a tick, 46 stuck
 bot-windows.
+
+**Battles by ground (step 4).** Each place fights its own way, set by the
+`Raid` with every round of orders and authority only: `WorldDef.ground_at`
+names the ground a soldier stands on and `ground_styles` lays a style over
+the soldier's own numbers (`BotBrain.set_ground`: the distance it keeps,
+how many may hunt one person, how far it chases, how quick it is to
+notice). On Ashfront (`GROUND_STYLES`) the rim's patrols chase little and
+one fewer hunts a person; the open field is where fireteams meet, as they
+did; a fifth of each army (`line_share`, never its elites) stands in the
+front's trenches on its own half of the field, on the map's "line_post"
+markers on each trench's fire step, a standing skirmish line that keeps
+its post (8 m leash) and fights from 1.4 times its range; a team sent at a
+site the other army holds with two or more near it first rings it from
+22 m past its edge, on the side it came from, for 40 s (`siege_time`,
+`Raid._besieging`, `_siege_spot`) before it storms it; a landmark's
+defenders keep to it; the Works is close quarters (half the range, a
+quicker eye); and the Foundry (`Strongpoint.hot_at`, the marker's
+"hot_at", 0.5) draws no teams until the war runs hot, then only each
+army's elites (`WorldDef.elite_kinds`: exos and walkers), who go there
+first (`WarCommander.plan`'s `hot_weight`) and hunt one more a person.
+Long marches showed bots stranded in craters and trench bottoms, pressing
+at a lip they could not climb; a bot on foot that covers less than a metre
+in 1.6 s now jumps and steps aside (`BotBrain._climb_out`, the keys a
+player presses). The battle bench: 11.7 ms a tick against 13.2 before
+the step, and 7 stuck bot-windows against 41.
 
 **Grudges (step 5).** Ashfront's two armies each keep a grudge against each
 player for one life (`WorldDef.grudge_factions`, `Raid.grudges`): a point

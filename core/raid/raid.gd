@@ -354,6 +354,15 @@ var commander := WarCommander.new()
 var _detail_in := 0.0
 ## Bot -> the strongpoint its faction last sent it to.
 var _orders := {}
+## Bot -> where it was last posted, for orders that send it short of the
+## site (a siege ring) or to a line post.
+var _posted := {}
+## Battles by ground (the enemy AI pass, step 4): the "line_post" markers,
+## bot -> the post it holds, and "faction:site index" -> when that army
+## began ringing that site (`_tick_orders`).
+var line_posts: Array[Node3D] = []
+var _line_of := {}
+var _sieges := {}
 ## The armies' pushes, newest last, as {"site", "from", "title", "at"}
 ## (`at` is `clock`): what the watch map draws as an arrow. The server
 ## decides them in `_tick_orders`; a client is told (`note_push`).
@@ -463,6 +472,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		point.name = "Strongpoint%d" % point.index
 		point.title = marker.get_meta("name", "Strongpoint %d" % (point.index + 1))
 		point.radius = float(marker.get_meta("radius", point.radius))
+		point.hot_at = float(marker.get_meta("hot_at", 0.0))
 		marker.add_child(point)
 		var faction: String = marker.get_meta("holder", "")
 		if faction != "":
@@ -470,6 +480,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		strongpoints.append(point)
 	_find_lifts()
 	outposts = _map_nodes("outpost")
+	line_posts = _map_nodes("line_post")
 	beacons = _map_nodes("beacon")
 	warmth = _map_nodes("warmth")
 	_find_keepers()
@@ -1060,27 +1071,56 @@ func _tick_orders(delta: float) -> void:
 				armies[bot.faction] = []
 			armies[bot.faction].append(bot)
 	# Untyped: a freed bot cannot be assigned to an `Actor` to be checked.
-	for bot: Variant in _orders.keys():
-		if not is_instance_valid(bot) or (bot as Actor).is_dead:
-			_orders.erase(bot)
+	for book: Dictionary in [_orders, _posted, _line_of]:
+		for bot: Variant in book.keys():
+			if not is_instance_valid(bot) or (bot as Actor).is_dead:
+				book.erase(bot)
+	# A share of each army stands on its line posts first.
+	var on_line := {}
+	for faction: String in armies:
+		_man_lines(faction, armies[faction], on_line)
+		armies[faction] = (armies[faction] as Array).filter(func(bot: Actor) -> bool:
+			return not on_line.has(bot))
 	var storm: Array = []
 	if world.weather_pushes:
 		storm = strongpoints.filter(func(p: Strongpoint) -> bool:
 			return weather.strength_at(p.global_position) >= STORM_COVER)
 	var teams := {}
 	var first := 1
+	var sieges := {}
+	var grounds := {}
+	for bot: Actor in on_line:
+		grounds[bot] = "line"
 	for faction: String in armies:
 		var orders := commander.plan(faction, armies[faction], strongpoints, strength, storm,
-				world.garrison_size, teams, first)
+				world.garrison_size, teams, first, war.intensity, world.elite_kinds)
 		first += 100
 		var pushing := {}
 		var sizes := {}
+		var centres := {}
 		for bot: Actor in orders:
 			var id := int(teams.get(bot, 0))
 			sizes[id] = int(sizes.get(id, 0)) + 1
+			centres[id] = (centres.get(id, Vector3.ZERO) as Vector3) + bot.global_position
+		var rank := {}
 		for bot: Actor in orders:
-			_order(bot, orders[bot])
 			var id := int(teams.get(bot, 0))
+			var point: Strongpoint = orders[bot]
+			var ring := -1.0
+			if id != 0 and _besieging(faction, point, strength.get(point, {})):
+				var key := "%s:%d" % [faction, point.index]
+				if not sieges.has(key):
+					sieges[key] = float(_sieges.get(key, clock))
+				if clock - float(sieges[key]) < world.siege_time:
+					ring = float(rank.get(id, 0))
+					rank[id] = ring + 1.0
+			if ring >= 0.0:
+				var from: Vector3 = centres[id] / float(sizes[id])
+				_order(bot, point, _siege_spot(point, from, int(ring), int(sizes[id])), 6.0)
+				grounds[bot] = "siege"
+			else:
+				_order(bot, point)
+				grounds[bot] = world.ground_at(bot.global_position)
 			(bot.get_node("Brain") as BotBrain).set_team(id, int(sizes[id]) if id != 0 else 0)
 			if teams.has(bot):
 				if not pushing.has(orders[bot]):
@@ -1093,6 +1133,81 @@ func _tick_orders(delta: float) -> void:
 				main = point
 		if main != null:
 			_note_army_target(faction, main, pushing[main])
+	_sieges = sieges
+	if not world.ground_styles.is_empty():
+		for bot: Actor in grounds:
+			(bot.get_node("Brain") as BotBrain).set_ground(grounds[bot],
+					world.ground_styles.get(grounds[bot], {}))
+
+
+## Puts `line_share` of an army on its own "line_post" markers (meta
+## "faction"), a standing skirmish line: a soldier keeps its post from one
+## round to the next, and an empty post takes the nearest one free. The
+## ones posted go in `on_line`.
+func _man_lines(faction: String, army: Array, on_line: Dictionary) -> void:
+	if world.line_share <= 0.0 or line_posts.is_empty():
+		return
+	var posts := line_posts.filter(func(post: Node3D) -> bool:
+		return str(post.get_meta("faction", "")) == faction)
+	var count := mini(posts.size(), roundi(army.size() * world.line_share))
+	var free: Array = army.filter(func(bot: Actor) -> bool:
+		return str(bot.get_meta("kind", "")) not in world.elite_kinds)
+	var manned := {}
+	for bot: Actor in free:
+		if manned.size() < count and _line_of.has(bot) and not manned.has(_line_of[bot]):
+			manned[_line_of[bot]] = bot
+	for bot: Variant in _line_of.keys():
+		if not manned.has(_line_of[bot]) or manned[_line_of[bot]] != bot:
+			_line_of.erase(bot)
+	for post: Node3D in posts:
+		if manned.size() >= count:
+			break
+		if manned.has(post):
+			continue
+		var best: Actor = null
+		for bot: Actor in free:
+			if _line_of.has(bot):
+				continue
+			if best == null or bot.global_position.distance_squared_to(post.global_position) \
+					< best.global_position.distance_squared_to(post.global_position):
+				best = bot
+		if best == null:
+			break
+		manned[post] = best
+		_line_of[best] = post
+	for post: Node3D in manned:
+		var bot: Actor = manned[post]
+		on_line[bot] = true
+		_orders.erase(bot)
+		if (_posted.get(bot, Vector3.INF) as Vector3).distance_to(post.global_position) > 1.0:
+			_posted[bot] = post.global_position
+			(bot.get_node("Brain") as BotBrain).post_to(post.global_position, 4.0)
+
+
+## Whether `faction`'s team sent at `point` should ring it first: a site
+## the other side holds, with enough of them near it.
+func _besieging(faction: String, point: Strongpoint, near: Dictionary) -> bool:
+	if world.siege_time <= 0.0 or point.holder == "" or point.holder == "faction:" + faction:
+		return false
+	var theirs := 0
+	for side: String in near:
+		if side != faction:
+			theirs += int(near[side])
+	return theirs >= world.siege_holders
+
+
+## Where the `index`th of a team of `size` stands in the ring round
+## `point`, on the side the team comes from, spread along an arc.
+func _siege_spot(point: Strongpoint, from: Vector3, index: int, size: int) -> Vector3:
+	var out := from - point.global_position
+	out.y = 0.0
+	if out.length_squared() < 1.0:
+		out = Vector3.FORWARD
+	var angle := atan2(out.x, out.z) + (index - (size - 1) * 0.5) * 0.18
+	var spot := point.global_position + Vector3(sin(angle), 0.0, cos(angle)) * (point.radius + world.siege_reach)
+	if map != null and map.has_method("ground_height"):
+		spot.y = float(map.call("ground_height", spot.x, spot.z))
+	return spot
 
 
 ## A faction's army has a new site to go for: a push, told before it lands
@@ -1167,11 +1282,16 @@ func _army_target(faction: String, held: Array, army: Array) -> Strongpoint:
 	return best
 
 
-func _order(bot: Actor, point: Strongpoint) -> void:
-	if _orders.get(bot) == point:
+## Sends `bot` at `point`: into it, or with `at` set short of it (a siege
+## ring), to hold `radius` round there. A bot already sent there is left
+## alone, so its patrol goes on.
+func _order(bot: Actor, point: Strongpoint, at := Vector3.INF, radius := 0.0) -> void:
+	var spot := point.global_position if at == Vector3.INF else at
+	if _orders.get(bot) == point and (_posted.get(bot, Vector3.INF) as Vector3).distance_to(spot) < 4.0:
 		return
 	_orders[bot] = point
-	(bot.get_node("Brain") as BotBrain).post_to(point.global_position, point.radius)
+	_posted[bot] = spot
+	(bot.get_node("Brain") as BotBrain).post_to(spot, point.radius if at == Vector3.INF else radius)
 
 
 ## Vehicles nobody rides are cleared away, and empty parking spots get a new one.

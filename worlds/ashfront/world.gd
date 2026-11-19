@@ -306,6 +306,11 @@ func _init() -> void:
 	bots_contest_sites = true
 	# Each army remembers who has been killing its soldiers, for one life.
 	grudge_factions.assign(["legion", "tide"])
+	# Battles follow the ground (DESIGN.md "The enemy AI pass", step 4).
+	ground_styles = GROUND_STYLES
+	line_share = 0.2
+	siege_time = 40.0
+	elite_kinds.assign(["exo", "walker"])
 	depot_hold_time = 4.0
 	# The PvP world is where blueprints and upgrade data come from.
 	warlord_blueprint_chance = 0.5
@@ -421,6 +426,47 @@ func bot_skill_range(bot: Actor, warlord: bool) -> Vector2:
 	if warlord:
 		return Vector2(0.62, 0.85)
 	return BOT_SKILL[clampi(int(bot.get_meta("zone", 1)), 0, 2)]
+
+
+## How each kind of ground fights (`ground_at`, DESIGN.md "The enemy AI
+## pass", step 4). The rim is quiet patrols that chase little; the open
+## field is where fireteams meet, as they are; a trench line ("line") and a
+## siege ring hold their ground and trade fire from further off; a
+## landmark's defenders keep to it; the Works is close quarters, nearer and
+## quicker to react; the Foundry, fought over by elites in a hot war,
+## hunts harder.
+const GROUND_STYLES := {
+	"rim": {"hunters": -1, "leash": 22.0},
+	"field": {},
+	"line": {"range": 1.4, "leash": 8.0, "hunters": -2},
+	"front": {"range": 1.2, "leash": 16.0},
+	"siege": {"range": 1.3, "leash": 12.0},
+	"landmark": {"leash": 24.0},
+	"works": {"range": 0.55, "leash": 26.0, "notice": 0.85},
+	"foundry": {"hunters": 1},
+}
+## How near a trench line counts as the front.
+const FRONT_REACH := 9.0
+
+
+## The kind of ground at a point: the Works, the Foundry, a landmark, the
+## front's trenches, the rim or the open field.
+func ground_at(pos: Vector3) -> String:
+	var at := Vector2(pos.x, pos.z)
+	if absf(at.x) < MapScript.WORKS_REACH + 2.0 and at.y > MapScript.WORKS_TO - 2.0 \
+			and at.y < MapScript.WORKS_FROM + 2.0:
+		return "works"
+	if at.length() <= MapScript.CORE_RADIUS:
+		return "foundry"
+	for site: Dictionary in MapScript.SITES:
+		if site["kind"] != "foundry" and at.distance_to(site["at"]) <= float(site["radius"]) * 1.4:
+			return "landmark"
+	for index: int in MapScript.FRONT_LINES:
+		var line: Array = MapScript.TRENCHES[index]
+		for i in line.size() - 1:
+			if at.distance_to(Geometry2D.get_closest_point_to_segment(at, line[i], line[i + 1])) < FRONT_REACH:
+				return "front"
+	return "rim" if zone_at(pos) == 0 else "field"
 
 
 ## Risk zones by distance from the middle of the field.
