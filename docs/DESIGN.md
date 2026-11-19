@@ -1076,8 +1076,12 @@ type's storm mood), snow, blue ice and banded rock on the valley's ground
 and rocks, and the Glacier's land and peaks past the walls to the horizon
 (raised at the map's edge to meet its mountains; the planet's boulders and
 shards only up past the rim, out of the fight). The cold, the still air's
-carry and the snow and ice grip stay Frostline's own. Ashfront moves in
-its own PR.
+carry and the snow and ice grip stay Frostline's own. Ashfront stands on
+the Ashland: its sky, light and ash-storm mood (the war mood is Ashfront's
+own), the Ashland's burnt ground and glowing cracks on the field, and its
+land and mountains past the rim to the horizon, kept low near the map so
+the skyline, the giants and the burning ring stand on it; the planet's
+rocks only on the rim's slope and past it, out of the fight.
 
 ## 3. The watch
 
