@@ -586,6 +586,27 @@ func bot_skill_range(_bot: Actor, warlord: bool) -> Vector2:
 
 ## The risk zone at a point: 0 the outer ring, 1 the middle, 2 the core, or
 ## -1 for a world without zones.
+## The colour a bot faction wears on the plaza's War Room (its landmarks,
+## its side of the front line). Plain worlds get one from the faction's name.
+func faction_color(faction: String) -> Color:
+	if faction == "":
+		return Color(0.6, 0.65, 0.7)
+	return Color.from_hsv(float(hash(faction) % 360) / 360.0, 0.6, 0.95)
+
+
+## Big moments a world keeps on the wall clock rather than in its `Raid`
+## (a set piece every screen times the same way), for the War Room: each
+## {kind, text, at (unix seconds)}. None by default.
+func clock_moments(_unix: int) -> Array[Dictionary]:
+	return []
+
+
+## The race circuits the War Room shows from outside (`Race`'s tracks, built
+## from the map's data without the map). None for a world without races.
+func feed_tracks() -> Array[RaceTrack]:
+	return []
+
+
 ## What a bot faction is called in news ("the Legion"), for the war feed's
 ## lines about armies. Plain worlds use the faction's own name.
 func faction_title(faction: String) -> String:
