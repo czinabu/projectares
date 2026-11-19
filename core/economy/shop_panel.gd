@@ -90,10 +90,11 @@ func stash_items() -> Array:
 
 
 ## The tabs on show: the shops (or just the filtered one), then selling.
+## A stall (the back room) is only dealt with at its own counter.
 func tabs() -> Array[String]:
 	var out: Array[String] = []
 	for shop_id in ShopDB.ids():
-		if shop_filter == "" or shop_filter == shop_id:
+		if shop_filter == shop_id or (shop_filter == "" and not ShopDB.shop(shop_id).get("stall", false)):
 			out.append(shop_id)
 	out.append(SELL_TAB)
 	return out
