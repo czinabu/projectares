@@ -6,7 +6,7 @@ extends Node
 ## "Enemy balance"). Every duel of a matchup runs at once, far apart.
 ##
 ##   godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn
-##   ... -- --duels 40 --ranges 12,25 --only raider --world ashfront --seed 1
+##   ... -- --duels 40 --ranges 12,25 --only raider,warlord --world ashfront --seed 1
 ##   ... -- --melee blade_scrap   (the melee bench: the reference fights with
 ##   that blade only, against each type; DESIGN.md "Melee bots")
 ##
@@ -31,6 +31,12 @@ const TARGETS := {
 	"exo_core": {"kind": "exo", "zone": 2, "win": Vector2(0.45, 0.7), "role": "armor that needs a plan"},
 	"walker_middle": {"kind": "walker", "zone": 1, "win": Vector2(0.15, 0.4), "role": "a fight for two players"},
 	"walker_core": {"kind": "walker", "zone": 2, "win": Vector2(0.1, 0.3), "role": "a fight for two players"},
+	# The armies' own kinds (the enemy AI pass, step 3), inside the soldiers' bands.
+	# A marksman is easy up close and wins about half at 50 m (`--ranges 50`).
+	"marksman_outer": {"kind": "marksman", "zone": 0, "win": Vector2(0.85, 1.0), "role": "the Legion's long eye, easy up close"},
+	"marksman_core": {"kind": "marksman", "zone": 2, "win": Vector2(0.75, 1.0), "role": "the Legion's long eye, easy up close"},
+	"runner_outer": {"kind": "runner", "zone": 0, "win": Vector2(0.85, 0.97), "role": "the Tide's first in"},
+	"runner_core": {"kind": "runner", "zone": 2, "win": Vector2(0.65, 0.85), "role": "the Tide's first in"},
 }
 ## Other worlds' enemies, by world id (the enemy AI pass): a "faction" row is
 ## built from that faction's marker, as the map would. Frostline's bands are
@@ -70,7 +76,8 @@ func _ready() -> void:
 	var ranges: Array[float] = []
 	for part in _arg(args, "--ranges", "12,25").split(","):
 		ranges.append(float(part))
-	var only := _arg(args, "--only", "")
+	# One row, or several separated by commas.
+	var only: PackedStringArray = _arg(args, "--only", "").split(",", false)
 	var seed_base := int(_arg(args, "--seed", "1"))
 	_world = Worlds.get_world(_arg(args, "--world", "ashfront"))
 	_targets = WORLD_TARGETS.get(_world.id, TARGETS)
@@ -99,7 +106,7 @@ func _ready() -> void:
 				"on" if BotBrain.ration_attacks else "off"))
 		var g_off := 0
 		for type: String in GROUP_TYPES.get(_world.id, GROUP_TYPES["ashfront"]):
-			if only != "" and type != only:
+			if not only.is_empty() and not only.has(type):
 				continue
 			for size in groups.split(","):
 				for distance in ranges:
@@ -110,7 +117,7 @@ func _ready() -> void:
 		return
 	var off := 0
 	for type: String in _targets:
-		if only != "" and type != only:
+		if not only.is_empty() and not only.has(type):
 			continue
 		for distance in ranges:
 			var result: Dictionary = await _matchup(type, distance, duels, seed_base * 1000 + off)

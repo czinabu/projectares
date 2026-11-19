@@ -228,6 +228,9 @@ var return_fire_time := 2.0
 var point_blank := 7.0
 ## Bots on the outer ring hold their cover; further in they also flank.
 var flanks := true
+## How many bots work round one person's flank at once: one, or two for a
+## pincer from both sides (meta "flankers").
+var flankers := 1
 ## A target further off is spotted more slowly: the reaction time grows
 ## to this many times its near value at the edge of sight, and a crouched
 ## target takes `crouch_notice_mult` longer still.
@@ -279,6 +282,14 @@ var suppress_spread_deg := 2.5
 ## Below this share of its health a soldier falls back to its post and only
 ## fights back when pressed (heavier kinds stand their ground).
 var fall_back_below := 0.35
+## A fireteam that has lost this share of itself breaks off: each of the
+## rest falls back to its post for `break_time` (meta "breaks_at"; 0 never).
+## Losses count from when it joined the team (`set_team`, `ally_down`).
+var breaks_at := 0.0
+var break_time := 12.0
+var team_size := 0
+var _allies_lost := 0
+var _broken_left := 0.0
 ## Seconds a bot runs from a grenade or rocket about to burst near it, and
 ## its chance to notice one, from its lowest skill to its highest.
 var dodge_time := 1.0
@@ -360,6 +371,16 @@ func _ready() -> void:
 		far_notice_mult = float(actor.get_meta("far_notice"))
 	# How it fires ("burst": seconds on the trigger, seconds off): a slow,
 	# steady gun keeps its trigger down longer than a rifle's short bursts.
+	# How it fights a doctrine (the enemy AI pass, step 3): the distance it
+	# keeps ("range"), how badly hurt before it falls back ("fall_back"),
+	# how many more of it may hunt one person ("hunters", added to the
+	# ring's), a pincer ("flankers") and when its team breaks ("breaks_at").
+	if actor.has_meta("range"):
+		preferred_range = float(actor.get_meta("range"))
+	if actor.has_meta("fall_back"):
+		fall_back_below = float(actor.get_meta("fall_back"))
+	flankers = int(actor.get_meta("flankers", 1))
+	breaks_at = float(actor.get_meta("breaks_at", 0.0))
 	if actor.has_meta("burst"):
 		var burst: Vector2 = actor.get_meta("burst")
 		burst_time = burst.x
@@ -380,6 +401,10 @@ func _ready() -> void:
 	# A world may hold a kind to fewer shooters at one person ("slots").
 	if actor.has_meta("slots"):
 		attack_slots = int(actor.get_meta("slots"))
+	max_hunters += int(actor.get_meta("hunters", 0))
+	# A kind that dash-strikes whatever its ring ("dash", a chance).
+	if actor.has_meta("dash"):
+		dash_chance = float(actor.get_meta("dash"))
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 
@@ -451,6 +476,8 @@ func _physics_process(delta: float) -> void:
 		if not _falling_back and not uses_kit and _stands_ground() == false \
 				and actor.health.health < actor.health.max_health * fall_back_below:
 			_falling_back = true
+		if _broken_left > 0.0:
+			_broken_left -= 0.2
 
 	if _dodge_left > 0.0:
 		_dodge_left -= delta
@@ -592,7 +619,8 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 		return
 	_aim_gun(cmd, eye, chest, dist, delta)
 	_combat_hop(cmd, delta)
-	if _falling_back and dist > point_blank and not (_hit_by == target and _since_hit() < return_fire_time):
+	if (_falling_back or _broken_left > 0.0) and dist > point_blank \
+			and not (_hit_by == target and _since_hit() < return_fire_time):
 		_fall_back(cmd, delta)
 		return
 	var my_turn := _may_attack(dist)
@@ -974,7 +1002,7 @@ func _plan_search() -> void:
 	var drift := Vector3(_last_vel.x, 0.0, _last_vel.z).limit_length(6.0)
 	var guess := _last_seen + drift
 	if _contact_person and flanks and SquadBoard.flank(_contact_id, get_instance_id(),
-			Engine.get_physics_frames(), 6.0):
+			Engine.get_physics_frames(), 6.0, flankers):
 		var off := actor.global_position - guess
 		off.y = 0.0
 		if off.length() > 0.5:
@@ -1086,6 +1114,31 @@ func _fall_back(cmd: ActorCommand, delta: float) -> void:
 		_move_toward(cmd, _cover, delta, false)
 	else:
 		cmd.crouch = true
+
+
+## Joins fireteam `id` of `size` (the `Raid`'s orders); a new team starts
+## counting its losses afresh.
+func set_team(id: int, size: int) -> void:
+	if id != team:
+		_allies_lost = 0
+	team = id
+	team_size = size
+
+
+## One of its fireteam fell. A team that breaks (`breaks_at`) falls back
+## once it has lost that share of itself.
+func ally_down() -> void:
+	if team == 0 or breaks_at <= 0.0 or uses_kit:
+		return
+	_allies_lost += 1
+	if _broken_left <= 0.0 and _allies_lost >= maxi(1, ceili(team_size * breaks_at)):
+		_broken_left = break_time
+		_allies_lost = 0
+
+
+## Broken off from a fight its team was losing (`ally_down`).
+func is_broken() -> bool:
+	return _broken_left > 0.0
 
 
 ## A grenade or rocket about to burst near the bot: it runs (`_dodge`). A
@@ -1585,7 +1638,7 @@ func _wait_turn(cmd: ActorCommand, delta: float, dist: float) -> void:
 		_cover = _find_cover(false)
 		if not _cover.is_finite() and flanks and _may_close(target.global_position) \
 				and (not _contact_person or SquadBoard.flank(_contact_id, get_instance_id(),
-					Engine.get_physics_frames(), 4.0)):
+					Engine.get_physics_frames(), 4.0, flankers)):
 			_cover = _flank_point(dist)
 	if _cover.is_finite() and _flat_dist(_cover) > 1.0:
 		_move_toward(cmd, _cover, delta, false)
@@ -1694,7 +1747,13 @@ func _flank_point(dist: float) -> Vector3:
 	off.y = 0.0
 	if off.length() < 0.1:
 		off = Vector3.FORWARD
-	var turn := deg_to_rad(50.0) * (1.0 if _rng.randf() < 0.5 else -1.0)
+	var side := 1.0 if _rng.randf() < 0.5 else -1.0
+	if flankers > 1 and _contact_person:
+		# A pincer: the flankers come round both sides.
+		var taken := SquadBoard.flank_side(_contact_id, get_instance_id())
+		if taken != 0:
+			side = float(taken)
+	var turn := deg_to_rad(50.0) * side
 	var reach := clampf(dist, preferred_range * 0.8, attack_range * 0.8)
 	return target.global_position + off.normalized().rotated(Vector3.UP, turn) * reach
 

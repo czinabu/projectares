@@ -386,7 +386,14 @@ without Caleb, and update the gap list when a PR closes a row.
   A world caps rare kinds with `WorldDef.bot_allowed` (authority only: the
   `Raid` rolls a turned-away bot again from a new seed, so clients only hear
   of the kept seed). Ashfront's kinds (meta "kind": soldier, heavy, exo,
-  walker; DESIGN.md "Heavy units") come from the seed in `equip_bot`; a big
+  walker, and each army's own, the Legion marksman and the Tide runner;
+  DESIGN.md "Heavy units", "The enemy AI pass") come from the seed in
+  `equip_bot`, and each army fights its own way (`DOCTRINE`, as metas:
+  "range" the distance it keeps, "fall_back", "hunters" added to the
+  ring's, "flankers" 2 for a pincer from both sides, `SquadBoard.flank`'s
+  cap, and "breaks_at", the share of its fireteam lost before the rest
+  break off, counted by `BotBrain.set_team` and `ally_down`, which the
+  `Raid` calls on a death, `_tell_team`); a big
   body is `Actor.set_stand_height` (capsule, hit tests and eyes follow
   `body_height()`), a weak spot `Actor.rear_damage_mult`, and a gun that
   must hold a lock first `BotBrain.lock_time` (meta "lock_time"), whose

@@ -1054,7 +1054,7 @@ plan in five steps (the plan doc, "Enemy AI pass: a plan per world"):
    head. Ferals hunt in packs of 3 to 5 that follow tracks, grow bolder
    against someone shivering or alone, and never enter a heater's or a
    beacon's ring. About 18 to 24 bots, packs a little bigger against a group.
-3. **Ashfront's armies fight differently.** The Legion holds ground
+3. **Ashfront's armies fight differently (built).** The Legion holds ground
    (rifles from cover at 30 to 60 m, a marksman per fireteam, more exos);
    the Tide swarms (blades and runners, closes to 10 to 25 m, pincers,
    breaks off when it loses a third). Two new kinds: the Legion marksman
@@ -1102,6 +1102,25 @@ three wins every fight in the open, so the grid is something you go round,
 take apart one at a time from cover, or cross with a squad. The battle
 bench on Frostline (60 bots, 16 players): 5.2 ms a tick, and 76 stuck
 bot-windows against 107 before step 2, most of them up the glacier head.
+
+**Ashfront after step 3 (30 duels a row).** Each army's way of fighting is
+`DOCTRINE` in `worlds/ashfront/world.gd`, set on its bots as metas. Legion
+riflemen keep 30 m off and see 48 m, one rifleman in eight to five is a
+**Legion Marksman** (a 50-54 damage rifle firing single aimed rounds out
+to 70 m, plain soldier health), and the Legion fields a third more exos
+and fewer blades. Tide riflemen close to 10 m, two of the Tide work round
+a person at once from both sides (a pincer, `SquadBoard.flank`'s cap and
+`flank_side`), one more of it may hunt a person, and a fireteam that loses
+a third of itself breaks off for 12 s (`BotBrain.set_team`, `ally_down`,
+told by `Raid._tell_team`). The Tide fields a third more blades and its
+**Tide Runner**, one rifleman in seven to four: fast (10.5 m/s), 150-175
+health and a quick hooked knife that dash-strikes the last metres. A
+warlord drops its army's doctrine. 23 of 28 rows sit in their bands; the
+four edge rows of the baseline are still on the edge, plus a core runner
+at 12 m (90%, band 65-85) and a core soldier at 12 m (87%, where a Legion
+rifleman now steps back). A marksman is easy up close (83-97%) and wins
+about half its duels at 50 m. The battle bench: 9.8 ms a tick, 46 stuck
+bot-windows.
 
 ### Army commanders
 

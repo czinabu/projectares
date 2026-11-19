@@ -11,6 +11,8 @@ const KIT: Array[String] = ["rifle_scrap", "blade_scrap"]
 static func run(t: Node) -> void:
 	_smoke_shape(t)
 	await _smoke_hides(t)
+	_pincer_and_break(t)
+	await _doctrines(t)
 
 
 static func _smoke_shape(t: Node) -> void:
@@ -79,7 +81,14 @@ static func _smoke_hides(t: Node) -> void:
 	eyed.add_child(sharp)
 	t.check(sharp.sight_range == 72.0 and sharp.fov_deg == 90.0 and sharp.attack_range == 60.0
 			and sharp.far_notice_mult == 2.2, "a world can give a kind its own senses")
-	t.check(brain.sight_range == 38.0, "and a kind it gives none keeps the usual")
+	var plain := raid.spawn_bot("Plain", raid._stand(spot + Vector3(-30, 0, 0)), 7, false, "legion", 1)
+	for key in ["sight", "fov", "reach", "far_notice", "range"]:
+		plain.remove_meta(key)
+	var usual := BotBrain.new()
+	usual.name = "Brain"
+	plain.add_child(usual)
+	t.check(usual.sight_range == 38.0 and usual.preferred_range == 14.0,
+			"and a kind it gives none keeps the usual")
 	raid.queue_free()
 	await t.frames(2)
 	# Frostline's factions build from their markers, for the duel bench.
@@ -134,4 +143,99 @@ static func _smoke_hides(t: Node) -> void:
 	t.check(hunter.state == BotBrain.State.CHASE and hunter._last_seen.distance_to(mark_at) < 1.0,
 			"a Feral that finds fresh tracks follows them to the mark, not to the person")
 	frost.queue_free()
+	await t.frames(2)
+
+
+static func _pincer_and_break(t: Node) -> void:
+	print("Enemy AI: Ashfront's doctrines")
+	SquadBoard.clear()
+	var who := 4242
+	t.check(SquadBoard.flank(who, 1, 0, 4.0, 2) and SquadBoard.flank(who, 2, 0, 4.0, 2)
+			and not SquadBoard.flank(who, 3, 0, 4.0, 2), "a pincer takes two flankers, and only two")
+	t.check(SquadBoard.flank_side(who, 1) == -SquadBoard.flank_side(who, 2) and SquadBoard.flank_side(who, 3) == 0,
+			"and they come round opposite sides")
+	SquadBoard.clear()
+	var brain := BotBrain.new()
+	brain.breaks_at = 0.33
+	brain.set_team(7, 3)
+	brain.ally_down()
+	t.check(brain.is_broken(), "a team of three that loses one breaks off")
+	var steady := BotBrain.new()
+	steady.set_team(7, 3)
+	steady.ally_down()
+	steady.ally_down()
+	t.check(not steady.is_broken(), "a team with no breaking point fights on")
+	var big := BotBrain.new()
+	big.breaks_at = 0.33
+	big.set_team(9, 6)
+	big.ally_down()
+	t.check(not big.is_broken(), "a team of six shrugs off one loss")
+	big.set_team(10, 6)
+	big.ally_down()
+	t.check(not big.is_broken(), "and a new team counts afresh")
+	brain.free()
+	steady.free()
+	big.free()
+
+
+static func _doctrines(t: Node) -> void:
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(Worlds.get_world("ashfront"), 73)
+	var kinds := {}
+	var legion_range := true
+	var tide_close := true
+	for i in 400:
+		var faction := "legion" if i % 2 == 0 else "tide"
+		var bot := raid.spawn_bot("K%d" % i, Vector3(0, -400, 0), 1000 + i, false, faction, 1 + i % 2)
+		var kind := str(bot.get_meta("kind", ""))
+		kinds["%s:%s" % [faction, kind]] = bot
+		if kind == "soldier":
+			if faction == "legion":
+				legion_range = legion_range and float(bot.get_meta("range")) >= 30.0
+			else:
+				tide_close = tide_close and float(bot.get_meta("range")) <= 12.0 \
+						and int(bot.get_meta("flankers")) == 2 and float(bot.get_meta("breaks_at")) > 0.0
+	t.check(legion_range, "Legion riflemen hold their distance")
+	t.check(tide_close, "Tide riflemen close in, pincer and break")
+	var marksman: Actor = kinds.get("legion:marksman")
+	t.check(marksman != null and not kinds.has("tide:marksman"), "the Legion fields marksmen, the Tide none")
+	if marksman:
+		var rifle := marksman.get_active_weapon() as Gun
+		t.check(rifle != null and rifle.damage > 40.0 and float(marksman.get_meta("sight")) > 60.0,
+				"a marksman sees far and hits hard")
+	var runner: Actor = kinds.get("tide:runner")
+	t.check(runner != null and not kinds.has("legion:runner"), "the Tide fields runners, the Legion none")
+	if runner:
+		t.check(runner.get_active_weapon() is MeleeWeapon and runner.sprint_speed > 9.0
+				and runner.health.max_health < 200.0, "a runner is quick, lighter than a heavy and carries a knife")
+	# The mix leans each army's way: more exos in the Legion, more blades in the Tide.
+	var legion_exo := 0
+	var tide_exo := 0
+	var legion_blade := 0
+	var tide_blade := 0
+	for i in 600:
+		var faction := "legion" if i % 2 == 0 else "tide"
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 5000 + i
+		var dummy := Actor.new()
+		dummy.faction = faction
+		dummy.set_meta("zone", 2)
+		raid.world.equip_bot(dummy, rng)
+		var kind := str(dummy.get_meta("kind"))
+		if kind == "exo":
+			if faction == "legion":
+				legion_exo += 1
+			else:
+				tide_exo += 1
+		if kind in ["heavy", "runner"]:
+			if faction == "legion":
+				legion_blade += 1
+			else:
+				tide_blade += 1
+		dummy.free()
+	t.check(legion_exo > tide_exo and tide_blade > legion_blade * 2,
+			"the Legion brings more exos, the Tide more blades (%d/%d exos, %d/%d blades)"
+			% [legion_exo, tide_exo, legion_blade, tide_blade])
+	raid.queue_free()
 	await t.frames(2)

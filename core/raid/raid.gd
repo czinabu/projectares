@@ -1041,7 +1041,7 @@ func _tick_orders(delta: float) -> void:
 					strength[point][bot.faction] = int(strength[point].get(bot.faction, 0)) + 1
 			# A soldier falling back to its post is left to it.
 			var brain := bot.get_node("Brain") as BotBrain
-			if float(_busy_until.get(bot, 0.0)) > clock or brain._falling_back:
+			if float(_busy_until.get(bot, 0.0)) > clock or brain._falling_back or brain.is_broken():
 				continue
 			if not armies.has(bot.faction):
 				armies[bot.faction] = []
@@ -1061,9 +1061,14 @@ func _tick_orders(delta: float) -> void:
 				world.garrison_size, teams, first)
 		first += 100
 		var pushing := {}
+		var sizes := {}
+		for bot: Actor in orders:
+			var id := int(teams.get(bot, 0))
+			sizes[id] = int(sizes.get(id, 0)) + 1
 		for bot: Actor in orders:
 			_order(bot, orders[bot])
-			(bot.get_node("Brain") as BotBrain).team = int(teams.get(bot, 0))
+			var id := int(teams.get(bot, 0))
+			(bot.get_node("Brain") as BotBrain).set_team(id, int(sizes[id]) if id != 0 else 0)
 			if teams.has(bot):
 				if not pushing.has(orders[bot]):
 					pushing[orders[bot]] = []
@@ -3549,6 +3554,7 @@ func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3,
 
 func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	world.on_death(actor, info)
+	_tell_team(actor)
 	var drops := actor.get_drop_items()
 	if state_for(actor) != null and world.keep_gear_on_death:
 		# A gentler world: a player's equipped gear goes home, not in the bag.
@@ -4229,3 +4235,23 @@ class PlayerState:
 	var end_note := {}
 	## Seconds held in a strongpoint of their side not yet counted.
 	var held_for := 0.0
+
+
+## A bot of a fireteam fell: the rest of its team hear of it
+## (`BotBrain.ally_down`, which breaks a team that has lost too many).
+## Authority only; one scan of the bots a death.
+func _tell_team(dead: Actor) -> void:
+	if mode == Mode.CLIENT or not dead.has_node("Brain"):
+		return
+	var team := (dead.get_node("Brain") as BotBrain).team
+	if team == 0:
+		return
+	for other: Variant in bots:
+		if not is_instance_valid(other) or other == dead:
+			continue
+		var bot := other as Actor
+		if bot.is_dead or bot.faction != dead.faction or not bot.has_node("Brain"):
+			continue
+		var brain := bot.get_node("Brain") as BotBrain
+		if brain.team == team:
+			brain.ally_down()
