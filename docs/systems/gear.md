@@ -37,8 +37,13 @@ date in the same PR.
   (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
-  full bar, climbing 1.3x and boosting 2.5x the heat, a 40 m ceiling,
-  steady aim), but slow across the map, loud and clumsy under a roof;
+  full bar, climbing 1.3x the heat, a 40 m ceiling, steady aim), its prone
+  boost its travel (Caleb's call: 0.7x, about 10 s and 170 m a bar, a climb
+  in it costs the climb's heat) paid for in the fight, not in heat: aim or
+  the trigger held brings you upright into a hover (`Actor._wants_boost`,
+  `_boost_flare`, the jets held while the trigger is) and a gun waits out
+  `sprint_out_time` as out of a sprint, and free look (E) holds the boost's
+  heading (`_boost_yaw`) like the wings'; it is loud and clumsy under a roof;
   the boots are ground agility and stealth: no heat, `max_charges` pay for
   kicks and dashes, a short skim (`skim_time`), faster on foot
   (`ground_speed_mult`), no fall damage, a graze window on every dash
@@ -91,7 +96,9 @@ date in the same PR.
   added on top of the rig's own flight and taken back off, so a glide or a
   cruise carries on after it. Q and E fly nothing (Caleb's call); E holds free look.
   The body's attitude in the air (flat, banked, leaning, barrel rolled by a
-  sideways air dash) is the skin's job (`ActorSkin._update_glide`), read
+  sideways air dash) is the skin's job (`ActorSkin._update_glide`; a boost's
+  prone pose eases in and out by `boost_ease`, so coming upright into a
+  hover never snaps, Caleb's feedback), read
   from velocity and the simulated actor only, so remote players match. Boots
   show their thrust (`ActorSkin._update_boot_thrust`): the body leans into
   the push (gravity, drag and speeding up), the legs and swivelling flames

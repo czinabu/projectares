@@ -74,7 +74,8 @@ static func _until(t: Node, done: Callable, limit: float) -> float:
 
 
 ## Jetpack: hover 8 s on a full bar, climb at 8 m/s on 1.3x heat, a boost
-## burns out in about 3 s on 2.5x, and the ground cools it in 4 s.
+## lasts about 10 s on 0.7x (travel, no shooting from it), and the ground
+## cools it in 4 s.
 static func _test_jetpack(t: Node) -> void:
 	var arena := _arena(t, Vector3(0, 0, 9000))
 	var p := _actor(arena, ["jetpack_mk1"])
@@ -107,21 +108,95 @@ static func _test_jetpack(t: Node) -> void:
 	var climb_rate := (f.heat - heat)
 	t.check(absf(rise - 8.0) < 0.3 and absf(climb_rate - f.heat_per_sec * 1.3) < 0.5,
 			"climbing rises at %.1f m/s for 1.3x the heat (%.1f a second)" % [rise, climb_rate])
-	# Boosting: 2.5x, so a long boost overheats in about 3 s.
+	# Boosting is the jetpack's travel (Caleb's call): 0.7x, so a bar lasts
+	# about 10 s prone (the Shift press's air dash takes its bit first) and
+	# carries you about 170 m, level.
 	p.cmd.jump = false
+	p.cmd.secondary = false
 	f.heat = 0.0
+	p.velocity = Vector3.ZERO
 	p.cmd.move = Vector2(0, 1)
 	p.cmd.sprint = true
 	p.cmd.sprint_pressed = true
 	await t.frames(1)
 	p.cmd.sprint_pressed = false
-	var boost := await _until(t, func() -> bool: return f.overheated, 10.0)
-	t.check(f.is_boosting or f.overheated, "Shift boosts the jetpack")
-	# The Shift press that starts it is also an air dash, for its own heat.
-	t.check(boost > 2.5 and boost < 4.3, "a held boost overheats in a few seconds (%.1f s)" % boost)
+	t.check(f.is_boosting, "Shift boosts the jetpack")
+	var from := p.global_position
+	var boost := await _until(t, func() -> bool: return f.overheated, 15.0)
+	var carried := Vector2(p.global_position.x - from.x, p.global_position.z - from.z).length()
+	t.check(boost > 9.0 and boost < 10.5, "a held boost lasts about 10 s on a full bar (%.1f s)" % boost)
+	t.check(carried > 150.0 and carried < 190.0, "a full bar of boost carries about 170 m (%.0f m)" % carried)
+	t.check(carried < 556.0 * 0.5, "wings still go further on a flight than a jetpack's bar of boost")
+	await _test_boost_is_travel(t, p)
 	p.cmd = ActorCommand.new()
 	arena.queue_free()
 	await t.frames(2)
+
+
+## Boosts `p` (in the air over its arena) from a cold bar at height.
+static func _start_boost(t: Node, p: Actor) -> void:
+	p.cmd = ActorCommand.new()
+	p.global_position.y = 25.0
+	p.velocity = Vector3.ZERO
+	p.flight.heat = 0.0
+	p.flight.overheated = false
+	await t.frames(2)
+	p.cmd.move = Vector2(0, 1)
+	p.cmd.sprint = true
+	p.cmd.sprint_pressed = true
+	await t.frames(1)
+	p.cmd.sprint_pressed = false
+	await t.frames(60)
+
+
+## No shooting from a boost (Caleb's call): aim or the trigger brings you
+## upright into a hover first, and the gun waits out the sprint's beat.
+## Free look holds the boost's heading while the view looks round.
+static func _test_boost_is_travel(t: Node, p: Actor) -> void:
+	var f := p.flight
+	if p.get_active_weapon() == null:
+		p._draw_weapon(p.weapon_for_key(2))
+	await t.frames(30)
+	var gun := p.get_active_weapon() as Gun
+	t.check(gun != null, "the pilot holds a gun")
+	if gun == null:
+		return
+	await _start_boost(t, p)
+	t.check(f.is_boosting, "boosting again")
+	p.cmd.secondary = true
+	await t.frames(1)
+	t.check(not f.is_boosting and f.is_hovering, "aiming in a boost brings you upright into a hover")
+	await t.frames(30)
+	t.check(f.is_hovering and absf(p.velocity.y) < 1.0, "and the jets hold you there while aim is held")
+	await _start_boost(t, p)
+	var rounds := gun.ammo_in_mag
+	p.cmd.primary = true
+	p.cmd.primary_pressed = true
+	await t.frames(1)
+	p.cmd.primary_pressed = false
+	t.check(not f.is_boosting and f.is_hovering, "pulling the trigger in a boost brings you upright into a hover")
+	t.check(gun.ammo_in_mag == rounds, "the gun does not fire straight out of a boost")
+	await t.frames(int(p.sprint_out_time * Engine.physics_ticks_per_second) + 4)
+	t.check(gun.ammo_in_mag < rounds, "the pull is kept and fires once the beat is out")
+	await t.frames(20)
+	t.check(f.is_hovering, "the jets hold you up while the trigger stays held")
+	p.cmd.sprint = false
+	p.cmd.primary = false
+	await t.frames(2)
+	t.check(not f.is_hovering, "letting go of the trigger (Shift let go) puts the jets out")
+	# Free look: the boost flies on its heading while the view turns away.
+	await _start_boost(t, p)
+	var ahead := Vector2(p.velocity.x, p.velocity.z).normalized()
+	p.cmd.free_look = true
+	p.cmd.yaw += PI / 2.0
+	await t.frames(60)
+	var now := Vector2(p.velocity.x, p.velocity.z).normalized()
+	t.check(f.is_boosting and now.dot(ahead) > 0.99, "free look holds the boost's heading while the view looks round")
+	p.cmd.free_look = false
+	await t.frames(120)
+	var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
+	now = Vector2(p.velocity.x, p.velocity.z).normalized()
+	t.check(now.dot(Vector2(view.x, view.z)) > 0.95, "let go, the boost comes round onto the view")
 
 
 ## Wings: 25 s of glide stamina that refills on the ground only (in about

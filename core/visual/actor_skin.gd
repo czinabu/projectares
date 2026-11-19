@@ -144,6 +144,10 @@ var hover_lean := 0.45
 ## How far a jetpack boost leans the body in as it sets off (radians from
 ## upright); it lies flat once at full boost speed.
 var boost_start_lean := 0.5
+## How fast the body goes in and out of a boost's prone pose (a share a
+## second, eased at both ends): out of a boost into a hover it rises from
+## flat to the hover's lean over about half a second, never in a snap.
+var boost_ease := 2.2
 ## A sideways air dash while flat rolls the body once round its own length;
 ## after it, the body rights itself at this many radians a second.
 var twist_speed := 7.0
@@ -3468,7 +3472,11 @@ func _update_glide(delta: float) -> void:
 	var alive := not actor.is_dead and actor.vehicle == null
 	var flat := alive and (actor.flight.is_gliding or actor.flight.is_boosting)
 	_glide = move_toward(_glide, 1.0 if flat else 0.0, glide_blend * delta)
-	_boost = move_toward(_boost, 1.0 if alive and actor.flight.is_boosting else 0.0, glide_blend * delta)
+	_boost = move_toward(_boost, 1.0 if alive and actor.flight.is_boosting else 0.0, boost_ease * delta)
+	# Out of a boost the body keeps flying the prone attitude, eased back to
+	# upright by `_boost`, so the hover's lean takes over without a snap.
+	var prone := alive and not actor.flight.is_gliding and _boost > 0.0
+	var prone_w := smoothstep(0.0, 1.0, _boost)
 	var flare := 0.0
 	if alive and actor.flight.is_gliding and actor.velocity.y < 0.0:
 		flare = 1.0 - smoothstep(flare_full, flare_height, actor.height_above_ground(flare_height + 0.5))
@@ -3484,7 +3492,7 @@ func _update_glide(delta: float) -> void:
 	var tilt := Vector3.ZERO
 	var face := 0.0
 	var bank := 0.0
-	if flat:
+	if flat or prone:
 		var path := atan2(actor.velocity.y, maxf(speed, 0.5)) if actor.velocity.length() > 1.0 else 0.0
 		var lie := lerpf(glide_pitch, flare_pitch, smoothstep(0.0, 1.0, _flare))
 		if not actor.flight.is_gliding:
@@ -3503,6 +3511,15 @@ func _update_glide(delta: float) -> void:
 			bank = clampf(atan(speed * rate / 9.8), -max_bank, max_bank)
 		_last_heading = heading
 		_has_heading = speed > 2.0
+		if not actor.flight.is_gliding:
+			# A boost: between the hover's lean (or none) and flat out.
+			var upright := Vector3.ZERO
+			if actor.flight.is_hovering and not actor.flight.is_boosting:
+				var drift := dir if speed > 0.5 else Vector3.FORWARD
+				upright = drift * hover_lean * clampf(speed / maxf(actor.flight.fly_speed, 0.1), 0.0, 1.0)
+			tilt = upright.lerp(tilt, prone_w)
+			face *= prone_w
+			bank *= prone_w
 	else:
 		_has_heading = false
 		if alive and actor.flight.is_hovering:
