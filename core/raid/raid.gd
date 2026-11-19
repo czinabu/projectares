@@ -90,6 +90,10 @@ signal keeper_changed(kind: String, phase: int)
 ## `purges`) warns (1), vents (2) or goes quiet (0). Every machine emits it
 ## (a client from `NetSession`), for the view.
 signal purge_changed(index: int, state: int)
+## A death burst (`WorldDef.death_burst`, the Marsh's bloaters) left a cloud
+## at `at`, `radius` metres round, hanging `seconds`. The authority alone
+## hurts anyone in it (`_tick_clouds`); views show it from this.
+signal cloud_burst(at: Vector3, radius: float, seconds: float, kind: String)
 
 ## Bots never start closer to the player than this, so a raid does not open with a fight.
 const MIN_BOT_SPAWN_DISTANCE := 40.0
@@ -297,6 +301,10 @@ var _boss_party_left := 0.0
 const LINK_EVERY := 1.5
 var _link_next := {}
 var _hazard_in := 0.0
+## Death bursts' clouds (`WorldDef.death_burst`), authority only: each
+## { at, radius, damage, left, kind, faction }, hurting once a second.
+var clouds: Array[Dictionary] = []
+var _cloud_in := 1.0
 ## The map's warmth (heaters, vents; Marker3D in group "warmth") and the
 ## clock for the cold's once-a-second hurt.
 var warmth: Array[Node3D] = []
@@ -512,6 +520,9 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 		grid_called.connect(_show_grid_call)
 	if Look.enabled and not army_pushed.is_connected(_show_push):
 		army_pushed.connect(_show_push)
+	clouds.clear()
+	if Look.enabled and not cloud_burst.is_connected(_show_cloud):
+		cloud_burst.connect(_show_cloud)
 	_assault_in = world.assault_interval
 	_event_in = world.event_interval
 	_raider_in = world.raider_gap
@@ -555,6 +566,8 @@ func _physics_process(delta: float) -> void:
 	_tick_outposts()
 	_tick_piles()
 	_tick_hazards(delta)
+	if not clouds.is_empty():
+		_tick_clouds(delta)
 	if world.shelling > 0.0 and zone_rules:
 		shelling.tick(self, delta)
 	smoke.tick(delta)
@@ -2614,6 +2627,99 @@ func _turn_away(state: PlayerState, gate: Node3D, why: String) -> void:
 	state.refused_at = clock
 
 
+## Leaves a death burst's cloud (`WorldDef.death_burst`) at `at`. Authority
+## only; everyone is told through `cloud_burst`.
+func burst_cloud(at: Vector3, burst: Dictionary, faction: String) -> void:
+	var cloud := {"at": at, "radius": float(burst.get("radius", 4.0)), "damage": float(burst.get("damage", 5.0)),
+			"left": float(burst.get("seconds", 8.0)), "kind": str(burst.get("kind", "spores")), "faction": faction}
+	clouds.append(cloud)
+	cloud_burst.emit(at, cloud.radius, cloud.left, cloud.kind)
+
+
+## Death bursts' clouds hang a while and hurt, once a second, everyone of
+## another faction inside them (players and bots alike) through
+## `Combat.deal`, past armor. Authority only.
+func _tick_clouds(delta: float) -> void:
+	for cloud in clouds:
+		cloud.left = float(cloud.left) - delta
+	clouds = clouds.filter(func(c: Dictionary) -> bool: return float(c.left) > 0.0)
+	_cloud_in -= delta
+	if _cloud_in > 0.0:
+		return
+	_cloud_in = 1.0
+	var hurt: Array = []
+	for state in players:
+		if not state.finished and is_instance_valid(state.actor):
+			hurt.append(state.actor)
+	hurt.append_array(bots)
+	for cloud in clouds:
+		var at: Vector3 = cloud.at
+		var reach: float = cloud.radius
+		for body: Variant in hurt:
+			if not is_instance_valid(body):
+				continue
+			var actor := body as Actor
+			if actor == null or actor.is_dead or (cloud.faction != "" and actor.faction == cloud.faction):
+				continue
+			var centre := actor.global_position + Vector3(0, actor.body_height() * 0.5, 0)
+			if centre.distance_to(at) > reach:
+				continue
+			var info := DamageInfo.new()
+			info.amount = float(cloud.damage)
+			info.kind = str(cloud.kind)
+			info.position = centre
+			info.armor_pierce = 1.0
+			Combat.deal(actor, info)
+
+
+## A death burst's cloud, view only: a slow swell of spores that thins and
+## goes as it runs out.
+func _show_cloud(at: Vector3, radius: float, seconds: float, _kind: String) -> void:
+	# Soft puffs hung through the cloud's ball, low ones more than high, so it
+	# lies on the ground with a ragged edge (`spore_cloud.gdshader`).
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/spore_cloud.gdshader") as Shader
+	mat.set_shader_parameter("tint", Color(CLOUD_COLOR, CLOUD_ALPHA))
+	mat.set_shader_parameter("alpha", 0.0)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0, 2.0)
+	quad.material = mat
+	var puffs := MultiMesh.new()
+	puffs.transform_format = MultiMesh.TRANSFORM_3D
+	puffs.use_custom_data = true
+	puffs.mesh = quad
+	puffs.instance_count = CLOUD_PUFFS
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(Vector3i(at.round()))
+	for i in CLOUD_PUFFS:
+		var dir := Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-0.3, 0.7), rng.randf_range(-1.0, 1.0))
+		var spot := dir.limit_length(1.0) * radius * 0.7
+		var size := radius * rng.randf_range(0.45, 0.75)
+		puffs.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ONE * size), spot))
+		puffs.set_instance_custom_data(i, Color(rng.randf(), radius * 0.12, 0.0, 0.0))
+	var cloud := MultiMeshInstance3D.new()
+	cloud.name = "Cloud"
+	cloud.multimesh = puffs
+	cloud.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	cloud.custom_aabb = AABB(Vector3.ONE * -radius * 1.6, Vector3.ONE * radius * 3.2)
+	add_child(cloud)
+	cloud.global_position = at
+	cloud.scale = Vector3.ONE * 0.4
+	var swell := cloud.create_tween()
+	swell.tween_property(cloud, "scale", Vector3.ONE, 0.8).set_ease(Tween.EASE_OUT)
+	swell.parallel().tween_property(mat, "shader_parameter/alpha", 1.0, 0.8)
+	swell.tween_interval(maxf(seconds - 2.8, 0.1))
+	swell.tween_property(mat, "shader_parameter/alpha", 0.0, 2.0)
+	swell.tween_callback(cloud.queue_free)
+	Fx.ring(self, at, radius, CLOUD_COLOR, 0.9, false)
+	Sfx.play("spore_burst", at, 0.0, 50.0)
+
+
+const CLOUD_COLOR := Color(0.62, 0.85, 0.3)
+const CLOUD_ALPHA := 0.36
+const CLOUD_PUFFS := 22
+
+
 ## Hazard ground (a molten core) drains whoever stands in it, once a second.
 func _tick_hazards(delta: float) -> void:
 	if not zone_rules:
@@ -3698,6 +3804,10 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		actor.hunted_by = ""
 	elif info != null and world.grudge_factions.has(actor.faction):
 		_add_grudge(info.source as Actor, actor.faction, world.grudge_per_kill)
+	if mode != Mode.CLIENT and state_for(actor) == null:
+		var burst := world.death_burst(actor)
+		if not burst.is_empty():
+			burst_cloud(actor.global_position + Vector3(0, 0.6, 0), burst, actor.faction)
 	var drops := actor.get_drop_items()
 	if state_for(actor) != null and world.keep_gear_on_death:
 		# A gentler world: a player's equipped gear goes home, not in the bag.

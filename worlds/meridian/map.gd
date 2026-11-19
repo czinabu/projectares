@@ -71,6 +71,12 @@ const WorksScript := preload("res://worlds/meridian/works.gd")
 ## Half the salt pan's width: past it the dunes rise (`_build_far_land`),
 ## near enough that the works run up into them.
 const GROUND_HALF := 900.0
+## How far the player's view draws here (the map's "view_far" meta, read
+## by `PlayerController._view_far`): the landmarks, the works and the
+## dunes past them from anywhere on either circuit. The camera's own 400 m
+## cut the far side of the salt off (Caleb: "my view distance is not very
+## long"); the fog fades the rest.
+const VIEW_FAR := 1800.0
 ## What the works keep clear of (`works.gd`): [centre, radius, and how far
 ## off trackside fences stay]: the pits and race control, the stands, the
 ## skyline's towers, cranes and booster.
@@ -91,6 +97,10 @@ var _skyhook_track: RaceTrack
 var _skyhook: RefCounted
 var _rng := RandomNumberGenerator.new()
 var _art_rng := RandomNumberGenerator.new()
+
+
+func _init() -> void:
+	set_meta("view_far", VIEW_FAR)
 
 
 func _ready() -> void:

@@ -414,6 +414,10 @@ func _ready() -> void:
 	# A kind that dash-strikes whatever its ring ("dash", a chance).
 	if actor.has_meta("dash"):
 		dash_chance = float(actor.get_meta("dash"))
+	# A world may make a kind feint more than its ring would ("feint_chance":
+	# the marsh's stalkers circle and feint before they strike).
+	if actor.has_meta("feint_chance"):
+		feint_chance = float(actor.get_meta("feint_chance"))
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 
@@ -545,7 +549,7 @@ func _physics_process(delta: float) -> void:
 		_patrol(cmd, delta)
 	# A gun never reloads itself: a bot presses the key like a player.
 	var dry := actor.get_active_weapon() as Gun
-	if dry != null and dry.ammo_in_mag <= 0 and dry.reserve_ammo > 0 and not dry.is_reloading():
+	if dry != null and not dry.is_reloading() and (dry.jammed or (dry.ammo_in_mag <= 0 and dry.reserve_ammo > 0)):
 		cmd.reload_pressed = true
 	if uses_kit:
 		_tend_kit(cmd)
