@@ -777,7 +777,10 @@ func _build_floor() -> void:
 		var z := dens[k]
 		var side := 1.0 if k % 2 == 0 else -1.0
 		var w := half_width(z) * (0.6 if absf(z - LAKE_Z) > LAKE_RADIUS.y else 0.95)
-		_bot_spot(_ground(Vector2(centre(z) + side * w, z)), "feral", 1)
+		# A pack of three to a den, close together, so they set out as one.
+		var den := Vector2(centre(z) + side * w, z)
+		for p in 3:
+			_bot_spot(_ground(den + Vector2(-side * 3.0 * p, (p - 1) * 3.0)), "feral", 1)
 
 
 func _add_rocks(at: Vector2, count: int) -> void:

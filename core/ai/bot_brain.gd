@@ -198,6 +198,20 @@ var _on_target := false
 ## the aim has to stay on a target it can see, from the actor's meta
 ## "lock_time" (0 for none). Breaking the line of sight starts it over.
 var lock_time := 0.0
+## A pack hunter's ways (DESIGN.md "The enemy AI pass"), set by a world with
+## metas: "tracker" follows fresh tracks within that many metres (a trail of
+## places, never where someone is now, through `_sensed`), "preys_on_cold"
+## goes first for someone shivering, and "shuns_warmth" never fights anyone
+## standing in a heater's or a beacon's warmth, nor walks into one.
+var tracker_range := 0.0
+var preys_on_cold := false
+var shuns_warmth := false
+## Seconds a track stays fresh enough to follow, and how often a tracker
+## looks at the ground.
+var track_fresh := 40.0
+var sniff_every := 1.0
+var _sniff_left := 0.0
+var _trail_id := 0
 ## Group fights (DESIGN.md "Group fights", Caleb's call): a person (a
 ## player, or a bot that plays like one) is shot at by only `attack_slots`
 ## army bots at a time. The rest hold off, take cover or work round the
@@ -344,6 +358,15 @@ func _ready() -> void:
 		attack_range = float(actor.get_meta("reach"))
 	if actor.has_meta("far_notice"):
 		far_notice_mult = float(actor.get_meta("far_notice"))
+	# How it fires ("burst": seconds on the trigger, seconds off): a slow,
+	# steady gun keeps its trigger down longer than a rifle's short bursts.
+	if actor.has_meta("burst"):
+		var burst: Vector2 = actor.get_meta("burst")
+		burst_time = burst.x
+		burst_pause = burst.y
+	tracker_range = float(actor.get_meta("tracker", 0.0))
+	preys_on_cold = bool(actor.get_meta("preys_on_cold", false))
+	shuns_warmth = bool(actor.get_meta("shuns_warmth", false))
 	var ring := int(actor.get_meta("zone", 1))
 	attack_slots = RING_SLOTS[clampi(ring, 0, RING_SLOTS.size() - 1)]
 	max_hunters = RING_HUNTERS[clampi(ring, 0, RING_HUNTERS.size() - 1)]
@@ -354,6 +377,9 @@ func _ready() -> void:
 	heavy_feint_chance = RING_HEAVY_FEINT[clampi(ring, 0, RING_HEAVY_FEINT.size() - 1)]
 	melee_dodge_chance = RING_DODGE[clampi(ring, 0, RING_DODGE.size() - 1)]
 	flanks = ring > 0
+	# A world may hold a kind to fewer shooters at one person ("slots").
+	if actor.has_meta("slots"):
+		attack_slots = int(actor.get_meta("slots"))
 	actor.health.damaged.connect(_on_damaged)
 	actor.heard.connect(_on_heard)
 
@@ -420,6 +446,8 @@ func _physics_process(delta: float) -> void:
 		_think_danger()
 		if target == null and _heard_at.is_finite() and state != State.ATTACK:
 			_on_heard(_heard_at, _heard_from)
+		if target == null and tracker_range > 0.0 and state != State.ATTACK:
+			_sniff(0.2)
 		if not _falling_back and not uses_kit and _stands_ground() == false \
 				and actor.health.health < actor.health.max_health * fall_back_below:
 			_falling_back = true
@@ -1136,6 +1164,8 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 	# when the path it has ran out short of it: a search only reaches so far,
 	# and a long march arrives in legs.
 	_repath_left -= delta
+	if shuns_warmth:
+		dest = _outside_warmth(dest)
 	var dir := dest - actor.global_position
 	if _repath_left <= 0.0:
 		var moved := dest.distance_to(_path_to)
@@ -1254,12 +1284,16 @@ func _find_target() -> Actor:
 				_heard_at = other.global_position
 				_heard_from = other
 		var score := dist * (person_bias if person else 1.0) * (0.85 if other == target else 1.0)
+		if preys_on_cold and other.shivering:
+			score *= 0.6
 		if dist >= sight_range or score >= best_score:
 			continue
 		if weather != null and dist >= sight_range * weather.sight_between(eye, chest):
 			continue
 		# Smoke hides a body from a bot as it does from a player's eyes.
 		if raid != null and raid.smoke.blocks(eye, chest):
+			continue
+		if shuns_warmth and raid != null and in_warmth(raid, other.global_position):
 			continue
 		# A Phase Cloak hides all but someone right beside the bot.
 		if other.is_cloaked() and dist > other.artifact.cloak_sense_range:
@@ -1284,6 +1318,71 @@ func _find_target() -> Actor:
 		_heard_at = Vector3.INF
 		_heard_from = null
 	return best
+
+
+## A tracker reads the ground (`tracker_range`): the freshest mark near it
+## that it has not followed yet sends it there, as a place to search, never
+## the person's live position. Who made it is only the contact it is after.
+func _sniff(delta: float) -> void:
+	_sniff_left -= delta
+	if _sniff_left > 0.0:
+		return
+	_sniff_left = sniff_every
+	var raid := Raid.of(actor)
+	if raid == null or not raid.world.tracks:
+		return
+	var newest: Array = []
+	for mark: Array in raid.tracks.near(actor.global_position, tracker_range):
+		if int(mark[0]) <= _trail_id or float(mark[4]) < raid.clock - track_fresh:
+			continue
+		if newest.is_empty() or int(mark[0]) > int(newest[0]):
+			newest = mark
+	if newest.is_empty():
+		return
+	_trail_id = int(newest[0])
+	var at: Vector3 = newest[1]
+	var world := Worlds.of(actor)
+	var maker: Actor = null
+	var best := 40.0
+	for node in get_tree().get_nodes_in_group("actors"):
+		var other := node as Actor
+		if other == null or other.is_dead or other.faction == actor.faction or not is_person(other):
+			continue
+		if not Raid.together(actor, other) or (world and not world.can_damage(actor, other, null)):
+			continue
+		var dist := other.global_position.distance_to(at)
+		if dist < best:
+			best = dist
+			maker = other
+	if maker != null:
+		_sensed(at, maker, false, true)
+
+
+## Whether `at` stands in a heater's, vent's or beacon's warmth.
+static func in_warmth(raid: Raid, at: Vector3) -> bool:
+	for source in raid.warmth:
+		if raid.waits_on_keeper(source):
+			continue
+		var off := at - source.global_position
+		var radius := float(source.get_meta("radius", 4.0))
+		if absf(off.y) < 3.0 and Vector2(off.x, off.z).length_squared() <= radius * radius:
+			return true
+	return false
+
+
+## `dest`, moved out to the edge of any warmth it stands in.
+func _outside_warmth(dest: Vector3) -> Vector3:
+	var raid := Raid.of(actor)
+	if raid == null:
+		return dest
+	for source in raid.warmth:
+		var off := dest - source.global_position
+		var radius := float(source.get_meta("radius", 4.0)) + 1.0
+		var flat := Vector2(off.x, off.z)
+		if absf(off.y) < 3.0 and flat.length_squared() < radius * radius:
+			var out := flat.normalized() if flat.length() > 0.1 else Vector2.RIGHT
+			return Vector3(source.global_position.x + out.x * radius, dest.y, source.global_position.z + out.y * radius)
+	return dest
 
 
 ## How far off a bot hears `other` move (0: silent): an occupied vehicle's

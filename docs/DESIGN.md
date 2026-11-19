@@ -1048,7 +1048,7 @@ plan in five steps (the plan doc, "Enemy AI pass: a plan per world"):
    bench counts stuck bots (pressing to move for five seconds and getting
    nowhere) and prints where; the duel bench measures Frostline's Wardens
    and Ferals (`WORLD_TARGETS`, bands proposed, `--world frostline`).
-2. **Frostline's enemies.** Wardens are the machine you sneak past: long
+2. **Frostline's enemies (built).** Wardens are the machine you sneak past: long
    sight with a slow, visible sweep and a short lock before the first shot,
    lone sentries at the mouth rising to grid posts of three at the glacier
    head. Ferals hunt in packs of 3 to 5 that follow tracks, grow bolder
@@ -1083,6 +1083,25 @@ unevenly: a glacier-head pack of three wins 43-60%, of five 23-33%; two or
 three Wardens still lose to one player, five win 73-87% of the time after
 25 s or more. So step 2 makes the single enemy matter and the grid less of
 a wall of health.
+
+**Frostline after step 2 (30 duels a row).** Everything sits in
+`worlds/frostline/world.gd`'s `WARDEN_*` and `FERAL_*` tables, by zone. A
+Warden sees 70 m in a 100 degree cone, notices the far edge 2.4 times
+slower, holds its beam 0.5 s before it fires ("lock_time", the beam now
+drawn for any gun with one), fires long bursts ("burst") and lets one of a
+post shoot at a time ("slots" 1). A Feral follows fresh tracks within
+26 m ("tracker", `BotBrain._sniff`: to where the mark was laid, never to
+the person), counts a shivering target as nearer ("preys_on_cold") and
+never targets or walks into a heater's or beacon's ring ("shuns_warmth").
+Every den now holds a pack of three, and the valley 22 bots. One enemy
+alone is a stray, and the reference wins 90-100% of those duels
+(the bands). The danger is the group: a pack of three at the mouth wins 3%
+of the time, of five 7-13%; at the glacier head two win 17-40%, three
+53-67% and five 73-93%. Two Wardens at the head win 70-80% and a post of
+three wins every fight in the open, so the grid is something you go round,
+take apart one at a time from cover, or cross with a squad. The battle
+bench on Frostline (60 bots, 16 players): 5.2 ms a tick, and 76 stuck
+bot-windows against 107 before step 2, most of them up the glacier head.
 
 ### Army commanders
 

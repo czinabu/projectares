@@ -420,8 +420,14 @@ without Caleb, and update the gap list when a PR closes a row.
   snapshot when the spotter raises its gun). What they learn is a place,
   never live tracking: a lost contact is searched for (`_lost`) and let go.
   A world gives a kind its own senses with metas set in `equip_bot`
-  ("sight", "fov", "reach", "far_notice"; DESIGN.md "The enemy AI pass"),
-  never a second brain. Smoke hides people from bots as it hides them from
+  ("sight", "fov", "reach", "far_notice"; how it fires, "burst" and
+  "slots"; and how it hunts, "tracker", "preys_on_cold", "shuns_warmth";
+  DESIGN.md "The enemy AI pass"), never a second brain. A tracker follows
+  the freshest mark in `Raid.tracks` near it to where the mark was laid,
+  never to the person (`BotBrain._sniff`, through `_sensed`), and a bot
+  that shuns warmth neither targets anyone in a "warmth" ring nor walks
+  into one (`BotBrain.in_warmth`, `_outside_warmth`). Any gun with a
+  "lock_time" meta draws its tracking beam. Smoke hides people from bots as it hides them from
   eyes: anything a player cannot see through is a cloud in `Raid.smoke`
   (`Smoke.add`, authority only; a shell leaves one), and bot sight asks
   `Smoke.blocks`, never a view.

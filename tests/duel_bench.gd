@@ -34,13 +34,14 @@ const TARGETS := {
 }
 ## Other worlds' enemies, by world id (the enemy AI pass): a "faction" row is
 ## built from that faction's marker, as the map would. Frostline's bands are
-## proposed in the pass's plan, not yet confirmed by Caleb.
+## for one enemy alone, a stray: its danger is the pack or the grid, read
+## from `--group` (the enemy AI pass, step 2).
 const WORLD_TARGETS := {
 	"frostline": {
-		"warden_mouth": {"kind": "warden", "faction": "warden", "zone": 0, "win": Vector2(0.85, 0.95), "role": "a sentry you learn to slip past"},
-		"warden_head": {"kind": "warden", "faction": "warden", "zone": 2, "win": Vector2(0.7, 0.9), "role": "the grid at the glacier head"},
-		"feral_mouth": {"kind": "feral", "faction": "feral", "zone": 0, "win": Vector2(0.85, 0.97), "role": "a stray from a small pack"},
-		"feral_head": {"kind": "feral", "faction": "feral", "zone": 2, "win": Vector2(0.75, 0.92), "role": "one of the big packs"},
+		"warden_mouth": {"kind": "warden", "faction": "warden", "zone": 0, "win": Vector2(0.85, 1.0), "role": "a sentry you learn to slip past"},
+		"warden_head": {"kind": "warden", "faction": "warden", "zone": 2, "win": Vector2(0.8, 1.0), "role": "one post of the grid at the glacier head"},
+		"feral_mouth": {"kind": "feral", "faction": "feral", "zone": 0, "win": Vector2(0.9, 1.0), "role": "a stray from a small pack"},
+		"feral_head": {"kind": "feral", "faction": "feral", "zone": 2, "win": Vector2(0.85, 1.0), "role": "a stray from a big pack"},
 	},
 }
 ## The rows a group fight (`--group`) runs, by world.

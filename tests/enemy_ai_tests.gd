@@ -86,9 +86,52 @@ static func _smoke_hides(t: Node) -> void:
 	var frost := Raid.new()
 	t.add_child(frost)
 	frost.start_server(Worlds.get_world("frostline"), 72)
-	var warden := frost.spawn_bot("W", Vector3(0, 40, 0), 3, false, "warden", 0)
+	for b in frost.bots:
+		b.get_node("Brain").set_physics_process(false)
+		b.set_physics_process(false)
+		b.global_position = Vector3(0, -500, 0)
+	var warden := frost.spawn_bot("W", Vector3(0, 40, 0), 3, false, "warden", 2)
 	var feral := frost.spawn_bot("F", Vector3(5, 40, 0), 4, false, "feral", 2)
 	t.check(warden.faction == "warden" and warden.get_active_weapon() is Gun, "a Warden marker builds a Warden")
 	t.check(feral.faction == "feral" and feral.get_active_weapon() is MeleeWeapon, "a Feral den builds a Feral")
+	print("Enemy AI: Frostline's enemies")
+	t.check(float(warden.get_meta("sight")) > 38.0 and float(warden.get_meta("lock_time")) > 0.0,
+			"a Warden sees far and holds a beam before it fires")
+	var mouth := frost.spawn_bot("W0", Vector3(0, 40, 0), 3, false, "warden", 0)
+	t.check(warden.health.max_health > mouth.health.max_health, "and is tougher at the glacier head than at the mouth")
+	t.check(feral.has_meta("tracker") and feral.has_meta("shuns_warmth"), "a Feral hunts by tracks and keeps out of the warm")
+	var ws := Worlds.get_world("frostline")
+	t.check(ws.bot_count >= 18, "the valley holds packs, not a handful of bots")
+	# A Feral keeps out of the warm: nobody in a heater's ring is its target.
+	var heat: Node3D = null
+	for source in frost.warmth:
+		if not frost.waits_on_keeper(source) and source.global_position.y > -50.0:
+			heat = source
+			break
+	var hiker := frost.add_player(KIT, {}, "Hiker", "hiker")
+	await t.frames(3)
+	hiker.protected_left = 0.0
+	var ring := float(heat.get_meta("radius", 4.0))
+	hiker.global_position = heat.global_position + Vector3(ring * 0.4, 0.2, 0)
+	var stalker := frost.spawn_bot("S", heat.global_position + Vector3(ring + 6.0, 0.6, 0), 9, false, "feral", 1)
+	var hunter := BotBrain.new()
+	hunter.name = "Brain"
+	hunter.seed_value = 9
+	stalker.add_child(hunter)
+	hunter.set_physics_process(false)
+	var toward := hiker.global_position - stalker.global_position
+	stalker.cmd.yaw = atan2(-toward.x, -toward.z)
+	await t.frames(2)
+	t.check(BotBrain.in_warmth(frost, hiker.global_position) and hunter._find_target() == null,
+			"a Feral will not go for someone standing in a heater's warmth")
+	t.check(hunter._outside_warmth(heat.global_position).distance_to(heat.global_position) > ring,
+			"and steps round the ring rather than into it")
+	# A Feral follows fresh tracks to where someone went.
+	hiker.global_position = stalker.global_position + Vector3(0, 0, 40)
+	var mark_at := stalker.global_position + Vector3(0, 0, 12)
+	frost.tracks.add(mark_at, 0.0, Tracks.Kind.LEFT, frost.clock)
+	hunter._sniff(5.0)
+	t.check(hunter.state == BotBrain.State.CHASE and hunter._last_seen.distance_to(mark_at) < 1.0,
+			"a Feral that finds fresh tracks follows them to the mark, not to the person")
 	frost.queue_free()
 	await t.frames(2)
