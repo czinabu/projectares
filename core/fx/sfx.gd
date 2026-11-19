@@ -100,12 +100,17 @@ func _ready() -> void:
 	_streams["war_rumble"] = _rumble_loop(4.0)
 	_streams["far_boom"] = _far_boom(2.6)
 	_streams["far_fire"] = _far_fire(9)
+	# A fighter going over low: a roar that swells and tears away.
+	_streams["jet_pass"] = _jet_pass(3.4)
 	# An army's push on a strongpoint: a long low war horn, heard far off.
 	_streams["war_horn"] = _tones([98.0, 147.0, 196.0], 1.8, 1.4, 0.6)
 	# The war's artillery (`ShellView`): a falling whistle as a shell comes
 	# in, and its blast, a deep crack with a long roll after it.
 	_streams["shell_whistle"] = _sweep(2300.0, 700.0, 1.1, 0.3)
 	_streams["shell_blast"] = _noise_burst(1.6, 3.2, 0.95, 38.0)
+	# A bloater bursting (`Raid.cloud_burst`): a wet, soft pop with a hiss of
+	# spores after it.
+	_streams["spore_burst"] = _noise_burst(0.9, 5.0, 0.85, 70.0)
 	# The race radio: a short burst of static as a rival keys up.
 	_streams["radio"] = _noise_burst(0.14, 26.0, 0.7, 1300.0)
 	for sound: String in RECORDED:
@@ -516,6 +521,24 @@ func _far_boom(duration: float) -> AudioStreamWAV:
 		var at := int(echo.x * RATE)
 		for i in count - at:
 			samples[at + i] += body[i] * echo.y
+	return _to_stream(samples, false)
+
+
+func _jet_pass(duration: float) -> AudioStreamWAV:
+	var samples := PackedFloat32Array()
+	var count := int(duration * RATE)
+	var low := 0.0
+	var high := 0.0
+	var phase := 0.0
+	for i in count:
+		var p := float(i) / count
+		var noise := _rng.randf_range(-1.0, 1.0)
+		low = lerpf(low, noise, 0.05)
+		high = lerpf(high, noise, lerpf(0.5, 0.18, p))
+		# The engine's whine drops in pitch as it goes by.
+		phase += TAU * lerpf(900.0, 380.0, smoothstep(0.35, 0.65, p)) / RATE
+		var swell := pow(sin(PI * pow(p, 0.7)), 2.0)
+		samples.append((low * 2.2 + high * 0.5 + sin(phase) * 0.12) * swell * 0.55)
 	return _to_stream(samples, false)
 
 

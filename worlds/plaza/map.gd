@@ -956,7 +956,9 @@ func _build_clan_hall() -> void:
 
 
 ## The big screen over tiers of seats, where people gather to watch how the
-## worlds are doing. What plays on it comes later.
+## worlds are doing: the War Room. What plays on it is `WarRoom`'s (view
+## only, on the "screen_wall" node). The console in front of it picks a
+## world to see on the screen and deploy to (its "war_room" portal).
 func _build_screen() -> void:
 	var wall_at := SCREEN_AT
 	_solid(Vector3(40, 16, 3), wall_at + Vector3(0, 8, -1.5), WALL)
@@ -978,6 +980,20 @@ func _build_screen() -> void:
 	for x: float in [-15.5, 15.5]:
 		_part(screen, Vector3(0.2, 11.7, 0.12), Vector3(x, 0, 0.04), CYAN, true)
 	_sign("WAR ROOM", wall_at + Vector3(0, 15.4, 0.2), 0.0, 1.6, Color(0.6, 0.95, 1.0))
+	# The console before the screen, its own screen tipped up to whoever
+	# stands at it, facing the wall.
+	var desk := wall_at + Vector3(0, 0, 7.0)
+	_solid(Vector3(2.6, 1.05, 0.8), desk + Vector3(0, 0.525, 0), DARK)
+	_solid(Vector3(2.7, 0.06, 0.9), desk + Vector3(0, 1.08, 0), STEEL)
+	_part(self, Vector3(2.7, 0.05, 0.06), desk + Vector3(0, 1.1, 0.45), CYAN, true)
+	var portal := _add_portal("war_room", "Use the War Room console", desk + Vector3(0, 0, 2.2), 1.8)
+	var console := Node3D.new()
+	console.name = "Screen"
+	console.position = Vector3(0, 1.62, -2.0)
+	console.basis = Basis(Vector3.RIGHT, -0.35)
+	portal.add_child(console)
+	_part(console, Vector3(1.7, 1.0, 0.06), Vector3(0, 0, -0.04), DARK_GLASS)
+	_part(console, Vector3(1.6, 0.9, 0.01), Vector3.ZERO, CYAN.darkened(0.75), true)
 	# Tiers facing the screen, low enough to step up, a light along each edge.
 	for row in 4:
 		var tier := _tier(row)

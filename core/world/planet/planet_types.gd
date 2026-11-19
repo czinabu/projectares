@@ -326,23 +326,23 @@ static func marsh() -> PlanetType:
 	t.display_name = "Spore Marsh"
 	t.blurb = "Moss and black water under fungal giants that glow at dusk; rain and drifting spores."
 	t.sky = {
-		"zenith_color": Color(0.1, 0.22, 0.26), "horizon_color": Color(0.5, 0.66, 0.6),
-		"horizon_fall": 3.0, "sun_disc": 0.03, "sun_glow": 0.5, "sun_glow_width": 4.0,
-		"cloud_cover": 0.5, "cloud_scale": 0.35, "cloud_color": Color(0.7, 0.82, 0.78),
-		"cloud_shade": Color(0.22, 0.3, 0.32),
+		"zenith_color": Color(0.03, 0.08, 0.09), "horizon_color": Color(0.26, 0.38, 0.32),
+		"horizon_fall": 2.4, "sun_disc": 0.03, "sun_glow": 0.65, "sun_glow_width": 5.0,
+		"cloud_cover": 0.62, "cloud_scale": 0.35, "cloud_color": Color(0.42, 0.52, 0.46),
+		"cloud_shade": Color(0.1, 0.15, 0.15),
 		"body1_dir": Vector3(0.6, 0.38, -0.7), "body1_size": 0.08, "body1_color": Color(0.85, 0.82, 0.7),
 		"body1_band": Color(0.7, 0.66, 0.55), "body1_bands": 0.0, "body1_glow": Color(0.6, 0.9, 0.8),
 		"body2_dir": Vector3(0.35, 0.55, -0.76), "body2_size": 0.035, "body2_color": Color(0.7, 0.85, 0.82),
 		"body_daylight": 0.75, "stars": 0.3,
 	}
 	t.calm = {
-		"sky_tint": Color(1.0, 1.0, 1.0), "sky_energy": 0.9, "sky_saturation": 1.0,
-		"fog_color": Color(0.3, 0.42, 0.4), "fog_density": 0.75,
-		"fog_depth_begin": 40.0, "fog_depth_end": 700.0, "fog_depth_curve": 1.1,
-		"fog_height": 1.0, "fog_height_density": 0.12, "haze_height": 0.2,
-		"sun_color": Color(1.0, 0.82, 0.6), "sun_energy": 1.2, "sun_angles": Vector3(-14, -60, 0),
-		"ambient_color": Color(0.36, 0.5, 0.48), "ambient_energy": 1.2,
-		"exposure": 1.15, "saturation": 1.0, "contrast": 1.12, "glow": 1.1,
+		"sky_tint": Color(0.85, 0.95, 0.9), "sky_energy": 0.75, "sky_saturation": 1.0,
+		"fog_color": Color(0.16, 0.25, 0.22), "fog_density": 0.86,
+		"fog_depth_begin": 12.0, "fog_depth_end": 300.0, "fog_depth_curve": 0.9,
+		"fog_height": 1.5, "fog_height_density": 0.3, "haze_height": 0.35,
+		"sun_color": Color(1.0, 0.72, 0.5), "sun_energy": 1.0, "sun_angles": Vector3(-10, -60, 0),
+		"ambient_color": Color(0.26, 0.4, 0.36), "ambient_energy": 1.15,
+		"exposure": 1.15, "saturation": 0.95, "contrast": 1.15, "glow": 1.35,
 	}
 	t.storm = {
 		"sky_tint": Color(0.6, 0.68, 0.68), "sky_energy": 0.6, "sky_saturation": 0.5,
@@ -359,10 +359,11 @@ static func marsh() -> PlanetType:
 	}
 	t.surfaces = {"base": "Grass007", "rock": "Rock060", "cap": "Ground037", "patch": ""}
 	t.ground = {
-		"base_a": Color(0.2, 0.26, 0.15), "base_b": Color(0.12, 0.16, 0.12), "base_rough": 0.9,
-		"rock_a": Color(0.2, 0.2, 0.19), "rock_b": Color(0.1, 0.11, 0.1), "rock_rough": 0.55,
+		# Moss and mud on the flats, the hills dark peat and wet rock at dusk.
+		"base_a": Color(0.14, 0.19, 0.1), "base_b": Color(0.21, 0.14, 0.08), "base_rough": 0.85,
+		"rock_a": Color(0.13, 0.14, 0.13), "rock_b": Color(0.07, 0.08, 0.075), "rock_rough": 0.55,
 		"slope_range": Vector2(0.8, 0.62), "strata_every": 2.0, "strata": 0.3,
-		"cap_color": Color(0.32, 0.42, 0.24), "cap_range": Vector2(20.0, 30.0), "cap_on_slopes": 0.6,
+		"cap_color": Color(0.11, 0.14, 0.1), "cap_range": Vector2(20.0, 30.0), "cap_on_slopes": 0.6,
 		"patch_a": Color(0.03, 0.05, 0.05), "patch_b": Color(0.05, 0.08, 0.07), "patch_amount": 0.75,
 		"patch_edge": 0.03, "patch_low": 1.0, "patch_low_at": -0.6, "patch_wet": 1.0,
 		"bank": 0.8, "bank_width": 0.14, "bank_color": Color(0.28, 0.4, 0.13), "photo_chroma": 0.75,
@@ -375,5 +376,7 @@ static func marsh() -> PlanetType:
 		{"kind": "boulder", "per_ha": 2.5, "size": Vector2(0.6, 2.0), "max_slope": 0.6},
 		{"kind": "crystal", "per_ha": 0.8, "size": Vector2(0.6, 1.6), "max_slope": 0.5, "high": -0.8},
 	]
+	# Mist lying low over the black water, thicker in the rain.
+	t.smoke = {"density": 0.05, "colour": Color(0.5, 0.62, 0.56), "depth": 7.0, "war": 0.0, "storm": 1.2}
 	t.rules = {"cold": 0.0, "surface_grip": 0.8, "shot_carry": 0.85}
 	return t

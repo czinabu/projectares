@@ -75,6 +75,17 @@ new planet is a new folder under `worlds/`.
    worlds and the Marked, by name, clan tag and world, never where they are
    (`Raid.wanted` rides in each world's `world_status`). Kade, the bounty
    broker, stands at it. Arena results and live video are still to come.
+   *Built:* the big screen is the War Room, a live feed of the worlds that
+   the tiers face. It turns through each world's front (the map split by
+   who holds each landmark, so where two colours meet is the front line,
+   with a landmark under attack pulsing), the race world's track camera
+   (its AI races cut between a chase, an overhead and a trackside shot,
+   with the order; exhibition laps, labelled as such, while no race runs)
+   and the worlds at a glance, with big moments (a warlord or boss brought
+   down, a landmark changing hands, the Colossus falling) and who the
+   armies are hunting down the side and each world's news along the
+   bottom. A console in front of it picks a world: its map comes up on
+   the console and on the big screen for you, and you deploy from there.
 2. **Ring races and time trials.** Courses of rings through the hub's
    skyline, one per rig plus a bike course. A cheap, small version of the
    racing mode (section 9) and a place for new players to practise each rig.
@@ -669,6 +680,22 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   bot. A round from the player's own gun through an extra, or a shell
   landing by it, drops it, on that screen only and for nothing. View only:
   no collision, no `Combat.deal`, nothing sent online, none on a server.
+- **The busy low sky (Caleb's call: view only).** Under the flak past the
+  rim, the war is overhead too (`worlds/ashfront/lowsky.gd`, the map's
+  `make_low_sky`). A gunship runs in 60 to 95 m up over one of the scenery
+  army's fights and rakes it with its chin gun in its army's colour,
+  dropping extras where its rounds land, while the fight's tracer comes
+  back up at it in the other army's colour, always missing; it flies on
+  and away. Fighters streak over in pairs, 120 to 200 m up, passing near
+  the war's centre with a roar that swells and tears away. Now and then a
+  dropship is hit over the field and falls burning, trailing smoke, to
+  crash past the rim, where it lies burning a while. A run every 75 s in
+  a quiet war down to every 16 s in all-out war (two at once past 0.6),
+  fighters every 60 s down to 12 s, a falling dropship every 4 minutes
+  down to about one a minute, and none of it starts while a storm hides
+  the sky. A strafe only lands as far from every player and the camera as
+  a scenery fight is placed, and a wreck only comes down past the rim, so
+  none of it is near anyone. View only, like the scenery army.
 - Everything lost on death, but the body drops a scrip pile worth it, not
   the gear itself (section 10, "Scrip piles").
 - The only place heavy weapons are found.
@@ -1066,22 +1093,22 @@ plan in five steps (the plan doc, "Enemy AI pass: a plan per world"):
    bench counts stuck bots (pressing to move for five seconds and getting
    nowhere) and prints where; the duel bench measures Frostline's Wardens
    and Ferals (`WORLD_TARGETS`, bands proposed, `--world frostline`).
-2. **Frostline's enemies.** Wardens are the machine you sneak past: long
+2. **Frostline's enemies (built).** Wardens are the machine you sneak past: long
    sight with a slow, visible sweep and a short lock before the first shot,
    lone sentries at the mouth rising to grid posts of three at the glacier
    head. Ferals hunt in packs of 3 to 5 that follow tracks, grow bolder
    against someone shivering or alone, and never enter a heater's or a
    beacon's ring. About 18 to 24 bots, packs a little bigger against a group.
-3. **Ashfront's armies fight differently.** The Legion holds ground
+3. **Ashfront's armies fight differently (built).** The Legion holds ground
    (rifles from cover at 30 to 60 m, a marksman per fireteam, more exos);
    the Tide swarms (blades and runners, closes to 10 to 25 m, pincers,
    breaks off when it loses a third). Two new kinds: the Legion marksman
    and the Tide runner. Both stay inside the existing bands.
-4. **Ashfront's battles follow the ground.** Quiet patrols at the rim,
+4. **Ashfront's battles follow the ground (built).** Quiet patrols at the rim,
    fireteams meeting in the open field, standing skirmish lines along the
    front lines, sieges at the landmarks, close quarters in the Works, and
    both armies' elites at the Foundry only when the war runs hot.
-5. **Players and the armies.** Each army keeps a grudge against each
+5. **Players and the armies (built).** Each army keeps a grudge against each
    player for one life: damage to it raises it, time lets it fade, death
    clears it. A high grudge sends that army's hunters (inside the existing
    hunter, slot and leash limits) and names you in its callouts; the other
@@ -1101,6 +1128,80 @@ unevenly: a glacier-head pack of three wins 43-60%, of five 23-33%; two or
 three Wardens still lose to one player, five win 73-87% of the time after
 25 s or more. So step 2 makes the single enemy matter and the grid less of
 a wall of health.
+
+**Frostline after step 2 (30 duels a row).** Everything sits in
+`worlds/frostline/world.gd`'s `WARDEN_*` and `FERAL_*` tables, by zone. A
+Warden sees 70 m in a 100 degree cone, notices the far edge 2.4 times
+slower, holds its beam 0.5 s before it fires ("lock_time", the beam now
+drawn for any gun with one), fires long bursts ("burst") and lets one of a
+post shoot at a time ("slots" 1). A Feral follows fresh tracks within
+26 m ("tracker", `BotBrain._sniff`: to where the mark was laid, never to
+the person), counts a shivering target as nearer ("preys_on_cold") and
+never targets or walks into a heater's or beacon's ring ("shuns_warmth").
+Every den now holds a pack of three, and the valley 22 bots. One enemy
+alone is a stray, and the reference wins 90-100% of those duels
+(the bands). The danger is the group: a pack of three at the mouth wins 3%
+of the time, of five 7-13%; at the glacier head two win 17-40%, three
+53-67% and five 73-93%. Two Wardens at the head win 70-80% and a post of
+three wins every fight in the open, so the grid is something you go round,
+take apart one at a time from cover, or cross with a squad. The battle
+bench on Frostline (60 bots, 16 players): 5.2 ms a tick, and 76 stuck
+bot-windows against 107 before step 2, most of them up the glacier head.
+
+**Ashfront after step 3 (30 duels a row).** Each army's way of fighting is
+`DOCTRINE` in `worlds/ashfront/world.gd`, set on its bots as metas. Legion
+riflemen keep 30 m off and see 48 m, one rifleman in eight to five is a
+**Legion Marksman** (a 50-54 damage rifle firing single aimed rounds out
+to 70 m, plain soldier health), and the Legion fields a third more exos
+and fewer blades. Tide riflemen close to 10 m, two of the Tide work round
+a person at once from both sides (a pincer, `SquadBoard.flank`'s cap and
+`flank_side`), one more of it may hunt a person, and a fireteam that loses
+a third of itself breaks off for 12 s (`BotBrain.set_team`, `ally_down`,
+told by `Raid._tell_team`). The Tide fields a third more blades and its
+**Tide Runner**, one rifleman in seven to four: fast (10.5 m/s), 150-175
+health and a quick hooked knife that dash-strikes the last metres. A
+warlord drops its army's doctrine. 23 of 28 rows sit in their bands; the
+four edge rows of the baseline are still on the edge, plus a core runner
+at 12 m (90%, band 65-85) and a core soldier at 12 m (87%, where a Legion
+rifleman now steps back). A marksman is easy up close (83-97%) and wins
+about half its duels at 50 m. The battle bench: 9.8 ms a tick, 46 stuck
+bot-windows.
+
+**Battles by ground (step 4).** Each place fights its own way, set by the
+`Raid` with every round of orders and authority only: `WorldDef.ground_at`
+names the ground a soldier stands on and `ground_styles` lays a style over
+the soldier's own numbers (`BotBrain.set_ground`: the distance it keeps,
+how many may hunt one person, how far it chases, how quick it is to
+notice). On Ashfront (`GROUND_STYLES`) the rim's patrols chase little and
+one fewer hunts a person; the open field is where fireteams meet, as they
+did; a fifth of each army (`line_share`, never its elites) stands in the
+front's trenches on its own half of the field, on the map's "line_post"
+markers on each trench's fire step, a standing skirmish line that keeps
+its post (8 m leash) and fights from 1.4 times its range; a team sent at a
+site the other army holds with two or more near it first rings it from
+22 m past its edge, on the side it came from, for 40 s (`siege_time`,
+`Raid._besieging`, `_siege_spot`) before it storms it; a landmark's
+defenders keep to it; the Works is close quarters (half the range, a
+quicker eye); and the Foundry (`Strongpoint.hot_at`, the marker's
+"hot_at", 0.5) draws no teams until the war runs hot, then only each
+army's elites (`WorldDef.elite_kinds`: exos and walkers), who go there
+first (`WarCommander.plan`'s `hot_weight`) and hunt one more a person.
+Long marches showed bots stranded in craters and trench bottoms, pressing
+at a lip they could not climb; a bot on foot that covers less than a metre
+in 1.6 s now jumps and steps aside (`BotBrain._climb_out`, the keys a
+player presses). The battle bench: 11.7 ms a tick against 13.2 before
+the step, and 7 stuck bot-windows against 41.
+
+**Grudges (step 5).** Ashfront's two armies each keep a grudge against each
+player for one life (`WorldDef.grudge_factions`, `Raid.grudges`): a point
+for each point of damage to its bots (an overkill counts as one body), 60
+for a kill, fading 3 a second, cleared by death, at most 700. Over 300,
+two or three kills of one army in a minute or two, that army sends its two
+nearest bots within 120 m to where the player roughly is every 12 s, as if
+they had heard them (`BotBrain.hunt_grudge`), so the hunter, slot and
+leash limits still hold and the other army does not change. The player's
+visor says "THE LEGION IS HUNTING YOU" under the heading tape while it
+lasts (`VisorHud.hunted_text`, owner only, `NetSession._hunted`).
 
 ### Army commanders
 
@@ -1242,6 +1343,9 @@ built in this order, cheapest and most connected first:
    death (keep what you wear, drop the pack). It is the main source of
    artifacts (Caleb's call), plus trophies, melee blueprints (new options,
    never a higher Mk) and marsh cosmetics.
+   Part one is built (below, "The Spore Marsh"): the world, its map, three
+   of the five kinds of wildlife, fouling, spore clouds and its loot. The
+   lurkers, the brood keepers and their hives, and the Rootways come next.
 3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
    map several times Ashfront's width, salvage crates too big for a pack
    that ride in a vehicle's cargo space, sandstorms that bury and uncover
@@ -1259,6 +1363,68 @@ Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
 goes in, artifacts mostly come from it; a carried artifact still drops as
 itself under Ashfront's scrip-pile rule, so they keep changing hands in
 the war.
+
+### The Spore Marsh (part one, built)
+
+`worlds/marsh/`, on the marsh planet type. A drowned basin about 400 m
+across inside low hills: players come in on the dry southern shore (the
+outer zone), the drowned middle is hummocks between pools of black water
+(the pools are dug under one dark sheet of water at the waterline, view
+only), and the core in the north is the Grey Matriarch's forest. Five
+fungus forests stand in it, each twenty to thirty giant stalks a few
+metres apart under caps big enough to stand on, so sight lines close in
+and a fight is short. The planet's mist lies low over everything (its
+"smoke", thicker in a storm) and spores drift round the viewer.
+
+- **The wildlife.** Three kinds, each a faction of its own, so they hunt
+  each other as well as you and nobody hurts its own kind. Stalkers are
+  quick, fragile pack hunters with hooked claws; a pack dens round each
+  forest's heart, and they circle out of reach and feint more than an
+  army's blades do (the bot's "feint_chance"). Shellbacks are slow grazers
+  under a plated dome, 80 armor, with a heavy bash from the front and a
+  soft rear: hits from behind do three times as much. Bloaters are slow
+  sacs of spores with a weak slap. Each wears a beast's own body built in
+  code on the walker's skeleton (`ActorSkin._build_creature`), with nothing
+  in its hand: the claws and the bash are its own.
+- **Spore clouds.** A bloater bursts where it dies (`WorldDef.death_burst`)
+  into a cloud 4.5 m across that hangs eight seconds and hurts everyone in
+  it but other bloaters, players and beasts alike, 9 a second past armor
+  (`Raid.burst_cloud`, `_tick_clouds`, through `Combat.deal`, authority
+  only; clients are told with `NetSession._cloud` and draw it). So a blade
+  kill is a step back after the cut, and a shot from range is a noise.
+- **Gunshots wake the marsh.** Shots carry 1.6 times as far as still air
+  (`WorldDef.shot_carry`, which every bot's hearing scales by); melee kills
+  stay silent, as everywhere.
+- **Fouling** (Caleb's call). With `WorldDef.gun_fouling` over 0 every shot
+  fouls the gun a little (`Gun.fouling`, 4% a shot here): the spread grows
+  with it, up to 1.8 times, it clears on its own once the trigger rests,
+  and at full the gun jams (`Gun.jammed`): it only clicks until a reload,
+  which a pull on the trigger starts and which clears it all. About 25
+  shots without a pause jam a gun, so bursts are fine and a full mag held
+  down is not. Heavy weapons never foul (there are none here anyway), and
+  every other world's guns are untouched. Bots clear their own jams.
+- **The Grey Matriarch.** The core's boss, at her den in the north forest:
+  a stalker 2.9 m tall, 900 health, quick for her size and feinting most of
+  the time, made for one player and tougher for each other player near her
+  (`boss_party_scale`). She carries what a warlord carries, an artifact
+  more often than not, sometimes her trophy (the Matriarch's Fang, a
+  keepsake never traded or sold) and now and then the Spore paint, a Relic
+  armor paint earned nowhere else.
+- **What it pays.** It is the main source of artifacts: the Matriarch
+  (0.6), world events' pods (0.15), the den's cache, and now and then a
+  forest's hollow (the cache among the roots at its heart) or a cap (the
+  cache on its two tallest caps, reached by flight). Its own goods are
+  Stalker Fangs, Shellback Chitin, Spore Sacs and Glowcaps, and its own
+  blueprints, the Hookblade and the Reed Spear: melee options made from
+  them, never a higher Mk. Gear in its caches stays the basic tier, as in
+  every gentle world. The survey stations (a hut and a depot each) hold
+  what the expeditions left behind.
+- **Contracts.** Its own, tagged "marsh": hollows, caps, stalkers,
+  shellbacks and Spore Sacs as dailies; the Matriarch twice and three
+  Glowcaps as weeklies, which pay a blueprint like every weekly.
+- **Still to come.** Lurkers under the black water, brood keepers and the
+  hives they guard, the Rootways and their keepers, the rain storms the
+  planet already has a look for, and wading.
 
 ## 3. The watch
 
@@ -2141,12 +2307,12 @@ How they work for now:
   found in the world rides in your pack as loot until you get it home.
 - **Finding them.** The Blade Tournament's weekly prize carries a chance
   at one (section 2, "Gladiator arena"), and the Heart Warden's vault a
-  small one. Until the Spore Marsh's dungeons and bosses exist,
-  world events also stand in: a warlord carries one half the time and a supply
-  pod holds one now and then (`WorldDef` sets the chances per world). They
-  are off in Frostline for now, under the rule that rare gear stays in the
-  full-loot war worlds; the PvE source in this section is Caleb's call to
-  turn on when it exists.
+  small one. The Spore Marsh is their main source (Caleb's call): the Grey
+  Matriarch carries one more often than not, its pods sometimes, and its
+  forests' hollows, caps and the den now and then (section 2, "The Spore
+  Marsh"). World events stand in elsewhere: a warlord carries one half the
+  time and a supply pod holds one now and then (`WorldDef` sets the chances
+  per world). They are off in Frostline.
 - **Losing and keeping them.** The equipped one is gear: it drops in your bag
   on death in the PvP world and goes home on sign-out. One in the pack banks
   at a depot like any loot. Never sold in shops.
