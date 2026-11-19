@@ -53,6 +53,19 @@ var move_spread_deg := 2.0
 var bloom_per_shot := 0.35
 var max_bloom := 2.6
 var bloom_recovery := 5.0
+## Fouling (DESIGN.md "Spore Marsh", Caleb's call): where the world sets
+## `WorldDef.gun_fouling` over 0 (the Marsh's damp and spores), sustained
+## fire fouls the action. Each shot adds `foul_per_shot` times the world's
+## rate, it clears by `foul_clear` a second once the trigger has rested
+## `spray_reset`, the spread grows by up to `foul_spread` of itself as it
+## builds, and at full the gun jams (`jammed`) until a reload clears it.
+## Simulated from the command like the bloom, so it predicts; a heavy weapon
+## never fouls.
+var foul_per_shot := 0.04
+var foul_clear := 0.25
+var foul_spread := 0.8
+var fouling := 0.0
+var jammed := false
 ## How far each shot kicks the shooter's view, in degrees.
 var recoil_kick_deg := 0.55
 var recoil_side_deg := 0.22
@@ -439,6 +452,8 @@ func tick(delta: float) -> void:
 	_press_left = maxf(0.0, _press_left - delta)
 	_bloom = maxf(0.0, _bloom - bloom_recovery * delta)
 	_since_fire += delta
+	if not jammed and fouling > 0.0 and _since_fire > spray_reset:
+		fouling = maxf(0.0, fouling - foul_clear * delta)
 	if visual:
 		# Recoil kick settles back to rest.
 		visual.position.z = move_toward(visual.position.z, 0.0, delta * 0.6)
@@ -449,6 +464,8 @@ func tick(delta: float) -> void:
 			var need := mini(mag_size - ammo_in_mag, reserve_ammo)
 			ammo_in_mag += need
 			reserve_ammo -= need
+			jammed = false
+			fouling = 0.0
 			_reload_sound("reload_in")
 
 
@@ -478,7 +495,11 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 	var trigger := (cmd.primary_pressed or _press_left > 0.0) if semi_auto else cmd.primary
 	if trigger and _cooldown <= 0.0 and _reload_left <= 0.0 and recover <= 0.0:
 		_press_left = 0.0
-		if ammo_in_mag > 0:
+		if jammed:
+			# A jammed gun only clicks; a fresh pull clears it with a reload.
+			if cmd.primary_pressed:
+				start_reload()
+		elif ammo_in_mag > 0:
 			_fire()
 		elif cmd.primary_pressed:
 			# A fresh pull on the empty gun reloads it; a trigger held through
@@ -546,9 +567,21 @@ func reload_left() -> float:
 
 
 func start_reload() -> void:
-	if _reload_left <= 0.0 and ammo_in_mag < mag_size and reserve_ammo > 0:
+	if _reload_left > 0.0:
+		return
+	# A jam is cleared by working the action, rounds in the pack or not.
+	if (ammo_in_mag < mag_size and reserve_ammo > 0) or jammed:
 		_reload_left = reload_time
 		_reload_sound("reload_out")
+
+
+## The world's fouling rate where this gun is (`WorldDef.gun_fouling`): 0 in
+## most worlds, and always 0 for a heavy weapon.
+func foul_rate() -> float:
+	if actor == null or is_power():
+		return 0.0
+	var world := Worlds.of(actor)
+	return world.gun_fouling if world != null else 0.0
 
 
 ## The reload's clacks and the dry click: flat for the player's own gun, from
@@ -561,7 +594,7 @@ func _reload_sound(sound: String) -> void:
 
 func current_spread_deg() -> float:
 	return (spread_deg + _bloom + _air_spread() + move_spread_deg * move_share()) \
-			* lerpf(1.0, ads_spread_mult, _aim_in) * _steadiness()
+			* lerpf(1.0, ads_spread_mult, _aim_in) * _steadiness() * (1.0 + fouling * foul_spread)
 
 
 ## How fast the shooter moves on the ground, as a share of a sprint (0 to 1).
@@ -609,6 +642,13 @@ func _fire() -> void:
 	_since_fire = 0.0
 	last_recoil = recoil_for(spray_shot)
 	shots_fired += 1
+	var foul := foul_rate()
+	if foul > 0.0:
+		fouling = minf(1.0, fouling + foul_per_shot * foul)
+		if fouling >= 1.0:
+			jammed = true
+			if actor:
+				actor.notice.emit("Jammed: reload to clear it")
 	if visual:
 		var kick := model_kick()
 		visual.position.z = kick.x

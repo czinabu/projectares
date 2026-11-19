@@ -188,6 +188,23 @@ without Caleb, and update the gap list when a PR closes a row.
   the phase (`Raid.keepers`, `NetSession._keeper`, the map's "keepers"
   meta) and the lanes (`Raid.purge_changed`, `NetSession._purge`, drawn
   by the map's `show_purge`). Check by eye with `visual_check.tscn -- <dir> --engine-only`.
+- The Spore Marsh (DESIGN.md "The Spore Marsh", `worlds/marsh/`): a co-op
+  PvE world whose enemy is wildlife, each kind a faction of its own
+  (stalker, shellback, bloater) that hunts the others and never its own.
+  Guns foul there (Caleb's call): with `WorldDef.gun_fouling` over 0 each
+  shot adds to `Gun.fouling`, which widens the spread, clears once the
+  trigger rests and at full jams the gun (`Gun.jammed`) until a reload; it
+  is simulated in `Gun` from the command like the bloom, never touches a
+  heavy weapon, and every other world leaves it at 0. A world's
+  `death_burst(bot)` leaves a cloud where a bot dies (the bloaters'
+  spores): only the authority keeps it (`Raid.burst_cloud`,
+  `_tick_clouds`) and hurts everyone in it but its own faction through
+  `Combat.deal`; clients hear of it through `NetSession._cloud` and draw
+  it from `Raid.cloud_burst`. A beast's body is built in code like the
+  walker's (`Look.SKINS` "creature", `ActorSkin._build_creature`), and a
+  skin marked "bare" shows nothing in the hand. A world makes a kind
+  feint more than its ring with the bot's "feint_chance" meta. Check by
+  eye with `visual_check.tscn -- <dir> --marsh-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that
@@ -996,8 +1013,9 @@ without Caleb, and update the gap list when a PR closes a row.
   (`heat_free`, `lock_up`) are rig states, not new rig types. Artifacts
   drop from world events (`WorldDef.roll_artifact`, `warlord_artifact_chance`,
   `pod_artifact_chance`), the Heart Warden's vault and the Blade
-  Tournament's weekly prize (`Arena.blade_prize_artifact`) until the Spore
-  Marsh's dungeons become their main source.
+  Tournament's weekly prize (`Arena.blade_prize_artifact`) and, most of all,
+  the Spore Marsh (Caleb's call: its Grey Matriarch, pods, hollows, caps
+  and den).
 - Flight is simulated in `Actor` from the command, like a dash, so it
   predicts and replicates: jets lit only while aim is held in the air
   (`Actor._wants_hover`, Caleb's call: never a hover that stays on by
@@ -2196,7 +2214,9 @@ without Caleb, and update the gap list when a PR closes a row.
   merged into one mesh per material (the works per material per block,
   every lit and painted shape in one vertex-coloured material each). The
   works fill the salt out to the dunes (`GROUND_HALF`) and keep off the
-  roads and what `WORKS_KEEP_OUT` lists; a new stand or set piece goes
+  roads (`track_dist`; `race_tests.gd` checks every road point at any
+  height) and what `WORKS_KEEP_OUT` lists, and the view draws out to the
+  map's `VIEW_FAR` (its "view_far" meta); a new stand or set piece goes
   in that list. The lights, splits, board
   text and the ghost being chased are `RaceView`, a view. In a race world the
   watch's contract icon is the race icon (`Hud.race_slot`, `glyph`).

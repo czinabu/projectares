@@ -425,7 +425,7 @@ func _follow_gun() -> void:
 	var controller := get_tree().get_first_node_in_group("player_controllers") as PlayerController
 	var gun: Gun = null
 	if controller != null and is_instance_valid(controller.actor) and Raid.together(controller.actor, self):
-		gun = controller.actor.weapon as Gun
+		gun = controller.actor.get_active_weapon() as Gun
 	if gun == _gun:
 		return
 	if is_instance_valid(_gun) and _gun.fired.is_connected(shot):

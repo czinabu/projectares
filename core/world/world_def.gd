@@ -183,6 +183,11 @@ var track_lifetime := 240.0
 ## How far a gunshot carries, as a share of the usual: bots hear it that much
 ## further off (`Combat.noise`) and so do people (`Gun.SHOT_REACH`).
 var shot_carry := 1.0
+## Fouling (DESIGN.md "Spore Marsh", Caleb's call): how fast sustained fire
+## fouls a gun here, as a rate on its `Gun.foul_per_shot`. A fouled gun
+## spreads wider and a long burst jams it until a reload. 0, the default,
+## leaves guns alone.
+var gun_fouling := 0.0
 ## Weather (DESIGN.md "Weather: ash storms"): with a `weather_kind` ("ash",
 ## "snow"; "" for none) storms cross the map one at a time (`Weather`,
 ## `Raid.weather`), named `weather_name` on the watch and the plaza's signs.
@@ -652,6 +657,16 @@ func on_spawn(_actor: Actor) -> void:
 
 func on_death(_actor: Actor, _info: DamageInfo) -> void:
 	pass
+
+
+## Death bursts (DESIGN.md "Spore Marsh"): what a bot leaves where it falls,
+## as {"radius": metres, "damage": a second, "seconds": how long it hangs,
+## "kind": what it is ("spores")}, or {} for nothing. The cloud hurts
+## everyone of another faction inside it through `Combat.deal`
+## (`Raid._tick_clouds`, authority only) and is shown to everyone near.
+## Runs on the authority only.
+func death_burst(_bot: Actor) -> Dictionary:
+	return {}
 
 
 ## Where the next storm comes in and where it leaves, as [from, to] on the

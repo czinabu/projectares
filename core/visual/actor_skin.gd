@@ -465,6 +465,8 @@ func _ready() -> void:
 	_skeleton = skeleton
 	if def.get("chassis", "") == "walker":
 		_build_walker()
+	if def.get("creature", "") != "":
+		_build_creature(str(def["creature"]))
 	if def.get("suit", false):
 		_build_exo_suit()
 	# Before the arm, so the arm's hooks run after the legs have turned.
@@ -1209,6 +1211,12 @@ func _dress_weapons() -> void:
 		if weapon.visual.has_meta("dressed"):
 			continue
 		weapon.visual.set_meta("dressed", true)
+		# A beast's weapon is its own body: nothing is shown in its "hand".
+		if _def.get("bare", false):
+			for child in weapon.visual.get_children():
+				if child is Node3D:
+					child.visible = false
+			continue
 		var model: Node3D = look.weapon_model(weapon)
 		if model:
 			for child in weapon.visual.get_children():
@@ -1726,8 +1734,174 @@ func _build_walker() -> void:
 		_hang_at(foot, "Foot" + side, "FootBack." + side, Vector3(ankle.x, 0.0, ankle.z))
 
 
+## The lit parts of a marsh beast: the planet's fungal glow.
+const CREATURE_GLOW := Color(0.5, 1.0, 0.65)
+## A shellback's soft rear: pale, fleshy hide lit faintly from inside.
+const SOFT_REAR := Color(0.95, 0.66, 0.55)
+
+
 ## The walker's cannon, raised and lowered with the aim (view only).
 var _cannon: Node3D
+
+
+## A marsh beast's own body (DESIGN.md "Spore Marsh"), built round the
+## walking skeleton of the skin's scene, whose own mesh is hidden: "stalker",
+## "shellback" or "bloater". Rounded shapes, unlike the machines' blocks,
+## each hung on the bone it moves with so the walk clip drives it. Lit parts
+## are the planet's own glow: eyes, gills, the shellback's soft rear and the
+## bloater's pustules. View only.
+func _build_creature(kind: String) -> void:
+	if _skeleton == null:
+		return
+	var hide := _solid(actor.body_color, 0.0)
+	hide.metallic = 0.0
+	hide.roughness = 0.8
+	var dark := _solid(actor.body_color.darkened(0.45), 0.0)
+	dark.metallic = 0.0
+	dark.roughness = 0.9
+	var bone := _solid(Color(0.78, 0.74, 0.62), 0.0)
+	bone.metallic = 0.0
+	var glow := _solid(CREATURE_GLOW, 2.6)
+	var body := _rest_at("Body")
+	var chest := _rest_at("Chest")
+	var ball := SphereMesh.new()
+	ball.radial_segments = 16
+	ball.rings = 8
+	ball.radius = 0.5
+	ball.height = 1.0
+	var tube := CylinderMesh.new()
+	tube.top_radius = 0.5
+	tube.bottom_radius = 0.5
+	tube.height = 1.0
+	tube.radial_segments = 8
+	var horn := CylinderMesh.new()
+	horn.top_radius = 0.0
+	horn.bottom_radius = 0.5
+	horn.height = 1.0
+	horn.radial_segments = 6
+	var h := actor.stand_height
+	match kind:
+		"stalker":
+			var low := body.y * 0.95
+			var trunk := Node3D.new()
+			_piece(trunk, "Torso", ball, hide, Vector3(0, low, 0.0), Vector3(0.46, 0.42, 1.15) * h / 1.6)
+			_piece(trunk, "Belly", ball, dark, Vector3(0, low - 0.08 * h, -0.05), Vector3(0.38, 0.3, 0.9) * h / 1.6)
+			for i in 6:
+				var spine := _piece(trunk, "Spine", horn, bone, Vector3(0, low + 0.2 * h / 1.6, -0.35 + i * 0.14) * Vector3(1, 1, h / 1.6),
+						Vector3(0.05, 0.16, 0.05) * h / 1.6)
+				spine.rotation.x = 0.5
+			# The tail, tapering out behind.
+			for i in 4:
+				_piece(trunk, "Tail", ball, hide, Vector3(0, low + 0.02 * i, (0.6 + i * 0.26) * h / 1.6),
+						Vector3(0.22 - i * 0.04, 0.2 - i * 0.035, 0.42) * h / 1.6)
+			_hang_at(trunk, "CreatureTrunk", "Torso", trunk.position)
+			# The head and long jaw, carried forward and low.
+			var skull := Node3D.new()
+			var at := Vector3(0, low + 0.12 * h, -0.72 * h / 1.6)
+			_piece(skull, "Skull", ball, hide, at, Vector3(0.28, 0.26, 0.42) * h / 1.6)
+			_piece(skull, "Jaw", ball, dark, at + Vector3(0, -0.08, -0.22) * h / 1.6, Vector3(0.2, 0.12, 0.42) * h / 1.6)
+			for side: float in [-1.0, 1.0]:
+				_piece(skull, "Eye", ball, glow, at + Vector3(side * 0.1, 0.06, -0.12) * h / 1.6,
+						Vector3(0.05, 0.04, 0.05) * h / 1.6)
+				for t in 3:
+					var tooth := _piece(skull, "Tooth", horn, bone, at + Vector3(side * 0.07, -0.13, -0.28 - t * 0.07) * h / 1.6,
+							Vector3(0.025, 0.07, 0.025) * h / 1.6)
+					tooth.rotation.x = PI
+			_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
+			# Hooked foreclaws, held up in front of the chest.
+			for side: float in [-1.0, 1.0]:
+				var arm := Node3D.new()
+				var shoulder := Vector3(side * 0.18 * h / 1.6, low - 0.02, -0.38 * h / 1.6)
+				var reach := _piece(arm, "Foreleg", tube, hide, shoulder + Vector3(0, -0.12, -0.08) * h / 1.6,
+						Vector3(0.07, 0.3, 0.07) * h / 1.6)
+				reach.rotation.x = 0.6
+				for c in 3:
+					var claw := _piece(arm, "Claw", horn, bone,
+							shoulder + Vector3((c - 1) * 0.03, -0.28, -0.24) * h / 1.6, Vector3(0.025, 0.16, 0.025) * h / 1.6)
+					claw.rotation.x = -2.2
+				_hang_at(arm, "Foreclaw" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
+			_creature_legs(hide, Vector2(0.11, 0.13), bone)
+		"shellback":
+			var dome := Node3D.new()
+			var mid := body.y * 0.82
+			_piece(dome, "Shell", ball, hide, Vector3(0, mid + 0.1 * h, 0), Vector3(1.5, 0.95, 1.9) * h / 1.6)
+			_piece(dome, "Skirt", ball, dark, Vector3(0, mid - 0.05 * h, 0), Vector3(1.6, 0.4, 2.0) * h / 1.6)
+			# Plates in rows down the dome.
+			for row in 3:
+				for i in 3:
+					# On the dome's curve: an ellipsoid's surface over the
+					# plate's spot across and along it.
+					var px := (i - 1) * 0.42
+					var pz := -0.5 + row * 0.5
+					var up := 0.475 * sqrt(maxf(0.0, 1.0 - pow(px / 0.75, 2.0) - pow(pz / 0.95, 2.0)))
+					var plate := _piece(dome, "Plate", ball, dark,
+							Vector3(px * h / 1.6, mid + 0.1 * h + up * h / 1.6, pz * h / 1.6), Vector3(0.38, 0.09, 0.42) * h / 1.6)
+					plate.rotation = Vector3(-pz * 0.9, 0, -px * 1.2)
+			# The soft rear: pale hide between the back plates, lit from inside.
+			var soft := _solid(SOFT_REAR, 0.9)
+			soft.metallic = 0.0
+			_piece(dome, "SoftRear", ball, soft, Vector3(0, mid + 0.05 * h, 0.86 * h / 1.6), Vector3(0.7, 0.5, 0.3) * h / 1.6)
+			_hang_at(dome, "CreatureShell", "Torso", Vector3.ZERO)
+			var face := Node3D.new()
+			var at := Vector3(0, mid - 0.02 * h, -1.0 * h / 1.6)
+			_piece(face, "Head", ball, dark, at, Vector3(0.6, 0.42, 0.5) * h / 1.6)
+			_piece(face, "Brow", ball, hide, at + Vector3(0, 0.13, -0.04) * h / 1.6, Vector3(0.64, 0.16, 0.42) * h / 1.6)
+			for side: float in [-1.0, 1.0]:
+				_piece(face, "Eye", ball, glow, at + Vector3(side * 0.18, 0.06, -0.22) * h / 1.6,
+						Vector3(0.06, 0.05, 0.05) * h / 1.6)
+				var tusk := _piece(face, "Tusk", horn, bone, at + Vector3(side * 0.2, -0.08, -0.3) * h / 1.6,
+						Vector3(0.06, 0.26, 0.06) * h / 1.6)
+				tusk.rotation.x = -1.9
+			_hang_at(face, "CreatureHead", "Head", Vector3.ZERO)
+			_creature_legs(dark, Vector2(0.24, 0.26), bone)
+		"bloater":
+			var sac := Node3D.new()
+			var at := Vector3(0, (chest.y + body.y) * 0.5, 0)
+			_piece(sac, "Sac", ball, hide, at, Vector3(1.3, 1.4, 1.3) * h / 2.1)
+			_piece(sac, "Belly", ball, dark, at + Vector3(0, -0.42, 0) * h / 2.1, Vector3(1.0, 0.6, 1.0) * h / 2.1)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 11
+			for i in 12:
+				var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.6, 1), rng.randf_range(-1, 1)).normalized()
+				_piece(sac, "Pustule", ball, glow, at + dir * 0.66 * h / 2.1, Vector3.ONE * rng.randf_range(0.1, 0.18) * h / 2.1)
+			for i in 5:
+				var tendril := _piece(sac, "Tendril", tube, dark,
+						at + Vector3(cos(i * 1.3) * 0.35, -0.75, sin(i * 1.3) * 0.35) * h / 2.1, Vector3(0.04, 0.5, 0.04) * h / 2.1)
+				tendril.rotation.z = cos(i * 2.1) * 0.25
+			_hang_at(sac, "CreatureSac", "Chest", Vector3.ZERO)
+			var face := Node3D.new()
+			var mouth := at + Vector3(0, -0.25, -0.62) * h / 2.1
+			_piece(face, "Mouth", ball, dark, mouth, Vector3(0.36, 0.22, 0.2) * h / 2.1)
+			for side: float in [-1.0, 1.0]:
+				_piece(face, "Eye", ball, glow, mouth + Vector3(side * 0.12, 0.16, -0.06) * h / 2.1,
+						Vector3(0.06, 0.06, 0.05) * h / 2.1)
+			_hang_at(face, "CreatureHead", "Head", Vector3.ZERO)
+			_creature_legs(dark, Vector2(0.14, 0.16), bone)
+
+
+## A beast's two legs down the skeleton's own (thigh, shank and foot), with
+## claws on the foot.
+func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
+	var horn := CylinderMesh.new()
+	horn.top_radius = 0.0
+	horn.bottom_radius = 0.5
+	horn.height = 1.0
+	horn.radial_segments = 6
+	for side: String in ["L", "R"]:
+		_limb("UpperLeg." + side, "MidLeg." + side, Vector3.ZERO, size, mat, 0.0, 1.0, true)
+		_limb("MidLeg." + side, "LowerLeg." + side, Vector3.ZERO, size * 0.8, mat, 0.0, 1.0, true)
+		_limb("LowerLeg." + side, "FootBack." + side, Vector3.ZERO, size * 0.6, mat, 0.0, 1.0, true)
+		var ankle := _rest_at("FootBack." + side)
+		var foot := Node3D.new()
+		var pad := SphereMesh.new()
+		pad.radial_segments = 10
+		pad.rings = 5
+		_piece(foot, "Pad", pad, mat, Vector3(0, size.x * 0.3, -size.x * 0.4), Vector3(size.x * 1.6, size.x * 0.7, size.x * 2.4))
+		for toe: float in [-1.0, 0.0, 1.0]:
+			var nail := _piece(foot, "Claw", horn, claw, Vector3(toe * size.x * 0.6, size.x * 0.2, -size.x * 1.5),
+					Vector3(size.x * 0.35, size.x * 1.3, size.x * 0.35))
+			nail.rotation = Vector3(-1.5, -toe * 0.3, 0)
+		_hang_at(foot, "Foot" + side, "FootBack." + side, Vector3(ankle.x, 0.0, ankle.z))
 
 
 ## Pitches the walker's cannon in its mantlet toward where it aims.

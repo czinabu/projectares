@@ -152,6 +152,28 @@ const SKINS := {
 		"scenes": ["Enemy_2Legs_Gun.glb"], "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Attack"},
 	},
+	# Wildlife (DESIGN.md "Spore Marsh"): beasts of their own, built in code
+	# like the walker ("creature": `ActorSkin._build_creature`) round the
+	# scene's walking skeleton, whose mesh is hidden. They carry no weapon
+	# you can see ("bare": the claws and the bash are the body's own).
+	# A marsh stalker: a lean, low raptor with a long jaw, hooked foreclaws,
+	# a spined back and a long tail, its eyes lit.
+	"marsh_stalker": {
+		"scenes": ["Leela.glb"], "height": 1.6, "hide": ["Leela"], "creature": "stalker", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# A shellback: a broad, low grazer under a plated dome, its soft rear
+	# (the weak spot) a pale, glowing hide between the shell's back plates.
+	"shellback": {
+		"scenes": ["Leela.glb"], "height": 1.6, "hide": ["Leela"], "creature": "shellback", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# A bloater: a swollen sac of spores on stubby legs, studded with lit
+	# pustules and trailing tendrils.
+	"bloater": {
+		"scenes": ["Leela.glb"], "height": 2.1, "hide": ["Leela"], "creature": "bloater", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 }
 const DEFAULT_SKIN := "raider"
 
