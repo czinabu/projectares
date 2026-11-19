@@ -39,7 +39,7 @@ static func shoot(vc: Node, out_dir: String, _args: PackedStringArray) -> void:
 	var parked: Array[Node3D] = []
 	for i in ids.size():
 		var v: Node3D = raid.spawn_vehicle(ids[i], at + Vector3(spaced[i], 0.4, 0), 0.0)
-		parked.append(vc)
+		parked.append(v)
 	await vc._settle(60)
 	var cam := Camera3D.new()
 	raid.add_child(cam)
