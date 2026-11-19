@@ -1072,7 +1072,17 @@ plan in five steps (the plan doc, "Enemy AI pass: a plan per world"):
 **Baseline before the pass (19 Nov, 30 duels a row).** 16 of 20 Ashfront
 rows in their bands, the other four on the edge (outer soldier 100% at
 12 m and 83% at 25 m, outer exo 90% at 12 m, core walker 10% at 25 m). The
-battle bench: 12.7 ms a tick of 16.7 with 150 bots and 32 players.
+battle bench: 12.7 ms a tick of 16.7 with 150 bots and 32 players (12.8 with
+step 1's smoke and senses). The first stuck count: 38 bot-windows in 30 s,
+all in the middle ring, most at the Breach (9).
+
+**Frostline before step 2 (40 duels, 30 for groups).** One Warden or Feral
+alone is no fight: the reference won every duel, at the mouth and the
+glacier head alike, with 80-98% health left. Groups are where it bites, and
+unevenly: a glacier-head pack of three wins 43-60%, of five 23-33%; two or
+three Wardens still lose to one player, five win 73-87% of the time after
+25 s or more. So step 2 makes the single enemy matter and the grid less of
+a wall of health.
 
 ### Army commanders
 
