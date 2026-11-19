@@ -56,7 +56,7 @@ var shot_reach := 0.7
 ## Tracers: speed (m/s), length, and their colours by army.
 var tracer_speed := 260.0
 var tracer_length := 12.0
-const TRACER_COLOURS := {"legion": Color(1.0, 0.55, 0.18), "tide": Color(0.3, 0.85, 1.0)}
+const TRACER_COLOURS := {"legion": Color(1.0, 0.42, 0.08), "tide": Color(0.15, 0.7, 1.0)}
 
 ## The armies, west and east, and each one's poses: `RUN_FRAMES` frames of
 ## the run cycle, then aiming, kneeling and fallen.
@@ -574,7 +574,7 @@ func _draw_tracers() -> void:
 		_tracer_buffer[o + 8] = basis.x.z; _tracer_buffer[o + 9] = basis.y.z; _tracer_buffer[o + 10] = basis.z.z; _tracer_buffer[o + 11] = mid.z
 		_tracer_buffer[o + 12] = colour.r; _tracer_buffer[o + 13] = colour.g; _tracer_buffer[o + 14] = colour.b
 		# A fresh round is the muzzle's flash: brighter for its first metres.
-		_tracer_buffer[o + 15] = 4.0 if travel < 8.0 else 2.2
+		_tracer_buffer[o + 15] = 3.0 if travel < 8.0 else 1.6
 		n += 1
 	if n > 0:
 		_tracer_mesh.buffer = _tracer_buffer

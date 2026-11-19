@@ -54,7 +54,7 @@ static func ashland() -> PlanetType:
 		"ambient_color": Color(0.52, 0.5, 0.5), "ambient_energy": 1.6,
 		"exposure": 1.3, "saturation": 0.6, "contrast": 1.05, "glow": 0.9,
 	}
-	t.smoke = {"density": 0.08, "colour": Color(0.45, 0.44, 0.44), "depth": 18.0, "war": 0.5, "storm": 1.0}
+	t.smoke = {"density": 0.012, "colour": Color(0.45, 0.44, 0.44), "depth": 18.0, "war": 0.6, "storm": 1.5}
 	t.terrain = {
 		"base_amp": 9.0, "base_freq": 0.006, "octaves": 4, "warp": 25.0,
 		"ridge_amp": 26.0, "ridge_freq": 0.005, "ridge_cover": 0.18,
