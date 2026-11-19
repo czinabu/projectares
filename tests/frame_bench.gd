@@ -20,14 +20,30 @@ extends Node
 ## own processing; `--seed <n>` starts the world from a fixed seed, so two
 ## builds can be compared on the same battle (with `--fixed-fps 60` the
 ## steadiest).
+##
+## Pass lines: a hitch is a frame over `HITCH_MS`, and `--max-hitches <n>`
+## fails the run (exit 1) on more than that. `--save <file.json>` keeps the
+## result, and `--against <file.json>` fails the run when the median or the
+## 1% worst frame is slower than that saved result by more than
+## `--tolerance` (a share, 0.15 by default). Measure main with `--save`,
+## then a change with `--against`, on the same machine and the same flags:
+##
+##   godot --headless --fixed-fps 60 --path . res://tests/frame_bench.tscn -- --look --seed 7 --save main.json
+##   godot --headless --fixed-fps 60 --path . res://tests/frame_bench.tscn -- --look --seed 7 --against main.json
 
 const PORT := 25790
+## A frame this long or longer is a hitch the player feels (the
+## checklist's bar: no hitch over 50 ms in a busy fight).
+const HITCH_MS := 50.0
 const MainScene := "res://scenes/main.tscn"
 
 var _main: Node
 ## The world's seed for a solo run (`--seed`), -1 for a random one.
 var _main_seed := -1
 var _server_pid := -1
+## The last measurement (`_measure`): median and 1% worst frame in ms,
+## frames a second and hitches.
+var _result := {}
 
 
 func _ready() -> void:
@@ -92,6 +108,9 @@ func _ready() -> void:
 		await _probe()
 	else:
 		await _measure(mode, seconds)
+		if not _judge(args):
+			_finish(1)
+			return
 	# `--shot <file.png>` saves the last frame, to check the look by eye.
 	var shot := _arg(args, "--shot", "")
 	if shot != "" and DisplayServer.get_name() != "headless":
@@ -254,8 +273,10 @@ func _measure(mode: String, seconds: float) -> void:
 	print("Frame bench result (%s, %s, %d actors in the world, %.0f within 70 m)" % [mode,
 			"third person" if _main.controller.is_third_person() else "first person",
 			_count_near(raid, Vector3.ZERO, INF), near_sum / n])
-	print("  frames: %d in %.1f s -> %.1f fps average, median %.2f ms, 1%% worst %.2f ms" % [samples, wall,
-			samples / wall, p50, p99])
+	var hitches := frame_ms.filter(func(ms: float) -> bool: return ms >= HITCH_MS).size()
+	print("  frames: %d in %.1f s -> %.1f fps average, median %.2f ms, 1%% worst %.2f ms, %d over %.0f ms" % [samples,
+			wall, samples / wall, p50, p99, hitches, HITCH_MS])
+	_result = {"median_ms": p50, "worst_ms": p99, "fps": samples / wall, "hitches": hitches}
 	# Godot reports the slowest frame and tick of each second for these.
 	print("  slowest each second: process %.2f ms, physics tick %.2f ms (navigation %.2f ms)"
 			% [process_ms / n, physics_ms / n, nav_ms / n])
@@ -268,6 +289,40 @@ func _measure(mode: String, seconds: float) -> void:
 	if net != null and is_instance_valid(net):
 		var stats := _take_stats(net)
 		print("  network: %.1f KB/s down, %.1f KB/s up" % [stats.x / 1024.0 / wall, stats.y / 1024.0 / wall])
+
+
+## The pass lines (see the top of this file): prints one line for each
+## asked for and returns false if any failed.
+func _judge(args: PackedStringArray) -> bool:
+	var passed := true
+	var max_hitches := _arg(args, "--max-hitches", "")
+	if max_hitches != "":
+		var ok: bool = int(_result.hitches) <= int(max_hitches)
+		print("%s: %d hitches over %.0f ms, %s allowed" % ["PASS" if ok else "FAIL", _result.hitches, HITCH_MS, max_hitches])
+		passed = passed and ok
+	var against := _arg(args, "--against", "")
+	if against != "":
+		var saved: Variant = JSON.parse_string(FileAccess.get_file_as_string(against))
+		if not saved is Dictionary or not (saved as Dictionary).has("median_ms"):
+			print("FAIL: no saved result to compare against in %s" % against)
+			return false
+		var tolerance := float(_arg(args, "--tolerance", "0.15"))
+		for key: String in ["median_ms", "worst_ms"]:
+			var was := float(saved[key])
+			var now := float(_result[key])
+			var ok := now <= was * (1.0 + tolerance)
+			print("%s: %s %.2f ms against %.2f ms saved (%+.0f%%, %.0f%% allowed)" % ["PASS" if ok else "FAIL",
+					"median" if key == "median_ms" else "1% worst", now, was,
+					(now / maxf(was, 0.001) - 1.0) * 100.0, tolerance * 100.0])
+			passed = passed and ok
+	var save := _arg(args, "--save", "")
+	if save != "":
+		var file := FileAccess.open(save, FileAccess.WRITE)
+		if file != null:
+			file.store_string(JSON.stringify(_result, "\t"))
+			file.close()
+			print("Frame bench: saved the result to %s" % save)
+	return passed
 
 
 ## Draw counts with parts of the scene switched off in turn, to see what
