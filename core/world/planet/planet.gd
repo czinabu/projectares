@@ -25,7 +25,7 @@ static func surface_path(folder: String, map: String) -> String:
 ## The sky, light and air of `type` on `parent`. `war` is a world's own war
 ## mood, if it has one (it keeps the planet's sky and only changes the light).
 static func atmosphere(parent: Node3D, type: PlanetType, war := {}) -> void:
-	Look.atmosphere(parent, type.calm, war, type.storm)
+	Look.atmosphere(parent, type.calm, war, type.storm, type.close)
 	# The far land ring (`horizon`) and its peaks are drawn whole: the
 	# player's view reaches past it (`PlayerController._view_far`).
 	parent.set_meta("horizon_far", horizon_far(type))
@@ -251,6 +251,15 @@ class GroundSmoke:
 	var env: Environment
 	var volume: FogVolume
 	var material: FogMaterial
+	## Drifting banks (`PlanetType.smoke`'s "banks"): one ellipsoid per cell
+	## of a fixed grid, at a spot hashed from the cell, carried along the
+	## wind and wrapped round within it, so the same banks come back to the
+	## same air whichever way the camera goes.
+	var banks := {}
+	var bank_volumes: Array[FogVolume] = []
+	var bank_material: FogMaterial
+	var bank_cells := 0
+	var bank_size := Vector3(24.0, 6.0, 16.0)
 
 	static func make(p: Dictionary, p_env: Environment) -> GroundSmoke:
 		var smoke := GroundSmoke.new()
@@ -278,6 +287,9 @@ class GroundSmoke:
 		smoke.volume.size = Vector3(smoke.reach * 2.0, smoke.depth, smoke.reach * 2.0)
 		smoke.volume.material = smoke.material
 		smoke.add_child(smoke.volume)
+		smoke.banks = p.get("banks", {})
+		if not smoke.banks.is_empty():
+			smoke._make_banks(tex)
 		smoke.add_to_group("ground_smoke")
 		p_env.volumetric_fog_density = 0.0
 		p_env.volumetric_fog_albedo = smoke.material.albedo
@@ -294,6 +306,61 @@ class GroundSmoke:
 		set_process(on)
 		if env != null:
 			env.volumetric_fog_enabled = on
+
+	func _make_banks(tex: Texture3D) -> void:
+		bank_material = FogMaterial.new()
+		bank_material.albedo = material.albedo
+		bank_material.density = float(banks.get("density", 0.3))
+		bank_material.edge_fade = 1.2
+		bank_material.height_falloff = 0.05
+		bank_material.density_texture = tex
+		bank_cells = int(banks.get("count", 5))
+		bank_size = banks.get("size", bank_size)
+		for i in bank_cells * bank_cells:
+			var bank := FogVolume.new()
+			bank.name = "Bank%d" % i
+			bank.shape = RenderingServer.FOG_VOLUME_SHAPE_ELLIPSOID
+			bank.size = bank_size
+			bank.material = bank_material
+			add_child(bank)
+			bank_volumes.append(bank)
+
+	## Where the bank of grid cell (`cx`, `cz`) stands at `time`: a spot
+	## hashed from the cell, carried down the wind and wrapped in the cell.
+	static func bank_spot(cx: int, cz: int, cell: float, wind: Vector2, time: float) -> Vector2:
+		var h := absi(hash(Vector2i(cx, cz)))
+		var base := Vector2(float(h % 1000) / 1000.0, float((h / 1000) % 1000) / 1000.0)
+		var at := base * cell + wind * time
+		at = Vector2(fposmod(at.x, cell), fposmod(at.y, cell))
+		return Vector2(cx * cell, cz * cell) + at
+
+	func _place_banks(map: Node, at: Vector3) -> void:
+		var cell := float(banks.get("cell", 60.0))
+		var heading := float(banks.get("wind", 0.6))
+		var wind := Vector2(cos(heading), sin(heading)) * float(banks.get("drift", 1.0))
+		var time := Time.get_ticks_msec() / 1000.0
+		var half := bank_cells / 2
+		var ox := floori(at.x / cell) - half
+		var oz := floori(at.z / cell) - half
+		var lift := bank_size.y * 0.25
+		for i in bank_volumes.size():
+			var cx := ox + i % bank_cells
+			var cz := oz + i / bank_cells
+			var spot := bank_spot(cx, cz, cell, wind, time)
+			# A bank wrapped round its cell would jump: wrapped against the
+			# wind, it thins out through its last stretch and in again.
+			var into := Vector2(fposmod(spot.x - cx * cell, cell), fposmod(spot.y - cz * cell, cell)) / cell
+			var fade := minf(minf(into.x, 1.0 - into.x), minf(into.y, 1.0 - into.y))
+			var ground := at.y - 2.0
+			if map.has_method("ground_height"):
+				ground = float(map.call("ground_height", spot.x, spot.y))
+			var water: Variant = map.get_meta("mist_floor", null)
+			if water != null:
+				ground = maxf(ground, float(water))
+			var bank := bank_volumes[i]
+			bank.global_position = Vector3(spot.x, ground + lift, spot.y)
+			bank.visible = fade > 0.02
+			bank.size = bank_size * clampf(fade * 6.0, 0.2, 1.0)
 
 	## How thick it is for a war intensity and a share of storm, 0 to 1.
 	func density_for(war: float, storm: float) -> float:
@@ -312,3 +379,5 @@ class GroundSmoke:
 		# Stood on the ground under the camera: thickest at the foot, thinning
 		# upward through `depth`.
 		volume.global_position = Vector3(at.x, ground + depth * 0.5 - 2.0, at.z)
+		if not bank_volumes.is_empty():
+			_place_banks(map, at)

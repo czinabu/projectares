@@ -284,7 +284,8 @@ var beacons: Array[Node3D] = []
 static var zone_rules := true
 var _bosses: Array[Dictionary] = []
 ## Guards at the map's "spawn_guard" markers (a dungeon's garrison), each
-## { marker, bot, back_in }, outside the armies like the bosses.
+## { marker, bot, back_in, brood (what it has spilled), brood_in }, outside
+## the armies like the bosses.
 var _guards: Array[Dictionary] = []
 ## The map's lifts by id: { stops (its two "lift_stop" markers), power (its
 ## "lift_power" marker or null), left (seconds it runs on for), charge (how
@@ -543,7 +544,8 @@ func _spawn_caches() -> void:
 	for marker in _map_nodes("spawn_cache"):
 		var source: String = marker.get_meta("loot_source", "cache")
 		var cache := spawn_container(world.roll_loot(source, rng), false, "cache", marker.global_position)
-		var entry := {"container": cache, "source": source, "refill_in": -1.0, "looted": {}}
+		var entry := {"container": cache, "source": source, "refill_in": -1.0, "looted": {},
+				"hive": str(marker.get_meta("hive", ""))}
 		_caches.append(entry)
 		cache.looted_by.connect(_on_cache_looted.bind(entry))
 
@@ -1983,7 +1985,9 @@ func _spawn_guards() -> void:
 	if world.bot_count <= 0:
 		return
 	for marker in _map_nodes("spawn_guard"):
-		_guards.append({"marker": marker, "bot": _add_guard(marker), "back_in": 0.0})
+		_guards.append({"marker": marker, "bot": _add_guard(marker), "back_in": 0.0, "brood": [],
+				"brood_in": float(marker.get_meta("brood_every", 0.0)) * 0.5})
+	_seal_hives()
 
 
 func _add_guard(marker: Node3D) -> Actor:
@@ -1995,17 +1999,77 @@ func _add_guard(marker: Node3D) -> Actor:
 
 
 func _tick_guards(delta: float) -> void:
+	var changed := false
 	for guard in _guards:
 		var bot: Variant = guard.bot
 		if bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
+			_tick_brood(guard, delta)
 			continue
 		if guard.back_in <= 0.0:
 			guard.back_in = world.guard_respawn_time
 			guard.bot = null
+			changed = true
 			continue
 		guard.back_in -= delta
 		if guard.back_in <= 0.0:
 			guard.bot = _add_guard(guard.marker)
+			changed = true
+	if changed:
+		_seal_hives()
+
+
+## A guard whose marker names a "brood" (a faction, its kin) spills one of
+## it every "brood_every" seconds while a player is within "brood_range"
+## of its post, no more than "brood_max" alive at once, each posted to the
+## guard's ground and told where the nearest player is. The brood are
+## outside the armies (`_is_extra`) and never replaced. A fallen guard
+## spills nothing.
+func _tick_brood(guard: Dictionary, delta: float) -> void:
+	var marker := guard.marker as Node3D
+	var kind := str(marker.get_meta("brood", ""))
+	if kind == "":
+		return
+	var brood: Array = guard.brood
+	for k in range(brood.size() - 1, -1, -1):
+		var one: Variant = brood[k]
+		if one == null or not is_instance_valid(one) or (one as Actor).is_dead:
+			brood.remove_at(k)
+	var near := _players_at(marker.global_position, float(marker.get_meta("brood_range", 20.0)))
+	if near.is_empty():
+		guard.brood_in = float(marker.get_meta("brood_every", 8.0)) * 0.5
+		return
+	guard.brood_in -= delta
+	if guard.brood_in > 0.0 or brood.size() >= int(marker.get_meta("brood_max", 4)):
+		return
+	guard.brood_in = float(marker.get_meta("brood_every", 8.0))
+	var bot := _add_bot(marker, false, kind)
+	brood.append(bot)
+	var brain := bot.get_node_or_null("Brain") as BotBrain
+	if brain != null:
+		brain.post_to(marker.global_position, float(marker.get_meta("radius", 10.0)))
+	var target := near[0]
+	for actor in near:
+		if actor.global_position.distance_to(marker.global_position) < target.global_position.distance_to(marker.global_position):
+			target = actor
+	bot.heard.emit(target.global_position, target)
+
+
+## A hive (a cache whose marker names a "hive") is sealed while the guard
+## whose marker names the same hive stands, and opens once it falls
+## (`LootContainer.sealed`). Authority only, so only it refuses the loot.
+func _seal_hives() -> void:
+	var standing := {}
+	for guard in _guards:
+		var key := str((guard.marker as Node3D).get_meta("hive", ""))
+		var bot: Variant = guard.bot
+		if key != "" and bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
+			standing[key] = str((bot as Actor).display_name)
+	for cache in _caches:
+		var container: Variant = cache.container
+		if str(cache.get("hive", "")) == "" or container == null or not is_instance_valid(container):
+			continue
+		var by := str(standing.get(cache.hive, ""))
+		(container as LootContainer).sealed = ("The %s guards it" % by) if by != "" else ""
 
 
 func _find_lifts() -> void:
@@ -2126,9 +2190,9 @@ func _ride_lift(lift: Dictionary, delta: float) -> void:
 			arrived.erase(key)
 
 
-## Whether a bot is one of the map's guards.
+## Whether a bot is one of the map's guards, or a brood one spilled.
 func is_guard(bot: Actor) -> bool:
-	return _guards.any(func(guard: Dictionary) -> bool: return guard.bot == bot)
+	return _guards.any(func(guard: Dictionary) -> bool: return guard.bot == bot or (guard.brood as Array).has(bot))
 
 
 ## A dead boss comes back after `WorldDef.boss_respawn_time`.
@@ -3116,12 +3180,12 @@ func zone_label(actor: Actor) -> String:
 
 
 ## A new bot with a brain, at a spawn marker.
-func _add_bot(marker: Node3D, warlord := false) -> Actor:
+func _add_bot(marker: Node3D, warlord := false, p_faction := "") -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
 	var first_seed := rng.randi()
 	var boss: String = marker.get_meta("boss", "") if warlord else ""
-	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), first_seed, warlord, marker.get_meta("faction", ""),
-			-2, [], boss)
+	var faction: String = p_faction if p_faction != "" else str(marker.get_meta("faction", ""))
+	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), first_seed, warlord, faction, -2, [], boss)
 	# The world may turn a rare kind away (`WorldDef.bot_allowed`): roll again,
 	# from seeds made from the first, so the raid's own dice are not moved.
 	for tries in BOT_REROLLS:
@@ -3132,7 +3196,7 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 		warlords.erase(bot)
 		bot.free()
 		bot = spawn_bot("Bot%d" % _bot_count, _stand(at), hash([first_seed, tries]), warlord,
-				marker.get_meta("faction", ""), -2, [], boss)
+				faction, -2, [], boss)
 	if warlord and marker.get_meta("keeper", false):
 		# A keeper carries nothing: its vault pays everyone who fought it.
 		bot.inventory.items.clear()
