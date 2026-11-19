@@ -2002,8 +2002,10 @@ without Caleb, and update the gap list when a PR closes a row.
 - Every gameplay feature gets checks in `tests/test_runner.gd`.
 - A running game logs no errors: one a frame is enough to sink the frame
   rate. `tests/error_spam_tests.gd` watches an Ashfront session with an
-  `OS.add_logger` counter; fix the cause of anything it catches, never
-  silence it. A spring stepped by `delta` is stepped in short slices (a
+  `OS.add_logger` counter, and `tests/screen_sweep_tests.gd` does the same
+  in the base and every world while opening every phone app, settings tab,
+  watch icon, station, the bench and the plan table; fix the cause of
+  anything they catch, never silence it. A spring stepped by `delta` is stepped in short slices (a
   long frame throws it off), and a deferred call or timer that outlives
   the node it acts on is bound to that node (`node.queue_free`, an
   instance id), never a lambda capturing it A loop over a
@@ -2023,7 +2025,8 @@ godot --headless --path . res://tests/test_runner.tscn   # must exit 0
 godot --headless --path . res://tests/test_runner.tscn -- --only online   # one group
 godot --headless --fixed-fps 60 --path . res://tests/test_runner.tscn -- --tier offline   # fast, ~1 min
 godot --headless --path . res://tests/test_runner.tscn -- --tier net --shard 1/3   # a third of the online groups
-godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle
+godot --headless --path . res://tests/battle_bench.tscn -- --bots 150 --players 32   # server cost of a big battle; exits 1 over the 16.7 ms budget
+godot --headless --fixed-fps 60 --path . res://tests/frame_bench.tscn -- --look --seed 7 --save main.json   # then the same with --against main.json on a change (fails past --tolerance, 0.15), --max-hitches for frames over 50 ms
 godot --headless --path . res://tests/server_bench.tscn -- --plaza 10 --per-world 7 --arena 4   # the whole server at once: tick time per session, travel against 3 s
 godot --headless --path . res://tests/server_bench.tscn -- --cluster --plaza 10 --per-world 7 --arena 4   # the same with one program per world; times a trip made on a connection opened ahead
 godot --headless --fixed-fps 60 --path . res://tests/feel_bench.tscn   # how each rig answers, in numbers
