@@ -437,7 +437,14 @@ without Caleb, and update the gap list when a PR closes a row.
   "lock_time" meta draws its tracking beam. Smoke hides people from bots as it hides them from
   eyes: anything a player cannot see through is a cloud in `Raid.smoke`
   (`Smoke.add`, authority only; a shell leaves one), and bot sight asks
-  `Smoke.blocks`, never a view.
+  `Smoke.blocks`, never a view. An army remembers a player for one life
+  (`WorldDef.grudge_factions`, `Raid.grudges`, authority only): hurting
+  its bots raises its grudge, time fades it, death clears it, and over
+  `grudge_hunt` the `Raid` sends its nearest few after where that player
+  roughly is (`BotBrain.hunt_grudge`, through `_sensed`, so the hunter and
+  leash limits hold). The player is told only which army
+  (`Actor.hunted_by`, `NetSession._hunted`, the visor's tag
+  `VisorHud.hunted_text`).
   Only a few act on it, through `SquadBoard` claims (static, with an
   expiry, like the slots): `noise_lookers` go to look at one person's
   noise, `RING_HUNTERS` army bots may leave their ground to hunt one person

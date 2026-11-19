@@ -372,6 +372,20 @@ var keeper_purge_first := 2.0
 ## gunshot is heard (`Actor.heard`), so a drawn-out fight brings the rest.
 ## A kill in one blow calls nobody.
 var linked_factions := {}
+## Grudges (DESIGN.md "The enemy AI pass", step 5): the bot factions that
+## remember a player for one life. Hurting one of its bots raises that
+## army's grudge (`grudge_per_damage` a point of damage, `grudge_per_kill`
+## a kill), it fades by `grudge_fade` a second, and death clears it. Over
+## `grudge_hunt` the army sends a few of its bots after that player, to
+## where they roughly are, every `Raid.GRUDGE_EVERY` (still through the
+## brain's hunter and leash limits), and the player's visor says so.
+## Empty keeps no grudges.
+var grudge_factions: Array[String] = []
+var grudge_per_damage := 1.0
+var grudge_per_kill := 60.0
+var grudge_fade := 3.0
+var grudge_hunt := 300.0
+var grudge_cap := 700.0
 ## Contracts of its own (DESIGN.md section 10, "World-tagged contracts"):
 ## a world with a `contract_tag` ("expedition") puts `contract_jobs` on the
 ## board beside the jobs that count anywhere, and they count only in a world

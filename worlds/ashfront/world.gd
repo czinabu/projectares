@@ -304,6 +304,8 @@ func _init() -> void:
 	war_reinforcements = 60
 	max_players = 32
 	bots_contest_sites = true
+	# Each army remembers who has been killing its soldiers, for one life.
+	grudge_factions.assign(["legion", "tide"])
 	depot_hold_time = 4.0
 	# The PvP world is where blueprints and upgrade data come from.
 	warlord_blueprint_chance = 0.5

@@ -85,7 +85,7 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 signal portal_travel(destination: String)
 
 const DEFAULT_PORT := 24565
-const PROTOCOL := 56
+const PROTOCOL := 57
 ## Every packet is compressed, both ways. State updates are mostly repeated
 ## numbers, and a big battle sends a player hundreds of them a second. Server
 ## and client must agree, so a change here needs a new PROTOCOL.
@@ -124,6 +124,7 @@ const PROTOCOL := 56
 ## 51: a keeper's phase (`_keeper`) and its purge lanes (`_purge`).
 ## 54: the war's artillery: a salvo called, with where and when each shell
 ## lands (`_shells`).
+## 57: an army hunting you for a grudge is told to you (`_hunted`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
 const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
@@ -371,6 +372,7 @@ var _sent_war := -1.0    # war intensity last sent (server)
 var _sent_weather := ""   # the storm kind last sent (server), "" for none
 var _sent_points := {}   # peer id -> strongpoint states last sent to them (server)
 var _sent_heat := {}     # peer id -> [body heat, warming] last sent to them (server)
+var _sent_hunted := {}   # peer id -> the army hunting them last sent (server)
 var _sent_tracks := {}   # peer id -> { track cell: last mark id sent } (server)
 ## Tracks: how far round a player new marks are sent, how often, and at most
 ## how many in one message (the rest follow next time).
@@ -731,6 +733,7 @@ func _clear_tables() -> void:
 	_sent_war = -1.0
 	_sent_points.clear()
 	_sent_heat.clear()
+	_sent_hunted.clear()
 	_sent_tracks.clear()
 	_actor_account.clear()
 	_board_sent.clear()
@@ -1670,6 +1673,7 @@ func _send_world(peer: int) -> void:
 		_send_portal(peer, portal)
 	_sent_points.erase(peer)
 	_sent_heat.erase(peer)
+	_sent_hunted.erase(peer)
 	_sent_tracks.erase(peer)
 	if not raid.ice_holes.is_empty():
 		_ice_holes.rpc_id(peer, raid.pack_ice_holes())
@@ -2104,6 +2108,17 @@ func _server_late_tick(_delta: float) -> void:
 			if _sent_heat.get(peer, []) != heat:
 				_sent_heat[peer] = heat
 				_body_heat.rpc_id(peer, heat[0], heat[1])
+	# Grudges: a player hears which army is hunting them, and nothing more.
+	if _tick % 30 == 0 and not raid.world.grudge_factions.is_empty():
+		for state in raid.players:
+			if not is_instance_valid(state.actor):
+				continue
+			var peer := _owner_peer(state.actor)
+			if peer == 0 or peer not in _joined_peers:
+				continue
+			if str(_sent_hunted.get(peer, "")) != state.actor.hunted_by:
+				_sent_hunted[peer] = state.actor.hunted_by
+				_hunted.rpc_id(peer, state.actor.hunted_by)
 	# Tracks: each player is sent the new marks near them, never the whole
 	# world's, a few times a second.
 	if _tick % TRACK_SEND_EVERY == 0 and raid.world.tracks:
@@ -3607,6 +3622,15 @@ func _purge(index: int, state: int) -> void:
 func _ice_holes(data: PackedFloat32Array) -> void:
 	if raid != null and raid.world != null and raid.world.thin_ice:
 		raid.unpack_ice_holes(data)
+
+
+## The army hunting you for a grudge ("" for none), for the visor's tag.
+## Only the owner hears it.
+@rpc("authority", "call_remote", "reliable")
+func _hunted(faction: String) -> void:
+	var me: Actor = _actors.get(my_actor_id)
+	if me != null:
+		me.hunted_by = faction.left(32)
 
 
 ## Your body heat and whether you stand in warmth, for the visor and the

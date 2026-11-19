@@ -1488,6 +1488,13 @@ func hear_callout(at: Vector3, about: Actor) -> void:
 	_sensed(at, about, false, true)
 
 
+## Its army holds a grudge against `about` (`Raid._tick_grudges`): the bot
+## goes to look round where they roughly are, as it would for a noise heard
+## (off by a tenth of the distance), if it may hunt them.
+func hunt_grudge(at: Vector3, about: Actor) -> void:
+	_sensed(at, about, false, false)
+
+
 ## Something tells the bot about `source` at `at`: it searches from there
 ## if it may (a free hunter place and, for a noise, a looker's), else it
 ## turns to face it for `alert_time`. Hearing is rough: the place is off by

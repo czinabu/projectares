@@ -1063,7 +1063,7 @@ plan in five steps (the plan doc, "Enemy AI pass: a plan per world"):
    fireteams meeting in the open field, standing skirmish lines along the
    front lines, sieges at the landmarks, close quarters in the Works, and
    both armies' elites at the Foundry only when the war runs hot.
-5. **Players and the armies.** Each army keeps a grudge against each
+5. **Players and the armies (built).** Each army keeps a grudge against each
    player for one life: damage to it raises it, time lets it fade, death
    clears it. A high grudge sends that army's hunters (inside the existing
    hunter, slot and leash limits) and names you in its callouts; the other
@@ -1121,6 +1121,17 @@ at 12 m (90%, band 65-85) and a core soldier at 12 m (87%, where a Legion
 rifleman now steps back). A marksman is easy up close (83-97%) and wins
 about half its duels at 50 m. The battle bench: 9.8 ms a tick, 46 stuck
 bot-windows.
+
+**Grudges (step 5).** Ashfront's two armies each keep a grudge against each
+player for one life (`WorldDef.grudge_factions`, `Raid.grudges`): a point
+for each point of damage to its bots (an overkill counts as one body), 60
+for a kill, fading 3 a second, cleared by death, at most 700. Over 300,
+two or three kills of one army in a minute or two, that army sends its two
+nearest bots within 120 m to where the player roughly is every 12 s, as if
+they had heard them (`BotBrain.hunt_grudge`), so the hunter, slot and
+leash limits still hold and the other army does not change. The player's
+visor says "THE LEGION IS HUNTING YOU" under the heading tape while it
+lasts (`VisorHud.hunted_text`, owner only, `NetSession._hunted`).
 
 ### Army commanders
 

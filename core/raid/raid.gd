@@ -217,6 +217,17 @@ var shelling := Shelling.new()
 ## Smoke that hides people from bots as it hides them from eyes (`Smoke`):
 ## authority only, aged every tick, added where a cloud rises (a shell).
 var smoke := Smoke.new()
+## Each army's grudge against each player for this life
+## ({player actor: {faction: points}}, `WorldDef.grudge_factions`).
+## Authority only; the player hears only who is hunting them
+## (`Actor.hunted_by`).
+var grudges := {}
+var _grudge_in := 0.0
+## Seconds between an army's hunters being sent after the player it holds
+## a grudge against, how many go each time, and from how far.
+const GRUDGE_EVERY := 12.0
+const GRUDGE_HUNTERS := 2
+const GRUDGE_REACH := 120.0
 ## The weather (DESIGN.md "Weather: ash storms"): at most one storm crossing
 ## the map, on `WorldDef.weather_kind`. Only the authority runs it; a client's
 ## copy comes from `NetSession` and is only carried on between updates.
@@ -537,6 +548,8 @@ func _physics_process(delta: float) -> void:
 		shelling.tick(self, delta)
 	smoke.tick(delta)
 	_tick_cold(delta)
+	if not world.grudge_factions.is_empty() and zone_rules:
+		_tick_grudges(delta)
 	if world.thin_ice:
 		_tick_ice(delta)
 	_tick_bosses(delta)
@@ -2829,6 +2842,8 @@ func _add_bot(marker: Node3D, warlord := false) -> Actor:
 	bot.died.connect(_on_actor_died)
 	if world.linked_factions.has(bot.faction):
 		bot.health.damaged.connect(_on_linked_hurt.bind(bot))
+	if world.grudge_factions.has(bot.faction) and mode != Mode.CLIENT:
+		bot.health.damaged.connect(_on_army_hurt.bind(bot))
 	world.on_spawn(bot)
 	_post_bot(bot)
 	actor_spawned.emit(bot)
@@ -3555,6 +3570,12 @@ func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3,
 func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	world.on_death(actor, info)
 	_tell_team(actor)
+	if grudges.has(actor):
+		# A grudge lasts one life.
+		grudges.erase(actor)
+		actor.hunted_by = ""
+	elif info != null and world.grudge_factions.has(actor.faction):
+		_add_grudge(info.source as Actor, actor.faction, world.grudge_per_kill)
 	var drops := actor.get_drop_items()
 	if state_for(actor) != null and world.keep_gear_on_death:
 		# A gentler world: a player's equipped gear goes home, not in the bag.
@@ -4255,3 +4276,66 @@ func _tell_team(dead: Actor) -> void:
 		var brain := bot.get_node("Brain") as BotBrain
 		if brain.team == team:
 			brain.ally_down()
+
+
+## A bot of an army that keeps grudges was hurt: the player who did it rises
+## in that army's grudge (`WorldDef.grudge_factions`).
+func _on_army_hurt(info: DamageInfo, bot: Actor) -> void:
+	if info == null or info.amount <= 0.0 or not is_instance_valid(bot):
+		return
+	# No more than the bot had in it: an overkill counts as one body.
+	var hurt := minf(info.amount, bot.health.max_health)
+	_add_grudge(info.source as Actor, bot.faction, hurt * world.grudge_per_damage)
+
+
+func _add_grudge(source: Actor, faction: String, points: float) -> void:
+	if source == null or not is_instance_valid(source) or source.is_dead or state_for(source) == null:
+		return
+	var held: Dictionary = grudges.get(source, {})
+	held[faction] = minf(float(held.get(faction, 0.0)) + points, world.grudge_cap)
+	grudges[source] = held
+
+
+## Grudges fade, and an army whose grudge runs high sends a few of its bots
+## after that player: to where they roughly are (a heard place, never live
+## tracking), through `BotBrain.hunt_grudge`, so the brain's hunter and leash
+## limits still hold. Authority only.
+func _tick_grudges(delta: float) -> void:
+	_grudge_in -= delta
+	var send := _grudge_in <= 0.0
+	if send:
+		_grudge_in = GRUDGE_EVERY
+	# Untyped: a freed player cannot be assigned to an `Actor` to be checked.
+	for key: Variant in grudges.keys():
+		if not is_instance_valid(key):
+			grudges.erase(key)
+			continue
+		var player := key as Actor
+		var held: Dictionary = grudges[player]
+		var top := ""
+		for faction: String in held.keys():
+			var points := float(held[faction]) - world.grudge_fade * delta
+			if points <= 0.0:
+				held.erase(faction)
+				continue
+			held[faction] = points
+			if points >= world.grudge_hunt and (top == "" or points > float(held[top])):
+				top = faction
+		player.hunted_by = top
+		if held.is_empty():
+			grudges.erase(player)
+		elif send and top != "" and not player.is_dead:
+			_send_grudge_hunters(player, top)
+
+
+func _send_grudge_hunters(player: Actor, faction: String) -> void:
+	var near: Array = []
+	for bot in bots:
+		if not is_instance_valid(bot) or bot.is_dead or bot.faction != faction or _is_extra(bot):
+			continue
+		var d := bot.global_position.distance_to(player.global_position)
+		if d <= GRUDGE_REACH and bot.has_node("Brain"):
+			near.append([d, bot])
+	near.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for i in mini(GRUDGE_HUNTERS, near.size()):
+		(near[i][1].get_node("Brain") as BotBrain).hunt_grudge(player.global_position, player)

@@ -13,6 +13,7 @@ static func run(t: Node) -> void:
 	await _smoke_hides(t)
 	_pincer_and_break(t)
 	await _doctrines(t)
+	await _grudges(t)
 
 
 static func _smoke_shape(t: Node) -> void:
@@ -237,5 +238,63 @@ static func _doctrines(t: Node) -> void:
 	t.check(legion_exo > tide_exo and tide_blade > legion_blade * 2,
 			"the Legion brings more exos, the Tide more blades (%d/%d exos, %d/%d blades)"
 			% [legion_exo, tide_exo, legion_blade, tide_blade])
+	raid.queue_free()
+	await t.frames(2)
+
+
+static func _grudges(t: Node) -> void:
+	print("Enemy AI: grudges")
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(Worlds.get_world("ashfront"), 74)
+	for bot in raid.bots:
+		bot.get_node("Brain").set_physics_process(false)
+		bot.set_physics_process(false)
+		bot.global_position = Vector3(600, 0, 600)
+	var me := raid.add_player(KIT, {}, "Grudger", "grudger")
+	await t.frames(3)
+	me.protected_left = 0.0
+	var spot := raid._stand(Vector3(-150, 0, 40))
+	me.global_position = spot
+	var victim := raid.spawn_bot("Victim", raid._stand(spot + Vector3(10, 0, 0)), 11, false, "legion", 1)
+	# Wired as the map's own soldiers are (`Raid._add_bot`).
+	victim.health.damaged.connect(raid._on_army_hurt.bind(victim))
+	victim.died.connect(raid._on_actor_died)
+	Combat.deal(victim, DamageInfo.make(40.0, me, "bullet"))
+	var held: Dictionary = raid.grudges.get(me, {})
+	t.check(is_equal_approx(float(held.get("legion", 0.0)), 40.0) and not held.has("tide"),
+			"hurting the Legion raises its grudge, not the Tide's")
+	Combat.deal(victim, DamageInfo.make(9999.0, me, "bullet"))
+	held = raid.grudges.get(me, {})
+	t.check(float(held.get("legion", 0.0)) >= 40.0 + raid.world.grudge_per_kill,
+			"and a kill raises it more")
+	var before := float(held.get("legion", 0.0))
+	raid._tick_grudges(1.0)
+	t.check(is_equal_approx(float(raid.grudges[me]["legion"]), before - raid.world.grudge_fade) and me.hunted_by == "",
+			"it fades, and a small grudge sends nobody")
+	# Over the line, the army sends a couple of its own after the player.
+	var hunter := raid.spawn_bot("Hunter", raid._stand(spot + Vector3(0, 0, 40)), 12, false, "legion", 1)
+	var brain := BotBrain.new()
+	brain.name = "Brain"
+	brain.seed_value = 12
+	hunter.add_child(brain)
+	brain.set_physics_process(false)
+	brain.post_to(hunter.global_position, 10.0)
+	var bystander := raid.spawn_bot("Bystander", raid._stand(spot + Vector3(0, 0, -40)), 13, false, "tide", 1)
+	var calm := BotBrain.new()
+	calm.name = "Brain"
+	bystander.add_child(calm)
+	calm.set_physics_process(false)
+	await t.frames(2)
+	raid.grudges[me]["legion"] = raid.world.grudge_hunt + 100.0
+	raid._grudge_in = 0.0
+	raid._tick_grudges(0.1)
+	t.check(me.hunted_by == "legion", "an army over its line hunts the player")
+	t.check(brain.state == BotBrain.State.CHASE and brain._last_seen.distance_to(me.global_position) < 8.0,
+			"and sends its nearest after where they roughly are")
+	t.check(calm.state != BotBrain.State.CHASE, "while the other army takes no notice")
+	t.check(VisorHud.hunted_text(me) == "THE LEGION IS HUNTING YOU", "the visor says who is after you")
+	Combat.deal(me, DamageInfo.make(99999.0, hunter, "bullet"))
+	t.check(not raid.grudges.has(me) and me.hunted_by == "", "and death clears the grudge")
 	raid.queue_free()
 	await t.frames(2)
