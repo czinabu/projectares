@@ -420,6 +420,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		watch_shortcut("emote")
 	elif event.is_action_pressed("watch_map"):
 		watch_shortcut("map")
+	elif event.is_action_pressed("helmet"):
+		toggle_helmet()
 	elif event.is_action_pressed("quick_emote"):
 		quick_emote()
 	elif event.is_action_pressed("ping") and captured and is_instance_valid(actor) and not actor.is_dead:
