@@ -53,7 +53,7 @@ date in the same PR.
   draws every tab's settings from that table (`Phone._draw_setting_rows`),
   so a new setting never touches the phone.
 - Emotes (DESIGN.md "Emotes", `core/visual/emotes.gd`): picked on the
-  watch's emote icon (Status tab, `Hud.emote_slot`), played by the
+  emote key's quick wheel (below; they left the watch, Caleb's call), played by the
   controller as the held `ActorCommand.emote` (in the stance's byte,
   `EMOTE_SHIFT`), so they predict and replicate with no message of their
   own, and posed on the one body (`ActionPose.emote`, timed by each view;
@@ -160,7 +160,9 @@ date in the same PR.
   three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
   Summon (weapons, vehicles, artifacts, the pack, with the pack's line
   under it; the helmet left the watch once it had its own key, K),
-  Status (map, standing) and Mission (portal, contract, ping, sign-out).
+  Status (map, standing) and Mission (portal, contract, sign-out). Emotes
+  (the emote key's wheel) and the squad ping (its own key) left the watch
+  (Caleb's call): a watch icon must do something no key already does.
   The contract icon is the mission log (Caleb's ask): opened, the wheel
   turns through the tour's step and each contract held
   (`Hud.mission_entries`, `mission_slot`) and a click turns the picked one

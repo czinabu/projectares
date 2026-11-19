@@ -1599,7 +1599,7 @@ the storage behind it.
       renown, any bounty: what dying now would cost), safe (what this life
       has banked, lifetime rank) and this life (time alive, kills, streak,
       the contract nearest done).
-  - **Mission:** the squad portal, the contract tracker, a squad ping, and
+  - **Mission:** the squad portal, the contract tracker, and
     sign-out and banking.
 - **Pop-ups only while they matter:** the death report and landing choices
   when you go down, the flight rig's status while flying, and a brief notice.
@@ -1677,7 +1677,6 @@ other places, not only to the worlds).
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying: the wheel picks one on the death report and a click drops in (number keys and Enter still work). |
 | Squad portal | Opens a portal to a world, the arena, the plaza or home from your base and the plaza, or home from anywhere in a world as a sign-out (above). |
-| Emotes | A carousel on the Status tab: wave, salute, point, cheer, sit, lean, dance and taunt, played on your own body for everyone to see (section 11). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
@@ -3245,10 +3244,10 @@ players far less than to bots.
 
 Eight to start (Caleb's go-ahead, 19 November 2026): wave, salute, point,
 cheer, sit down, lean back (arms folded), dance and a taunt (a beckon, the
-other hand on the hip). They are picked on the watch, since they are
-something you do in the world: the emote icon on the Status tab opens like
-the other carousels, the wheel turns through them and a click plays one (a
-click on the one playing stops it).
+other hand on the hip). They are picked on the emote key's quick wheel
+(below). They were an icon on the watch's Status tab until the wheel came,
+and left the watch then (Caleb's call): the watch keeps to what you do in
+action.
 
 - **One body, every view.** An emote is a pose on the one body
   (`Locomotion.emote_pose`, `_emote_body`), the same in first and third
@@ -3277,8 +3276,7 @@ points at a slice instead of turning the view (the wheel steps round it
 too) and clicks never shoot. Held, letting go plays the slice pointed at
 (nothing if the mouse never moved); tapped, it stays up until a click
 plays a slice, a right click or the key again puts it away. It closes on
-the watch, the phone, a vehicle or a death. The watch's emote icon still
-works the same way.
+the watch, the phone, a vehicle or a death.
 
 ### Shortcut keys
 
@@ -3309,8 +3307,9 @@ no rebinding screen yet; when it gets one these come with the rest.
   does: from the plaza, the arena or your base, landing at the gate outpost.
   Out in a world where gear is at stake you sign out first. An accepted
   world invite goes the same way.
-- **Pings** stay on the watch (Mission tab), marking where you look for your
-  side.
+- **Pings** are their own key (the middle mouse button), marking where you
+  look for your side. They left the watch (Caleb's call), where the icon
+  only did what the key does.
 - **Later:** squadmates marked on the visor and watch map (today that is
   your clan), a say-nearby line over the head, voice.
 

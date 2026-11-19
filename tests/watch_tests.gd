@@ -436,13 +436,7 @@ static func _ping_and_popups(t: Node) -> void:
 	await t.frames(2)
 	t.check(hud.pings_shown() == 1, "and stands in the world as a marker for you")
 	t.check(raid.ping(p) != "" and pings.size() == 1, "pings cannot be spammed")
-	var asked := [0]
-	controller.ping_requested.connect(func() -> void: asked[0] += 1)
-	controller.wrist_raised = true
-	controller.watch_focus = Hud.Wrist.SLOTS.find("ping")
-	controller.watch_focus_moved = true
-	t.check(controller.watch_takes_fire() and controller.click_watch() and asked[0] == 1 and controller.wrist_raised,
-			"a click on the ping icon asks for a ping and keeps the watch up")
+	t.check(not "ping" in Hud.Wrist.SLOTS, "pinging is its own key (the middle button), not a watch icon")
 	# A stranger's ping is not yours to see.
 	var other := raid.bots[0]
 	raid.pinged.emit(other, spot)
@@ -657,7 +651,7 @@ static func _rough_edges(t: Node) -> void:
 	controller.watch_focus = Hud.Wrist.SLOTS.find("map")
 	await t.frames(3)
 	t.check(not hud.wrist.card.map.is_empty(), "read on the watch, the card draws it")
-	controller.watch_focus = Hud.Wrist.SLOTS.find("ping")
+	controller.watch_focus = Hud.Wrist.SLOTS.find("standing")
 	await t.frames(3)
 	t.check(hud.wrist.card.map.is_empty(), "and only while the Map icon is read")
 
@@ -885,8 +879,15 @@ static func _clicks_stay_on_watch(t: Node) -> void:
 		cmd.secondary = aim
 		cmd.secondary_pressed = fresh_aim
 		controller._hold_back_clicks(cmd)
-	# A pick that lowers the watch (an emote, as the emote wheel does).
-	controller.watch_shortcut("emote")
+	# A pick that lowers the watch (drawing the sidearm off the weapons list).
+	var onto_weapons := func() -> void:
+		controller.wrist_raised = true
+		controller.watch_tabs = false
+		controller.watch_focus_moved = true
+		controller.watch_focus = Hud.Wrist.SLOTS.find("weapon")
+		controller.watch_open = "weapon"
+		controller.weapon_pick = 1
+	onto_weapons.call()
 	press.call(true, false, true)
 	t.check(not controller.wrist_raised and not cmd.primary and not cmd.primary_pressed,
 			"a pick that lowers the watch is not a shot")
@@ -897,7 +898,7 @@ static func _clicks_stay_on_watch(t: Node) -> void:
 	t.check(cmd.primary and cmd.primary_pressed, "once let go, the next click with the watch down shoots")
 	press.call(false, false)
 	# Right click backs out of an open icon, then the watch goes down.
-	controller.watch_shortcut("emote")
+	onto_weapons.call()
 	press.call(false, true, false, true)
 	t.check(controller.watch_open == "" and controller.wrist_raised and not cmd.secondary and not cmd.secondary_pressed,
 			"a right click backs out of the icon without aiming")
