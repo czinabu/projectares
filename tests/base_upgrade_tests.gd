@@ -230,7 +230,8 @@ static func _helmet_shelf(t: Node, stash: Array[String]) -> void:
 		var helmet := display.get_node_or_null("Model/HelmetModel") as Node3D
 		if helmet != null:
 			# A helmet's front is -Z; it must look the way its display faces.
-			facing_out = facing_out and (-helmet.global_basis.z).dot(display.global_basis.z) > 0.95
+			# Normalized: a helmet model is scaled to fit the head.
+			facing_out = facing_out and (-helmet.global_basis.z.normalized()).dot(display.global_basis.z.normalized()) > 0.95
 	t.check(facing_out, "every helmet on show faces out toward the room")
 	var plates: Array[Label3D] = []
 	for display in base.displays:

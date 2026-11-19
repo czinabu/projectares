@@ -811,11 +811,15 @@ without Caleb, and update the gap list when a PR closes a row.
   vertex's rest place and hand share in CUSTOM0, so `character.gdshader`
   draws patterns that stay on the body as it moves. Never change a
   vertex count, bone or weight there: a body must pose and cost the same.
-  Under an armor frame the bare skin below the head wears a fitted
-  undersuit with gloves and a lit cuff, drawn by the shader (`suit`, set
-  by `ActorSkin._update_frame`; `Human.surface_kind` says which surfaces
-  it covers), never a mesh, so plates fit the same over it. Check by eye
-  with `body_check.tscn -- <dir> [--suit] [--before]`.
+  Under an armor frame a person wears a fitted undersuit (Caleb's
+  tactical pass): the body, legs and boots of their build's
+  `ActorSkin.SUIT_OUTFITS` go on in place of their clothes
+  (`_wear_undersuit`, view only, the clothes given back when the frame
+  comes off, the appearance untouched), and the shader draws every
+  surface below the head as the suit in the frame's "suit" colour, with
+  gloves and a cuff lit in its accent (`suit`, `suit_color`,
+  `suit_trim`; `Human.surface_kind` says which surfaces it covers). Check
+  by eye with `body_check.tscn -- <dir> [--suit] [--before]`.
   Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
@@ -1146,13 +1150,20 @@ without Caleb, and update the gap list when a PR closes a row.
   worn one goes in the pack; `_worn_changed` tells every client. The skin wears it on the
   head (`ActorSkin._update_helmet`, `build_helmet`), hiding the head under it; it
   hangs off the "Head" bone, so first person leaves it out with the head.
-  Each helmet looks like what it does (Caleb's call; `helmet_model.gd`):
-  a dark hood, a shell with its own outline (`Shape`: the Spotter low and
-  high-cut, the Seeker a swept egg, the Warden faceted with a crest, the
-  Ember broad over its heat sinks), smoked glass glowing in the visor's
-  colour and the mode's fitting (rangefinder pod, emitter crown, sensor
-  eyes all round, thermal lens and heat sinks; the scrap visor patched and
-  cracked); a Mk2 (`Visor.tier`) wears a lit seam over the crown. Keep
+  Each helmet looks like what it does (Caleb's call, and his tactical
+  pass: grounded military sci-fi; `helmet_model.gd`): a dark hood, a
+  shell with a real outline (a superellipsoid, never a ball) with a brow,
+  a rim and the mode's own cut (the Spotter high-cut for a headset with a
+  flip-down rangefinder, the Seeker full-cut with a jaw guard and crown
+  emitter, the Warden a faceplate with a lit slit and sensor eyes all
+  round, the Ember a broad ceramic shell over its heat sinks, the scrap
+  visor a patched pot with cracked goggles), framed glass that is dark
+  and reflective, never a glowing panel; a Mk2 (`Visor.tier`) wears a lit
+  seam over the crown. Every helmet and armor piece is built from
+  `GearShapes` (`core/visual/gear_shapes.gd`), merged into one mesh per
+  material (`GearShapes.merge`: "Gear", and "Glass" with no shadow; the
+  parts it was made of in its "parts" meta, `has_part`) and built once
+  per kind, then shared (`GearShapes.cached`). Keep
   the back of the head clear for the vitals strip. Goggles will be the
   same glass and fitting on a strap, no shell. Check by eye with
   `visual_check.tscn -- <dir> --helmets-only` (helmet_closeups.png).
@@ -1163,22 +1174,29 @@ without Caleb, and update the gap list when a PR closes a row.
   carousel too and goes through `Raid.swap_worn`. Both go on at once and
   then the watch rests (`Loadout.SUMMON_TIMES` "helmet", short, and
   "armor", long), and a frame taken off keeps its armor left in
-  `Actor.stowed_armor`, so spare plates are no instant refill. The skin wears its plates
-  (`ActorSkin._update_frame`, `build_frame`, `build_pad`, `build_tasset`)
-  on the chest, upper arm and thigh bones, the same body in both views and
-  on the base's armor stands (`HomeBase._build_armor`). Plates are fitted,
-  never boxes (Caleb's call): curved shells (`_shell`) off the torso,
-  bevelled at the edges. Weight reads at a glance (Caleb's armor pass):
-  the frame's weight tag picks its bulk (`ActorSkin.FRAME_BULK`: plate
-  thickness, how far off the body, coverage, shoulder lames, tassets, a
-  gorget), light a thin breastplate and back plate, medium a carrier with
-  caps and a tasset, heavy thick layered plate that widens the shoulders,
-  so a frame moved to another weight tier changes bulk with it. Each frame
-  also has a look of its own that fits what it does (`FRAME_LOOKS` to
-  `FRAME_STYLES`: colours, a matte finish matching the helmets, and
-  details such as the Runner's cool spine vents or the Bulwark's hot back
-  vents); a new frame gets a `FRAME_LOOKS` entry (a test checks it). Check
-  by eye with `visual_check.tscn -- <dir> --armor-only`.
+  `Actor.stowed_armor`, so spare plates are no instant refill. The skin
+  wears the whole kit (`ActorSkin._update_frame`, `armor_model.gd`): a
+  plate carrier on the chest (`build_frame`), a battle belt on the hips
+  (`build_belt`) and on each side a segmented shoulder pad (`build_pad`),
+  an elbow pad and bracer (`build_bracer`), a thigh plate (`build_tasset`,
+  a drop-leg pouch on the right) and a knee pad and shin guard
+  (`build_shin`), each on the bone it moves with (`_hang_limb` turns a
+  limb piece along its limb), the same body in both views, over the
+  undersuit, and on the base's armor stands (`HomeBase._build_armor`).
+  Plates are fitted, never boxes (Caleb's call): curved shells off the
+  torso, bevelled at the edges, over a fabric carrier with straps,
+  webbing and pouches. Weight reads at a glance: the frame's weight tag
+  picks its coverage (`ActorSkin.FRAME_BULK`), light a slim carrier,
+  caps and knee pads, medium the full kit with a cummerbund and an upper
+  arm plate, heavy layered plate with abdominal lames, a gorget, faulds
+  and greaves that widens the shoulders, so a frame moved to another
+  weight tier changes bulk with it. Each frame also has a look of its own
+  that fits what it does (`FRAME_LOOKS` to `FRAME_STYLES`: plate,
+  carrier, strap, undersuit, accent and metal colours, and details such
+  as the Runner's cool back panel, the Trooper's radio and hydration
+  carrier or the Bulwark's hot back vents); a new frame gets a
+  `FRAME_LOOKS` entry (a test checks it). Check by eye with
+  `visual_check.tscn -- <dir> --armor-only`.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
