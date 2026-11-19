@@ -28,7 +28,7 @@ func _ready() -> void:
 	# equip (`StashRules.free_items`), and it can never be stashed, so it
 	# cannot be farmed.
 	register("rifle_scrap", "Scrap Rifle", Rarity.COMMON, 0, ["weapon", "firearm", "rifle", "starter"],
-			{"recoil_pattern": "sway", "headshot_mult": 1.5, "falloff_start": 40.0, "falloff_end": 90.0, "falloff_min": 0.75},
+			{"recoil_pattern": "sway", "shot_sound": "shot_scrap", "headshot_mult": 1.5, "falloff_start": 40.0, "falloff_end": 90.0, "falloff_min": 0.75},
 			"Worn automatic rifle.")
 	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "one_handed", "blade", "starter"], {},
 			"A sharpened strip of plating.")
@@ -47,7 +47,7 @@ func _ready() -> void:
 
 	# Firearms
 	register("rifle_carbine", "Ashfront Carbine", Rarity.UNCOMMON, 450, ["weapon", "firearm", "rifle", "vendor"],
-			{"recoil_pattern": "climb_right", "damage": 24.0, "headshot_mult": 1.5, "fire_interval": 0.1, "spread_deg": 0.9, "reserve_ammo": 150,
+			{"recoil_pattern": "climb_right", "shot_sound": "shot_carbine", "damage": 24.0, "headshot_mult": 1.5, "fire_interval": 0.1, "spread_deg": 0.9, "reserve_ammo": 150,
 			"falloff_start": 50.0, "falloff_end": 100.0, "falloff_min": 0.8},
 			"Reliable automatic. Harder hitting and tighter than the scrap rifle.")
 	register("smg_stinger", "Stinger SMG", Rarity.UNCOMMON, 420, ["weapon", "firearm", "smg", "vendor"],
@@ -69,7 +69,7 @@ func _ready() -> void:
 	# Sidearms: worn on the hip and drawn when the primary runs dry.
 	register("pistol_machine", "Hornet Machine Pistol", Rarity.UNCOMMON, 380,
 			["weapon", "firearm", "sidearm", "machine_pistol", "vendor"],
-			{"recoil_pattern": "climb_left", "shot_sound": "shot_smg", "damage": 10.0, "headshot_mult": 1.3, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
+			{"recoil_pattern": "climb_left", "shot_sound": "shot_mpistol", "damage": 10.0, "headshot_mult": 1.3, "ads_time": 0.16, "move_spread_deg": 1.0, "fire_interval": 0.055, "mag_size": 20, "ammo_in_mag": 20, "reserve_ammo": 100,
 			"reload_time": 1.4, "spread_deg": 2.6, "bloom_per_shot": 0.45, "max_bloom": 4.0,
 			"recoil_kick_deg": 0.35, "max_range": 45.0, "falloff_start": 10.0, "falloff_end": 28.0, "falloff_min": 0.5},
 			"Full-auto spray. Deadly up close, useless at range.")

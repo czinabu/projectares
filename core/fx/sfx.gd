@@ -112,6 +112,179 @@ func _ready() -> void:
 		var stream := recorded(sound)
 		if stream != null:
 			_streams[sound] = stream
+	_load_weapon_sounds()
+
+
+## Weapon voices made by `assets/sounds/weapons/make_weapon_sounds.py`
+## (our own, from code). Each gun voice is three takes outdoors, three
+## indoors and two far off; a checkout without the files keeps the synth.
+const WEAPON_DIR := "res://assets/sounds/weapons/"
+## Every gun voice a `shot_sound` can name, and how loud it sits against the
+## others in dB (a fast gun is quieter a round, so a burst is not a wall).
+const GUN_VOICES := {
+	"shot_scrap": -1.0, "shot_carbine": -1.0, "shot_smg": -3.0, "shot_dmr": 0.0,
+	"shot_shotgun": 0.0, "shot_pistol": -2.0, "shot_mpistol": -4.0, "shot_cannon": 0.0,
+	"rail": 0.0, "plasma_shot": -1.0, "arc_shot": -2.0, "pulse": -6.0,
+}
+## Older names that still reach a voice: the plain "shot" every gun had.
+const GUN_ALIASES := {"shot": "shot_carbine"}
+## One-shots in that folder that replace a synthesized voice of the same
+## name (the hit marker's voices, the draws, a charge and a spin).
+const WEAPON_ONE_SHOTS := ["hit", "headshot", "armor_hit", "armor_break", "kill",
+		"draw_gun", "draw_blade", "rail_charge", "storm_spin"]
+const WEAPON_LOOPS := ["storm_spin"]
+## Where a shot heard from far off starts to give way to its far take, and
+## where only the far take is left. Sound is given its travel time past
+## `FAR_FROM` (`SOUND_SPEED`), so a distant fight is seen before it is heard.
+const FAR_FROM := 35.0
+const FAR_ONLY := 110.0
+const SOUND_SPEED := 343.0
+## How far over a shot a roof must be to make it an indoor shot, and how
+## long one look up is trusted for the same shooter.
+const ROOF_REACH := 9.0
+const ROOF_TRUST := 0.4
+
+var _roofs := {}
+var _own := {}
+
+
+func _load_weapon_sounds() -> void:
+	for voice: String in GUN_VOICES:
+		for place: String in ["out", "in", "far"]:
+			var stream := _takes(voice + "_" + place, 3 if place != "far" else 2)
+			if stream != null:
+				_streams[voice + "_" + place] = stream
+		# The plain name plays the outdoor take, for anything that asks for it.
+		if _streams.has(voice + "_out"):
+			_streams[voice] = _streams[voice + "_out"]
+	for alias: String in GUN_ALIASES:
+		if _streams.has(GUN_ALIASES[alias] + "_out"):
+			_streams[alias] = _streams[GUN_ALIASES[alias] + "_out"]
+	for sound: String in WEAPON_ONE_SHOTS:
+		var path: String = WEAPON_DIR + sound + ".ogg"
+		if ResourceLoader.exists(path):
+			var stream := load(path) as AudioStream
+			if stream is AudioStreamOggVorbis and sound in WEAPON_LOOPS:
+				(stream as AudioStreamOggVorbis).loop = true
+			_streams[sound] = stream
+
+
+## `count` takes of one sound in a randomizer that never plays the same take
+## twice running, with a touch of pitch so a burst never repeats itself.
+static func _takes(base: String, count: int) -> AudioStream:
+	var pick := AudioStreamRandomizer.new()
+	pick.random_pitch = 1.04
+	pick.random_volume_offset_db = 0.8
+	pick.playback_mode = AudioStreamRandomizer.PLAYBACK_RANDOM_NO_REPEATS
+	for i in count:
+		var path := WEAPON_DIR + "%s_%d.ogg" % [base, i + 1]
+		if ResourceLoader.exists(path):
+			pick.add_stream(-1, load(path))
+	return pick if pick.streams_count > 0 else null
+
+
+## The voice a gun's `shot_sound` names, after its aliases.
+static func gun_voice(sound: String) -> String:
+	return GUN_ALIASES.get(sound, sound)
+
+
+## A gun going off at `at`, fired by `shooter`. Your own is played flat the
+## moment it fires (no position, no travel). Anyone else's is placed in the
+## world: near it is the full shot, far off its far take after the sound's
+## travel time, and both answer the place: under a roof the tight indoor
+## take, in the open the long echo. `reach` and `unit` are as `play`'s.
+func shot(sound: String, at: Vector3, shooter: Node, own: bool, volume_db := 0.0,
+		reach := 220.0, unit := UNIT_SIZE) -> void:
+	if not _enabled:
+		return
+	var voice := gun_voice(sound)
+	if not _streams.has(voice + "_out"):
+		play(sound, null if own else at, volume_db, reach, unit)
+		return
+	var trim: float = GUN_VOICES.get(voice, 0.0)
+	var room := voice + ("_in" if indoors(shooter, at) else "_out")
+	if not _streams.has(room):
+		room = voice + "_out"
+	if own:
+		_play_own(room, volume_db + trim)
+		return
+	var ear := _ear(shooter)
+	var far := ear.distance_to(at) if ear.is_finite() else 0.0
+	var fade := far_share(far)
+	if fade < 1.0:
+		play(room, at, volume_db + trim + linear_to_db(maxf(1.0 - fade, 0.001)), reach, unit)
+	if fade > 0.0 and _streams.has(voice + "_far") and far <= reach:
+		var player := _player_3d(voice + "_far", at, volume_db + trim + linear_to_db(fade) + 4.0,
+				reach, unit * 2.5)
+		get_tree().create_timer((far - FAR_FROM) / SOUND_SPEED).timeout.connect(player.play)
+
+
+## How much of a shot `distance` metres off is its far take: none inside
+## `FAR_FROM`, all of it past `FAR_ONLY`.
+static func far_share(distance: float) -> float:
+	return clampf((distance - FAR_FROM) / (FAR_ONLY - FAR_FROM), 0.0, 1.0)
+
+
+## Your own gun: one flat player per voice that plays every round over the
+## last (`max_polyphony`), so a fast gun makes no new node a shot.
+func _play_own(sound: String, volume_db: float) -> void:
+	var player: AudioStreamPlayer = _own.get(sound)
+	if player == null or not is_instance_valid(player):
+		player = AudioStreamPlayer.new()
+		player.stream = _streams[sound]
+		player.max_polyphony = 12
+		add_child(player)
+		_own[sound] = player
+	player.volume_db = volume_db - 4.0
+	player.play()
+
+
+## Whether a shot at `at` goes off under a roof (a ceiling within
+## `ROOF_REACH` overhead), so it gets the indoor take. One look up per
+## shooter is trusted for `ROOF_TRUST` seconds: a gun firing twenty rounds a
+## second asks once. View only: it reads the world, never changes it.
+func indoors(shooter: Node, at: Vector3) -> bool:
+	if not _enabled or not shooter is Node3D or not shooter.is_inside_tree():
+		return false
+	var key := shooter.get_instance_id()
+	var now := Time.get_ticks_msec() / 1000.0
+	var seen: Variant = _roofs.get(key)
+	if seen is Array and now - float(seen[0]) < ROOF_TRUST:
+		return seen[1]
+	var roofed := roof_over((shooter as Node3D).get_world_3d(), at)
+	if _roofs.size() > 256:
+		_roofs.clear()
+	_roofs[key] = [now, roofed]
+	return roofed
+
+
+## Whether the world has a roof (anything on the world layer) within
+## `ROOF_REACH` straight over `at`.
+static func roof_over(world: World3D, at: Vector3) -> bool:
+	if world == null:
+		return false
+	var query := PhysicsRayQueryParameters3D.create(at, at + Vector3(0.0, ROOF_REACH, 0.0), Actor.LAYER_WORLD)
+	return not world.direct_space_state.intersect_ray(query).is_empty()
+
+
+## Where the listener is: the camera of the viewport `node` is drawn in.
+func _ear(node: Node) -> Vector3:
+	if node == null or not node.is_inside_tree():
+		return Vector3.INF
+	var camera := node.get_viewport().get_camera_3d()
+	return camera.global_position if camera != null else Vector3.INF
+
+
+func _player_3d(sound: String, at: Vector3, volume_db: float, reach: float, unit: float) -> AudioStreamPlayer3D:
+	var player := AudioStreamPlayer3D.new()
+	player.stream = _streams[sound]
+	player.volume_db = volume_db
+	player.unit_size = unit
+	player.max_distance = reach
+	add_child(player)
+	player.global_position = at
+	player.finished.connect(player.queue_free)
+	return player
 
 
 ## Plays a sound. With a position it is 3D and fades with distance; without
