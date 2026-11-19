@@ -1427,6 +1427,9 @@ func _find_target() -> Actor:
 			continue
 		if weather != null and dist >= sight_range * weather.sight_between(eye, chest):
 			continue
+		# Close air (a forest's mist) shuts the eyes in as it does a player's.
+		if world and dist >= minf(world.sight_at(eye), world.sight_at(chest)):
+			continue
 		# Smoke hides a body from a bot as it does from a player's eyes.
 		if raid != null and raid.smoke.blocks(eye, chest):
 			continue

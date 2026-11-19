@@ -303,6 +303,17 @@ func contract_jobs() -> Dictionary:
 ## A PvE world: nobody hurts their own kind, and every player is one kind.
 ## The wildlife hunts across kinds, so a stalker pack on a shellback is a
 ## chance to slip past.
+## Under the forests' caps the mist shuts sight in to about where the
+## view's close air hides a body (Caleb's call: close quarters); out on the
+## water the air is clear enough for a bot's own sight.
+const FOREST_SIGHT := 38.0
+func sight_at(pos: Vector3) -> float:
+	var close := MapScript.close_at(pos.x, pos.z)
+	if close <= 0.0:
+		return INF
+	return lerpf(FOREST_SIGHT * 4.0, FOREST_SIGHT, close)
+
+
 func can_damage(attacker: Node, target: Node, _info: DamageInfo) -> bool:
 	if attacker == target:
 		return false

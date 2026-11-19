@@ -12,6 +12,7 @@ const KIT: Array[String] = ["rifle_scrap", "blade_scrap"]
 
 static func run(t: Node) -> void:
 	_settings(t)
+	_close_air(t)
 	_loot(t)
 	await _fouling(t)
 	await _wildlife(t)
@@ -53,6 +54,42 @@ static func _settings(t: Node) -> void:
 			"a brood keeper and its broodlings are one kind")
 	a.free()
 	b.free()
+
+
+static func _close_air(t: Node) -> void:
+	print("Marsh: the forests' close air")
+	var marsh := Worlds.get_world("marsh")
+	var map_script: GDScript = load("res://worlds/marsh/map.gd")
+	var forest: Dictionary = map_script.FORESTS[2]
+	var heart: Vector2 = forest["at"]
+	var inside := Vector3(heart.x, 0.0, heart.y)
+	var open := Vector3(heart.x, 0.0, heart.y) + Vector3(float(forest["radius"]) + 30.0, 0.0, 0.0)
+	t.check(map_script.close_at(inside.x, inside.z) > 0.99 and map_script.close_at(open.x, open.z) == 0.0,
+			"the air is close under a forest's caps and open out on the water")
+	t.check(marsh.sight_at(inside) < 40.0 and marsh.sight_at(open) == INF
+			and Worlds.get_world("ashfront").sight_at(inside) == INF,
+			"under the caps sight is cut to close quarters; out on the water, and in other worlds, it is not")
+	var type := PlanetTypes.get_type("marsh")
+	t.check(not type.close.is_empty() and float(type.close["fog_depth_end"]) < 60.0
+			and not type.smoke.get("banks", {}).is_empty(),
+			"the marsh planet shuts its air in under cover and drifts its mist in banks")
+	# The fog's floor comes down with the close air, as it does in a storm.
+	var env := Environment.new()
+	var mood := Look.mood_values(type.calm)
+	var shut := Look.blend_moods(mood, Look.mood_values(type.close, mood), 1.0)
+	Look.close_cover = 0.0
+	Look.apply_fog(env, mood)
+	var open_end := env.fog_depth_end
+	Look.close_cover = 1.0
+	Look.apply_fog(env, shut)
+	t.check(env.fog_depth_end < 60.0 and open_end > 100.0,
+			"the view shuts in under the caps (solid by %.0f m) and opens out over the water (%.0f m)" % [env.fog_depth_end, open_end])
+	Look.close_cover = 0.0
+	# The banks drift with the wind but come back to the same air.
+	var a: Vector2 = Planet.GroundSmoke.bank_spot(3, -2, 55.0, Vector2(0.8, 0.3), 10.0)
+	var b: Vector2 = Planet.GroundSmoke.bank_spot(3, -2, 55.0, Vector2(0.8, 0.3), 20.0)
+	t.check(a != b and a.x >= 165.0 and a.x < 220.0 and a.y >= -110.0 and a.y < -55.0,
+			"a mist bank drifts with the wind and stays in its own stretch of air")
 
 
 static func _loot(t: Node) -> void:

@@ -203,8 +203,20 @@ without Caleb, and update the gap list when a PR closes a row.
   it from `Raid.cloud_burst`. A beast's body is built in code like the
   walker's (`Look.SKINS` "creature", `ActorSkin._build_creature`), and a
   skin marked "bare" shows nothing in the hand. A world makes a kind
-  feint more than its ring with the bot's "feint_chance" meta. Check by
-  eye with `visual_check.tscn -- <dir> --marsh-only`.
+  feint more than its ring with the bot's "feint_chance" meta. Kinds that
+  are one family (a brood keeper and its broodlings) share a kind through
+  the world's `KIN`, which `can_damage` compares. A bot with the meta
+  "lies_low" (the lurkers) sits crouched at its post until it sees
+  someone, and a skin's "lurks" share sinks a crouched body (view only;
+  the crouch is what replicates). A "spawn_guard" marker's "brood" metas
+  make its guard spill extra bots near a player (`Raid._tick_brood`,
+  authority only, counted in `is_guard`), and a cache marker's "hive"
+  meta keeps that cache sealed while the guard with the same "hive" stands
+  (`Raid._seal_hives`, `LootContainer.sealed`). The forests' close air is
+  a planet's `close` mood the map blends in by its "close_here" meta
+  (`Look.close_cover` brings the depth fog's floor down like a storm's),
+  view only; what a bot sees there is `WorldDef.sight_at`, never the
+  view. Check by eye with `visual_check.tscn -- <dir> --marsh-only`.
 - How harsh death is belongs to the world, not to `Raid`. With
   `WorldDef.keep_gear_on_death` a dead player drops only the backpack and the
   equipped gear returns in the result's `kept`. A gentle world pays for that

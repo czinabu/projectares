@@ -179,12 +179,31 @@ func _process(_delta: float) -> void:
 	if camera != null and is_instance_valid(_weather):
 		_weather.global_position = Vector3(camera.global_position.x, camera.global_position.y - 6.0,
 				camera.global_position.z)
+	# Under the caps the mist shuts in (the planet's close air).
+	if camera != null:
+		set_meta("close_here", close_at(camera.global_position.x, camera.global_position.z))
+
+
+## How far a point is under a forest's caps, 0 out in the open to 1 well
+## inside: the close air the view blends in ("close_here") and the sight a
+## bot has there (the world's `sight_at`). From the layout alone.
+const CLOSE_INSIDE := 6.0
+const CLOSE_OUTSIDE := 14.0
+static func close_at(x: float, z: float) -> float:
+	var most := 0.0
+	for forest: Dictionary in FORESTS:
+		var radius := float(forest["radius"])
+		var dist := Vector2(x, z).distance_to(forest["at"])
+		most = maxf(most, 1.0 - smoothstep(radius - CLOSE_INSIDE, radius + CLOSE_OUTSIDE, dist))
+	return most
 
 
 func _build_environment() -> void:
 	# A drowned basin at dusk: the planet's green sky and pale moons, the
 	# mist lying low over the water (the planet's "smoke") and the spores
 	# drifting in it. The forests' gills are the warm lights.
+	# The mist banks lie on the water, never under it.
+	set_meta("mist_floor", WATER_Y)
 	Planet.atmosphere(self, planet)
 	Planet.weather(self, str(planet.weather.get("air", "spores")), 36.0, 18.0)
 	_weather = get_node_or_null("Weather")

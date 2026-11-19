@@ -294,6 +294,12 @@ var weather_fog_solid_min := 50.0
 var weather_depth_amount_cap := 0.985
 var weather_follow := 0.35
 var weather_cover := 0.0
+## How far into close air the view is (a planet's `close` mood, the map's
+## "close_here" meta), 0 to 1: like `weather_cover` it brings the depth fog's
+## floor down, so a forest can shut the view in (Caleb's call: close
+## quarters read smoky).
+var close_cover := 0.0
+var close_follow := 0.5
 ## The far skyline's haze (`skyline_haze`): how much it wears at a far fog
 ## of `skyline_haze_from` or less, rising to all of it at `skyline_haze_gone`.
 var skyline_haze_clear := 0.42
@@ -773,7 +779,7 @@ func _noise_texture() -> NoiseTexture2D:
 ## camera is), through `soften_weather`, which lets it close in to about
 ## 70 m but no closer.
 ## On a headless server this only adds a plain sun, which nothing sees.
-func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}) -> void:
+func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}, close := {}) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = p.get("sun_angles", Vector3(-45, 30, 0))
@@ -830,8 +836,9 @@ func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}) -> void:
 	parent.add_child(edge_ink())
 	var calm := mood_values(p)
 	weather_cover = 0.0
+	close_cover = 0.0
 	apply_mood(calm, env, sky_mat, sun)
-	if war.is_empty() and storm.is_empty():
+	if war.is_empty() and storm.is_empty() and close.is_empty():
 		return
 	var mood := WarMood.new()
 	mood.name = "WarMood"
@@ -839,6 +846,7 @@ func atmosphere(parent: Node3D, p := {}, war := {}, storm := {}) -> void:
 	mood.calm = calm
 	mood.war = soften_storm(mood_values(war, calm)) if not war.is_empty() else calm
 	mood.storm = soften_weather(mood_values(storm, calm)) if not storm.is_empty() else {}
+	mood.close = mood_values(close, calm) if not close.is_empty() else {}
 	mood.env = env
 	mood.sky_mat = sky_mat
 	mood.sun = sun
@@ -977,8 +985,9 @@ func apply_fog(env: Environment, m: Dictionary) -> void:
 	var height_density: float = m.fog_height_density
 	var use_depth := end > begin + 1.0
 	if use_depth:
-		# In a storm the floor comes down with how far in the camera is.
-		var cover := clampf(weather_cover, 0.0, 1.0)
+		# In a storm, or close air, the floor comes down with how far in
+		# the camera is.
+		var cover := clampf(maxf(weather_cover, close_cover), 0.0, 1.0)
 		begin = maxf(begin, lerpf(storm_fog_begin_min, weather_fog_begin_min, cover))
 		end = maxf(end, lerpf(storm_fog_solid_min, weather_fog_solid_min, cover))
 		curve = maxf(curve, 0.75)
@@ -1232,6 +1241,10 @@ class WarMood:
 	var war := {}
 	## The thick of a storm (`Look.atmosphere`'s `storm`), or empty.
 	var storm := {}
+	## Close air (`Look.atmosphere`'s `close`), or empty.
+	var close := {}
+	## How far into close air the view is shown to be, 0 to 1.
+	var close_shown := 0.0
 	var env: Environment
 	var sky_mat: ShaderMaterial
 	var sun: DirectionalLight3D
@@ -1252,25 +1265,32 @@ class WarMood:
 		if not storm.is_empty():
 			var here := clampf(float(parent.get_meta("weather_here", 0.0)), 0.0, 1.0)
 			storm_shown = move_toward(storm_shown, here, Look.weather_follow * delta)
+		if not close.is_empty():
+			var shut := clampf(float(parent.get_meta("close_here", 0.0)), 0.0, 1.0)
+			close_shown = move_toward(close_shown, shut, Look.close_follow * delta)
 		show_intensity(shown, parent.get_meta("war_centre", Vector3.ZERO))
 
 	## Sets the mood for an intensity at once. `_process` calls this with the eased value.
 	func show_intensity(value: float, centre: Vector3) -> void:
 		shown = value
 		var mood := Look.blend_moods(calm, war, value)
+		if not close.is_empty():
+			mood = Look.blend_moods(mood, close, close_shown)
+		Look.close_cover = close_shown if not close.is_empty() else 0.0
 		if not storm.is_empty():
 			mood = Look.blend_moods(mood, storm, storm_shown)
 		Look.weather_cover = storm_shown if not storm.is_empty() else 0.0
 		Look.apply_mood(mood, env, sky_mat, sun)
-		# In a storm the air hides the sky too, and outlines fade with it.
-		env.fog_sky_affect = Look.weather_cover
+		# In a storm, or close air, the air hides the sky too, and outlines
+		# fade with it.
+		env.fog_sky_affect = maxf(Look.weather_cover, Look.close_cover)
 		if ink != null and is_instance_valid(ink):
 			var mat := (ink.mesh as QuadMesh).material as ShaderMaterial if ink.mesh is QuadMesh else null
 			if mat != null:
 				if _ink_strength < 0.0:
 					var base: Variant = mat.get_shader_parameter("strength")
 					_ink_strength = float(base) if base != null else 0.8
-				mat.set_shader_parameter("strength", _ink_strength * (1.0 - Look.weather_cover))
+				mat.set_shader_parameter("strength", _ink_strength * (1.0 - maxf(Look.weather_cover, Look.close_cover)))
 		if column == null:
 			return
 		var smoke: GPUParticles3D = column.get_node("Smoke")
