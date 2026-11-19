@@ -2515,7 +2515,7 @@ func _marsh_shots(out_dir: String) -> void:
 		var beast := line[i]
 		var at := beast.global_position
 		var reach := maxf(beast.body_height() / 1.4, 0.8)
-		cam.look_at_from_position(at + Vector3(2.2, 1.4, -2.4) * reach, at + Vector3(0, 0.8, 0) * reach)
+		cam.look_at_from_position(at + Vector3(1.5, 0.9, 1.7) * reach, at + Vector3(0, 0.55, 0) * reach)
 		await _settle(4)
 		await _shot(out_dir.path_join("marsh_%s_close.png" % beast.faction))
 	# A bloater bursts.
@@ -2533,6 +2533,16 @@ func _marsh_shots(out_dir: String) -> void:
 	cam.look_at_from_position(origin + Vector3(0, 30.0, 30.0), Vector3(0, 0, -40))
 	await _settle(4)
 	await _shot(out_dir.path_join("marsh_basin.png"))
+	# The far giants looming over the hills, from the shore and from a cap.
+	var spots: Array[Dictionary] = raid.map.Flora.giant_spots(raid.map.LAYOUT_SEED + 21)
+	var elder: Vector2 = spots[0].at
+	var arch: Vector2 = spots[1].at
+	cam.look_at_from_position(origin + Vector3(0, 2.0, 0), Vector3(elder.x, 120.0, elder.y))
+	await _settle(4)
+	await _shot(out_dir.path_join("marsh_giants.png"))
+	cam.look_at_from_position(Vector3(0, 40.0, 0), Vector3(arch.x, 50.0, arch.y))
+	await _settle(4)
+	await _shot(out_dir.path_join("marsh_giants_high.png"))
 	# A brood keeper at its hive with its broodlings, under the caps where
 	# the air shuts in.
 	var hive: Vector3 = raid.map._hives[2]
@@ -2556,6 +2566,15 @@ func _marsh_shots(out_dir: String) -> void:
 		mood.close_shown = 1.0
 	await _settle(4)
 	await _shot(out_dir.path_join("marsh_hive.png"))
+	# The forest floor up close: ferns, spires, fronds and trumpets.
+	if mood != null:
+		mood.close_shown = 0.2
+	var floor_at: Vector3 = ground.call(Vector3(forest.x + 6.0, 0, forest.y + 38.0))
+	cam.look_at_from_position(floor_at + Vector3(0, 1.3, 0), ground.call(Vector3(forest.x + 2.0, 0, forest.y + 30.0)) + Vector3(0, 0.4, 0))
+	await _settle(4)
+	await _shot(out_dir.path_join("marsh_floor.png"))
+	if mood != null:
+		mood.close_shown = 1.0
 	# The same forest's air looked through, deep under the caps.
 	cam.look_at_from_position(Vector3(forest.x, 0, forest.y) + Vector3(0, ground.call(Vector3(forest.x, 0, forest.y)).y + 2.0, 0),
 			Vector3(forest.x + 40.0, 2.0, forest.y + 10.0))

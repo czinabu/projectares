@@ -1463,9 +1463,43 @@ and a fight is short. The planet's mist lies low over everything (its
   "banks", Forward+ only, like all volumetric fog). Bots see no further
   than the mist lets a player (`WorldDef.sight_at`: 38 m deep in a
   forest), so it is fair both ways.
-- **Still to come.** The Rootways and their keepers, the rain storms the
-  planet already has a look for, giant shapes far off in the haze, the
-  forest floor's flora, and a pass on the beasts' bodies.
+- **Still to come.** The Rootways and their keepers, and the rain storms
+  the planet already has a look for.
+
+### The Spore Marsh (part three, built: atmosphere and scale)
+
+Caleb's references were for mood, scale and detail, not colour: a warm,
+wide haze over open water, dark blue-green close forests, and things far
+bigger than you. The marsh keeps its own palette (mauve flesh, jade glow,
+olive moss, black water, ochre as the warm accent). All of it is view only
+(`worlds/marsh/flora.gd`, built by the map only where `Look` is on).
+
+- **Far giants.** Twelve shapes stand 430 to 900 m out round the basin,
+  far past anything you can reach: seven elder fungi (clusters of stalks
+  230 to 420 m tall under their caps) and five root arches rising out of
+  the ground and plunging back in. They are drawn in the haze
+  (`giant_haze.gdshader`: fading into the horizon's colour toward their
+  feet and with distance, their gills faintly lit), so they loom rather
+  than show. Under the caps or in a storm they are veiled away
+  (`Flora.set_veil`, from the map's "close_here" and "weather_here").
+  Where they stand is `Flora.giant_spots`, the same on every machine.
+- **The forest floor.** Under the caps the ground is grown over:
+  fiddlehead ferns, ribbed spires of stacked plates, ochre fronds that fork
+  and droop at their tips, and trumpet caps whose throats glow jade. Each
+  kind is one MultiMesh, scattered in clumps on dry ground inside the
+  forests and clear of the stalks, from its own seed.
+- **The beasts' bodies.** Every beast wears a hide of its own
+  (`creature.gdshader`: mottled patches over a speckle, a paler belly, a
+  wet sheen and lit freckles that breathe, more on a bloater, few on a
+  shellback; `ActorSkin.CREATURE_FRECKLES`), worked out in each piece's
+  own space so it stays on the body. Legs carry them: a haunch at the hip,
+  a thick thigh and a calf. Stalkers flare lit gill fans behind the skull
+  and carry spines down the tail; broodlings still wear shards of egg on
+  their backs and have eyes too big for their heads; shellbacks grow moss
+  and small lit caps on old shells and have a hooked beak; lurkers trail
+  barbels from the jaw and lie on fins; a keeper's eggs glow softly under
+  a skin of hide, with tendrils trailing under it; a bloater has lit spore
+  vents round its crown and veins of glow down its sac.
 
 ## 3. The watch
 
