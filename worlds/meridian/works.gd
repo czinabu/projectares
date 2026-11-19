@@ -27,7 +27,7 @@ const FADE_FROM := 540.0
 const OUTER := 860.0
 const BIG_CHUNK := 600.0
 const FINE_CHUNK := 300.0
-const FINE_RANGE := 480.0
+const FINE_RANGE := 900.0
 ## The districts round the belt, clockwise from -x; each takes an equal
 ## slice, its edges wavering.
 const DISTRICTS := ["tanks", "hangars", "port", "cooling", "launch", "hangars", "tanks", "port"]
@@ -92,10 +92,12 @@ func _init(p_parent: Node3D, p_seed: int, p_keep_out: Array) -> void:
 func build(tracks: Array) -> void:
 	for track: RaceTrack in tracks:
 		for p in track.points:
+			# A packed array is a copy once read out of the dictionary, so
+			# each cell's is taken out, added to and put back.
 			var c := _cell(p)
-			if not _cells.has(c):
-				_cells[c] = PackedVector3Array()
-			(_cells[c] as PackedVector3Array).append(Vector3(p.x, 0, p.z))
+			var cell: PackedVector3Array = _cells.get(c, PackedVector3Array())
+			cell.append(Vector3(p.x, 0, p.z))
+			_cells[c] = cell
 	_landmarks()
 	_belt()
 	_roads()

@@ -956,14 +956,35 @@ static func _test_works(t: Node) -> void:
 	t.check(root.find_children("*", "CollisionObject3D", true, false).is_empty(), "the works never collide")
 	var meshes := root.find_children("*", "MeshInstance3D", true, false)
 	t.check(meshes.size() > 20 and meshes.size() < 200, "the works are merged into blocks (%d meshes)" % meshes.size())
+	# Caleb found car parks and a service road across Coilrun: the works'
+	# own road check had been empty all along. Measured here on its own,
+	# against every point of both tracks and at any height, so the works
+	# keep the road, its kerbs and a run-off clear, under Skyhook's deck too.
+	var near := {}
+	for track: RaceTrack in tracks:
+		for p in track.points:
+			var c := Vector2i(floori(p.x / 20.0), floori(p.z / 20.0))
+			var list: Array = near.get(c, [])
+			list.append([Vector2(p.x, p.z), track.width * 0.5 + 3.0])
+			near[c] = list
+	t.check(float(works.call("track_dist", (tracks[0] as RaceTrack).points[0])) < 1.0,
+			"the works know where the road is")
 	var on_road := 0
+	var where := Vector3.ZERO
 	for node: Node in meshes:
 		var verts: PackedVector3Array = (node as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-		for k in range(0, verts.size(), 5):
-			var v := verts[k]
-			if v.y < 3.0 and float(works.call("track_dist", v)) < 13.0 * 0.5 + 1.0:
-				on_road += 1
-	t.check(on_road == 0, "nothing from the works stands on the road (%d points)" % on_road)
+		for v in verts:
+			var c := Vector2i(floori(v.x / 20.0), floori(v.z / 20.0))
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					for e: Array in near.get(c + Vector2i(dx, dz), []):
+						if (e[0] as Vector2).distance_to(Vector2(v.x, v.z)) < float(e[1]):
+							on_road += 1
+							where = v
+	t.check(on_road == 0, "nothing from the works stands on a road or its run-off (%d points, one at %s)"
+			% [on_road, where.round()])
+	t.check(float(map.get_meta("view_far", 0.0)) >= 1500.0,
+			"the race world's view reaches past the works to the dunes")
 	holder.free()
 	map.free()
 
@@ -1047,7 +1068,12 @@ static func _test_ambient_races(t: Node) -> void:
 	var first: Race.Heat = race.heats.get(track.id)
 	t.check(first != null and first.ambient and first.phase == "racing" and first.runs.size() == Race.AMBIENT_FIELD
 			and first.people() == 0, "soon after you arrive, the track by you has an AI race of %d on it" % Race.AMBIENT_FIELD)
-	t.check(race.heats.size() == Race.AMBIENT_TRACKS, "one at a time, so the server pays little")
+	await t.frames(3)
+	var both := race.circuits.all(func(rt: RaceTrack) -> bool:
+		var h: Race.Heat = race.heats.get(rt.id)
+		return h != null and h.ambient and h.phase == "racing")
+	t.check(both and race.heats.size() == race.circuits.size(),
+			"both tracks have an AI race going when you get there, one each")
 	var view := race.heat_view(track.id)
 	t.check(bool(view.get("ambient", false)) and RaceView.heat_text(view).begins_with("AI RACE ON")
 			and RaceView.desk_prompt("bike_raider", view).begins_with(RaceView.key() + "  Race the AI"),
