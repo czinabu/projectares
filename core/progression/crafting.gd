@@ -64,6 +64,11 @@ const RECIPES := {
 		"parts": {"glacial_alloy": 1, "cryo_core": 1, "scrap_metal": 2}},
 	"grip_glacier": {"blueprint": "bp_grip_glacier", "scrip": 250,
 		"parts": {"glacial_alloy": 1, "circuit_board": 1}},
+	# The marsh's: melee options from its own parts.
+	"blade_hook": {"blueprint": "bp_blade_hook", "scrip": 250,
+		"parts": {"stalker_fang": 4, "chitin_plate": 1}},
+	"spear_reed": {"blueprint": "bp_spear_reed", "scrip": 280,
+		"parts": {"chitin_plate": 2, "glowcap": 1}},
 }
 
 ## Every craftable item id, in the order the bench shows them.

@@ -25,6 +25,7 @@ const ServerTrust := preload("res://core/net/server_trust.gd")
 const PORT := 25650          # the in-process service
 const CLUSTER_PORT := 25600  # the cluster's plaza; worlds after it, the arena ten above
 const CLUSTER_SERVICE := 25690
+const CLUSTER_START_MS := 60000  # how long the whole set may take to start listening
 const KEY := "0123456789abcdef0123456789abcdef"
 ## DESIGN.md section 14: travel between worlds within about 3 s.
 const TRAVEL_TARGET := 3.0
@@ -302,7 +303,12 @@ static func _for_real(t: Node) -> void:
 		worlds.append(world.id)
 	var first: String = worlds[0]
 
-	var ana: NetSession = await t._sign_in("Ana", CLUSTER_PORT)
+	# Every world is a program that has to start first, so wait by the clock
+	# (each program loads its world before it listens), not by attempts.
+	var ana: NetSession = null
+	var give_up := Time.get_ticks_msec() + CLUSTER_START_MS
+	while ana == null and Time.get_ticks_msec() < give_up:
+		ana = await t._sign_in("Ana", CLUSTER_PORT)
 	t.check(ana != null, "a game signs in at the plaza of a cluster")
 	if ana == null:
 		await _stop(t, cluster, dir)
