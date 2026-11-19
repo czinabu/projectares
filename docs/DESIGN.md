@@ -669,6 +669,22 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   bot. A round from the player's own gun through an extra, or a shell
   landing by it, drops it, on that screen only and for nothing. View only:
   no collision, no `Combat.deal`, nothing sent online, none on a server.
+- **The busy low sky (Caleb's call: view only).** Under the flak past the
+  rim, the war is overhead too (`worlds/ashfront/lowsky.gd`, the map's
+  `make_low_sky`). A gunship runs in 60 to 95 m up over one of the scenery
+  army's fights and rakes it with its chin gun in its army's colour,
+  dropping extras where its rounds land, while the fight's tracer comes
+  back up at it in the other army's colour, always missing; it flies on
+  and away. Fighters streak over in pairs, 120 to 200 m up, passing near
+  the war's centre with a roar that swells and tears away. Now and then a
+  dropship is hit over the field and falls burning, trailing smoke, to
+  crash past the rim, where it lies burning a while. A run every 75 s in
+  a quiet war down to every 16 s in all-out war (two at once past 0.6),
+  fighters every 60 s down to 12 s, a falling dropship every 4 minutes
+  down to about one a minute, and none of it starts while a storm hides
+  the sky. A strafe only lands as far from every player and the camera as
+  a scenery fight is placed, and a wreck only comes down past the rim, so
+  none of it is near anyone. View only, like the scenery army.
 - Everything lost on death, but the body drops a scrip pile worth it, not
   the gear itself (section 10, "Scrip piles").
 - The only place heavy weapons are found.

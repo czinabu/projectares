@@ -377,7 +377,11 @@ without Caleb, and update the gap list when a PR closes a row.
   and drawn one MultiMesh per pose (`extras.gdshader`, dithered fade). A
   round from the local player's gun or a shell drops one on that screen
   only. Check by eye with `visual_check.tscn -- <dir> --battle-only` (with
-  `--fixed-fps 60`).
+  `--fixed-fps 60`). The busy low sky over it is view only too
+  (`worlds/ashfront/lowsky.gd`, the map's `make_low_sky`): gunships rake
+  only scenery fights (`may_rake`: as far from everyone as a fight is
+  placed) and wrecks come down only past the rim; check with
+  `--sky-only`.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
