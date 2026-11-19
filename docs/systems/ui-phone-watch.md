@@ -53,7 +53,7 @@ date in the same PR.
   draws every tab's settings from that table (`Phone._draw_setting_rows`),
   so a new setting never touches the phone.
 - Emotes (DESIGN.md "Emotes", `core/visual/emotes.gd`): picked on the
-  watch's emote icon (Status tab, `Hud.emote_slot`), played by the
+  emote key's quick wheel (below; they left the watch, Caleb's call), played by the
   controller as the held `ActorCommand.emote` (in the stance's byte,
   `EMOTE_SHIFT`), so they predict and replicate with no message of their
   own, and posed on the one body (`ActionPose.emote`, timed by each view;
@@ -158,9 +158,11 @@ date in the same PR.
   feed). A new in-raid action goes on the watch; a new social or info
   feature is a phone app. The watch is a card-sized hologram of icons in
   three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
-  Summon (weapons, vehicles, artifacts, the pack, with the pack's line under it,
-  and the helmet, taken off or put on),
-  Status (map, standing) and Mission (portal, contract, ping, sign-out).
+  Summon (weapons, vehicles, artifacts, the pack, with the pack's line
+  under it; the helmet left the watch once it had its own key, K),
+  Status (map, standing) and Mission (portal, contract, sign-out). Emotes
+  (the emote key's wheel) and the squad ping (its own key) left the watch
+  (Caleb's call): a watch icon must do something no key already does.
   The contract icon is the mission log (Caleb's ask): opened, the wheel
   turns through the tour's step and each contract held
   (`Hud.mission_entries`, `mission_slot`) and a click turns the picked one
@@ -192,20 +194,29 @@ date in the same PR.
   Down, the death report's landing choices are picked with the wheel and a
   click (`drop_pick`, `click_landing`); the number keys and Enter still work. The open
   icon shows one short line, and controls are glyphs (wheel, click, key
-  cap), never words. The mouse wheel moves across the card tab after tab
-  (`PlayerController.watch_focus`, `step_watch`; Caleb's call) over the
-  main icons only. Two levels (Caleb's call): a click on an icon that holds
-  several things (weapons, toys, artifacts, portal places: `watch_entries`)
-  opens it (`PlayerController.watch_open`), the wheel then turns through
-  them and stops at the list's ends, a click acts and a right click backs
-  out (`close_watch_icon`); a closed icon shows the click glyph instead of
+  cap), never words. Three levels (Caleb's call): raised with X the watch
+  is on its tab row (`PlayerController.watch_tabs`), where the wheel turns
+  the tabs, the open one's name framed with arrows and the line under the
+  row saying what it holds (`Wrist.TAB_LINES`, `Card.tabs`), and a click
+  goes into the tab. In a tab the wheel moves across that tab's icons only
+  and stops at its ends (`watch_focus`, `step_watch`); turning back to a
+  tab lands on the icon last looked at there (`_tab_focus`). A click on an
+  icon that holds several things (weapons, toys, artifacts, portal places:
+  `watch_entries`) opens it (`PlayerController.watch_open`), the wheel then
+  turns through them and stops at the list's ends, and a click acts. A
+  right click backs out one level (`back_watch`): a list to its tab
+  (`close_watch_icon`), a tab to the tab row, the tab row lowers the
+  watch; it never aims. A shortcut key (the map) raises the watch straight
+  into its tab. A closed icon shows the click glyph instead of
   the wheel (`Hud.mark_open`). The mouse only looks. While the watch is up the
   wheel never switches weapons. A new watch feature is a new slot on a
   tab, not a new line of text; something that only matters now and then is
   a pop-up line (`Wrist.show_card`'s `popup`), not a slot. The summon
   carousel (Caleb's call) shows only what is carried, never the stash:
-  `Hud.weapon_entries` is the weapons worn then in the pack, and picking
-  one in the pack asks the authority's `Raid.summon` (`NetSession.summon`
+  `Hud.weapon_entries` is only the weapons worn (Caleb's call), and gear in
+  the pack comes out through the pack's list (`Hud.pack_slot`, which shows
+  the watch's rest as a ring): picking a weapon there asks the authority's
+  `Raid.summon` (`NetSession.summon`
   online), which swaps it with the one worn in its slot through
   `Loadout.swap_weapon` (the old one goes in the pack with its rounds,
   `Actor.stowed_rounds`; clients copy it from `Actor.weapon_swapped`). It

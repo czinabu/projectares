@@ -180,8 +180,21 @@ residences and Sola at the arena, besides:
   (wardrobe, records, mastery bench, trader), the **Gear hall** (armor
   stands, helmets, rigs, chips) and the **Stores** (supplies and trophies).
   A plate over each doorway names its room; there are no other signs.
+- **The lounge**, a seventh room, is somewhere to sit between lives: warm
+  planks, a slatted ceiling and lamps instead of steel, and a window out
+  over a dusk ridge with fires on it (one painted view, never a world).
+  Its doorway is the seventh: in the front wall left of the door in the
+  hall and the courtyard, and off the corridor to the range in the spine
+  and the ring (their hub walls are full). Like any room it can be moved
+  on the plan table. It starts small (a sofa and a lamp before a sealed
+  wall) and the Lounge upgrade opens the whole room and its window. Three
+  styles: the **Den** (free: two sofas round a rug and a low table, a
+  floor lamp and plants), the **Bar** (a counter with stools and lit
+  shelves, and a booth under the window) and the **Quarters** (a curtained
+  bunk, a desk and a small sofa). It holds no gear and changes nothing in
+  a fight; sitting, a radio and trophies on its walls come later.
 - **Designs** (Caleb's call): beyond moving rooms, the hub itself comes in
-  four shapes, each with the same six doorways: the **Hall** (the square
+  four shapes, each with the same seven doorways: the **Hall** (the square
   hall above, free), the **Ring** (an eight-sided rotunda, every room
   opening onto the table), the **Spine** (a long gallery, three rooms down
   each side) and the **Courtyard** (a big court under a skylight, with
@@ -267,7 +280,7 @@ has. Prices are placeholders until a playtest measures scrip per life.
 | Gunsmith | Master bench | 8,000 | Workshop bench | Looks only |
 | Halls | Gear hall | 1,000 | | 6 armor stands, 4 rig stands, the chip case |
 | Halls | Trophy hall | 1,500 | | The trophy shelf and a full supplies shelf |
-| Halls | Lounge | 800 | | Room for furniture and decor. Not built yet: a seventh room, and no socket for it yet |
+| Halls | Lounge | 800 | | The whole lounge: more to sit on, warm lamps and the window out |
 | Headquarters | Ops consoles | 500 | | The mastery bench and records get their own consoles |
 | Headquarters | Firing range | 2,500 | | The range below |
 | Headquarters | Finish | 1,500 | Any 4 upgrades | Lit trim and light columns |
@@ -1555,24 +1568,27 @@ Raising the watch opens a holo carousel, like pulling gear out of thin air:
 scroll through what you carry and pick it, and it materializes. The pack is
 the storage behind it.
 
-- **Only what you carry.** The carousel shows your loadout and your pack,
-  never the stash. Whatever you can summon is still what you drop when you
+- **Only what you carry.** The weapon carousel shows the weapons you wear
+  and the pack's list what you carry (Caleb's call: one place to swap gear
+  in), never the stash. Whatever you can summon is still what you drop when you
   die, so the extraction stakes stay. The pack's capacity still applies: a
   summoned weapon swaps places with the one worn in its slot, which goes into
   the pack with the rounds it had. The weapon in your hand can be stored
   the same way in reverse: a click on it dematerializes it back into the
   pack, leaving its slot empty and your hands free, if the pack has room.
-- **Two levels (Caleb's call).** The mouse wheel steps only across the main
-  icons, tab after tab. A click on an icon that holds several things
-  (weapons, vehicles, artifacts, portal places) opens its list, and only
-  then does the wheel turn through what it holds; a click picks, and a
-  right click closes the list and goes back to the icons.
-- **Three tabs**, stepped through with the mouse wheel:
-  - **Summon:** weapons (worn ones are drawn with a click, the one in hand
-    is stored back into the pack, ones in the pack are materialized into
-    your hand), vehicles (the toy carousel) and
-    artifacts (the attuned one is used; others carried are shown but stay
-    loot, one per outing). The pack's fill, worth, heals and scrip sit under
+- **Three levels (Caleb's call).** Raised, the watch is on its tab row:
+  the mouse wheel turns between the three tabs and a click goes into one.
+  In a tab the wheel moves across that tab's icons only. A click on an
+  icon that holds several things (weapons, vehicles, artifacts, portal
+  places) opens its list, and only then does the wheel turn through what
+  it holds; a click picks. A right click always backs out one level: a
+  list to its tab, a tab to the tab row, and the tab row lowers the watch.
+  Turning back to a tab lands on the icon last looked at there.
+- **Three tabs**, turned with the mouse wheel on the tab row:
+  - **Summon:** weapons (only the ones worn: drawn with a click, the one in
+    hand stored back into the pack), vehicles (the toy carousel) and the
+    artifact (one click uses the attuned one; others carried are loot in
+    the pack, one per outing). The pack's fill, worth, heals and scrip sit under
     the tab, and the pack's own icon opens (a click) as a list of what you
     carry, each with its worth, that the wheel turns through. Gear in it
     says the slot it goes in, and a click puts it on (Caleb's call: loot a
@@ -1596,7 +1612,7 @@ the storage behind it.
       renown, any bounty: what dying now would cost), safe (what this life
       has banked, lifetime rank) and this life (time alive, kills, streak,
       the contract nearest done).
-  - **Mission:** the squad portal, the contract tracker, a squad ping, and
+  - **Mission:** the squad portal, the contract tracker, and
     sign-out and banking.
 - **Pop-ups only while they matter:** the death report and landing choices
   when you go down, the flight rig's status while flying, and a brief notice.
@@ -1674,7 +1690,7 @@ other place too, by way of a sign-out).
 
 | Feature | What it does |
 | --- | --- |
-| Weapon carousel | The weapons worn and in the pack: draw one worn, or materialize one from the pack (above). |
+| Weapon carousel | The weapons worn: draw one, or store the one in hand. Weapons in the pack materialize from the pack's list (above). |
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |
@@ -1684,7 +1700,6 @@ other place too, by way of a sign-out).
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying: the wheel picks one on the death report and a click drops in (number keys and Enter still work). |
 | Squad portal | Opens a portal to a world, the arena, the plaza or home from anywhere: straight there from your base and the plaza, and as a sign-out from out in a world (above). |
-| Emotes | A carousel on the Status tab: wave, salute, point, cheer, sit, lean, dance and taunt, played on your own body for everyone to see (section 11). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
@@ -1836,9 +1851,9 @@ of the shots and their whizz.
 A worn helmet can come off and be clipped to the hip, so faces show where
 people meet (the Concourse, a base) and a helmet is still to hand.
 
-- **From the watch or its key.** The Summon tab's helmet icon takes it off
-  or puts it back on with a click, and so does its own key, K (Caleb's
-  ask). The watch goes down, since the off hand does it.
+- **From its key.** Its own key, K (Caleb's ask), takes it off or puts it
+  back on. It was a Summon tab icon on the watch until it had the key, and
+  left the watch then (Caleb's call).
 - **Shown, not swapped.** Both hands lift the helmet off (Caleb's call),
   so a weapon in hand is put away first. The weapon hand lets go as it
   comes down, and the off hand carries it round the body and clips it to the back of the left hip
@@ -3252,10 +3267,10 @@ players far less than to bots.
 
 Eight to start (Caleb's go-ahead, 19 November 2026): wave, salute, point,
 cheer, sit down, lean back (arms folded), dance and a taunt (a beckon, the
-other hand on the hip). They are picked on the watch, since they are
-something you do in the world: the emote icon on the Status tab opens like
-the other carousels, the wheel turns through them and a click plays one (a
-click on the one playing stops it).
+other hand on the hip). They are picked on the emote key's quick wheel
+(below). They were an icon on the watch's Status tab until the wheel came,
+and left the watch then (Caleb's call): the watch keeps to what you do in
+action.
 
 - **One body, every view.** An emote is a pose on the one body
   (`Locomotion.emote_pose`, `_emote_body`), the same in first and third
@@ -3284,8 +3299,7 @@ points at a slice instead of turning the view (the wheel steps round it
 too) and clicks never shoot. Held, letting go plays the slice pointed at
 (nothing if the mouse never moved); tapped, it stays up until a click
 plays a slice, a right click or the key again puts it away. It closes on
-the watch, the phone, a vehicle or a death. The watch's emote icon still
-works the same way.
+the watch, the phone, a vehicle or a death.
 
 ### Shortcut keys
 
@@ -3316,8 +3330,9 @@ no rebinding screen yet; when it gets one these come with the rest.
   does: from the plaza, the arena or your base, landing at the gate outpost.
   Out in a world where gear is at stake you sign out first. An accepted
   world invite goes the same way.
-- **Pings** stay on the watch (Mission tab), marking where you look for your
-  side.
+- **Pings** are their own key (the middle mouse button), marking where you
+  look for your side. They left the watch (Caleb's call), where the icon
+  only did what the key does.
 - **Later:** squadmates marked on the visor and watch map (today that is
   your clan), a say-nearby line over the head, voice.
 

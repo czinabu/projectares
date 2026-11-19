@@ -135,7 +135,15 @@ static func _sweep_hand(t: Node, main: Node, where: String) -> void:
 			controller.step_watch(1)
 			await t.frames(2)
 			controller.close_watch_icon()
+		var was := controller.watch_focus
 		controller.step_watch(1)
+		if controller.watch_focus == was:
+			# The tab's last icon: back to the tab row, on to the next tab
+			# (drawn a moment there too), and into it.
+			controller.watch_tabs = true
+			controller.step_watch(1)
+			await t.frames(2)
+			controller.watch_tabs = false
 	controller.wrist_raised = false
 	await t.frames(5)
 	t.check(seen.size() == slots.size(), "%s: the wheel reaches every watch icon (%d of %d)"
