@@ -618,7 +618,13 @@ without Caleb, and update the gap list when a PR closes a row.
   with the shoulder; `camera_tests.gd` (`_check_steady_on_the_run`)
   measures it. In a fight the run-and-shoot arms come back and the gun points where
   it shoots; a shot, aim or reload takes it out of the carry at once
-  (`carry_out_rate`). All of it is read from velocity and the command, so
+  (`carry_out_rate`). A tap of aim is not a fight: let go without a shot,
+  the gun goes back to its carry after `ActorSkin.aim_release_hold`, not
+  `aim_hold` (Caleb's in-between wobble). Held up at the hip on the move,
+  the gun rides the same steadied frame as the carry at the clip's wrist
+  averaged over a stride, turned to the aim (`WeaponArm._hold_at_hip`), so
+  the clip's arm swing never reaches it; `_check_hip_after_aim_tap`
+  measures it. All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
@@ -656,7 +662,10 @@ without Caleb, and update the gap list when a PR closes a row.
   the shoulders from behind)
   and leaves out only the head (`ActorSkin.hide_head` moves it and what is
   worn on it to `Mirror.HEAD_LAYER`, which that camera culls; shadows and
-  a mirror still see it). Never build a first-person-only copy of the arms,
+  a mirror still see it). A station's own view (the bench's, a
+  `WorldScreen`'s) stands about where the head is, so it leaves the head
+  out the same way in either view (`PlayerController.screen_view_up`, its
+  camera's `SCREEN_VIEW` meta; Caleb's feedback: it blocked the bench). Never build a first-person-only copy of the arms,
   a weapon or a prop, and never move anything in front of the camera for
   first person. Aiming down sights is a body animation, the same in both
   views (`ActionPose.ads`, eased by `ads_rate`): `WeaponArm._reach_sight`

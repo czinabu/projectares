@@ -49,6 +49,21 @@ var watch_elbow := Vector3(-1.0, 1.2, -0.15)
 ## a slide or a sprint's lean still comes through, just eased in.
 var carry_steady := 0.9
 var carry_steady_time := 0.25
+## A gun held up at the hip on the move (in a fight, `ActorSkin.in_fight`,
+## out of the carry and the sights) is held in the same steadied frame, at
+## where the run-and-shoot clip has the wrist on average over one stride, so
+## the clip's arm swing with each step never reaches the gun (Caleb's
+## in-between wobble: it swung a hand's width every stride). It takes over
+## as a stride's worth of the hold has been seen (`_hip_weight`), so a gun
+## raised to shoot comes up at once and settles after.
+var _hip_samples: Array = []
+var _hip_seen := 0.0
+var _hip_weight := 0.0
+var _hip_dt := 0.0
+## The clip's wrist this frame, and where the hip hold puts it (global).
+var _hip_raw := Vector3.ZERO
+var _hip_wrist := Vector3.ZERO
+var _body_frame := Transform3D.IDENTITY
 var _steady_lean := INF
 var _steady_dt := 0.0
 ## With the watch up the forearm rolls so the back of the wrist, where the
@@ -401,6 +416,7 @@ func step(delta: float) -> void:
 	var shared := _pose()
 	shared.advance(delta)
 	_steady_dt += delta
+	_hip_dt += delta
 	var melee := actor.get_active_weapon() as MeleeWeapon
 	var holding := melee != null and melee.visual != null and not actor.is_dead
 	var reaching := holding and shared.reach_weight > 0.0
@@ -529,6 +545,14 @@ func _face_watch() -> void:
 ## animation holds it by the shared reload offset; aiming down sights, move
 ## it so the gun's sight comes up onto the line of the eyes.
 func _reach_gun() -> void:
+	var gun := actor.get_active_weapon() as Gun
+	var in_hand := gun != null and gun.visual != null and gun.visual.visible and not actor.is_dead and _wrist >= 0
+	if in_hand:
+		_hold_at_hip()
+	else:
+		_hip_samples.clear()
+		_hip_seen = 0.0
+		_hip_weight = 0.0
 	if _gun_carry > 0.0 and _wrist >= 0 and _weight <= 0.001:
 		_reach_carry()
 	if _ads > 0.0 and _wrist >= 0 and _weight <= 0.001:
@@ -539,9 +563,15 @@ func _reach_gun() -> void:
 		if pose.inspect_for("gun") > 0.0:
 			_target.global_position = _target.global_position.lerp(pose.inspect_point(), pose.inspect_for("gun"))
 		return
-	if _gun_weight <= 0.0 or _wrist < 0 or override_weight > 0.001 or _weight > 0.001:
+	if _wrist < 0 or override_weight > 0.001 or _weight > 0.001:
 		return
-	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
+	if _gun_weight <= 0.0:
+		# Held up at the hip: the clip's hold with the stride taken out.
+		if in_hand and _hip_weight > 0.0:
+			_target.global_position = _hip_wrist
+			reach_ik.influence = 1.0
+		return
+	var wrist := _hip_wrist
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
 	_target.global_position = wrist + aim * pose.gun_offset().origin
 	if pose.reload > 0.0:
@@ -559,9 +589,8 @@ func _reach_carry() -> void:
 	var gun := actor.get_active_weapon() as Gun
 	if gun == null:
 		return
-	var frame := carry_frame()
-	var wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
-	_carry_wrist = wrist.lerp(frame * _pose().carry_point(gun), _gun_carry)
+	var frame := _body_frame
+	_carry_wrist = _hip_wrist.lerp(frame * _pose().carry_point(gun), _gun_carry)
 	_carry_basis = (frame.basis * ActionPose.turn_basis(_pose().carry_turn(gun))).orthonormalized()
 	_target.global_position = _carry_wrist
 	reach_ik.influence = 1.0
@@ -600,6 +629,50 @@ func carry_frame() -> Transform3D:
 	var skin := get_parent()
 	var steadied: Vector3 = skin.eye_steadying() if skin != null and skin.has_method("eye_steadying") else Vector3.ZERO
 	return Transform3D(basis, to_world * now.origin - basis * chest_rest + steadied * carry_steady)
+
+
+## Where a gun held up at the hip has its wrist this frame (`_hip_wrist`):
+## the clip's wrist in the steadied frame the carry rides (`carry_frame`,
+## kept in `_body_frame`), averaged over the last stride, so the body's turns,
+## crouches and leans come through and a stride's swing does not. Standing,
+## carried or on a vehicle, the clip's own hold is left alone.
+func _hold_at_hip() -> void:
+	_body_frame = carry_frame()
+	_hip_raw = skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
+	var dt := _hip_dt
+	_hip_dt = 0.0
+	var flat := Vector2(actor.velocity.x, actor.velocity.z).length()
+	var holding := flat > 0.6 and actor.vehicle == null and _gun_carry < 0.5 and _weight <= 0.001
+	if not holding:
+		_hip_samples.clear()
+		_hip_seen = 0.0
+	elif dt > 0.0:
+		_hip_samples.append([_body_frame.affine_inverse() * _hip_raw, dt])
+		_hip_seen += dt
+		var stride := _stride_time()
+		while _hip_samples.size() > 1 and _hip_seen - float(_hip_samples[0][1]) >= stride:
+			_hip_seen -= float(_hip_samples[0][1])
+			_hip_samples.pop_front()
+	var want := smoothstep(0.0, 1.0, clampf(_hip_seen / _stride_time(), 0.0, 1.0)) if holding else 0.0
+	_hip_weight = move_toward(_hip_weight, want, dt * 4.0) if want < _hip_weight else want
+	if _hip_samples.is_empty() or _hip_weight <= 0.0:
+		_hip_wrist = _hip_raw
+		return
+	var sum := Vector3.ZERO
+	var time := 0.0
+	for sample: Array in _hip_samples:
+		sum += (sample[0] as Vector3) * float(sample[1])
+		time += float(sample[1])
+	_hip_wrist = _hip_raw.lerp(_body_frame * (sum / maxf(time, 0.0001)), _hip_weight)
+
+
+## How long one stride of the clip playing takes, in seconds.
+func _stride_time() -> float:
+	var skin := get_parent()
+	var player: AnimationPlayer = skin.get("_player") if skin != null else null
+	if player == null or player.current_animation_length <= 0.0:
+		return 0.5
+	return clampf(player.current_animation_length / maxf(absf(player.get_playing_speed()), 0.1), 0.25, 1.5)
 
 
 ## Aiming down sights: where the hand would put the sight this frame (from
@@ -656,8 +729,9 @@ func _reach_sight() -> void:
 			_relief_now -= back
 			reach -= ahead * back
 	_pose().relief_now = _relief_now
-	# Out of a carry the gun comes up from where it was carried.
-	var from := _carry_wrist if _gun_carry > 0.0 else wrist
+	# Out of a carry the gun comes up from where it was carried, and from
+	# the hip as steadied as it was held there.
+	var from := _carry_wrist if _gun_carry > 0.0 else _hip_wrist
 	_target.global_position = from + (reach - from) * _ads
 	reach_ik.influence = 1.0
 
@@ -783,8 +857,11 @@ func _steady_gun() -> void:
 		return
 	# The hand turns with the gun as it is held in the aim clip, so a wrist
 	# never twists round the grip.
-	if _aim_wrist != null and _ads > 0.0:
-		_turn_to_aim(_wrist, _held_wrist(gun), _ads)
+	# Held up at the hip on the move it is turned the same, so a stride's
+	# roll of the forearm never nods the muzzle (`_hold_at_hip`).
+	var turned := maxf(_ads, _hip_weight * (1.0 - _gun_carry))
+	if _aim_wrist != null and turned > 0.0:
+		_turn_to_aim(_wrist, _held_wrist(gun), turned)
 	hold_weapon()
 	if _ads > 0.99:
 		var aimed := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch)
