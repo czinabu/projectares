@@ -124,6 +124,8 @@ func _ready() -> void:
 		await _seconds(3.0)
 	if "--probe" in args:
 		await _probe()
+	elif "--probe-process" in args:
+		await _probe_process()
 	else:
 		await _measure(mode, seconds)
 		if not _judge(args):
@@ -458,6 +460,81 @@ func _probe() -> void:
 		part.visible = false
 		await _probe_line("  without %s (%d)" % [part.name, geometry])
 		part.visible = true
+
+
+## `--probe-process`: where the frame's processing goes. Every node that
+## processes is grouped by its script (or its class, for an engine node such
+## as an AnimationPlayer); each group is switched off for a moment in turn
+## and what the frame and the process time drop by is printed, biggest
+## first. Read the drops against each other roughly: the world goes on
+## meanwhile, and a group switched off can stall what reads from it.
+func _probe_process() -> void:
+	var groups := {}
+	for node in get_tree().root.find_children("*", "", true, false):
+		if not (node.is_processing() or node.is_physics_processing() or node.is_processing_internal() \
+				or node.is_physics_processing_internal()):
+			continue
+		if node == self or node.get_tree() == null:
+			continue
+		var script: Script = node.get_script()
+		var key := script.resource_path.get_file() if script != null and script.resource_path != "" else node.get_class()
+		if not groups.has(key):
+			groups[key] = []
+		(groups[key] as Array).append(node)
+	var keys := groups.keys()
+	keys.sort_custom(func(a: String, b: String) -> bool: return (groups[a] as Array).size() > (groups[b] as Array).size())
+	var base := await _process_sample()
+	print("  process probe: frame %.2f ms, process %.2f ms, physics %.2f ms with everything on" % [base.x, base.y, base.z])
+	var rows := []
+	for key: String in keys.slice(0, 40):
+		var nodes: Array = groups[key]
+		var was := []
+		for n: Variant in nodes:
+			if not is_instance_valid(n):
+				was.append(null)
+				continue
+			var node := n as Node
+			was.append([node.is_processing(), node.is_physics_processing(), node.process_mode])
+			# A script's own callbacks only, so its children carry on; an
+			# engine node (an AnimationPlayer, particles) by its mode.
+			if node.get_script() != null:
+				node.set_process(false)
+				node.set_physics_process(false)
+			else:
+				node.process_mode = Node.PROCESS_MODE_DISABLED
+		var off := await _process_sample()
+		for i in nodes.size():
+			if was[i] != null and is_instance_valid(nodes[i]):
+				var node := nodes[i] as Node
+				node.set_process(was[i][0])
+				node.set_physics_process(was[i][1])
+				node.process_mode = was[i][2]
+		await _frames(10)
+		var again := await _process_sample()
+		var ref := (base + again) * 0.5
+		base = again
+		rows.append([ref.x - off.x, ref.y - off.y, ref.z - off.z, key, nodes.size()])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	for row: Array in rows:
+		print("    %-38s x%-4d frame -%.2f ms, process -%.2f ms, physics -%.2f ms" % [row[3], row[4], row[0], row[1], row[2]])
+
+
+## The average frame, process and physics time over a short stretch, in ms.
+func _process_sample() -> Vector3:
+	await _frames(5)
+	var frame := 0.0
+	var process := 0.0
+	var physics := 0.0
+	var count := 30
+	var last := Time.get_ticks_usec()
+	for i in count:
+		await get_tree().process_frame
+		var now := Time.get_ticks_usec()
+		frame += (now - last) / 1000.0
+		last = now
+		process += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	return Vector3(frame, process, physics) / count
 
 
 func _probe_line(what: String) -> void:
