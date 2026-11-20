@@ -113,11 +113,15 @@ date in the same PR.
   or nothing would hold you up). Off the
   ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
   never play a gait: a stand plays under an air pose (leap, fall, or
-  hanging from lit jets). Leaving the ground starts with a short push-off
+  hanging from lit jets: legs nearly straight under the body, toes
+  pointed, one a little behind the other, `hang_legs`). Leaving the ground starts with a short push-off
   and a running jump leans into it; a touchdown (`Actor.landed`) bends the
   knees by how hard it was (`Locomotion.squat`). All of it is view only. A boost keeps the arms down at the sides, never
   reaching ahead (Caleb's call). Check it by eye:
-  `visual_check.tscn -- <dir> --flight-only` (or `--takeoff-only`).
+  `visual_check.tscn -- <dir> --flight-only` (or `--takeoff-only`), or
+  quicker while tuning, `--air-only`: one sheet of the hover, a drift, a
+  boost, a glide, boots and a fall, taking `name=value` overrides of the
+  skin's tuning vars (`air_toes=0.9`) and `only=hover,glide`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
