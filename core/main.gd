@@ -236,6 +236,8 @@ var _tour_stash_size := -1
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	# Enemies on or off in every world this program runs (`Raid.enemies`).
+	Raid.enemies = Raid.enemies_wanted(args)
 	# Every life a raid here finishes goes in the life log (`LifeLog`), to
 	# tune the worlds from: `--life-log <dir>` puts it elsewhere.
 	var log_at := args.find("--life-log")

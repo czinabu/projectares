@@ -41,6 +41,12 @@ var _main: Node
 ## The world's seed for a solo run (`--seed`), -1 for a random one.
 var _main_seed := -1
 var _server_pid := -1
+## The world measured (`--world`, Ashfront by default).
+var _world_id := "ashfront"
+## `--tour`: instead of standing by the fighting, the player is carried
+## round the map's spots (player spawns, caches, depots) turning slowly, so
+## a world with no army is measured everywhere it is played.
+var _tour := false
 ## The last measurement (`_measure`): median and 1% worst frame in ms,
 ## frames a second and hitches.
 var _result := {}
@@ -55,6 +61,10 @@ func _ready() -> void:
 	var third := _arg(args, "--view", "first") == "third"
 	Profile.persist = false
 	if "--look" in args:
+	# Measured with the worlds' enemies unless `--no-enemies` (`Raid.enemies`),
+	# here and in any server this starts.
+	Raid.enemies = "--no-enemies" not in args
+	OS.set_environment("ARES_ENEMIES", "1" if Raid.enemies else "0")
 		Look.enabled = true
 	var fixed_seed := int(_arg(args, "--seed", "-1"))
 	if fixed_seed >= 0:
@@ -65,7 +75,13 @@ func _ready() -> void:
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_size(Vector2i(1600, 900))
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
-	var world := Worlds.get_world("ashfront")
+	_world_id = _arg(args, "--world", "ashfront")
+	_tour = "--tour" in args or not Raid.enemies
+	var world := Worlds.get_world(_world_id)
+	if world == null:
+		print("Frame bench: no world '%s'" % _world_id)
+		_finish(1)
+		return
 	world.bot_count = bots
 	# A steady army for a fair measurement: no war reinforcements on top.
 	world.war_reinforcements = 0
@@ -121,7 +137,7 @@ func _ready() -> void:
 
 func _start_solo(warmup: float) -> bool:
 	_main.raid_seed = _main_seed
-	_main.start_raid("ashfront")
+	_main.start_raid(_world_id)
 	await _frames(5)
 	var raid: Raid = _main.raid
 	if raid == null or raid.player == null:
@@ -129,6 +145,10 @@ func _start_solo(warmup: float) -> bool:
 	_toughen(raid.player)
 	print("Frame bench: solo, %d bots, marching for %.0f s" % [raid.bots.size(), warmup])
 	await _seconds(warmup)
+	if _tour:
+		_tour_spots = _spots(raid)
+		print("Frame bench: touring %d spots in %s" % [_tour_spots.size(), _world_id])
+		return true
 	# Drop the player beside the thickest fighting, facing it.
 	var hot := _hot_spot(raid.bots)
 	var out := Vector3(hot.x, 0, hot.z).normalized() if Vector3(hot.x, 0, hot.z).length() > 1.0 else Vector3.FORWARD
@@ -149,7 +169,7 @@ func _start_online(bots: int, warmup: float) -> bool:
 		for file in DirAccess.get_files_at(accounts):
 			DirAccess.remove_absolute(accounts.path_join(file))
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--world", "ashfront", "--no-plaza", "--no-arena", "--port", str(PORT),
+			"--", "--server", "--world", _world_id, "--no-plaza", "--no-arena", "--port", str(PORT),
 			"--bots", str(bots), "--accounts", accounts])
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
 	if _server_pid <= 0:
@@ -189,6 +209,45 @@ func _toughen(actor: Actor) -> void:
 	actor.health.max_health = 1.0e9
 	actor.health.health = 1.0e9
 	actor.protected_left = 1.0e9
+
+
+var _tour_spots: Array[Vector3] = []
+var _tour_at := -1
+
+
+## Where a tour goes: the map's player spawns, depots and caches, at most a
+## dozen spread over the list.
+func _spots(raid: Raid) -> Array[Vector3]:
+	var all: Array[Vector3] = []
+	for group: String in ["spawn_player", "depot", "spawn_cache"]:
+		for node in raid._map_nodes(group):
+			all.append((node as Node3D).global_position)
+	var out: Array[Vector3] = []
+	var step := maxf(1.0, all.size() / 12.0)
+	var i := 0.0
+	while int(i) < all.size():
+		out.append(all[int(i)])
+		i += step
+	return out
+
+
+## Puts the player at the tour's spot for `done` (0..1 of the run), turning
+## a full circle at each.
+func _tour_step(raid: Raid, done: float) -> void:
+	var player := raid.player
+	if player == null or not is_instance_valid(player):
+		return
+	var share := done * _tour_spots.size()
+	var index := mini(int(share), _tour_spots.size() - 1)
+	if index != _tour_at:
+		_tour_at = index
+		var at := _tour_spots[index]
+		if raid.map.has_method("ground_height"):
+			at.y = maxf(at.y, raid.map.call("ground_height", at.x, at.z)) + 0.2
+		player.global_position = at
+		player.velocity = Vector3.ZERO
+	(_main.controller as PlayerController).yaw = TAU * (share - index)
+	(_main.controller as PlayerController).pitch = -0.05
 
 
 ## The bot with the most other bots within 50 m.
@@ -241,6 +300,8 @@ func _measure(mode: String, seconds: float) -> void:
 	var began := Time.get_ticks_usec()
 	var last := began
 	while Time.get_ticks_usec() - began < seconds * 1000000.0:
+		if _tour and not _tour_spots.is_empty():
+			_tour_step(raid, (Time.get_ticks_usec() - began) / (seconds * 1000000.0))
 		await get_tree().process_frame
 		var now := Time.get_ticks_usec()
 		frame_ms.append((now - last) / 1000.0)

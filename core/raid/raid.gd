@@ -317,6 +317,15 @@ var beacons: Array[Node3D] = []
 ## turns it off, for the checks written before risk zones that need a player
 ## ready to fight where they spawn and unhurt by the ground.
 static var zone_rules := true
+## Whether worlds have enemies: armies, bosses, guards and their broods,
+## rival raiders and the events that bring bots (a warlord, a convoy, an
+## airship). Off, a world keeps its caches, vehicles, weather and supply
+## pods, and every enemy system stays in place to switch back on. `Main`
+## sets it from the project setting `ares/stability/enemies` (off during
+## the stability pass), the command line (`--enemies`, `--no-enemies`,
+## `--bots N`) or the environment (`ARES_ENEMIES`); see `enemies_wanted`. Code that
+## builds its own `Raid` (the tests, the benches) keeps them on.
+static var enemies := true
 var _bosses: Array[Dictionary] = []
 ## Guards at the map's "spawn_guard" markers (a dungeon's garrison), each
 ## { marker, bot, back_in, brood (what it has spilled), brood_in }, outside
@@ -934,10 +943,10 @@ func _tick_events(delta: float) -> void:
 		return
 	_event_in -= delta * (1.0 + war.intensity)
 	if _event_in <= 0.0:
-		var kinds := ["warlord", "supply_pod"]
-		if _convoy_routes().size() > 0:
+		var kinds := ["warlord", "supply_pod"] if enemies else ["supply_pod"]
+		if enemies and _convoy_routes().size() > 0:
 			kinds.append("convoy")
-		if _airship_routes().size() > 0:
+		if enemies and _airship_routes().size() > 0:
 			kinds.append("airship")
 		start_event(kinds[rng.randi() % kinds.size()])
 
@@ -947,6 +956,8 @@ func _tick_events(delta: float) -> void:
 func start_event(kind: String) -> bool:
 	var spawns := _map_nodes("spawn_bot")
 	if not event.is_empty() or spawns.is_empty():
+		return false
+	if not enemies and kind in ["warlord", "convoy", "airship"]:
 		return false
 	if kind == "convoy" and _convoy_routes().is_empty():
 		return false
@@ -1333,6 +1344,10 @@ func _tick_caches(delta: float) -> void:
 
 ## Every dead bot is replaced, so the world never runs out of enemies.
 func _tick_bots(delta: float) -> void:
+	# Enemies off (`enemies`): nobody comes back and nobody new comes in.
+	if not enemies:
+		_bot_respawns.clear()
+		return
 	for i in range(_bot_respawns.size() - 1, -1, -1):
 		_bot_respawns[i] -= delta
 		if _bot_respawns[i] > 0.0:
@@ -1357,9 +1372,33 @@ func _tick_bots(delta: float) -> void:
 func bot_target() -> int:
 	# A world with no army of its own (a server run with `--bots 0`) has
 	# nobody to send, however hot the war gets.
-	if world.bot_count <= 0:
+	if army_size() <= 0:
 		return 0
-	return world.bot_count + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
+	return army_size() + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
+
+
+## The world's own army: `WorldDef.bot_count`, or none with enemies off.
+func army_size() -> int:
+	return world.bot_count if enemies else 0
+
+
+## Whether enemies are wanted, from (first match wins) the command line's
+## `--enemies` / `--no-enemies`, the environment's `ARES_ENEMIES` ("1" or
+## "0", which servers started from this program inherit), a `--bots` count
+## over 0 (asking for bots is asking for enemies), then the project setting
+## `ares/stability/enemies`.
+static func enemies_wanted(args: PackedStringArray) -> bool:
+	if "--no-enemies" in args:
+		return false
+	if "--enemies" in args:
+		return true
+	var env := OS.get_environment("ARES_ENEMIES")
+	if env != "":
+		return env != "0"
+	var bots := args.find("--bots")
+	if bots >= 0 and bots + 1 < args.size() and args[bots + 1].to_int() > 0:
+		return true
+	return bool(ProjectSettings.get_setting("ares/stability/enemies", true))
 
 
 ## Bots that no player is near are simulated less often, in longer steps
@@ -2305,14 +2344,14 @@ func _spawn_bots() -> void:
 			spawns = far
 	if spawns.is_empty():
 		return
-	for i in world.bot_count:
+	for i in army_size():
 		_add_bot(spawns[i % spawns.size()])
 
 
 ## Risk zones: a boss stands guard at each of the map's "spawn_boss" markers.
 func _spawn_bosses() -> void:
 	# A world run without bots (`--bots 0`) has no bosses either.
-	if world.bot_count <= 0:
+	if army_size() <= 0:
 		return
 	for marker in _map_nodes("spawn_boss"):
 		var boss := {"marker": marker, "bot": null, "back_in": 0.0, "helpers": {}, "adds": [], "shares": [],
@@ -2336,7 +2375,7 @@ func _add_boss(marker: Node3D, boss: Dictionary) -> Actor:
 ## `WorldDef.guard_respawn_time` after it dies. Guards are ordinary bots of
 ## their marker's faction, outside the armies (`_is_extra`).
 func _spawn_guards() -> void:
-	if world.bot_count <= 0:
+	if army_size() <= 0:
 		return
 	for marker in _map_nodes("spawn_guard"):
 		_guards.append({"marker": marker, "bot": _add_guard(marker), "back_in": 0.0, "brood": [],
@@ -2363,6 +2402,9 @@ func _tick_guards(delta: float) -> void:
 			guard.back_in = world.guard_respawn_time
 			guard.bot = null
 			changed = true
+			continue
+		# With enemies off (`enemies`), its clock waits.
+		if not enemies:
 			continue
 		guard.back_in -= delta
 		if guard.back_in <= 0.0:
@@ -2560,6 +2602,8 @@ func _tick_bosses(delta: float) -> void:
 			if (boss.marker as Node3D).get_meta("keeper", false):
 				_keeper_fell(boss)
 			boss.bot = null
+			continue
+		if not enemies:
 			continue
 		boss.back_in -= delta
 		if boss.back_in <= 0.0:
@@ -3028,7 +3072,7 @@ func is_raider(bot: Actor) -> bool:
 ## up or their pack is full they sign out, standing still for the world's
 ## sign-out time; a fight starts it over. Authority only.
 func _tick_raiders(delta: float) -> void:
-	if world.raider_count <= 0 or world.safe_zone:
+	if world.raider_count <= 0 or world.safe_zone or not enemies:
 		return
 	_raider_in -= delta
 	if _raider_in <= 0.0:

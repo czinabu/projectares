@@ -46,6 +46,10 @@ func _ready() -> void:
 	var strict := "--strict" in args
 	_cluster = "--cluster" in args
 	Profile.persist = false
+	# Measured with the worlds' enemies unless `--no-enemies` (`Raid.enemies`),
+	# here and in any server this starts.
+	Raid.enemies = "--no-enemies" not in args
+	OS.set_environment("ARES_ENEMIES", "1" if Raid.enemies else "0")
 	if not await _start_server(bots):
 		print("Server bench: the server did not start")
 		_finish(1)

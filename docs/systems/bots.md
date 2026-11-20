@@ -4,6 +4,20 @@ Rules for armies, commanders, kinds, doctrine, group fights, senses, grudges, co
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
+- The enemies switch (`Raid.enemies`, the stability pass). One flag turns
+  every world's enemies off: the army (`Raid.army_size()` is 0, so
+  `bot_target`, bosses and guards see an empty world, as with `--bots 0`),
+  respawns and reinforcements, rival raiders, and the events that bring
+  bots (warlord, convoy, airship and its Sky Leviathan). Caches, vehicles,
+  weather and supply pods carry on. `Main` reads it at boot
+  (`Raid.enemies_wanted`): `--enemies` / `--no-enemies`, then
+  `ARES_ENEMIES`, then a `--bots` count over 0, then the project setting
+  `ares/stability/enemies` (false during the stability pass). The test
+  runner and the benches keep enemies on and set `ARES_ENEMIES` for the
+  servers they start. In a solo world the dev console's `enemies on|off`
+  flips it live. Never delete an enemy system to get a quiet world: gate it
+  on `Raid.enemies`. The arena's gladiators and the race's AI riders are
+  that venue's rules and are not switched.
 - Bot armies. A "spawn_bot" marker may name a faction (meta "faction");
   the `Raid` sets it on the bot before `WorldDef.equip_bot`, and `NetSession`
   sends it so a client builds the same soldier. Where
