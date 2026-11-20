@@ -96,7 +96,10 @@ date in the same PR.
   across keeps each bone's turn; limbs are bent to point the old way, the
   trunk and collarbones are not (bent, the chest tips and the long
   collarbone shrugs the shoulder up), and a collarbone's turn is scaled by
-  how much longer it is. An outfit no longer swaps meshes: it picks the
+  how much longer it is. A foot is placed relative to how it stands in the
+  old idle (the old feet are IK bones that lie differently), and a finger
+  takes only how far the old one curls, about its own curl axis from the
+  pack's closed hand (turned over whole, the fingers splay into a claw). An outfit no longer swaps meshes: it picks the
   hair (`Human.HAIR`) and the suit's colours (`Human.SUITS`), and the
   shader draws every surface below the head as a fitted tactical suit
   (`suit`, `suit_color`, `suit_trim`, gloves and a lit cuff;

@@ -14,8 +14,9 @@ extends Node
 ## retargeted from the old rig: each bone keeps the turn it makes from its
 ## rest in world space, with a limb's new rest first bent to the old rest's
 ## direction (the trunk and collarbones are not bent, `UNBENT`, and a
-## collarbone's turn is scaled down by how much longer it is), and the hips'
-## travel scaled by leg length. Body textures are shrunk first with
+## collarbone's turn is scaled down by how much longer it is), feet placed
+## relative to the old idle stance, fingers given only the old curl about
+## their own curl axis, and the hips' travel scaled by leg length. Body textures are shrunk first with
 ## `shrink_textures.py` (2048 for the body, 1024 for hair).
 
 ## Library bone -> the game's name for it.
@@ -45,6 +46,11 @@ const CLIPS := {
 	"HitRecieve": "Hit_Chest", "HitRecieve_2": "Hit_Head",
 }
 const FPS := 30.0
+## The library clip whose closed hands give each finger joint the axis it
+## curls about (`_curl_axes`).
+const CURL_CLIP := "Idle"
+## Finger bone -> the axis it curls about, in its rest frame.
+var _curl := {}
 ## Bones whose skin the suit covers with a glove.
 const HAND_BONES: Array[String] = ["Wrist", "Thumb", "Index", "Middle", "Ring", "Pinky"]
 ## Part -> its mesh node, as `Human.SLOT_NODES` names them.
@@ -218,6 +224,8 @@ func build(args: Dictionary) -> int:
 		scene.free()
 	for clip: String in ual:
 		library.add_animation(clip, ual[clip])
+	_curl = _curl_axes(ual.get(CURL_CLIP, ual.get(CURL_CLIP + "_Loop")), out_skeleton)
+	print("finger joints with a curl axis: ", _curl.size())
 	# The old rig, for clips the library has no match for.
 	var old: Node3D = null
 	if args.has("old"):
@@ -456,6 +464,20 @@ func _retarget(old: Node3D, clip: String, target: Skeleton3D, track_root: String
 		var ds: Vector3 = (source.get_bone_global_rest(sn).origin - src_rest[p[1]].origin).normalized()
 		var dt: Vector3 = (target.get_bone_global_rest(tn).origin - tgt_rest[p[0]].origin).normalized()
 		bend[p[0]] = Quaternion(dt, ds) if dt.cross(ds).length() > 1e-5 else Quaternion.IDENTITY
+	# The old feet are IK bones whose rest lies differently from the foot
+	# they move, so a foot is placed relative to how it stands in the old
+	# idle: standing there, the new foot is at its own rest (flat, ahead).
+	for idle_name in player.get_animation_list():
+		if String(idle_name).get_slice("|", String(idle_name).get_slice_count("|") - 1) != "Idle_Neutral":
+			continue
+		player.play(idle_name)
+		player.seek(0.0, true)
+		source.force_update_all_bone_transforms()
+		for p in pairs:
+			if target.get_bone_name(p[0]).begins_with("Foot"):
+				var stand: Quaternion = source.get_bone_global_pose(p[1]).basis.get_rotation_quaternion() \
+						* src_rest[p[1]].basis.get_rotation_quaternion().inverse()
+				bend[p[0]] = stand.inverse()
 	var src_hips := source.find_bone("Hips")
 	var tgt_hips := target.find_bone("Hips")
 	var scale: float = tgt_rest[tgt_hips].origin.y / maxf(src_rest[src_hips].origin.y, 0.01) if tgt_hips >= 0 and src_hips >= 0 else 1.0
@@ -505,6 +527,16 @@ func _retarget(old: Node3D, clip: String, target: Skeleton3D, track_root: String
 			var parent := target.get_bone_parent(b)
 			var parent_rot := _global_rot(target, parent, basis_of)
 			var local: Quaternion = parent_rot.inverse() * basis_of[b]
+			if _curl.has(b):
+				# A finger takes only how far the old one curls, about its own
+				# curl axis: the old fingers bend about other axes, and turned
+				# over whole they splay into a claw.
+				var bent: Quaternion = source.get_bone_rest(p[1]).basis.get_rotation_quaternion().inverse() \
+						* source.get_bone_pose_rotation(p[1])
+				if bent.w < 0.0:
+					bent = -bent
+				local = target.get_bone_rest(b).basis.get_rotation_quaternion() * Quaternion(_curl[b], bent.get_angle())
+				basis_of[b] = parent_rot * local
 			anim.rotation_track_insert_key(rot_tracks[b], time, local.normalized())
 		if tgt_hips >= 0 and src_hips >= 0:
 			var moved: Vector3 = source.get_bone_global_pose(src_hips).origin - src_rest[src_hips].origin
@@ -527,10 +559,36 @@ func _global_rot(skeleton: Skeleton3D, bone: int, basis_of: Dictionary) -> Quate
 	return q
 
 
-## The bone a bone points at, by the game's names.
+## Bones carried across without bending (see `_retarget`).
 const UNBENT := ["Hips", "Abdomen", "Torso", "Chest", "Neck", "Head", "Shoulder"]
 
 
+## Each finger joint's curl axis (in its rest frame), from how it turns in
+## `clip`'s closed hand.
+static func _curl_axes(clip: Animation, skeleton: Skeleton3D) -> Dictionary:
+	var out := {}
+	if clip == null:
+		return out
+	for t in clip.get_track_count():
+		if clip.track_get_type(t) != Animation.TYPE_ROTATION_3D:
+			continue
+		var bone := skeleton.find_bone(String(clip.track_get_path(t).get_concatenated_subnames()))
+		if bone < 0:
+			continue
+		var name := skeleton.get_bone_name(bone)
+		if not (name.begins_with("Index") or name.begins_with("Middle") or name.begins_with("Ring")
+				or name.begins_with("Pinky") or name.begins_with("Thumb")):
+			continue
+		var turn := skeleton.get_bone_rest(bone).basis.get_rotation_quaternion().inverse() \
+				* clip.rotation_track_interpolate(t, 0.0)
+		if turn.w < 0.0:
+			turn = -turn
+		if turn.get_angle() > 0.05:
+			out[bone] = turn.get_axis().normalized()
+	return out
+
+
+## The bone a bone points at, by the game's names.
 static func _next(bone: String) -> String:
 	var side := bone.right(2) if bone.ends_with(".L") or bone.ends_with(".R") else ""
 	var base := bone.trim_suffix(side)
