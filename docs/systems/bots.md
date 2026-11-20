@@ -48,7 +48,10 @@ date in the same PR.
   1.5 s) or, past the outer ring, working round a flank. Return fire
   (`return_fire_time`, not for a kind with the meta "holds_turn",
   Frostline's Wardens) and anything inside `point_blank` skip the queue,
-  and bots fighting bots are never rationed (`BotBrain.is_person`). Spotting
+  and bots fighting bots are never rationed (`BotBrain.is_person`); nor is a
+  bot on a vehicle's mounted gun (a weapon marked "mounted"), which fires
+  out to `MOUNTED_REACH` whatever its kind's own reach, keeps that gun in
+  hand (`_primary_index`) and, riding, watches all round. Spotting
   takes longer far off and against a crouch (`notice_mult`), and the gun
   comes up halfway through the reaction with a bark heard nearby
   (`ActorSkin._update_bark`) before the first shot. Measure with the duel

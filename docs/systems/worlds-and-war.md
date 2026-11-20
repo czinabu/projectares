@@ -180,7 +180,9 @@ date in the same PR.
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary
   `LootContainer`; a warlord is an ordinary bot passed through
   `WorldDef.make_warlord` (clients build the same one from `Raid.warlords`,
-  so keep that hook free of randomness). Event bots are extra and are never
+  so keep that hook free of randomness). A convoy (a world with
+  `WorldDef.convoy_vehicles` and a map with `convoy_routes`, see
+  `dunes.md`) is the third kind. Event bots are extra and are never
   respawned. Loot that should follow the war comes from
   `WorldDef.roll_war_loot(source, rng, intensity)`, not `roll_loot`.
 - The life log (DESIGN.md "Challenge and balance data"): the authority's

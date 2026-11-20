@@ -1384,9 +1384,9 @@ built in this order, cheapest and most connected first:
    vehicle drop (Caleb's call). It pays vehicle blueprints and parts,
    mounted weapons and the most scrip a trip. Built in three parts
    (Caleb's call: the haul first, then sandstorms over the wreck fields,
-   then armed convoys and mounted guns); parts one and two are built
-   (below, "The Dune Sea (part one, built: the haul)" and "(part two,
-   built: sandstorms)").
+   then armed convoys and mounted guns); all three are built (below,
+   "The Dune Sea (part one, built: the haul)", "(part two, built:
+   sandstorms)" and "(part three, built: convoys and roof guns)").
 4. **Basalt Rift, the sky fight.** Last, and only once there are players
    enough for three PvP worlds: a small vertical world over lava where
    flight rigs decide every fight, with updrafts, the Sky Leviathan and
@@ -1656,8 +1656,6 @@ Scrap Brutes) pick over the wrecks and hold the yards.
 - **The endless world.** A wreck field's emptied spot gets a new crate
   after 4 minutes (`WorldDef.crate_respawn_time`), and a crate left lying
   anywhere else is cleared after 10 (`crate_lifetime`).
-- **Still to come.** Armed AI convoys as a world event and mounted guns
-  (part three).
 
 ### The Dune Sea (part two, built: sandstorms)
 
@@ -1678,6 +1676,33 @@ out tracks; it looks like an ochre wall of driven grit.
   fresh crate on every spot at once. The war feed tells everyone what the
   storm buried and uncovered and roughly where, so a storm starts a race
   to the new field.
+
+### The Dune Sea (part three, built: convoys and roof guns)
+
+Caleb's call: a hauler convoy, and roof guns on the rovers.
+
+- **Convoys.** Now and then, in place of a warlord or a supply pod, a
+  convoy sets out from one salvage yard for another along a road across
+  the sand, passing wreck fields on the way, and the war feed says where.
+  In front, a rover hauling four salvage crates; behind it a second rover
+  and a raider bike riding escort. Raiders drive them, a gunner stands at
+  each rover's roof gun, and a rider sits behind on the bike. The convoy
+  keeps its spacing, slows into turns, and the hauler waits for its
+  escort if it falls far behind.
+- **Stopping it.** Drop the hauler's driver and its four crates spill on
+  the sand; every raider aboard gets off and fights for them on foot, and
+  the rovers and the bike stay where they stopped, anyone's to drive off
+  in. A convoy that gets through, or is not caught in time, is gone with
+  its crates.
+- **Roof guns.** Every Warden rover's front passenger seat is now a roof
+  gun: whoever climbs up stands through the roof, head and shoulders out,
+  on a heavy belt-fed gun (120 rounds a belt, no reserve to run out of,
+  long range). It is the seat's, never yours: get off and it stays on the
+  rover, your own weapon back in hand. A raider on a roof gun watches all
+  round, opens fire from farther out than its kind would, and never waits
+  its turn in a group fight.
+- **Still to come.** Shooting out a rover's wheels (vehicles take no
+  damage yet), and the gun swung on a mount rather than held.
 
 ## 3. The watch
 

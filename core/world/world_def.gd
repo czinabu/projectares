@@ -30,6 +30,9 @@ extends RefCounted
 ##     scenery (hulks) are its children, so they sink with it; the
 ##     "spawn_crate" markers inside its radius stand empty while it is
 ##     buried.
+##   - optionally a `convoy_routes()` method: an Array of routes, each an
+##     Array of Vector3 points on the ground a convoy drives through in
+##     order (`WorldDef.convoy_vehicles`).
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 ##   - optionally a `ground_height(x, z)` method, on a map with open ground
 ##     that is not level (see `core/world/terrain.gd`). The Raid stands
@@ -345,6 +348,18 @@ var event_interval := 420.0
 var event_lifetime := 300.0
 ## How many bots march with a warlord.
 var warlord_escort := 2
+## Convoys (DESIGN.md "The Dune Sea (part three)"): a world event of armed
+## vehicles driving one of the map's `convoy_routes`. `convoy_vehicles`
+## are item ids, the first the hauler (its cargo full of crates from
+## `roll_loot("crate")`), the rest its escort; each is driven by a bot of
+## the world's roster with `convoy_riders` more aboard on its seats, at
+## `convoy_throttle` of its top speed, all of `convoy_faction`. Drop the
+## hauler's driver and its cargo spills on the sand; the escort gets off to
+## fight. Empty: no convoys.
+var convoy_vehicles: Array[String] = []
+var convoy_faction := ""
+var convoy_riders := 1
+var convoy_throttle := 0.55
 ## Artifacts (items tagged "artifact", DESIGN.md section 6). Until the PvE
 ## dungeons and arena tournaments that should hand them out exist, world
 ## events do: the chance that a warlord carries one, and that a supply pod
