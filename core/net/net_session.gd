@@ -2969,6 +2969,19 @@ func _request_store(item_id: String) -> void:
 		raid.store(actor, item_id)
 
 
+## In the world: drop an item out of the pack where you stand (the pack
+## list's drop). The server checks the pack it keeps (`Raid.drop_item`).
+@rpc("any_peer", "call_remote", "reliable")
+func _request_drop(item_id: String) -> void:
+	if not _allow("world"):
+		return
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor != null and is_instance_valid(actor):
+		raid.drop_item(actor, item_id)
+
+
 ## In the world: ping the spot being looked at for your side. The server
 ## reads the aim from the actor it simulates.
 @rpc("any_peer", "call_remote", "reliable")
@@ -3104,6 +3117,12 @@ func summon(item_id: String) -> void:
 func store(item_id: String) -> void:
 	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
 		_request_store.rpc_id(1, item_id)
+
+
+## In the world: ask the server to drop an item out of your pack.
+func drop(item_id: String) -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy and item_id != "":
+		_request_drop.rpc_id(1, item_id)
 
 
 ## In the world: ask the server to ping where you are looking for your side.

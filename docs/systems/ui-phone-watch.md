@@ -255,7 +255,19 @@ date in the same PR.
   backwards), unusable and with no switching, then `Actor._tick_store`
   takes it off and leaves the hands empty. It needs room in the pack,
   never stores a heavy weapon, and does not rest the watch. At home it
-  unequips the slot. The squad ping (`Raid.ping`, `pinged`) goes
+  unequips the slot. Dropping (Caleb's call: a way to be rid of what you
+  do not want): on the opened pack list the interact key (its cap is drawn
+  beside the wheel, `Hud.key_cap`) drops the picked item instead of
+  interacting (`PlayerController.drop_picked_from_pack`), and the watch
+  stays on the list. The authority's `Raid.drop_item` (`NetSession.drop`
+  online) takes it out of the pack it keeps and lays it at the player's
+  feet in a bag anyone may loot, like a dead player's, cleared after
+  `WorldDef.bag_lifetime`; drops within `Raid.drop_bag_reach` of the last
+  share its bag, and a gun keeps its rounds in the bag
+  (`LootContainer.ammo`), so dropping and taking it back never refills it.
+  A safe zone, or a world where nothing is at stake (`gear_at_risk` off),
+  refuses it (`Hud.can_drop_here`), so dropping is never a way to trade.
+  The squad ping (`Raid.ping`, `pinged`) goes
   only to the pinger's side, like a visor tag. In third person the
   card rises off the worn watch with a glow on the arm (Caleb's feedback):
   it stands just past the character (`Wrist.tp_depth`, `tp_behind`), so the

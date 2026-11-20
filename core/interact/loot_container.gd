@@ -134,6 +134,13 @@ func interact(actor: Actor) -> void:
 		var id: String = items.pop_front()
 		actor.inventory.add_item(id)
 		taken.append(id)
+		# A gun dropped with rounds in it (`Raid.drop_item`) goes back into
+		# the pack with them, not refilled.
+		var kept: Array = ammo.get(id, [])
+		if not kept.is_empty() and not is_rack():
+			actor.stowed_rounds[id] = kept.pop_back()
+			if kept.is_empty():
+				ammo.erase(id)
 	if not taken.is_empty():
 		actor.looted.emit(taken)
 		looted_by.emit(actor)

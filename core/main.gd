@@ -888,6 +888,7 @@ func _attach_player_view() -> void:
 	controller.pack_requested.connect(_on_pack_requested)
 	controller.summon_requested.connect(_on_summon_requested)
 	controller.store_requested.connect(_on_store_requested)
+	controller.pack_drop_requested.connect(_on_pack_drop_requested)
 	controller.ping_requested.connect(_on_ping_requested)
 	controller.portal_requested.connect(_on_portal_requested)
 	raid.add_child(controller)
@@ -1090,6 +1091,16 @@ func _on_store_requested(item_id: String) -> void:
 		net.store(item_id)
 	else:
 		raid.store(raid.player, item_id)
+
+
+## The pack list's drop: the world puts the item on the ground, or refuses.
+func _on_pack_drop_requested(item_id: String) -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player):
+		return
+	if net:
+		net.drop(item_id)
+	else:
+		raid.drop_item(raid.player, item_id)
 
 
 ## The player pinged where they are looking, from the watch.

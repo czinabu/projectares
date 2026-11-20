@@ -667,6 +667,9 @@ static func pack_slot(p: Actor, picked := 0, p_raid: Raid = null) -> Dictionary:
 		slot.progress = p_raid.summon_charge(p)
 	elif Loadout.summonable(id):
 		slot.detail += " · %.1f s" % Loadout.summon_time(id)
+	if can_drop_here(p_raid):
+		# The interact key drops the picked item (`PlayerController.drop_picked_from_pack`).
+		slot.hints = slot.hints + [key_cap("interact")]
 	slot["where"] = pack_text(p)
 	var lines: Array[String] = []
 	for item: String in items:
@@ -674,6 +677,25 @@ static func pack_slot(p: Actor, picked := 0, p_raid: Raid = null) -> Dictionary:
 	slot["panel"] = lines
 	slot["panel_at"] = at
 	return slot
+
+
+## True if `p_raid`'s world lets a player drop things out of their pack
+## (`Raid.drop_item`): out in a world, never a safe zone or anywhere nothing
+## is at stake.
+static func can_drop_here(p_raid: Raid) -> bool:
+	return p_raid != null and p_raid.world != null and not p_raid.world.safe_zone and p_raid.world.gear_at_risk
+
+
+## The key cap hint ("key:F") for input action `action`, read from the keys
+## as bound, so a rebound key shows its own letter.
+static func key_cap(action: String) -> String:
+	if InputMap.has_action(action):
+		for ev in InputMap.action_get_events(action):
+			if ev is InputEventKey:
+				var key := ev as InputEventKey
+				var code := key.physical_keycode if key.physical_keycode != KEY_NONE else key.keycode
+				return "key:" + OS.get_keycode_string(code)
+	return "key:F"
 
 
 ## One line of the opened pack list: the item and its worth, and for gear

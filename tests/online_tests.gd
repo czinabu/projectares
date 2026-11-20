@@ -542,6 +542,25 @@ static func run(t: Node) -> void:
 				return there != null and Loadout.worn_index(there, slot) < 0
 			await t._wait_until(seen_store, 180)
 			t.check(seen_store.call(), "the other client sees it put away")
+		if back.call() and not me.inventory.items.is_empty():
+			# The pack list's drop, online: the server takes it out of the
+			# pack it keeps and lays a bag the other client sees.
+			var dropped: String = me.inventory.items[0]
+			var pack_was := me.inventory.items.size()
+			t.check(alpha.raid.drop_item(me, dropped) != "" and me.inventory.items.size() == pack_was,
+					"a client cannot drop out of its pack on its own")
+			alpha.drop(dropped)
+			var bag_seen := func() -> bool:
+				if me.inventory.items.size() != pack_was - 1:
+					return false
+				for node in bravo.raid.get_tree().get_nodes_in_group("loot_containers"):
+					var lying := node as LootContainer
+					if lying != null and lying.is_bag and Raid.of(lying) == bravo.raid and dropped in lying.items \
+							and lying.global_position.distance_to(me.global_position) < 6.0:
+						return true
+				return false
+			await t._wait_until(bag_seen, 180)
+			t.check(bag_seen.call(), "the server drops it: out of the pack, in a bag the other client sees")
 		if back.call():
 			# A ping reaches the pinger; a stranger on another side hears nothing.
 			var ping_heard := [0, 0]
