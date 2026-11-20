@@ -3304,33 +3304,187 @@ func _dress_power_rack(rack: LootContainer, marker: MeshInstance3D, size: Vector
 	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
+## A depot as an uplink station: a plated pad with a lit green rim (the bank
+## area, so you can see where to stand), lamp posts at its corners, a
+## terminal at the back with a lit screen that says what it does, and a mast
+## with a slow green beacon and a faint uplink beam you find it by from far.
 func _dress_depot(zone: Depot) -> void:
-	if not is_instance_valid(zone) or zone.has_node("Pad"):
+	if not is_instance_valid(zone) or zone.has_meta("dressed"):
 		return
-	# A landing pad under the zone and flares at its corners.
-	var pad := MeshInstance3D.new()
-	pad.name = "Pad"
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(zone.size.x, 0.12, zone.size.z)
-	mesh.material = surface("metal", {"tint": Color(0.5, 0.52, 0.5), "scale": 0.5})
-	pad.mesh = mesh
-	pad.position.y = -zone.size.y * 0.5 + 0.06
-	zone.add_child(pad)
-	var light := lamp(Color(0.25, 1.0, 0.55), 2.5, 14.0)
-	light.position.y = -zone.size.y * 0.5 + 2.0
-	zone.add_child(light)
-	for child in zone.get_children():
-		var mesh_node := child as MeshInstance3D
-		if mesh_node == null or mesh_node == pad:
-			continue
-		var source := mesh_node.mesh.surface_get_material(0) as StandardMaterial3D
-		if source == null:
-			continue
-		var mat := source.duplicate() as StandardMaterial3D
-		mat.albedo_color.a = 0.07
-		mat.emission_energy_multiplier = 1.6
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mesh_node.material_override = mat
+	zone.set_meta("dressed", true)
+	var green := Color(0.3, 1.0, 0.55)
+	var floor_y := -zone.size.y * 0.5
+	var pad := zone.get_node_or_null("Pad") as MeshInstance3D
+	if pad != null:
+		pad.material_override = surface("panels", {"tint": Color(0.42, 0.44, 0.43), "scale": 0.35, "grime": 0.5})
+	var rim := StandardMaterial3D.new()
+	rim.albedo_color = green * 0.3
+	rim.emission_enabled = true
+	rim.emission = green
+	rim.emission_energy_multiplier = 0.9
+	var steel := surface("metal", {"tint": Color(0.36, 0.38, 0.37), "scale": 0.5, "grime": 0.6})
+	var station := Node3D.new()
+	station.name = "Station"
+	station.set_meta("walk_through", "the pad's lit rim and slim corner lamps")
+	zone.add_child(station)
+	# The rim: a lit strip just inside each edge of the pad, so the bank
+	# area's edge reads from any side.
+	var half := Vector2(zone.size.x, zone.size.z) * 0.5 - Vector2(0.25, 0.25)
+	for edge in 4:
+		var along_x := edge < 2
+		var strip := MeshInstance3D.new()
+		var bar := BoxMesh.new()
+		bar.size = Vector3(half.x * 2.0, 0.04, 0.16) if along_x else Vector3(0.16, 0.04, half.y * 2.0)
+		bar.material = rim
+		strip.mesh = bar
+		var side := 1.0 if edge % 2 == 0 else -1.0
+		strip.position = Vector3(0, floor_y + 0.12, side * half.y) if along_x else Vector3(side * half.x, floor_y + 0.12, 0)
+		strip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		station.add_child(strip)
+	# Short posts at the corners, each with a green lamp on top.
+	for corner in 4:
+		var at := Vector3((1.0 if corner % 2 == 0 else -1.0) * half.x, floor_y, (1.0 if corner < 2 else -1.0) * half.y)
+		var post := MeshInstance3D.new()
+		var pole := BoxMesh.new()
+		pole.size = Vector3(0.22, 1.0, 0.22)
+		pole.material = trim("hazard")
+		post.mesh = pole
+		post.position = at + Vector3(0, 0.5, 0)
+		station.add_child(post)
+		var cap := MeshInstance3D.new()
+		var lens := BoxMesh.new()
+		lens.size = Vector3(0.26, 0.14, 0.26)
+		lens.material = rim
+		cap.mesh = lens
+		cap.position = at + Vector3(0, 1.07, 0)
+		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		station.add_child(cap)
+	var light := lamp(green, 0.7, 8.0)
+	light.position.y = floor_y + 3.0
+	station.add_child(light)
+
+	var terminal := zone.get_node_or_null("Terminal") as Node3D
+	if terminal == null:
+		return
+	var body := terminal.get_node_or_null("Body") as MeshInstance3D
+	var size := Depot.TERMINAL_SIZE
+	if body != null:
+		body.material_override = steel
+	# A hazard band round its foot, and a hood over the screen.
+	var band := MeshInstance3D.new()
+	var foot := BoxMesh.new()
+	foot.size = Vector3(size.x + 0.06, 0.22, size.z + 0.06)
+	foot.material = trim("hazard")
+	band.mesh = foot
+	band.position.y = 0.11
+	terminal.add_child(band)
+	# The screen leans back on the face toward the pad (local -Z).
+	var screen_at := Vector3(0, size.y * 0.72, -size.z * 0.5 - 0.02)
+	var screen := MeshInstance3D.new()
+	var glass := BoxMesh.new()
+	glass.size = Vector3(size.x * 0.82, 0.62, 0.05)
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(0.02, 0.08, 0.05)
+	glow.emission_enabled = true
+	glow.emission = green * 0.55
+	glow.emission_energy_multiplier = 1.2
+	glow.roughness = 0.15
+	glass.material = glow
+	screen.mesh = glass
+	screen.position = screen_at
+	screen.rotation.x = deg_to_rad(-14.0)
+	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	terminal.add_child(screen)
+	var hood := MeshInstance3D.new()
+	var lid := BoxMesh.new()
+	lid.size = Vector3(size.x * 0.92, 0.06, 0.32)
+	lid.material = steel
+	hood.mesh = lid
+	hood.position = Vector3(0, size.y * 0.72 + 0.36, -size.z * 0.5 - 0.12)
+	terminal.add_child(hood)
+	# The words sit on the glass, so they lean with it.
+	var label := Label3D.new()
+	label.text = "DEPOT UPLINK\nstand on the pad to send\nyour pack home"
+	label.font_size = 30
+	label.pixel_size = 0.004
+	label.outline_size = 0
+	label.modulate = Color(0.75, 1.0, 0.82)
+	label.double_sided = false
+	label.position = Vector3(0, 0, -0.035)
+	label.rotation.y = PI
+	screen.add_child(label)
+	# A row of status lamps under the screen, and vents down each side.
+	for k in 4:
+		var led := MeshInstance3D.new()
+		var dot := BoxMesh.new()
+		dot.size = Vector3(0.1, 0.06, 0.03)
+		dot.material = rim if k < 3 else trim("orange")
+		led.mesh = dot
+		led.position = Vector3(-0.3 + k * 0.2, size.y * 0.42, -size.z * 0.5 - 0.015)
+		led.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		terminal.add_child(led)
+	for side: float in [-1.0, 1.0]:
+		for k in 4:
+			var vent := MeshInstance3D.new()
+			var slat := BoxMesh.new()
+			slat.size = Vector3(0.03, 0.05, size.z * 0.7)
+			slat.material = trim("rut")
+			vent.mesh = slat
+			vent.position = Vector3(side * (size.x * 0.5 + 0.015), 0.5 + k * 0.12, 0)
+			terminal.add_child(vent)
+	# The mast's beacon, pulsing slowly, and a faint beam up from it.
+	var mast := terminal.get_node_or_null("Mast") as MeshInstance3D
+	if mast == null:
+		return
+	mast.material_override = steel
+	var top := mast.position + Vector3(0, Depot.MAST_HEIGHT * 0.5, 0)
+	for rung in 3:
+		var dish := MeshInstance3D.new()
+		var arm := BoxMesh.new()
+		arm.size = Vector3(0.7 - rung * 0.15, 0.06, 0.06)
+		arm.material = steel
+		dish.mesh = arm
+		dish.position = top - Vector3(0, 1.0 + rung * 0.9, 0)
+		dish.rotation.y = rung * 0.9
+		terminal.add_child(dish)
+	var beacon := MeshInstance3D.new()
+	var bulb := SphereMesh.new()
+	bulb.radius = 0.22
+	bulb.height = 0.44
+	var bright := StandardMaterial3D.new()
+	bright.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bright.albedo_color = Color(0.6, 1.0, 0.75)
+	bright.disable_fog = true
+	bulb.material = bright
+	beacon.mesh = bulb
+	beacon.position = top + Vector3(0, 0.15, 0)
+	beacon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	terminal.add_child(beacon)
+	var beacon_light := lamp(green, 2.0, 12.0)
+	beacon_light.position = beacon.position
+	terminal.add_child(beacon_light)
+	var pulse := beacon_light.create_tween().set_loops()
+	pulse.tween_property(beacon_light, "light_energy", 0.4, 1.1).set_trans(Tween.TRANS_SINE)
+	pulse.tween_property(beacon_light, "light_energy", 2.0, 1.1).set_trans(Tween.TRANS_SINE)
+	var beam := MeshInstance3D.new()
+	var column := CylinderMesh.new()
+	column.top_radius = 0.05
+	column.bottom_radius = 0.12
+	column.height = 60.0
+	column.radial_segments = 8
+	column.rings = 1
+	var faint := StandardMaterial3D.new()
+	faint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	faint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	faint.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	faint.albedo_color = Color(0.3, 1.0, 0.55, 0.22)
+	faint.cull_mode = BaseMaterial3D.CULL_DISABLED
+	column.material = faint
+	beam.mesh = column
+	beam.position = beacon.position + Vector3(0, column.height * 0.5 + 0.2, 0)
+	beam.set_meta("walk_through", "a beam of light")
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	terminal.add_child(beam)
 
 
 ## Something on show (a home base display): a node with the meta

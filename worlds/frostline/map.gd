@@ -678,7 +678,7 @@ func _build_mouth() -> void:
 	_add_warmth(_camp, CAMP)
 	for side: float in [-1.0, 1.0]:
 		var at := Vector2(centre(250.0) + side * 30.0, 250.0)
-		_add_depot(_ground(at))
+		_add_depot(_ground(at), Vector2(side, 0.0))
 		_add_rocks(at + Vector2(side * 8.0, -6.0), 2)
 
 
@@ -1561,10 +1561,14 @@ func _cylinder(parent: Node3D, radius: float, length: float, at: Vector3, materi
 	parent.add_child(node)
 
 
-func _add_depot(at: Vector3) -> void:
+## A depot whose uplink terminal stands on the `back` side of its pad (a
+## direction on the ground; zero leaves it on the +Z side).
+func _add_depot(at: Vector3, back := Vector2.ZERO) -> void:
 	var zone := Depot.new()
 	zone.add_to_group("depot")
 	zone.position = at + Vector3(0, 2.0, 0)
+	if back != Vector2.ZERO:
+		zone.rotation.y = atan2(back.x, back.y)
 	add_child(zone)
 
 

@@ -190,3 +190,19 @@ date in the same PR.
   get the lock from `ActorCommand.STATE_SHELTERED` in the state. Hazards
   and zones are shown in the world and on the watch (`Raid.zone_label`),
   never as an overlay.
+- Depots and gate outposts look like places, never like zones: no
+  see-through boxes. A `Depot` builds its own greybox station (a deep pad
+  that is the bank area, a solid uplink terminal at its back edge, local
+  +Z, and a mast), which `Look._dress_depot` dresses: a lit rim round the
+  pad, lamp posts at its corners, a screen saying what it does, and a
+  pulsing beacon with a faint uplink beam on the mast to find it by. The
+  pad's middle stays open (players and tests stand at its centre), and a
+  map turns a depot with `_add_depot(at, back)` so the terminal backs onto
+  a wall or away from a site. The terminal and mast are solid but not in
+  the navigation bake (the depot is not under the nav region), so a bot can
+  brush it; the pad, its rim and corner lamps are `walk_through`. An outpost's bubble is shown by its own
+  walls and, across the open gate, a lit striped threshold laid on the
+  bubble's radius between two emitter bollards, so the line is exactly
+  where protection ends; the gate's sign hangs from a beam over the posts
+  and reads on its front only (the rule outside, "leaving" inside), never
+  floating or mirrored. Ashfront dresses its gates in `_dress_outposts`.
