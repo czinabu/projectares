@@ -1771,9 +1771,12 @@ crashes with a big haul.
   rig's ceiling: you get to them by riding an updraft up past the ship, or
   diving off the Crown. Each weak spot glows hot so you can pick it out
   from a mesa. The design's first sketch had the pods for boots and bikes;
-  in the rift no rig climbs from a mesa (a ceiling counts from the lava's
-  floor), so the pods are for jetpacks and for guns from the mesas and
-  bridges instead.
+  in the rift the pods are for jetpacks and for guns from the mesas and
+  bridges.
+- **Boots in the rift** (Caleb's call): thruster boots count their 10 m
+  ceiling from the floor you last stood on, a mesa's top or a perch's, so
+  a kick lifts off anything you stand on. Every other rig still counts
+  from the lava's floor, so the Crown stays an updraft climb.
 - **The turrets fight.** Each turret is a gunner on a heavy mounted gun
   that sees 90 m all round and shoots at anyone in reach; up there that
   is mostly flyers. The pods and plates only take hits.

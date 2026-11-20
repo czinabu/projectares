@@ -714,6 +714,14 @@ func updraft_at(_pos: Vector3) -> float:
 	return 0.0
 
 
+## Whether the flight rig `rig_id` counts its ceiling from the floor its
+## wearer last stood on (a mesa's top, say) rather than from the world's
+## ground (`Actor._measure_altitude`). False everywhere by default, so
+## roof-hopping never stacks a ceiling. Data only, so a client agrees.
+func rig_ceiling_from_floor(_rig_id: String) -> bool:
+	return false
+
+
 ## Damage a second that the ground at a point does to a player standing in it
 ## (heat, fumes), or 0. The Raid deals it through `Combat.deal`.
 func hazard_at(_pos: Vector3) -> float:

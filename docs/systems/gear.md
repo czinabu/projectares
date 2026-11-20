@@ -63,7 +63,9 @@ date in the same PR.
   improves the rig's strength, never its weakness, and the heat bar stays
   100. A rig's `ceiling` is measured
   from the world's ground, never a roof (`Actor.ground_level`: the map's
-  `ground_height`, else its origin; the home base is its own ground), and
+  `ground_height`, else its origin; the home base is its own ground),
+  unless the world has that rig count from the floor its wearer last stood
+  on (`WorldDef.rig_ceiling_from_floor`: the Basalt Rift's boots), and
   only limits lift: the climb eases
   off under it (`FlightRig.climb_room`) and a kick, launch or boost is cut
   to top out on it (`lift_cap`), or refused. A world's updrafts

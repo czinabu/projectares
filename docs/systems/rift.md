@@ -94,6 +94,12 @@ Leviathan)"). Check it with `tests/rift_tests.gd` and
 
 ## Rules
 
+- Thruster boots count their ceiling from the floor last stood on
+  (`rig_ceiling_from_floor`, Caleb's call), so a kick still lifts off a
+  mesa or a perch; every other rig counts from the lava's floor, so only
+  an updraft gets a jetpack onto the Crown. `Actor._measure_altitude`
+  keeps the floor (`_floor_y`) and asks the world once per rig worn.
+
 - Ashfront's death rule (`death_drops_scrip`): the fallen drop scrip, not
   gear. The starter kit carries the Mk1 jetpack.
 - The roster (`ROSTER` in `worlds/rift/world.gd`) does not fly; its

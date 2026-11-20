@@ -54,6 +54,7 @@ static func run(t: Node) -> void:
 	await _check_paths(t, raid, map)
 	await _check_lava(t, raid, map)
 	await _check_updraft_flight(t, raid, map)
+	_check_boots_from_floor(t, raid, map)
 	# Signing out works from the Shelf.
 	me = raid.player
 	if me.is_dead:
@@ -231,3 +232,32 @@ static func _check_updraft_flight(t: Node, raid: Raid, map: Node3D) -> void:
 			"rift: out of an updraft a rig over its ceiling climbs no higher")
 	me.cmd.secondary = false
 	me.protected_left = 0.0
+
+
+## Boots count their ceiling from the floor last stood on, so a kick in
+## the air off a mesa still lifts; a jetpack still counts from the lava's
+## floor, so it never stacks a mesa's height onto its ceiling.
+static func _check_boots_from_floor(t: Node, raid: Raid, map: Node3D) -> void:
+	var me := raid.player
+	if me == null or me.is_dead:
+		return
+	var anvil: Dictionary = map.SITES[1]
+	var top: float = anvil["top"]
+	var rig := me.flight
+	var was := {"item_id": rig.item_id, "ceiling": rig.ceiling, "enabled": rig.enabled}
+	var heights := {}
+	for id: String in ["boots_thruster", "jetpack_mk1"]:
+		rig.item_id = id
+		rig.ceiling = float(ItemDB.item_stats(id).get("ceiling", 0.0))
+		rig.enabled = true
+		me.global_position = Vector3(anvil["at"].x, top, anvil["at"].y)
+		me.call("_measure_altitude", true)
+		me.global_position.y = top + 3.0
+		me.call("_measure_altitude", false)
+		heights[id] = rig.altitude
+	t.check(absf(float(heights["boots_thruster"]) - 3.0) < 0.01
+			and float(heights["jetpack_mk1"]) > top,
+			"rift: boots count their ceiling from the mesa they kicked off (%.0f m up), a jetpack from the lava's floor (%.0f m)"
+			% [heights["boots_thruster"], heights["jetpack_mk1"]])
+	for key: String in was:
+		rig.set(key, was[key])

@@ -14,6 +14,7 @@ extends WorldDef
 ## The rig rewards (upgrade data, rig cosmetics) come in part three.
 
 const MapScript := preload("map.gd")
+const RigModel := preload("res://core/visual/rig_model.gd")
 
 ## The enemy roster: each kind of bot this world sends, as data. `equip_bot`
 ## rolls one by `chance` (out of their sum) and builds it from its row:
@@ -209,6 +210,14 @@ func zone_name(tier: int) -> String:
 ## The vents' updrafts (the map's `VENTS`).
 func updraft_at(pos: Vector3) -> float:
 	return MapScript.updraft_at(pos)
+
+
+## Thruster boots count their ceiling from the floor you last stood on
+## (Caleb's call): from the lava's floor a kick could never leave a mesa.
+## Every other rig still counts from the lava's floor, so only an updraft
+## gets a jetpack onto the Crown.
+func rig_ceiling_from_floor(rig_id: String) -> bool:
+	return RigModel.kind_for(rig_id) == "boots"
 
 
 ## A rig is the point here: the starter kit flies.
