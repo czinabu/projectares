@@ -150,7 +150,7 @@ A new system gets a new file and a line here.
 - `docs/systems/home-base.md`: The modular base, its rooms, the plan table, the bench, the range and course, and upgrades.
 - `docs/systems/arena-and-race.md`: The arena venue and its rules, and Meridian's races, league, ghosts and tuning.
 - `docs/systems/updates-and-dev-mode.md`: The self-updater, the installer, the temporary dev mode and its tools (capture and snapshot keys, the phone's console).
-- `docs/systems/dunes.md`: The Dune Sea: its map, salvage crates, carrying, cargo, banking a haul and losing it.
+- `docs/systems/dunes.md`: The Dune Sea: its map, salvage crates, carrying, cargo, banking a haul and losing it, and sandstorms that bury and uncover the wreck fields.
 
 ## Conventions
 

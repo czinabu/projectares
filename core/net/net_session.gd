@@ -653,6 +653,7 @@ func _start_server_raid() -> void:
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
 	raid.crate_spawned.connect(_on_server_crate_spawned)
+	raid.field_changed.connect(_on_server_field_changed)
 	raid.watch_changed.connect(_send_watch)
 	raid.tally_changed.connect(_send_tally)
 	raid.banked_changed.connect(_send_banked)
@@ -1262,6 +1263,23 @@ func _crate_moved(id: int, where: Array) -> void:
 		crate.place(null)
 
 
+func _on_server_field_changed(_index: int, _buried: bool) -> void:
+	var packed := raid.pack_fields()
+	for peer in _joined_peers:
+		_fields.rpc_id(peer, packed)
+
+
+## Which salvage fields a storm has buried (`Raid.pack_fields`): the client
+## sinks or raises their scenery to match.
+@rpc("authority", "call_remote", "reliable")
+func _fields(buried: Array) -> void:
+	if raid == null:
+		return
+	for i in mini(buried.size(), raid.fields.size()):
+		if typeof(buried[i]) == TYPE_BOOL:
+			raid.set_field_buried(i, buried[i])
+
+
 @rpc("authority", "call_remote", "reliable")
 func _crate_gone(id: int) -> void:
 	var crate: SalvageCrate = _crates.get(id)
@@ -1839,6 +1857,8 @@ func _send_world(peer: int) -> void:
 		_send_vehicle(peer, id)
 	for id: int in _crates:
 		_send_crate(peer, id)
+	if not raid.fields.is_empty():
+		_fields.rpc_id(peer, raid.pack_fields())
 	for id: int in _sent_kills:
 		_kills.rpc_id(peer, id, _sent_kills[id])
 	for id: int in _sent_standing:
