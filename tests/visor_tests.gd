@@ -5,6 +5,7 @@ extends RefCounted
 const SkinScript := preload("res://core/visual/actor_skin.gd")
 const GearShapes := preload("res://core/visual/gear_shapes.gd")
 const Human := preload("res://core/visual/human.gd")
+const BodyFit := preload("res://core/visual/body_fit.gd")
 
 const StashRules := preload("res://core/account/stash_rules.gd")
 const BaseLayout := preload("res://core/base/base_layout.gd")
@@ -224,25 +225,36 @@ static func _frames(t: Node) -> void:
 	var coverage := []
 	var reach := []
 	for weight: String in ["light", "medium", "heavy"]:
-		var model := SkinScript.build_frame(weight)
-		built = built and GearShapes.has_part(model, "Chest") and GearShapes.has_part(model, "Carrier") \
-				and GearShapes.has_part(model, "Pouch") and GearShapes.has_part(model, "Strap") \
-				and GearShapes.has_part(model, "Side") == (weight != "light") \
-				and GearShapes.has_part(model, "Belly") == (weight == "heavy") \
-				and GearShapes.has_part(model, "Collar") == (weight == "heavy")
-		# Fitted, not blocky: the carrier and what hangs on it ride within a
-		# few centimetres of the torso (about 0.15 m to each side and 0.125 m
-		# in front of the bone), a heavy one further out than a light one.
-		var front := 0.0
-		for part: MeshInstance3D in model.find_children("*", "MeshInstance3D", false, false):
-			var box := part.transform * part.get_aabb()
-			fitted = fitted and box.position.z > -0.23 and box.position.x > -0.22 and box.end.x < 0.22
-			front = minf(front, box.position.z)
-		# Coverage is the plates and carrier, not the details on them.
-		coverage.append(Array(model.get_meta("parts")).filter(func(p: String) -> bool:
-				return p in ["Chest", "Back", "Collar", "Side"] or p.begins_with("Belly")).size())
-		reach.append(front)
-		model.free()
+		for build: String in ["m", "f"]:
+			var model := SkinScript.build_frame(weight, "", build)
+			built = built and GearShapes.has_part(model, "Chest") and GearShapes.has_part(model, "Carrier") \
+					and GearShapes.has_part(model, "Pouch") and GearShapes.has_part(model, "Strap") \
+					and GearShapes.has_part(model, "Side") == (weight != "light") \
+					and GearShapes.has_part(model, "Belly") == (weight == "heavy") \
+					and GearShapes.has_part(model, "Collar") == (weight == "heavy")
+			# Fitted, not blocky: laid over the measured body, the carrier
+			# and what hangs on it stay within a few centimetres of the
+			# torso's widest and fullest (`BodyFit`), a heavy one further
+			# out than a light one.
+			var chest := BodyFit.bone(build, "Chest")
+			var side := 0.0
+			var full := 0.0
+			for k in 30:
+				var y := lerpf(BodyFit.bone(build, "Hips").y, BodyFit.bone(build, "Neck").y, k / 29.0)
+				side = maxf(side, maxf(BodyFit.reach(build, y, PI * 0.5), BodyFit.reach(build, y, -PI * 0.5)))
+				full = maxf(full, BodyFit.reach(build, y, 0.0))
+			var front := 0.0
+			for part: MeshInstance3D in model.find_children("*", "MeshInstance3D", false, false):
+				var box := part.transform * part.get_aabb()
+				box.position += chest
+				fitted = fitted and box.position.z > BodyFit.axis_z() - full - 0.1 and box.position.x > -side - 0.09 and box.end.x < side + 0.09
+				front = minf(front, box.position.z - chest.z)
+			if build == "m":
+				# Coverage is the plates and carrier, not the details on them.
+				coverage.append(Array(model.get_meta("parts")).filter(func(p: String) -> bool:
+						return p in ["Chest", "Back", "Collar", "Side"] or p.begins_with("Belly")).size())
+				reach.append(front)
+			model.free()
 	t.check(fitted, "the carrier and plates are curved to the body and ride close to it")
 	t.check(coverage[0] < coverage[1] and coverage[1] < coverage[2], "each heavier frame covers more")
 	t.check(reach[0] > reach[2], "a heavy frame stands further off the body than a light one")

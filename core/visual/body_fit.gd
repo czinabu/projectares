@@ -41,6 +41,29 @@ static func reach(build: String, y: float, a: float) -> float:
 	return best
 
 
+## Whether `p` (actor frame) is inside the trunk's skin pushed out by
+## `gap`: within its reach at that height and toward that side. Above or
+## below the measured trunk nothing is inside.
+static func inside(build: String, p: Vector3, gap := 0.0) -> bool:
+	var top := D.TRUNK_LOW + D.TRUNK_STEP * (_hulled(build_of(build), "trunk").size() - 1)
+	if p.y < D.TRUNK_LOW or p.y > top:
+		return false
+	var d := Vector2(p.x, p.z - D.TRUNK_Z)
+	return d.length() < reach(build, p.y, atan2(p.x, -(p.z - D.TRUNK_Z))) + gap
+
+
+## Where an upper arm's piece is carried, in each stance the trunk is
+## measured in, relative to the chest: from its rest place (actor frame)
+## to where it stands against the measured trunk. `out` -1 is the left
+## arm, 1 the right (its mirror).
+static func arm_poses(build: String, out: float) -> Array[Transform3D]:
+	var poses: Array[Transform3D] = []
+	var flip := Transform3D(Basis.from_scale(Vector3(-1, 1, 1)), Vector3.ZERO)
+	for x: Transform3D in D.DATA[build_of(build)].get("arm_poses", []):
+		poses.append(x if out < 0.0 else flip * x * flip)
+	return poses
+
+
 ## The trunk's axis, actor frame Z.
 static func axis_z() -> float:
 	return D.TRUNK_Z

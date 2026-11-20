@@ -325,10 +325,17 @@ static func cyl(root: Node3D, part: String, radius: float, height: float, materi
 	return add(root, part, m, material, at, basis)
 
 
+## Leaves every part a node of its own instead of merging (a tool that
+## names the parts, `tools/armor_fit`). Never set in the game.
+static var keep_parts := false
+
+
 ## Bakes every mesh under `root` into one mesh with a surface per material,
 ## named "Gear", and lists the parts it was made of in the "parts" meta.
 ## Glass casts no shadow, so it goes in a mesh of its own ("Glass").
 static func merge(root: Node3D) -> Node3D:
+	if keep_parts:
+		return root
 	var groups := {}
 	var order: Array[Material] = []
 	var names := PackedStringArray()
