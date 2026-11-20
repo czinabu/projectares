@@ -6,7 +6,7 @@ extends Node
 ## every other library clip kept under its own name.
 ##
 ##   godot --headless --path . res://tools/human_rig/build_rig.tscn -- \
-##       --body <Superhero_Male_FullBody.gltf> --ual <UAL1_Standard.glb>,<UAL2_Standard.glb> \
+##       --body <Superhero_Male_FullBody.gltf> --ual <UAL1.glb from the Source tier>,<UAL2_Standard.glb> \
 ##       --hair <Hair_Buzzed.gltf>,... --old res://assets/characters/humans/rig_m.glb \
 ##       --out res://assets/characters/humans/body_m.glb
 ##
@@ -31,11 +31,10 @@ const SIDE_BONES := {
 const FINGERS := {"index": "Index", "middle": "Middle", "ring": "Ring", "pinky": "Pinky", "thumb": "Thumb"}
 
 ## The game's clip name -> library clip, or ["old", <old clip>] to retarget.
-## The empty-handed stand is the library's ("Idle", picked in
-## `Look.HUMAN_ANIMS`). The run, the strafes, the gun holds and the sword
-## stay the old ones: they are one set (the free library has no strafes),
-## and the library's jog, run lower and bouncier, bobbed the first-person
-## view at every switch between them.
+## The empty-handed stand is built (`_stand`, "Idle_Stand"): every
+## library idle is a fighting stance. The run and strafes are the
+## library's jogs, calmed (`JOGS`, replacing these entries). The gun holds
+## and the sword stay the old ones: the library has no rifle clips.
 ## Godot's import drops a clip's "_Loop" ending ("Walk_Loop" is "Walk",
 ## "Sprint_Loop" "Sprint", "Idle_Loop" "Idle"), so those need no entry.
 const CLIPS := {
@@ -253,6 +252,22 @@ func build(args: Dictionary) -> int:
 		if library.has_animation(clip):
 			library.remove_animation(clip)
 		library.add_animation(clip, anim)
+	for clip: String in JOGS:
+		var jog: Animation = ual.get(JOGS[clip], ual.get(JOGS[clip] + "_Loop"))
+		if jog == null:
+			print("  missing: ", clip, " <- ", JOGS[clip])
+			continue
+		if clip in MIRRORED:
+			jog = _mirror(jog, out_skeleton)
+		jog = _calm(jog, out_skeleton, JOG_BOUNCE, JOG_SWAY, JOG_STRETCH)
+		if library.has_animation(clip):
+			library.remove_animation(clip)
+		library.add_animation(clip, jog)
+	var stand := _stand(ual.get(STAND_BASE), ual.get(CURL_CLIP, ual.get(CURL_CLIP + "_Loop")), out_skeleton)
+	if stand:
+		library.add_animation("Idle_Stand", stand)
+	else:
+		print("  missing: Idle_Stand <- ", STAND_BASE)
 	player.add_animation_library("", library)
 	if old:
 		old.queue_free()
@@ -563,6 +578,334 @@ func _global_rot(skeleton: Skeleton3D, bone: int, basis_of: Dictionary) -> Quate
 	var q := _global_rot(skeleton, skeleton.get_bone_parent(bone), basis_of) * skeleton.get_bone_rest(bone).basis.get_rotation_quaternion()
 	basis_of[bone] = q
 	return q
+
+
+## The library clip the upright stand starts from: legs straight, feet
+## under the hips, chest and head square (`_stand`).
+const STAND_BASE := "A_TPose"
+## How the upright stand's arms hang: how far out from the sides and
+## forward of them (radians), how far the elbows bend, how much of the
+## pack idle's closed hand the fingers take, and the breath (radians of
+## chest lift, seconds a breath).
+const STAND_ARM_OUT := 0.13
+const STAND_ARM_FORWARD := 0.05
+const STAND_ELBOW := 0.2
+const STAND_CURL := 0.45
+const STAND_BREATH := 0.025
+const STAND_BREATH_TIME := 4.0
+
+
+## The relaxed, upright stand with nothing in hand (Caleb's call: the
+## library's idle is a fighting crouch). It is `base`'s pose (the library's
+## A-pose: straight legs, feet under the hips) with the arms let down to
+## hang at the sides, elbows a little bent, the fingers curled part of the
+## way `hand` closes them, and a slow breath in the chest.
+func _stand(base: Animation, hand: Animation, skeleton: Skeleton3D) -> Animation:
+	if base == null:
+		return null
+	var bones := skeleton.get_bone_count()
+	# Each bone's local pose in the base clip, its rest where it has no track.
+	var local: Array[Transform3D] = []
+	for b in bones:
+		local.append(skeleton.get_bone_rest(b))
+	var track_of := {}
+	for t in base.get_track_count():
+		var bone := skeleton.find_bone(String(base.track_get_path(t).get_concatenated_subnames()))
+		if bone < 0:
+			continue
+		var pose := local[bone]
+		if base.track_get_type(t) == Animation.TYPE_ROTATION_3D:
+			pose.basis = Basis(base.rotation_track_interpolate(t, 0.0))
+		elif base.track_get_type(t) == Animation.TYPE_POSITION_3D:
+			pose.origin = base.position_track_interpolate(t, 0.0)
+			track_of[bone] = true
+		local[bone] = pose
+	var globals := func() -> Array[Transform3D]:
+		var out: Array[Transform3D] = []
+		for b in bones:
+			var parent := skeleton.get_bone_parent(b)
+			out.append(local[b] if parent < 0 else out[parent] * local[b])
+		return out
+	# Which way the body faces and which way is up, from the stand itself.
+	var g: Array[Transform3D] = globals.call()
+	var at := func(name: String) -> Vector3: return g[skeleton.find_bone(name)].origin
+	var up: Vector3 = (at.call("Head") - at.call("Hips")).normalized()
+	var right: Vector3 = (at.call("UpperArm.R") - at.call("UpperArm.L")).normalized()
+	var forward := up.cross(right).normalized()
+	if forward.dot(at.call("Toe.L") - at.call("Foot.L")) < 0.0:
+		forward = -forward
+	# Turns a bone so that, in the whole body's frame, it turns by `turn`.
+	var turn_bone := func(name: String, turn: Quaternion) -> void:
+		var b := skeleton.find_bone(name)
+		var parent := skeleton.get_bone_parent(b)
+		var parent_rot := g[parent].basis.get_rotation_quaternion() if parent >= 0 else Quaternion.IDENTITY
+		var own := g[b].basis.get_rotation_quaternion()
+		var pose := local[b]
+		pose.basis = Basis((parent_rot.inverse() * turn * own).normalized())
+		local[b] = pose
+		# In place: the lambdas share this list.
+		var now: Array[Transform3D] = globals.call()
+		for i in bones:
+			g[i] = now[i]
+	for side: String in [".L", ".R"]:
+		var outward := right if side == ".R" else -right
+		var arm: Vector3 = at.call("LowerArm" + side) - at.call("UpperArm" + side)
+		var hang := (-up + outward * tan(STAND_ARM_OUT) + forward * tan(STAND_ARM_FORWARD)).normalized()
+		turn_bone.call("UpperArm" + side, Quaternion(arm.normalized(), hang))
+		var fore: Vector3 = at.call("Wrist" + side) - at.call("LowerArm" + side)
+		turn_bone.call("LowerArm" + side, Quaternion(fore.normalized().cross(forward).normalized(), STAND_ELBOW))
+	# Fingers: part of the way to the library idle's closed hand.
+	if hand:
+		for t in hand.get_track_count():
+			if hand.track_get_type(t) != Animation.TYPE_ROTATION_3D:
+				continue
+			var b := skeleton.find_bone(String(hand.track_get_path(t).get_concatenated_subnames()))
+			if b >= 0 and _curl.has(b):
+				var pose := local[b]
+				pose.basis = Basis(pose.basis.get_rotation_quaternion().slerp(hand.rotation_track_interpolate(t, 0.0), STAND_CURL))
+				local[b] = pose
+	var anim := Animation.new()
+	anim.length = STAND_BREATH_TIME
+	anim.loop_mode = Animation.LOOP_LINEAR
+	var chest := skeleton.find_bone("Chest")
+	var chest_axis := g[chest].basis.get_rotation_quaternion().inverse() * right
+	var steps := 8
+	for b in bones:
+		var path := NodePath("CharacterArmature/Skeleton3D:" + skeleton.get_bone_name(b))
+		if track_of.has(b):
+			var pt := anim.add_track(Animation.TYPE_POSITION_3D)
+			anim.track_set_path(pt, path)
+			anim.position_track_insert_key(pt, 0.0, local[b].origin)
+		var rt := anim.add_track(Animation.TYPE_ROTATION_3D)
+		anim.track_set_path(rt, path)
+		var q := local[b].basis.get_rotation_quaternion()
+		if b != chest:
+			anim.rotation_track_insert_key(rt, 0.0, q)
+			continue
+		# The chest lifts and settles once a breath.
+		for i in steps + 1:
+			var time := STAND_BREATH_TIME * i / steps
+			var lift := -STAND_BREATH * 0.5 * (1.0 - cos(TAU * i / steps))
+			anim.rotation_track_insert_key(rt, time, q * Quaternion(chest_axis, lift))
+	return anim
+
+
+## The library jogs as the game's run, strafes and run back (`JOGS`): each
+## is calmed (`_calm`), and the strafe right is the strafe left mirrored,
+## since the library's own right steps shorter than its left and measures
+## at a third of the speed.
+const JOGS := {"Run": "Jog_Fwd", "Run_Back": "Jog_Bwd", "Run_Left": "Jog_Left", "Run_Right": "Jog_Left"}
+const MIRRORED := ["Run_Right"]
+## How much of a jog's rise and fall the hips keep, from the top of the
+## stride down (the jog bounces twice as high as a gun run, and the carried
+## gun and the view bounced with it); the legs reach down to where the clip
+## put the feet.
+const JOG_BOUNCE := 0.35
+## How much of a jog's sway the trunk keeps (hips to head, about the
+## cycle's average lie): a jog rolls the shoulders, and the carried gun
+## swung across the view with them.
+const JOG_SWAY := 0.4
+## How much longer a jog's cycle is made: the library's jog covers twice
+## the ground a step of the old gun run does, so at its own pace a sprint
+## would only spin the legs; slowed, it measures under the speed at which
+## `Locomotion` starts to lengthen the stride.
+const JOG_STRETCH := 1.12
+const TRUNK := ["Hips", "Abdomen", "Torso", "Chest", "Neck", "Head"]
+
+
+## A clip sampled at `FPS`: per frame, every bone's local pose.
+static func _sample(anim: Animation, skeleton: Skeleton3D) -> Array:
+	var tracks := {}
+	for t in anim.get_track_count():
+		var bone := skeleton.find_bone(String(anim.track_get_path(t).get_concatenated_subnames()))
+		if bone < 0:
+			continue
+		if not tracks.has(bone):
+			tracks[bone] = {}
+		tracks[bone][anim.track_get_type(t)] = t
+	var frames := []
+	var count := maxi(1, roundi(anim.length * FPS))
+	for f in count + 1:
+		var time := minf(f / FPS, anim.length)
+		var poses: Array[Transform3D] = []
+		for b in skeleton.get_bone_count():
+			var pose := skeleton.get_bone_rest(b)
+			var own: Dictionary = tracks.get(b, {})
+			var rot := pose.basis.get_rotation_quaternion()
+			if own.has(Animation.TYPE_ROTATION_3D):
+				rot = anim.rotation_track_interpolate(own[Animation.TYPE_ROTATION_3D], time)
+			var at := pose.origin
+			if own.has(Animation.TYPE_POSITION_3D):
+				at = anim.position_track_interpolate(own[Animation.TYPE_POSITION_3D], time)
+			poses.append(Transform3D(Basis(rot), at))
+		frames.append(poses)
+	return frames
+
+
+static func _globals(local: Array, skeleton: Skeleton3D) -> Array[Transform3D]:
+	var out: Array[Transform3D] = []
+	for b in skeleton.get_bone_count():
+		var parent := skeleton.get_bone_parent(b)
+		out.append(local[b] if parent < 0 else out[parent] * local[b])
+	return out
+
+
+static func _locals(global: Array, skeleton: Skeleton3D) -> Array[Transform3D]:
+	var out: Array[Transform3D] = []
+	for b in skeleton.get_bone_count():
+		var parent := skeleton.get_bone_parent(b)
+		out.append(global[b] if parent < 0 else global[parent].affine_inverse() * global[b])
+	return out
+
+
+## Frames of local poses back into a looping clip, with the hips' and
+## root's travel as position tracks.
+static func _unsample(frames: Array, skeleton: Skeleton3D, length: float, loop: Animation.LoopMode, stretch := 1.0) -> Animation:
+	var anim := Animation.new()
+	length *= stretch
+	anim.length = length
+	anim.loop_mode = loop
+	for b in skeleton.get_bone_count():
+		var path := NodePath("CharacterArmature/Skeleton3D:" + skeleton.get_bone_name(b))
+		if skeleton.get_bone_parent(b) < 0 or skeleton.get_bone_name(b) == "Hips":
+			var pt := anim.add_track(Animation.TYPE_POSITION_3D)
+			anim.track_set_path(pt, path)
+			for f in frames.size():
+				anim.position_track_insert_key(pt, minf(f / FPS * stretch, length), frames[f][b].origin)
+		var rt := anim.add_track(Animation.TYPE_ROTATION_3D)
+		anim.track_set_path(rt, path)
+		for f in frames.size():
+			anim.rotation_track_insert_key(rt, minf(f / FPS * stretch, length), frames[f][b].basis.get_rotation_quaternion())
+	return anim
+
+
+## The body's left-right axis in skeleton space, from the rest.
+static func _lateral(skeleton: Skeleton3D) -> Vector3:
+	return (skeleton.get_bone_global_rest(skeleton.find_bone("UpperArm.R")).origin
+			- skeleton.get_bone_global_rest(skeleton.find_bone("UpperArm.L")).origin).normalized()
+
+
+## `anim` with left and right swapped: each bone takes its other side's
+## turn from rest, reflected across the body's middle.
+static func _mirror(anim: Animation, skeleton: Skeleton3D) -> Animation:
+	var n := _lateral(skeleton)
+	var rest: Array[Transform3D] = []
+	for b in skeleton.get_bone_count():
+		rest.append(skeleton.get_bone_global_rest(b))
+	var reflect_point := func(v: Vector3) -> Vector3: return v - 2.0 * v.dot(n) * n
+	var reflect_turn := func(q: Quaternion) -> Quaternion:
+		var v := Vector3(q.x, q.y, q.z)
+		var m: Vector3 = -reflect_point.call(v)
+		return Quaternion(m.x, m.y, m.z, q.w)
+	var frames := _sample(anim, skeleton)
+	for f in frames.size():
+		var g := _globals(frames[f], skeleton)
+		var out: Array[Transform3D] = []
+		for b in skeleton.get_bone_count():
+			var name := skeleton.get_bone_name(b)
+			var other := b
+			if name.ends_with(".L"):
+				other = skeleton.find_bone(name.trim_suffix(".L") + ".R")
+			elif name.ends_with(".R"):
+				other = skeleton.find_bone(name.trim_suffix(".R") + ".L")
+			if other < 0:
+				other = b
+			var turn := g[other].basis.get_rotation_quaternion() * rest[other].basis.get_rotation_quaternion().inverse()
+			var basis := Basis(reflect_turn.call(turn) * rest[b].basis.get_rotation_quaternion())
+			out.append(Transform3D(basis, reflect_point.call(g[other].origin)))
+		frames[f] = _locals(out, skeleton)
+	return _unsample(frames, skeleton, anim.length, anim.loop_mode)
+
+
+## `anim` played `stretch` times slower, with the trunk's sway (its roll,
+## and the hips' shift side to side) cut to `sway` of it, the hips' rise and
+## fall cut to `keep` of it, measured down
+## from the top of the stride, and each leg bent to reach where the clip
+## put its foot (two bones, the knee kept in its own plane).
+static func _calm(anim: Animation, skeleton: Skeleton3D, keep: float, sway: float, stretch: float) -> Animation:
+	var hips := skeleton.find_bone("Hips")
+	var up := (skeleton.get_bone_global_rest(skeleton.find_bone("Head")).origin
+			- skeleton.get_bone_global_rest(hips).origin).normalized()
+	var frames := _sample(anim, skeleton)
+	# The trunk's average lie over the cycle.
+	var mean := {}
+	for name: String in TRUNK:
+		var bone := skeleton.find_bone(name)
+		var sum := Quaternion(0, 0, 0, 0)
+		var first: Quaternion = frames[0][bone].basis.get_rotation_quaternion()
+		for f in frames.size():
+			var q: Quaternion = frames[f][bone].basis.get_rotation_quaternion()
+			if q.dot(first) < 0.0:
+				q = -q
+			sum = Quaternion(sum.x + q.x, sum.y + q.y, sum.z + q.z, sum.w + q.w)
+		mean[bone] = sum.normalized()
+	var top := -INF
+	var across := _lateral(skeleton)
+	var middle := 0.0
+	for f in frames.size():
+		var at := _globals(frames[f], skeleton)[hips].origin
+		top = maxf(top, at.dot(up))
+		middle += at.dot(across) / frames.size()
+	for f in frames.size():
+		var g := _globals(frames[f], skeleton)
+		var feet := {}
+		for side: String in [".L", ".R"]:
+			feet[side] = g[skeleton.find_bone("Foot" + side)]
+		var height := g[hips].origin.dot(up)
+		var local: Array = frames[f]
+		for bone: int in mean:
+			var pose := local[bone] as Transform3D
+			pose.basis = Basis((mean[bone] as Quaternion).slerp(pose.basis.get_rotation_quaternion(), sway))
+			local[bone] = pose
+		var hip_pose: Transform3D = local[hips]
+		var lift := (top - height) * (1.0 - keep)
+		# The hips' sway side to side is cut like the trunk's.
+		var shift := (middle - g[hips].origin.dot(across)) * (1.0 - sway)
+		# The move in the hips' parent's frame.
+		var parent := skeleton.get_bone_parent(hips)
+		var move := up * lift + across * shift
+		var lift_local := g[parent].basis.inverse() * move if parent >= 0 else move
+		hip_pose.origin += lift_local
+		local[hips] = hip_pose
+		g = _globals(local, skeleton)
+		for side: String in [".L", ".R"]:
+			var thigh := skeleton.find_bone("UpperLeg" + side)
+			var shin := skeleton.find_bone("LowerLeg" + side)
+			var foot := skeleton.find_bone("Foot" + side)
+			var hip_at := g[thigh].origin
+			var knee_at := g[shin].origin
+			var foot_at: Vector3 = feet[side].origin
+			var a := skeleton.get_bone_rest(shin).origin.length() * g[thigh].basis.get_scale().x
+			var b := skeleton.get_bone_rest(foot).origin.length() * g[shin].basis.get_scale().x
+			var reach := foot_at - hip_at
+			var d := clampf(reach.length(), absf(a - b) + 0.001, a + b - 0.001)
+			var dir := reach.normalized()
+			var bend := (knee_at - hip_at) - dir * (knee_at - hip_at).dot(dir)
+			bend = bend.normalized() if bend.length() > 0.0001 else up.cross(_lateral(skeleton)).normalized()
+			var cos_hip := clampf((a * a + d * d - b * b) / (2.0 * a * d), -1.0, 1.0)
+			var new_knee := hip_at + (dir * cos_hip + bend * sqrt(1.0 - cos_hip * cos_hip)) * a
+			var new_foot := hip_at + dir * d
+			# Turn the thigh to the new knee, then the shin to the foot.
+			var turn := Quaternion((knee_at - hip_at).normalized(), (new_knee - hip_at).normalized())
+			var thigh_g := g[thigh]
+			thigh_g.basis = Basis(turn) * thigh_g.basis
+			g[thigh] = thigh_g
+			var thigh_local := local[thigh] as Transform3D
+			thigh_local.basis = g[skeleton.get_bone_parent(thigh)].basis.inverse() * thigh_g.basis
+			local[thigh] = thigh_local
+			g = _globals(local, skeleton)
+			var shin_turn := Quaternion((g[foot].origin - g[shin].origin).normalized(), (new_foot - g[shin].origin).normalized())
+			var shin_local := local[shin] as Transform3D
+			shin_local.basis = g[thigh].basis.inverse() * (Basis(shin_turn) * g[shin].basis)
+			local[shin] = shin_local
+			g = _globals(local, skeleton)
+			# The foot keeps the clip's lie.
+			var foot_local := local[foot] as Transform3D
+			foot_local.basis = g[shin].basis.inverse() * (feet[side] as Transform3D).basis
+			local[foot] = foot_local
+			g = _globals(local, skeleton)
+		frames[f] = local
+	return _unsample(frames, skeleton, anim.length, anim.loop_mode, stretch)
 
 
 ## Bones carried across without bending (see `_retarget`).

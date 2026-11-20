@@ -90,15 +90,28 @@ date in the same PR.
   that stay on the body as it moves), and the clips. Never edit the
   `.glb` by hand: change the tool and build again. The clips come from the
   Universal Animation Library packs where they fit (`build_rig.gd`
-  `CLIPS`; the empty-handed stand is the pack's "Idle"); the ones the
-  game's poses are tuned on (the relaxed stand under a gun, the run, the
-  gun holds, the strafes, the sword) are the old bodies' own, carried
-  across from `rig_m.glb` and `rig_f.glb` (`_retarget`). They are one set:
-  the pack's jog runs lower and bouncier than the old strafes and gun run,
-  and mixed with them it bobbed the first-person view at every switch. A
+  `CLIPS`; UAL1 is the bought Source tier, with the 8-way jog, crouch
+  and crawl sets). The empty-handed stand stands straight up (Caleb's call:
+  every pack idle is a fighting stance with the feet staggered), so the tool
+  builds it, "Idle_Stand" (`_stand`): the pack's A-pose, straight legs and
+  feet under the hips, with the arms let down to the sides, the hands
+  half closed and a slow breath in the chest. The run, the run back and
+  the strafes are the pack's jog set (`JOGS`), calmed for the
+  first-person view (`_calm`): the hips keep `JOG_BOUNCE` of their rise
+  and fall (from 24 cm to 8 cm, about the gun run's) with the legs bent
+  again to reach where the clip put the feet, the trunk keeps `JOG_SWAY`
+  of its roll about the cycle's average (the hips' shift side to side
+  too: the view swayed with it), and the cycle is slowed by
+  `JOG_STRETCH` so a sprint lengthens the stride (the jog covers twice
+  the ground a step of the old trot did). The strafe right is the strafe
+  left mirrored (`_mirror`): the pack's own steps shorter and measured at
+  a third of the speed. The clips the game's gun poses are tuned on (the
+  relaxed stand under a gun, the gun holds and the run with the gun up,
+  the sword) are the old bodies' own, carried across from `rig_m.glb` and
+  `rig_f.glb` (`_retarget`); the pack has no rifle clips. A
   body is sized in its relaxed stand (`stand_legs`), never in an idle that
   bends the knees or spreads the feet, or the whole body grows. A glide lays the
-  body out over the relaxed stand too: the pack's idle turns the chest,
+  body out over the relaxed stand too: the pack's idles turn the chest,
   and the wings hang from it. Carrying a clip
   across keeps each bone's turn; limbs are bent to point the old way, the
   trunk and collarbones are not (bent, the chest tips and the long
