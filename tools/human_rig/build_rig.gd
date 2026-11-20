@@ -6,7 +6,7 @@ extends Node
 ## every other library clip kept under its own name.
 ##
 ##   godot --headless --path . res://tools/human_rig/build_rig.tscn -- \
-##       --body <Superhero_Male_FullBody.gltf> --ual <UAL1_Standard.glb>,<UAL2_Standard.glb> \
+##       --body <Superhero_Male_FullBody.gltf> --ual <UAL1.glb from the Source tier>,<UAL2_Standard.glb> \
 ##       --hair <Hair_Buzzed.gltf>,... --old res://assets/characters/humans/rig_m.glb \
 ##       --out res://assets/characters/humans/body_m.glb
 ##
@@ -31,8 +31,8 @@ const SIDE_BONES := {
 const FINGERS := {"index": "Index", "middle": "Middle", "ring": "Ring", "pinky": "Pinky", "thumb": "Thumb"}
 
 ## The game's clip name -> library clip, or ["old", <old clip>] to retarget.
-## The empty-handed stand is the library's ("Idle", picked in
-## `Look.HUMAN_ANIMS`). The run, the strafes, the gun holds and the sword
+## The empty-handed stand is built (`_stand`, "Idle_Stand"): every
+## library idle is a fighting stance. The run, the strafes, the gun holds and the sword
 ## stay the old ones: they are one set (the free library has no strafes),
 ## and the library's jog, run lower and bouncier, bobbed the first-person
 ## view at every switch between them.
@@ -253,6 +253,11 @@ func build(args: Dictionary) -> int:
 		if library.has_animation(clip):
 			library.remove_animation(clip)
 		library.add_animation(clip, anim)
+	var stand := _stand(ual.get(STAND_BASE), ual.get(CURL_CLIP, ual.get(CURL_CLIP + "_Loop")), out_skeleton)
+	if stand:
+		library.add_animation("Idle_Stand", stand)
+	else:
+		print("  missing: Idle_Stand <- ", STAND_BASE)
 	player.add_animation_library("", library)
 	if old:
 		old.queue_free()
@@ -563,6 +568,116 @@ func _global_rot(skeleton: Skeleton3D, bone: int, basis_of: Dictionary) -> Quate
 	var q := _global_rot(skeleton, skeleton.get_bone_parent(bone), basis_of) * skeleton.get_bone_rest(bone).basis.get_rotation_quaternion()
 	basis_of[bone] = q
 	return q
+
+
+## The library clip the upright stand starts from: legs straight, feet
+## under the hips, chest and head square (`_stand`).
+const STAND_BASE := "A_TPose"
+## How the upright stand's arms hang: how far out from the sides and
+## forward of them (radians), how far the elbows bend, how much of the
+## pack idle's closed hand the fingers take, and the breath (radians of
+## chest lift, seconds a breath).
+const STAND_ARM_OUT := 0.13
+const STAND_ARM_FORWARD := 0.05
+const STAND_ELBOW := 0.2
+const STAND_CURL := 0.45
+const STAND_BREATH := 0.025
+const STAND_BREATH_TIME := 4.0
+
+
+## The relaxed, upright stand with nothing in hand (Caleb's call: the
+## library's idle is a fighting crouch). It is `base`'s pose (the library's
+## A-pose: straight legs, feet under the hips) with the arms let down to
+## hang at the sides, elbows a little bent, the fingers curled part of the
+## way `hand` closes them, and a slow breath in the chest.
+func _stand(base: Animation, hand: Animation, skeleton: Skeleton3D) -> Animation:
+	if base == null:
+		return null
+	var bones := skeleton.get_bone_count()
+	# Each bone's local pose in the base clip, its rest where it has no track.
+	var local: Array[Transform3D] = []
+	for b in bones:
+		local.append(skeleton.get_bone_rest(b))
+	var track_of := {}
+	for t in base.get_track_count():
+		var bone := skeleton.find_bone(String(base.track_get_path(t).get_concatenated_subnames()))
+		if bone < 0:
+			continue
+		var pose := local[bone]
+		if base.track_get_type(t) == Animation.TYPE_ROTATION_3D:
+			pose.basis = Basis(base.rotation_track_interpolate(t, 0.0))
+		elif base.track_get_type(t) == Animation.TYPE_POSITION_3D:
+			pose.origin = base.position_track_interpolate(t, 0.0)
+			track_of[bone] = true
+		local[bone] = pose
+	var globals := func() -> Array[Transform3D]:
+		var out: Array[Transform3D] = []
+		for b in bones:
+			var parent := skeleton.get_bone_parent(b)
+			out.append(local[b] if parent < 0 else out[parent] * local[b])
+		return out
+	# Which way the body faces and which way is up, from the stand itself.
+	var g: Array[Transform3D] = globals.call()
+	var at := func(name: String) -> Vector3: return g[skeleton.find_bone(name)].origin
+	var up: Vector3 = (at.call("Head") - at.call("Hips")).normalized()
+	var right: Vector3 = (at.call("UpperArm.R") - at.call("UpperArm.L")).normalized()
+	var forward := up.cross(right).normalized()
+	if forward.dot(at.call("Toe.L") - at.call("Foot.L")) < 0.0:
+		forward = -forward
+	# Turns a bone so that, in the whole body's frame, it turns by `turn`.
+	var turn_bone := func(name: String, turn: Quaternion) -> void:
+		var b := skeleton.find_bone(name)
+		var parent := skeleton.get_bone_parent(b)
+		var parent_rot := g[parent].basis.get_rotation_quaternion() if parent >= 0 else Quaternion.IDENTITY
+		var own := g[b].basis.get_rotation_quaternion()
+		var pose := local[b]
+		pose.basis = Basis((parent_rot.inverse() * turn * own).normalized())
+		local[b] = pose
+		# In place: the lambdas share this list.
+		var now: Array[Transform3D] = globals.call()
+		for i in bones:
+			g[i] = now[i]
+	for side: String in [".L", ".R"]:
+		var outward := right if side == ".R" else -right
+		var arm: Vector3 = at.call("LowerArm" + side) - at.call("UpperArm" + side)
+		var hang := (-up + outward * tan(STAND_ARM_OUT) + forward * tan(STAND_ARM_FORWARD)).normalized()
+		turn_bone.call("UpperArm" + side, Quaternion(arm.normalized(), hang))
+		var fore: Vector3 = at.call("Wrist" + side) - at.call("LowerArm" + side)
+		turn_bone.call("LowerArm" + side, Quaternion(fore.normalized().cross(forward).normalized(), STAND_ELBOW))
+	# Fingers: part of the way to the library idle's closed hand.
+	if hand:
+		for t in hand.get_track_count():
+			if hand.track_get_type(t) != Animation.TYPE_ROTATION_3D:
+				continue
+			var b := skeleton.find_bone(String(hand.track_get_path(t).get_concatenated_subnames()))
+			if b >= 0 and _curl.has(b):
+				var pose := local[b]
+				pose.basis = Basis(pose.basis.get_rotation_quaternion().slerp(hand.rotation_track_interpolate(t, 0.0), STAND_CURL))
+				local[b] = pose
+	var anim := Animation.new()
+	anim.length = STAND_BREATH_TIME
+	anim.loop_mode = Animation.LOOP_LINEAR
+	var chest := skeleton.find_bone("Chest")
+	var chest_axis := g[chest].basis.get_rotation_quaternion().inverse() * right
+	var steps := 8
+	for b in bones:
+		var path := NodePath("CharacterArmature/Skeleton3D:" + skeleton.get_bone_name(b))
+		if track_of.has(b):
+			var pt := anim.add_track(Animation.TYPE_POSITION_3D)
+			anim.track_set_path(pt, path)
+			anim.position_track_insert_key(pt, 0.0, local[b].origin)
+		var rt := anim.add_track(Animation.TYPE_ROTATION_3D)
+		anim.track_set_path(rt, path)
+		var q := local[b].basis.get_rotation_quaternion()
+		if b != chest:
+			anim.rotation_track_insert_key(rt, 0.0, q)
+			continue
+		# The chest lifts and settles once a breath.
+		for i in steps + 1:
+			var time := STAND_BREATH_TIME * i / steps
+			var lift := -STAND_BREATH * 0.5 * (1.0 - cos(TAU * i / steps))
+			anim.rotation_track_insert_key(rt, time, q * Quaternion(chest_axis, lift))
+	return anim
 
 
 ## Bones carried across without bending (see `_retarget`).
