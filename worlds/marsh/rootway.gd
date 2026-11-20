@@ -667,7 +667,10 @@ static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 	var g: Array = GALLERY
 	var p: Array = PILLAR
 	var gx := float(g[1])
-	var in_by := 0.25
+	# Sunk a little into the wall, so no root stands out from it further
+	# than a body brushes past (collision_tests' `SKIN`): a root on the
+	# floor you walk through, or one standing out from a wall, is a ghost.
+	var in_by := -0.1
 	# Straight walls, each from a to b along its inner face, and its floor.
 	var walls: Array = [
 		[Vector2(-HALF + in_by, CUT), Vector2(-HALF + in_by, float(g[2])), FLOOR],
@@ -689,7 +692,7 @@ static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 		var low: float = wall[2]
 		for band in 5:
 			var y := lerpf(low + 0.3, ROOF - 0.4, band / 4.0) + rng.randf_range(-0.35, 0.35)
-			_root_along(st, f, a, b, y, rng.randf_range(0.28, 0.5), rng)
+			_root_along(st, f, a, b, y, rng.randf_range(0.28, 0.4), rng)
 	# The cut's walls, banded down the ramp and under the ground's edge.
 	for side: float in [-1.0, 1.0]:
 		for band in 4:
@@ -699,7 +702,7 @@ static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 				var y := floor_at((z0 + z1) * 0.5, top) + 0.4 + band * 1.6 + rng.randf_range(-0.3, 0.3)
 				if y < top - 0.3:
 					_root_along(st, f, Vector2(side * (HALF - in_by), z0), Vector2(side * (HALF - in_by), z1), y,
-							rng.randf_range(0.25, 0.45), rng)
+							rng.randf_range(0.25, 0.4), rng)
 				z0 = z1
 	# Ribs over the throat and the passage, wall foot over to wall foot.
 	var z := CUT + 1.5
@@ -717,25 +720,26 @@ static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 			_arc(st, f, from, to, 0.3, rng)
 			zz += 3.5
 	# The chamber: buttresses up its wall into the roof, and bands round it.
-	var ring := CHAMBER_RADIUS - 0.2
+	# Each stands in the wall (a face of the round sits a little inside
+	# `CHAMBER_RADIUS`) to above head height before it leans out.
+	var ring := CHAMBER_RADIUS
 	for k in 28:
 		var a := TAU * k / 28.0 + rng.randf_range(-0.05, 0.05)
 		if absf(ring * sin(a)) < CUT_HALF and cos(a) > 0.0:
 			continue
 		var out := Vector3(-sin(a), 0, -cos(a))
-		var foot := Vector3(BEND, CHAMBER_FLOOR - 0.1, CHAMBER_Z) + out * (ring - 1.2)
-		var head := Vector3(BEND, ROOF - 0.2, CHAMBER_Z) + out * (ring - 3.5)
+		var foot := Vector3(BEND, CHAMBER_FLOOR - 0.1, CHAMBER_Z) + out * ring
+		var head := Vector3(BEND, ROOF - 0.2, CHAMBER_Z) + out * (ring - 3.7)
 		var points := PackedVector3Array()
 		var radii := PackedFloat32Array()
 		var colours: Array[Color] = []
-		var thick := rng.randf_range(0.35, 0.65)
+		var thick := rng.randf_range(0.35, 0.5)
 		for i in 7:
 			var t := i / 6.0
-			var at := Vector3(BEND, 0, CHAMBER_Z) + out * lerpf(ring - 1.2, ring - 0.2, sin(t * PI * 0.5))
-			at = at.lerp(Vector3(head.x, 0, head.z), t * t)
+			var at := foot.lerp(head, smoothstep(0.35, 1.0, t))
 			at.y = lerpf(foot.y, head.y, t)
 			points.append(f * at)
-			radii.append(thick * lerpf(1.3, 0.7, t))
+			radii.append(thick * lerpf(1.0, 0.7, t))
 			colours.append(Color.WHITE)
 		Flora._tube(st, points, radii, colours, 7)
 	var white: Array[Color] = [Color.WHITE, Color.WHITE]
@@ -773,8 +777,8 @@ static func _root_along(st: SurfaceTool, f: Transform3D, a: Vector2, b: Vector2,
 
 ## A rib arching over a tunnel at `z`, from one wall's foot to the other's.
 static func _rib(st: SurfaceTool, f: Transform3D, centre: float, z: float, floor_y: float, rng: RandomNumberGenerator) -> void:
-	var h := HALF - 0.3
-	var thick := rng.randf_range(0.3, 0.5)
+	var h := HALF + 0.1
+	var thick := rng.randf_range(0.3, 0.4)
 	var shape: Array[Vector2] = [Vector2(-h, floor_y - 0.2), Vector2(-h, ROOF - 1.6), Vector2(-h + 0.6, ROOF - 0.7),
 			Vector2(-h + 2.0, ROOF - 0.25), Vector2(h - 2.0, ROOF - 0.25), Vector2(h - 0.6, ROOF - 0.7),
 			Vector2(h, ROOF - 1.6), Vector2(h, floor_y - 0.2)]
@@ -783,7 +787,7 @@ static func _rib(st: SurfaceTool, f: Transform3D, centre: float, z: float, floor
 	var colours: Array[Color] = []
 	for corner in shape:
 		points.append(f * Vector3(centre + corner.x, minf(corner.y, ROOF - 0.25), z + rng.randf_range(-0.2, 0.2)))
-		radii.append(thick * rng.randf_range(0.8, 1.15))
+		radii.append(thick * rng.randf_range(0.8, 1.1))
 		colours.append(Color.WHITE)
 	Flora._tube(st, points, radii, colours, 7)
 
