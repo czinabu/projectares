@@ -733,7 +733,9 @@ func _build_sites() -> void:
 				_build_carrier(at)
 		# The depot sits on the side facing the middle of the map, or north at the middle.
 		var inward := -at.normalized() if at.length() > 1.0 else Vector2(0, -1)
-		_add_depot(_open(at + inward * (radius - 10.0), 6.0), inward)
+		# Its terminal backs away from the site; at the middle, where there is no
+		# away, it backs east, across the way in.
+		_add_depot(_open(at + inward * (radius - 10.0), 6.0), inward if at.length() > 1.0 else Vector2(1, 0))
 		# The army that starts here, its garrison, and a bike for whoever takes the place.
 		var army: String = site["army"]
 		if army != "":

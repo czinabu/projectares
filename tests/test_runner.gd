@@ -501,11 +501,16 @@ func _check_crouch(p: Actor) -> void:
 ## stands at its back edge, so this picks the one turned furthest to the
 ## side, which keeps the terminal off that line (and never one in a gate).
 func _open_ground(raid: Raid) -> Vector3:
+	# The first in map order that will do (the quietest: the Foundry's in
+	# Ashfront, where no garrison stands round it), else the one turned
+	# furthest to the side.
 	var best: Depot = raid.depots[0]
 	for depot: Depot in raid.depots:
 		# Not one in a gate outpost: weapons are locked there.
 		if raid.outpost_at(depot.global_position - Vector3(0, 2, 0)) != null:
 			continue
+		if absf(depot.global_basis.z.x) > 0.9:
+			return depot.global_position
 		if absf(depot.global_basis.z.x) > absf(best.global_basis.z.x) + 0.01:
 			best = depot
 	return best.global_position
