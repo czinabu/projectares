@@ -143,9 +143,18 @@ var ads_reach := 0.97
 ## How far ahead of the gun hand's wrist the off wrist comes to wrap round
 ## a sidearm's grip, for working out whether the off arm can reach it.
 var sidearm_wrap := 0.02
+## And how far ahead of it the off hand holds a long gun at the nearest
+## (the fore end, slid back toward the grip as far as it goes), likewise.
+var long_wrap := 0.12
 var _ready_forearm: Variant = null
 var _spine: Array[int] = []
 var _neck := -1
+## The head's tip onto a long gun's stock in the sights, eased with them
+## (`ActionPose.cheek_long`): x toward the gun side, y forward, in radians.
+var cheek := Vector2.ZERO
+## How far the eyes move onto the stock with it, in the body's frame
+## (`ActionPose.cheek_eye`).
+var cheek_eye := Vector3.ZERO
 ## Finger bone -> closed rotation, for each hand.
 var _fist := {}
 var _off_fist := {}
@@ -502,6 +511,9 @@ func step(delta: float) -> void:
 		carried_low = _gun_carry * (1.0 - shared.sprint) * shared.carry_stance_share
 	var stance := maxf(maxf(_ads, hip_up * shared.hip_stance_share), carried_low)
 	_ads_turn = shared.ads_stance(gun) * stance if stance > 0.0 else Vector2.ZERO
+	var weld := _ads if _ads > 0.0 and shared.cheeks(gun) else 0.0
+	cheek = shared.cheek_long * weld
+	cheek_eye = shared.cheek_eye * weld
 
 	reach_ik.influence = _weight
 	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
@@ -874,15 +886,16 @@ func _reach_sight() -> void:
 			back = clampf(back, 0.0, _relief_now)
 			_relief_now -= back
 			reach -= ahead * back
-	# A sidearm is held in both hands: the off arm has to reach round the
-	# gun hand too, so the gun comes back until it can.
-	if gun.is_sidearm and _off_upper >= 0 and _off_forearm >= 0 and _off_wrist >= 0:
+	# Both hands hold it: the off arm has to reach round the gun hand on a
+	# sidearm, or the fore end of a long gun, so the gun comes back until it
+	# can.
+	if _off_upper >= 0 and _off_forearm >= 0 and _off_wrist >= 0:
 		var shoulder := skeleton.global_transform * skeleton.get_bone_global_pose(_off_upper).origin
 		var elbow := skeleton.global_transform * skeleton.get_bone_global_pose(_off_forearm).origin
 		var off_wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_off_wrist).origin
 		var length := (shoulder.distance_to(elbow) + elbow.distance_to(off_wrist)) * ads_reach
 		var ahead := -aimed.z
-		var d := reach + ahead * sidearm_wrap - shoulder
+		var d := reach + ahead * (sidearm_wrap if gun.is_sidearm else long_wrap) - shoulder
 		if d.length() > length:
 			var along := d.dot(ahead)
 			var back := along - sqrt(maxf(along * along - (d.length_squared() - length * length), 0.0))
@@ -912,15 +925,24 @@ func sight_target(gun: Gun, aimed: Basis) -> Vector3:
 ## on the target.
 func _turn_body() -> void:
 	var turn := _turn + _ads_turn
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	if _neck >= 0 and cheek != Vector2.ZERO:
+		var tip := cheek_basis()
+		_rotate_bone(_neck, to_skeleton * tip * to_skeleton.inverse())
 	if _spine.is_empty() or turn.length_squared() < 0.000001:
 		return
-	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
 	var share := 1.0 / _spine.size()
 	var step := Basis(to_skeleton * Vector3.UP, turn.x * share) * Basis(to_skeleton * Vector3.RIGHT, turn.y * share)
 	for bone in _spine:
 		_rotate_bone(bone, step)
 	if _neck >= 0:
 		_rotate_bone(_neck, Basis(to_skeleton * Vector3.UP, -turn.x * 0.7) * Basis(to_skeleton * Vector3.RIGHT, -turn.y * 0.5))
+
+
+## The cheek weld's tip of the head (`cheek`), in the actor's frame: toward
+## the gun side, then forward.
+func cheek_basis() -> Basis:
+	return Basis(Vector3.BACK, -cheek.x) * Basis(Vector3.RIGHT, -cheek.y)
 
 
 ## Rotates a bone in place, in the skeleton's space.

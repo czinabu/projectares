@@ -453,7 +453,7 @@ var toy_elbow := Vector3(0.9, 1.75, 0.3)
 ## An optic's eye point is its own relief.
 var ads_rate := 7.0
 var sidearm_relief := 0.5
-var stock_ahead := 0.17
+var stock_ahead := 0.06
 var min_relief := 0.06
 ## Guns with any of these tags are braced at the hip, never shouldered
 ## (a spinning cannon is too heavy to bring to the eye).
@@ -468,6 +468,13 @@ var ads_cup := Vector3(-0.03, -0.035, -0.01)
 ## squares up and leans in so the arms reach out.
 var ads_stance_long := Vector2(-0.35, -0.06)
 var ads_stance_sidearm := Vector2(0.3, -0.06)
+## A long gun's cheek weld in the sights: the eyes come down onto the stock
+## and over to the gun side (metres right, up and ahead, in the body's
+## frame), so the butt meets the shoulder instead of the neck, and the head
+## tips toward the gun side (x) and forward (y), in radians at the neck, to
+## go with them. The sights stay on the eyes (`ActorSkin.eye_point`).
+var cheek_eye := Vector3(0.05, -0.07, 0.03)
+var cheek_long := Vector2(0.4, 0.4)
 ## Held up at the hip (in a fight, out of the sights and the carry): where
 ## the gun hand's wrist goes, from the eyes along the aim (metres right, up
 ## and ahead), a long gun's stock tucked under the shoulder and a sidearm
@@ -1117,6 +1124,12 @@ func ads_stance(gun: Gun) -> Vector2:
 	return ads_stance_sidearm if gun.is_sidearm else ads_stance_long
 
 
+## True for a gun that takes a cheek weld in the sights (`cheek_eye`): not
+## a sidearm held out or a gun braced at the hip.
+func cheeks(gun: Gun) -> bool:
+	return gun != null and not gun.is_sidearm and not shoulders_never(gun)
+
+
 ## True for a gun that is aimed from the hip (`ads_hip_tags`).
 func shoulders_never(gun: Gun) -> bool:
 	for tag in ads_hip_tags:
@@ -1128,14 +1141,16 @@ func shoulders_never(gun: Gun) -> bool:
 ## How far in front of the eyes the sight of `gun` sits when sighted.
 ## An optic's "Sight" marker is already its eye point, so it needs none.
 func relief_for(gun: Gun) -> float:
-	if optic_sight(gun) != null:
-		return 0.0
 	if gun.is_sidearm or ItemDB.has_tag(gun.item_id, "sidearm"):
 		return sidearm_relief
 	var box := model_box(gun)
+	# A magnifying scope is looked into at its own eye point.
+	if gun.scope_lens and optic_sight(gun) != null:
+		return 0.0
+	var optic := optic_sight(gun) != null
 	if box.size == Vector3.ZERO:
-		return min_relief
-	return maxf(box.end.z - stock_ahead - sight_local(gun).z, min_relief)
+		return 0.0 if optic else min_relief
+	return maxf(box.end.z - stock_ahead - sight_local(gun).z, 0.0 if optic else min_relief)
 
 
 ## The bounds of the gun as drawn, in the space of its visual (worked out

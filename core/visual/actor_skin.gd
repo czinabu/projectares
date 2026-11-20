@@ -1062,7 +1062,11 @@ func eye_point(look: Basis) -> Variant:
 	if _steady_head.is_finite():
 		local += _steady_offset(local)
 	var head: Vector3 = _skeleton.global_transform * local
-	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
+	var face := Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
+	# Down on a long gun's stock in the sights (`WeaponArm.cheek_eye`).
+	if arm != null and arm.cheek_eye != Vector3.ZERO:
+		face += actor.global_basis.orthonormalized() * arm.cheek_eye
+	return head + face
 
 
 ## How far, in the world, the eyes are moved off the head as it is posed
