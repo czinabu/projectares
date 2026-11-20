@@ -1332,12 +1332,12 @@ class WarMood:
 ## steeply the streaks fall. A world picks a kind; nothing here names one.
 const WEATHER_KITS := {
 	"ash": {
-		"wall_tint": Color(0.18, 0.09, 0.07), "wall_lit": Color(0.55, 0.28, 0.16),
+		"wall_tint": Color(0.15, 0.075, 0.055), "wall_lit": Color(0.44, 0.23, 0.15),
 		"streak": Color(0.55, 0.32, 0.22, 0.55), "streak_size": Vector2(0.025, 0.55),
 		"billow": Color(0.42, 0.24, 0.17, 0.22), "fall": -0.06, "wall_height": 95.0,
 	},
 	"snow": {
-		"wall_tint": Color(0.66, 0.72, 0.8), "wall_lit": Color(0.95, 0.97, 1.0),
+		"wall_tint": Color(0.6, 0.66, 0.75), "wall_lit": Color(0.95, 0.97, 1.0),
 		"streak": Color(1.0, 1.0, 1.0, 0.8), "streak_size": Vector2(0.04, 0.4),
 		"billow": Color(0.92, 0.94, 0.98, 0.28), "fall": -0.22, "wall_height": 70.0,
 		# Spindrift off the edges a map offers (`WeatherView`).

@@ -54,8 +54,18 @@ date in the same PR.
   ground lean into the wind (`Locomotion._wind_pose`). Thermal already
   ignores fog, so it sees through a storm. What it looks like is
   `WeatherView` (view only, the same in both views): the wall, the driven
-  air round the camera and the wind, and the map's "weather_here" meta,
-  which blends `Look.atmosphere`'s storm mood in and lowers the fog floor
+  air round the camera and the wind. The wall is a front with no hard
+  edge: two layers of a steep dome (`WeatherView.dome_mesh`,
+  `storm_wall.gdshader`) that fade where seen edge on, are gone over the
+  crown, go soft against the ground (the depth buffer) and thin from 80 m
+  to 20 m from the camera, plus one draw of billows heaped round its
+  shoulder and crown (`storm_billow.gdshader`, laid out with their own
+  RNG). It stands at `WALL_REACH` (0.8) of the radius, inside the cell's
+  soft edge, so the storm's haze has begun by the time the wall thins
+  away; and it keeps out of the world fog (fading out from 700 m on its
+  own) so a coming storm reads as a dark mass, never washed out. Check it
+  by eye with `--storm-front-only` (`--cost` prints its GPU time). It
+  also sets the map's "weather_here" meta, which blends `Look.atmosphere`'s storm mood in and lowers the fog floor
   (`Look.weather_cover`, `soften_weather`: gone by about 70 m at the heart,
   Caleb's pick); an ash storm also settles ash on the visor glass
   (`VisorHud._draw_ash`, `ash_settling`: glass only, the middle kept clear). Told in the world only: the visor's heading tape
