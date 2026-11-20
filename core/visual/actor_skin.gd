@@ -525,7 +525,7 @@ func _ready() -> void:
 			var found := _find_animation(def["anims"][key])
 			if found != "":
 				_anims[key] = found
-				if key not in ["death", "attack", "roll", "kick"]:
+				if key not in ["death", "attack", "roll", "kick", "fist"]:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
 		# Sized in the relaxed stand: an idle that bends the knees or
 		# spreads the feet (a person's) would otherwise size the body up.
@@ -563,7 +563,8 @@ func _ready() -> void:
 		arm.skeleton = skeleton
 		arm.look = look
 		add_child(arm)
-		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
+		var fist: String = _anims.get("fist", _anims.get("idle_melee", ""))
+		arm.setup(def, _player.get_animation(fist) if _player and fist != "" else null)
 		if _player:
 			arm.calibrate(_player.get_animation(_anims["aim_gun"]) if _anims.has("aim_gun") else null,
 					_player.get_animation(_anims["idle_melee"]) if _anims.has("idle_melee") else null)
@@ -1065,7 +1066,11 @@ func eye_point(look: Basis) -> Variant:
 	if _steady_head.is_finite():
 		local += _steady_offset(local)
 	var head: Vector3 = _skeleton.global_transform * local
-	return head + Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
+	var face := Vector3.UP * eye_up + look * Vector3(0.0, 0.0, -eye_ahead)
+	# Down on a long gun's stock in the sights (`WeaponArm.cheek_eye`).
+	if arm != null and arm.cheek_eye != Vector3.ZERO:
+		face += actor.global_basis.orthonormalized() * arm.cheek_eye
+	return head + face
 
 
 ## How far, in the world, the eyes are moved off the head as it is posed
@@ -3707,6 +3712,7 @@ func _near_side(model: Node3D, upright: Basis, side: float) -> float:
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
 	_aim_left = aim_hold
+	ActionPose.of(actor).kick(gun)
 	var parent := actor.get_parent()
 	if parent == null:
 		return
