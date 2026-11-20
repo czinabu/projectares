@@ -217,7 +217,7 @@ const KINDS := [
 	["knife", "knife"], ["axe", "axe"], ["hammer", "two-handed hammer"], ["spear", "spear"],
 	["blade", "sword"], ["frame_light", "light armor frame"], ["frame_medium", "medium armor frame"],
 	["frame_heavy", "heavy armor frame"], ["helmet", "helmet"], ["attachment", "weapon attachment"],
-	["ability", "ability chip"], ["artifact", "artifact"], ["vehicle", "vehicle"],
+	["ability", "ability chip"], ["artifact", "artifact"], ["backpack", "backpack"], ["vehicle", "vehicle"],
 	["blueprint", "blueprint"], ["upgrade_data", "crafting data"], ["heal", "healing item"],
 	["paint", "armor paint"], ["cosmetic", "clothing"], ["decor", "decoration"], ["furniture", "furniture"],
 	["relic", "relic"], ["trophy", "trophy"], ["augment", "salvage"], ["material", "crafting material"],
@@ -309,6 +309,10 @@ static func facts(id: String) -> Array[String]:
 		out.append("Rides on your watch as a toy: throw it to unpack it")
 		if stats.has("watch_recharge"):
 			out.append("The watch needs %d s before the next throw" % roundi(float(stats.watch_recharge)))
+	elif ItemDB.has_tag(id, "backpack"):
+		out.append("Pack room: %d slots, against %d with none" % [int(stats.get("capacity", Loadout.FIELD_PACK)), Loadout.FIELD_PACK])
+		out.append("Sprint %d%% slower" % roundi((1.0 - float(stats.get("sprint_mult", 1.0))) * 100.0))
+		out.append("Worn on your back: it drops with you")
 	elif ItemDB.has_tag(id, "ability"):
 		out.append("Cooldown %d s" % roundi(float(stats.get("cooldown", 0.0))))
 	elif ItemDB.has_tag(id, "artifact"):
