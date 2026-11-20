@@ -74,6 +74,24 @@ const VENT_RADIUS := 8.0
 const VENT_CORE := 0.6
 const VENT_RISE := 9.0
 const VENT_EASE := 12.0
+## The Sky Leviathan's routes (the map contract's `airship_routes`): each
+## comes in high over a cliff, crosses the rift and climbs out over the
+## other, its keel at each point's height. The ship's pods hang under the
+## keel, in a Mk1 jetpack's reach from the lava; its spine and turrets are
+## above every rig's ceiling, for whoever rides an updraft or dives off the
+## Crown. No perch stands up into a route (`_build_perches`).
+const AIRSHIP_ROUTES := [
+	[Vector3(-195.0, 72.0, -48.0), Vector3(-130.0, 44.0, -50.0), Vector3(-60.0, 38.0, -54.0),
+			Vector3(0.0, 38.0, -57.0), Vector3(60.0, 38.0, -54.0), Vector3(130.0, 44.0, -50.0),
+			Vector3(195.0, 72.0, -48.0)],
+	[Vector3(-195.0, 72.0, 40.0), Vector3(-130.0, 42.0, 42.0), Vector3(-60.0, 37.0, 45.0),
+			Vector3(0.0, 38.0, 46.0), Vector3(60.0, 37.0, 45.0), Vector3(130.0, 42.0, 42.0),
+			Vector3(195.0, 72.0, 40.0)],
+]
+## How wide a route's lane is kept clear of tall perches, and how far under
+## its keel a perch may stand there.
+const AIRSHIP_LANE := 14.0
+const AIRSHIP_HEADROOM := 10.0
 ## Perches: how many single columns stand about the rift, and their sizes.
 const PERCHES := 24
 const PERCH_RADIUS := Vector2(2.5, 6.0)
@@ -350,7 +368,7 @@ func _build_perches() -> void:
 		# Higher to the north.
 		var north := clampf((MIDDLE_FROM_Z - at.y) / (MIDDLE_FROM_Z + FIELD), 0.0, 1.0)
 		var top := lerpf(PERCH_TOP.x, PERCH_TOP.y, clampf(north * 0.7 + _rng.randf() * 0.5, 0.0, 1.0))
-		if not _clear_for(at, radius):
+		if not _clear_for(at, radius) or _in_airship_lane(at, radius, top):
 			continue
 		_column(at, radius, top, nav_region)
 		perches.append({"at": at, "radius": radius, "top": top})
@@ -359,6 +377,23 @@ func _build_perches() -> void:
 			_add_marker("spawn_cache", Vector3(at.x, top + 0.1, at.y))
 		elif n % 4 == 1 and radius >= 4.0:
 			_add_marker("spawn_bot", Vector3(at.x, top, at.y)).set_meta("faction", "rift")
+
+
+## Whether a perch there would stand up into an airship's route.
+func _in_airship_lane(at: Vector2, radius: float, top: float) -> bool:
+	for route: Array in AIRSHIP_ROUTES:
+		for i in route.size() - 1:
+			var a: Vector3 = route[i]
+			var b: Vector3 = route[i + 1]
+			var near := Geometry2D.get_closest_point_to_segment(at, Vector2(a.x, a.z), Vector2(b.x, b.z))
+			if at.distance_to(near) < radius + AIRSHIP_LANE and top > minf(a.y, b.y) - AIRSHIP_HEADROOM:
+				return true
+	return false
+
+
+## The Sky Leviathan's routes, for the world's airship event.
+func airship_routes() -> Array:
+	return AIRSHIP_ROUTES
 
 
 func _clear_for(at: Vector2, radius: float) -> bool:

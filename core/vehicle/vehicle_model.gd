@@ -19,6 +19,13 @@ extends RefCounted
 ##              its back.
 ##   jet        a needle-nosed fighter with a clear bubble canopy, swept
 ##              delta wings, twin canted fins and two glowing engines.
+##   airship    a world event's armoured airship: a long iron hull with a
+##              ram, a gondola under it, a bridge tower on its back and
+##              four tail fins. Its weak spots are built at its seats (each
+##              seat's "piece": "pod", an engine pod on an outrigger;
+##              "plate", an armoured spine plate over a glowing core;
+##              "turret", a twin-barrelled turret), as "Part<n>", with a
+##              wrecked one, "Broken<n>", hidden beside it.
 ##
 ## Only the look changes with the model: the collision shapes, the seat,
 ## grips and pegs (`Vehicle.seat_point`, `grip_points`, `peg_points`, the
@@ -79,6 +86,8 @@ static func build(vehicle) -> Node3D:
 			root = maker._jet()
 		"hoverbike":
 			root = maker._hoverbike()
+		"airship":
+			root = maker._airship()
 		_:
 			root = maker._bike()
 	root.name = "Model"
@@ -508,6 +517,112 @@ func _jet() -> Node3D:
 	root.add_child(_cyl(0.15, 0.15, 0.12, Vector3(0, 0.15, -2.4), trim, Vector3(0, 0, PI / 2.0), 20))
 	root.add_child(_box(Vector3(0.2, 0.06, 0.06), Vector3(0, 0.86, -3.5), lamp))
 	return root
+
+
+# --- Airship ---------------------------------------------------------------------
+
+func _airship() -> Node3D:
+	var root := Node3D.new()
+	var length: float = v.body_size.z
+	var radius := 4.0
+	var mid := 4.5
+	var along := Vector3(PI / 2.0, 0, 0)
+	# The hull, banded with iron, a ram on its nose.
+	root.add_child(_capsule(radius, length - 2.0, Vector3(0, mid, 0), paint, along))
+	for z: float in [-0.3, -0.1, 0.12, 0.32]:
+		root.add_child(_cyl(radius + 0.15, radius + 0.15, 0.6, Vector3(0, mid, z * length), trim, along, 24))
+	root.add_child(_cyl(0.2, 2.2, 4.0, Vector3(0, mid - 0.6, -length * 0.5 - 0.6), steel, Vector3(-PI / 2.0, 0, 0)))
+	# A lit seam down each flank.
+	for side: float in [-1.0, 1.0]:
+		root.add_child(_strut(Vector3(side * (radius + 0.02), mid, -length * 0.36),
+				Vector3(side * (radius + 0.02), mid, length * 0.36), Vector2(0.06, 0.2), seam))
+	# The gondola under it, its windows lit, a searchlight at its front.
+	root.add_child(_box(Vector3(3.0, 1.6, 14.0), Vector3(0, 0.7, 1.0), trim))
+	root.add_child(_box(Vector3(3.05, 0.3, 11.0), Vector3(0, 0.9, 1.0), _glow(Color(1.0, 0.7, 0.35), 1.6)))
+	root.add_child(_box(Vector3(0.8, 0.5, 0.3), Vector3(0, 0.6, -6.1), lamp))
+	# The bridge tower on its back, up to the turrets' seats (the highest).
+	var roof := mid
+	for seat: Dictionary in v.seats:
+		roof = maxf(roof, (seat.offset as Vector3).y)
+	var foot := mid + radius - 0.5
+	root.add_child(_box(Vector3(4.5, roof - foot, 8.0), Vector3(0, (roof + foot) * 0.5, 0), paint))
+	root.add_child(_box(Vector3(4.6, 0.4, 7.0), Vector3(0, roof - 1.2, 0), _glow(Color(1.0, 0.7, 0.35), 1.4)))
+	# Four tail fins.
+	var tail_z: float = length * 0.5 - 3.0
+	root.add_child(_box(Vector3(0.5, 5.5, 5.0), Vector3(0, mid + radius + 1.5, tail_z), paint))
+	root.add_child(_box(Vector3(0.5, 4.0, 5.0), Vector3(0, mid - radius - 0.6, tail_z), paint))
+	root.add_child(_box(Vector3(radius * 2.0 + 6.0, 0.5, 4.5), Vector3(0, mid, tail_z), paint))
+	# The weak spots, at their seats, each with a hot glow that reads from
+	# far off as a place to shoot.
+	var weak := _glow(Color(1.0, 0.42, 0.1), 2.6)
+	for i in v.seats.size():
+		var seat: Dictionary = v.seats[i]
+		var kind := str(seat.get("piece", ""))
+		if kind == "":
+			continue
+		var at: Vector3 = seat.offset
+		var whole := Node3D.new()
+		whole.name = "Part%d" % i
+		whole.position = at
+		var broken := Node3D.new()
+		broken.name = "Broken%d" % i
+		broken.position = at
+		broken.visible = false
+		whole.rotation.y = float(seat.get("turn", 0.0))
+		broken.rotation.y = whole.rotation.y
+		match kind:
+			"pod":
+				_airship_pod(whole, broken, weak)
+				# The outrigger out to it from the hull, which stays.
+				var side := signf(at.x)
+				root.add_child(_strut(Vector3(side * (radius - 0.5), mid - 1.0, at.z),
+						at + Vector3(-side * 1.0, 1.4, 0), Vector2(0.6, 0.9), trim))
+			"plate":
+				_airship_plate(whole, broken, weak)
+			"turret":
+				_airship_turret(whole, broken, weak)
+		root.add_child(whole)
+		root.add_child(broken)
+	return root
+
+
+## An engine pod: a long nacelle, a glowing ring at its back. Broken, a
+## torn stub.
+func _airship_pod(whole: Node3D, broken: Node3D, weak: Material) -> void:
+	var along := Vector3(PI / 2.0, 0, 0)
+	whole.add_child(_capsule(1.3, 5.6, Vector3(0, 1.4, 0), steel, along))
+	whole.add_child(_cyl(1.34, 1.34, 0.35, Vector3(0, 1.4, 0.9), weak, along, 20))
+	whole.add_child(_cyl(1.4, 1.4, 0.5, Vector3(0, 1.4, -1.2), trim, along, 20))
+	whole.add_child(_cyl(1.1, 1.1, 0.15, Vector3(0, 1.4, 2.85), energy, along, 20))
+	whole.add_child(_cyl(1.5, 1.5, 0.3, Vector3(0, 1.4, 2.6), trim, along, 20))
+	broken.add_child(_cyl(1.0, 1.2, 1.6, Vector3(0, 1.4, -1.0), trim, along, 10))
+	broken.add_child(_cyl(0.6, 0.6, 0.1, Vector3(0, 1.4, -0.15), tail, along, 10))
+
+
+## A spine plate: an armoured ridge with lit seams over a glowing core.
+## Broken, the core shows through torn armour.
+func _airship_plate(whole: Node3D, broken: Node3D, weak: Material) -> void:
+	whole.add_child(_box(Vector3(3.2, 1.2, 6.5), Vector3(0, 0.6, 0), steel))
+	whole.add_child(_box(Vector3(2.0, 0.6, 5.6), Vector3(0, 1.4, 0), paint))
+	# The core glows through the slats on top.
+	for z: float in [-2.0, -0.7, 0.6, 1.9]:
+		whole.add_child(_box(Vector3(1.6, 0.1, 0.35), Vector3(0, 1.72, z), weak))
+	for side: float in [-1.0, 1.0]:
+		whole.add_child(_box(Vector3(0.08, 0.12, 6.0), Vector3(side * 1.62, 0.9, 0), seam))
+	broken.add_child(_box(Vector3(3.2, 0.4, 6.5), Vector3(0, 0.2, 0), trim))
+	broken.add_child(_cyl(0.9, 1.1, 0.8, Vector3(0, 0.6, 0), tail))
+
+
+## A turret: a ring, a dome and twin barrels. Broken, the empty ring.
+func _airship_turret(whole: Node3D, broken: Node3D, weak: Material) -> void:
+	whole.add_child(_cyl(1.4, 1.5, 0.7, Vector3(0, 0.35, 0), trim, Vector3.ZERO, 20))
+	whole.add_child(_capsule(1.05, 2.1, Vector3(0, 1.2, 0), steel))
+	whole.add_child(_box(Vector3(0.9, 0.18, 0.1), Vector3(0, 1.35, -1.02), weak))
+	for side: float in [-1.0, 1.0]:
+		whole.add_child(_strut(Vector3(side * 0.35, 1.35, -0.8), Vector3(side * 0.35, 1.35, -3.2),
+				Vector2(0.22, 0.22), trim))
+	whole.add_child(_box(Vector3(1.2, 0.12, 0.1), Vector3(0, 1.6, -1.0), seam))
+	broken.add_child(_cyl(1.4, 1.5, 0.5, Vector3(0, 0.25, 0), trim, Vector3.ZERO, 12))
 
 
 # --- Shared parts ----------------------------------------------------------------

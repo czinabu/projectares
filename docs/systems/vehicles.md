@@ -65,7 +65,17 @@ date in the same PR.
   the bikes one; see `docs/systems/dunes.md`), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
-  higher than `ceiling` over the world's ground). Jump is the handbrake
+  higher than `ceiling` over the world's ground), and the "airship" tag
+  makes a world event's ship (`Vehicle.floats`, model "airship"): nobody
+  rides it and it has no seat to interact with, so it is never ridden,
+  packed or thrown; the `Raid` steers it by setting `Vehicle.course`
+  (`_float`: it turns at `turn_rate` and climbs to the course's height,
+  passing through everything; with no course it falls onto the world).
+  Each of its `seats` with a "part" (a boss kind) holds a weak spot, a bot
+  the `Raid` seats there, and a "piece" ("pod", "plate" or "turret") the
+  model builds there as "Part<n>" with a wrecked "Broken<n>" beside it;
+  `Vehicle._show_parts` swaps them once that seat has been manned and is
+  empty, on every machine, from who sits where. Jump is the handbrake
   (`handbrake`, off for the mech and the jet, whose jump key is theirs):
   at speed it is a drift (`Vehicle.drifting`, the same `slip` a hover
   keeps, `drift_*` stats) whose clean exit on the throttle is a short

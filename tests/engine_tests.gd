@@ -509,10 +509,14 @@ static func _floor_ray(space: PhysicsDirectSpaceState3D, top: Vector3) -> Dictio
 ## at the very same spot for a sync, and a wait that took that for this one
 ## asked for its path just as it left the map, finding nothing.
 static func _wait_for_nav(t: Node, nav: RID, spot: Vector3, raid: Node) -> void:
+	# The bake runs on its own thread in real time, which frames run at
+	# `--fixed-fps` (as fast as the machine goes) do not measure: a busy
+	# machine can take longer than 600 such frames. Wait by the clock.
+	var until := Time.get_ticks_msec() + 30000
 	# The map answers from its last sync, so the sync must come after the
 	# old regions left: count from the first frame they are gone.
 	var clean_from := -1
-	for i in 600:
+	while Time.get_ticks_msec() < until:
 		if clean_from < 0 and _only_regions_of(nav, raid):
 			clean_from = NavigationServer3D.map_get_iteration_id(nav)
 		if clean_from >= 0 and NavigationServer3D.map_get_iteration_id(nav) > clean_from \

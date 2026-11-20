@@ -6,7 +6,7 @@ extends Node
 ## every other library clip kept under its own name.
 ##
 ##   godot --headless --path . res://tools/human_rig/build_rig.tscn -- \
-##       --body <Superhero_Male_FullBody.gltf> --ual <UAL1.glb from the Source tier>,<UAL2_Standard.glb> \
+##       --body <Superhero_Male_FullBody.gltf> --ual <UAL1.glb from the Source tier>,<UAL2.glb from the Source tier> \
 ##       --hair <Hair_Buzzed.gltf>,... --old res://assets/characters/humans/rig_m.glb \
 ##       --out res://assets/characters/humans/body_m.glb
 ##

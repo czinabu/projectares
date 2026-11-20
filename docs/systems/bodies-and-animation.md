@@ -90,8 +90,11 @@ date in the same PR.
   that stay on the body as it moves), and the clips. Never edit the
   `.glb` by hand: change the tool and build again. The clips come from the
   Universal Animation Library packs where they fit (`build_rig.gd`
-  `CLIPS`; UAL1 is the bought Source tier, with the 8-way jog, crouch
-  and crawl sets). The empty-handed stand stands straight up (Caleb's call:
+  `CLIPS`; both libraries are the bought Source tiers: UAL1 with the
+  8-way jog, crouch and crawl sets, UAL2 with the 8-way walk, the sword
+  light and heavy combos, aerial sword, unarmed combos, vaults, wall runs,
+  double jumps and the thrown-in-the-air set; every clip is in the bodies
+  under its own name, ready for later passes). The empty-handed stand stands straight up (Caleb's call:
   every pack idle is a fighting stance with the feet staggered), so the tool
   builds it, "Idle_Stand" (`_stand`): the pack's A-pose, straight legs and
   feet under the hips, with the arms let down to the sides, the hands
