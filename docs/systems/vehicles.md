@@ -4,6 +4,13 @@ Rules for vehicles, riding, seats, aircraft, drifting and toy vehicles on the wa
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
+- A vehicle's model is dressed once by `Look._dress_vehicle`, which then
+  merges its still pieces into one mesh per material
+  (`Look.merge_pieces(model, true)`): a parked bike is a few draws, not
+  fifty. Pieces given a name of their own (thrusters, engines, the canopy)
+  and anything under a child node (a walker's legs, an airship's weak
+  spots) are left alone, so a part the vehicle moves or finds by name must
+  be named or sit under its own node.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while

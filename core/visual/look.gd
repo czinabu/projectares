@@ -483,8 +483,10 @@ func fit_draw_distance(map: Node3D) -> void:
 ## override or overlay, default layers and nothing faded or hidden is
 ## taken; anything else, and any node under a child that is not a piece
 ## (a cannon that turns), is left as it is. Pieces that differ in shadow
-## casting or vertex format never share a mesh. View only.
-static func merge_pieces(root: Node3D) -> void:
+## casting or vertex format never share a mesh. With `keep_named`, a piece
+## given a name of its own (a vehicle's "Thruster1", found by name and
+## moved) is left out too. View only.
+static func merge_pieces(root: Node3D, keep_named := false) -> void:
 	if root == null:
 		return
 	var groups := {}
@@ -492,6 +494,8 @@ static func merge_pieces(root: Node3D) -> void:
 	for child in root.get_children():
 		var piece := child as MeshInstance3D
 		if piece == null or not _mergeable(piece):
+			continue
+		if keep_named and not str(piece.name).begins_with("@"):
 			continue
 		var mat := _piece_material(piece)
 		var layout := _layout(piece.mesh.surface_get_arrays(0))
@@ -3703,3 +3707,8 @@ func _dress_vehicle(vehicle: Node3D) -> void:
 			model.add_child(beam)
 		else:
 			mesh_node.material_override = _worn(source, wear, 0.7)
+	# A parked vehicle was a draw for every panel, strut and bolt (about fifty
+	# a bike): its still pieces are one mesh per material now. Named pieces
+	# (thrusters, engines, the canopy) and anything under a moving part (a
+	# walker's legs, an airship's weak spots) stay as they are.
+	merge_pieces(model, true)

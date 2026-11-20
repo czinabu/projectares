@@ -20,6 +20,7 @@ boot_splash/image="res://assets/branding/splash.png"
 stability/enemies=false
 stability/enemy_cap=16
 stability/enemies_full_detail=12
+release/playtest_worlds=PackedStringArray("plaza", "ashfront", "frostline", "marsh", "dunes", "rift", "meridian")
 
 [autoload]
 

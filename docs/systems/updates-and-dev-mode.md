@@ -4,6 +4,19 @@ Rules for the self-updater, the installer and the temporary dev mode. These are 
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
+- Playtest and dev builds, one codebase. The "Windows Client" and "Linux
+  Server" export presets carry the feature tag "playtest": `Worlds` then
+  offers only the worlds in the project setting
+  `ares/release/playtest_worlds` (`Worlds.choose_offered`); a world left
+  out is still loaded, so its items and old saves stay good, but it is
+  never listed, offered or travelled to. The "Windows Dev" preset has no
+  tag and offers every world; CI exports it as a workflow artifact only.
+  Only the playtest build updates itself (`Updater`), so the dev build is
+  never swapped for the release. `--playtest` on the command line tries
+  the playtest build from the editor. A world joins the list once it runs
+  smoothly (the frame bench, `--world <id>`) and its core loop works;
+  changing the list is Caleb's call. Never branch the code for a build:
+  gate on the tag or the list.
 - The game updates itself (`core/update/updater.gd`, the `Updater`
   autoload, second after `Boot` and, like it, free of project classes). The
   Windows client keeps its pack beside the exe (`embed_pck` off); the
