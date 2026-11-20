@@ -222,24 +222,24 @@ func _build_core() -> void:
 		_box(Vector3(4.0, 3.0, 4.0), _ground(at) + Vector3(0, 1.5, 0), WALL)
 
 
-## View only: scattered rocks so the ground reads at a distance. Its own
-## RNG, so it never moves the layout.
+## View only: the planet's land runs on past the walls to the horizon, its
+## props standing out there (anything on the playable ground must be a
+## solid of its own, or the collision checks call it a ghost). Its own
+## seed, so it never moves the layout. Named "Dressing", as every map's is.
 func _dress() -> void:
 	if not Look.enabled:
 		return
-	for i in 60:
-		var at := Vector2(_art_rng.randf_range(-FIELD, FIELD), _art_rng.randf_range(-FIELD, FIELD))
-		if _near_site(at, 25.0) or at.distance_to(Vector2(0.0, LANDING_Z)) < 30.0:
-			continue
-		var size := _art_rng.randf_range(0.6, 2.2)
-		var mesh := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(size, size * 0.7, size * 1.2)
-		box.material = WALL
-		mesh.mesh = box
-		mesh.position = _ground(at) + Vector3(0, size * 0.25, 0)
-		mesh.rotation = Vector3(_art_rng.randf() * 0.4, _art_rng.randf() * TAU, 0.0)
-		add_child(mesh)
+	var art := Node3D.new()
+	art.name = "Dressing"
+	add_child(art)
+	var land := PlanetTerrain.new(planet.terrain, LAYOUT_SEED)
+	var half := terrain.extent() * 0.5
+	art.add_child(Planet.horizon(planet, land, half))
+	var height_of := func(x: float, z: float) -> float:
+		return terrain.height_at(x, z) if maxf(absf(x), absf(z)) < half else land.height_at(x, z)
+	var clear := func(x: float, z: float) -> bool:
+		return maxf(absf(x), absf(z)) > FIELD + 20.0
+	PlanetProps.scatter(art, planet, height_of, half, LAYOUT_SEED + 3, clear)
 
 
 # --- Helpers -----------------------------------------------------------------

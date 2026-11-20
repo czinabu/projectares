@@ -392,6 +392,8 @@ func _on_node_added(node: Node) -> void:
 		dress = _dress_actor
 	elif node is LootContainer:
 		dress = _dress_cache
+	elif node is SalvageCrate:
+		dress = _dress_salvage_crate
 	elif node is Depot:
 		dress = _dress_depot
 	elif node is CharacterBody3D and node.get_script() != null \
@@ -3220,6 +3222,45 @@ func _dress_cache(cache: LootContainer) -> void:
 	marker.mesh = band
 	marker.position.y = size.y * (0.2 if cache.is_bag else 0.55)
 	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## A salvage crate (`SalvageCrate`, DESIGN.md "The Dune Sea"): a dented
+## sand-coloured freight box with dark steel corner posts and bands and an
+## ochre stripe, so it reads apart from a cache. Built of still pieces, one
+## mesh a material (`merge_pieces`). View only.
+func _dress_salvage_crate(crate: SalvageCrate) -> void:
+	if not is_instance_valid(crate) or crate.has_node("Freight"):
+		return
+	var body := crate.get_node_or_null("Body") as MeshInstance3D
+	if body == null:
+		return
+	var size := SalvageCrate.SIZE
+	var shell := surface("metal", {"tint": Color(0.72, 0.62, 0.46), "grime": 0.8, "scale": 0.6})
+	var steel := surface("metal", {"tint": Color(0.25, 0.25, 0.26), "grime": 0.6, "scale": 0.6})
+	var stripe := StandardMaterial3D.new()
+	stripe.albedo_color = Color(0.85, 0.55, 0.15)
+	stripe.roughness = 0.7
+	(body.mesh as BoxMesh).material = shell
+	var freight := Node3D.new()
+	freight.name = "Freight"
+	var pieces: Array = []
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			pieces.append([Vector3(0.07, size.y + 0.02, 0.07), Vector3(sx * (size.x * 0.5 - 0.02), 0, sz * (size.z * 0.5 - 0.02)), steel])
+	for bx: float in [-0.28, 0.28]:
+		pieces.append([Vector3(0.06, size.y + 0.015, size.z + 0.015), Vector3(bx, 0, 0), steel])
+	pieces.append([Vector3(size.x * 0.5, 0.07, size.z + 0.012), Vector3(0, size.y * 0.18, 0), stripe])
+	pieces.append([Vector3(0.3, 0.05, 0.08), Vector3(0, size.y * 0.5 + 0.03, 0), steel])
+	for piece: Array in pieces:
+		var mesh := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = piece[0]
+		box.material = piece[2]
+		mesh.mesh = box
+		mesh.position = piece[1]
+		freight.add_child(mesh)
+	crate.add_child(freight)
+	merge_pieces(freight)
 
 
 ## A scrip pile (DESIGN.md "Scrip piles"): a heap of glowing amber chits

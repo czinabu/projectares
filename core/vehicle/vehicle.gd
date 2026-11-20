@@ -170,6 +170,11 @@ var pillion_exit := Vector3(-1.4, 0.1, 0.6)
 ## Two up it is heavier: these share of top speed, acceleration, turn rate
 ## and gap glide are what is left with a passenger aboard, and again for
 ## each more.
+## Cargo (DESIGN.md "The Dune Sea"): where salvage crates ride, in the
+## vehicle's own space, one crate a point (`SalvageCrate`, the `Raid`'s
+## `set_down_crate`). `cargo` holds the crate at each point, or null.
+var cargo_points: Array[Vector3] = []
+var cargo: Array = []
 var laden_speed := 0.92
 var laden_accel := 0.85
 var laden_turn := 0.85
@@ -268,6 +273,7 @@ func setup(p_item_id: String) -> void:
 		else:
 			push_warning("Vehicle: no property '%s' for %s" % [key, p_item_id])
 	_fill_seats()
+	cargo.resize(cargo_points.size())
 
 
 ## The pillion seat from the `pillion_*` vars, unless the item lists its own.
