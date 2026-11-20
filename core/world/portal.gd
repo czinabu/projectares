@@ -7,19 +7,24 @@ extends Node3D
 ## folds away.
 ##
 ## Where a portal can lead depends on where it opens (`choices_for`, Caleb's
-## call: home and other places as well as the worlds):
+## call: anywhere from anywhere):
 ## - your home base: every world, the arena and the plaza (`PLAZA`);
 ## - a safe-zone world such as the plaza: every world, the arena and `HOME`
 ##   (`Raid.open_portal`, where only the authority opens them and
 ##   `NetSession` shows them to everyone there);
-## - a world where gear is at stake: only `HOME`, and opening it is a
-##   sign-out (`Raid.begin_sign_out`) with a door. It takes the sign-out's own
-##   time (quick at a gate outpost, 15 s on the ground, 25 s and a beacon in
-##   the air), a fight or a bounty still refuses it or cancels it (and the ring
+## - a world where gear is at stake: `HOME` first, then every other world,
+##   the arena and the plaza, and opening any of them is a sign-out
+##   (`Raid.begin_sign_out`) with a door. It takes the sign-out's own time
+##   (quick at a gate outpost, 15 s on the ground, 25 s and a beacon in the
+##   air), a fight or a bounty still refuses it or cancels it (and the ring
 ##   folds away with it), the ring unfolds over the countdown where everyone
-##   can see it, and a squadmate who steps in starts their own sign-out. So a
-##   portal is never an escape hatch out of a fight, and no portal leads from
-##   one world straight into another.
+##   can see it, and a squadmate who steps in starts their own sign-out
+##   through the same door. When the countdown ends everything carried goes
+##   home first, as with any sign-out (the result's "door" says where the
+##   ring led), and only then does the trip go on from the base to the
+##   destination, with the loadout as it now stands at home. So a portal is
+##   never an escape hatch out of a fight, and no gear goes from one world
+##   straight into another.
 ## Walking through to a world lands you with the "portal" drop
 ## (`Raid.PORTAL_DROP`), at the world's gate outpost where it has one.
 ##
@@ -28,7 +33,8 @@ extends Node3D
 ## (the base or the raid) ticks it, sends walkers through and frees it. The
 ## ring is the same object in every view, built as greybox here.
 
-## The destination home: your base. Out in a world it is a sign-out.
+## The destination home: your base. Out in a world it is a sign-out, as is
+## every other destination there.
 const HOME := "home"
 ## The destination out of your base to the social world (the plaza): the
 ## base's door, as a portal.
@@ -58,8 +64,9 @@ var side := ""
 var opener := ""
 ## Shown over the ring.
 var opener_name := ""
-## A portal home out in a world: walking in starts a sign-out rather than
-## sending anyone anywhere, and it unfolds over its opener's countdown.
+## A portal out of a world where gear is at stake: walking in starts a
+## sign-out (through to `destination` once it ends, by way of home) rather
+## than sending anyone anywhere, and it unfolds over its opener's countdown.
 var signs_out := false
 ## Seconds since it opened.
 var age := 0.0
@@ -98,9 +105,11 @@ static func is_place(id: String) -> bool:
 
 ## Where `actor` may open a portal to in `raid` (null for the home base):
 ## from the base every world, the arena and the plaza; in a safe zone every
-## world, the arena and home; in a world where gear is at stake only `HOME`,
-## which is a sign-out; nowhere in the arena (leaving it has its own way)
-## or while down. The authority checks it again in `Raid.open_portal`.
+## world, the arena and home; in a world where gear is at stake `HOME`
+## first, then every other world, the arena and the plaza, each a sign-out
+## that ends at home before the trip goes on; nowhere in the arena (leaving
+## it has its own way) or while down. The authority checks it again in
+## `Raid.open_portal`.
 static func choices_for(raid: Raid, actor: Actor) -> Array[String]:
 	if actor == null or not is_instance_valid(actor) or actor.is_dead:
 		return []
@@ -113,8 +122,26 @@ static func choices_for(raid: Raid, actor: Actor) -> Array[String]:
 		out.append(HOME)
 		return out
 	if raid.world.portal_home:
-		return [HOME] as Array[String]
+		return from_world(raid.world.id)
 	return []
+
+
+## Where a portal out of the world `here` (gear at stake) can lead: home
+## first, so the watch starts on it, then every other world, the arena and
+## the plaza. Each one signs you out.
+static func from_world(here: String) -> Array[String]:
+	var out: Array[String] = [HOME]
+	for id in destinations():
+		if id != here:
+			out.append(id)
+	out.append(PLAZA)
+	return out
+
+
+## Whether a portal to `id` opened out in a world signs you out and then
+## travels on from home (anywhere but home itself).
+static func goes_on(id: String) -> bool:
+	return id != "" and id != HOME and is_place(id)
 
 
 ## The name a destination is shown by.
@@ -254,8 +281,9 @@ func _update_view() -> void:
 	_label.visible = open > 0.5
 	var who := "" if opener_name == "" else "%s · " % opener_name
 	if age < unfold_time and unfold_time > fold_time:
-		# A portal home out in a world, still unfolding over a sign-out.
-		_label.text = "%sSigning out · %d s" % [who, ceili(unfold_time - age)]
+		# A portal out of a world, still unfolding over a sign-out.
+		var to := "" if destination == HOME else " · to %s" % title_of(destination)
+		_label.text = "%sSigning out%s · %d s" % [who, to, ceili(unfold_time - age)]
 	else:
 		_label.text = "%sTo %s · %d s" % [who, title_of(destination), ceili(time_left())]
 	if not usable:

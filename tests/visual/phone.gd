@@ -87,6 +87,19 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 	phone.open_app("mirror")
 	await v._settle(40)
 	await v._shot(out_dir.path_join("phone_mirror_third.png"))
+	# Third person's dressing room: the camera in front, the hologram beside.
+	mirror.visible = false
+	controller.dressing_room = true
+	phone.dressing = true
+	await v._settle(40)
+	await v._shot(out_dir.path_join("phone_dressing_room.png"))
+	controller.dressing_turn = 0.9
+	await v._settle(20)
+	await v._shot(out_dir.path_join("phone_dressing_room_turned.png"))
+	controller.dressing_room = false
+	controller.dressing_turn = 0.0
+	phone.dressing = false
+	mirror.visible = true
 	controller.toggle_view()
 	await v._settle(40)
 	await v._shot(out_dir.path_join("phone_mirror_first.png"))

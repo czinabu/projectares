@@ -244,6 +244,11 @@ var swing_scale := 1.0
 var dash_range := 9.0
 ## Extra stamina a heavy pays when it dashes further than a plain lunge.
 var dash_stamina := 12.0
+## A charge: a heavy started at a sprint at a foe out of reach runs its
+## whole `dash_range` toward them instead of stopping at striking distance,
+## so a foe who steps aside lets it run on past (into whatever stands
+## behind).
+var dash_through := false
 ## A light attack while moving back, with a foe behind in reach, strikes
 ## behind you for this much more. Zero turns the move off.
 var back_strike_mult := 1.4
@@ -703,6 +708,11 @@ func is_lunging() -> bool:
 	return _lunge_left > 0.0
 
 
+## A dash-strike (or a charge) is carrying the actor.
+func is_dashing() -> bool:
+	return _dashing and _lunge_left > 0.0
+
+
 func status_text() -> String:
 	if _blocking:
 		return "%s  guarding %s" % [display_name, DIR_NAMES[guard_dir]]
@@ -820,8 +830,10 @@ func _heavy_attack() -> void:
 	var dash := dash_range if _sprinting and dash_range > most else most
 	var foe := _lunge_target(reach + dash)
 	if foe.size() > 0:
-		# Close to striking distance, never past the foe.
+		# Close to striking distance, never past the foe, unless it charges.
 		var travel := clampf(foe[1] - reach * lunge_stop, 0.0, dash)
+		if dash_through and _sprinting and foe[1] > reach * 1.4:
+			travel = dash
 		# Further than a plain lunge reaches is a dash-strike, and costs more.
 		if travel > most and not actor.spend_stamina(dash_stamina):
 			travel = most

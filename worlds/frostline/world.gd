@@ -149,7 +149,7 @@ const CONTRACTS := {
 			"scrip": 160},
 	"frost_cores": {"title": "Bring home 3 Cryo Cores", "stat": "item:cryo_core", "goal": 3, "kind": "daily",
 			"scrip": 170},
-	"frost_sentinel": {"title": "Bring down the Engine Sentinel twice", "stat": "bosses", "goal": 2,
+	"frost_sentinel": {"title": "Bring down the Engine Sentinel twice", "stat": "boss:sentinel", "goal": 2,
 			"kind": "weekly", "scrip": 900, "items": ["upgrade_data"], "reward_tag": "blueprint"},
 	"frost_coils": {"title": "Bring home 3 Engine Coils", "stat": "item:engine_coil", "goal": 3,
 			"kind": "weekly", "scrip": 850, "items": ["upgrade_data"], "reward_tag": "blueprint"},

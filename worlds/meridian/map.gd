@@ -67,6 +67,7 @@ const AMBER := Color(1.0, 0.6, 0.2)
 const SkyhookScript := preload("res://worlds/meridian/skyhook.gd")
 const StandsScript := preload("res://worlds/meridian/stands.gd")
 const SkylineScript := preload("res://worlds/meridian/skyline.gd")
+const SpectacleSolid := preload("res://worlds/meridian/spectacle_solid.gd")
 const WorksScript := preload("res://worlds/meridian/works.gd")
 ## Half the salt pan's width: past it the dunes rise (`_build_far_land`),
 ## near enough that the works run up into them.
@@ -88,6 +89,19 @@ const WORKS_KEEP_OUT := [
 	[Vector3(-520, 0, -300), 35.0], [Vector3(-300, 0, 640), 60.0],
 ]
 
+## The relay pylons the chicane threads through.
+const PYLONS := [Vector3(-190, 0, 185), Vector3(-240, 0, 135), Vector3(-180, 0, 125), Vector3(-255, 0, 85),
+		Vector3(-208, 0, 45)]
+## The launch ramp: where it leaves the flats, how steeply it climbs and how
+## far it runs before it breaks off.
+const RAMP_START := Vector3(240, 0, 0)
+const RAMP_PITCH := 16.0
+const RAMP_LENGTH := 900.0
+## The cracked cooling tower: its foot and its two sections, [bottom radius,
+## top radius, height, base height] each.
+const TOWER_AT := Vector3(-60, 0, 330)
+const TOWER_PARTS := [[38.0, 26.0, 40.0, 0.0], [26.0, 30.0, 34.0, 40.0]]
+
 var nav_region: Node3D
 ## The planet the map stands on (`WorldDef.planet_type`), set before it
 ## enters the tree.
@@ -97,6 +111,8 @@ var _skyhook_track: RaceTrack
 var _skyhook: RefCounted
 var _rng := RandomNumberGenerator.new()
 var _art_rng := RandomNumberGenerator.new()
+## The breakers' yard's storage cans, [foot, height] each (`_build_set_pieces`).
+var _yard_cans: Array = []
 
 
 func _init() -> void:
@@ -121,6 +137,7 @@ func _ready() -> void:
 	_skyhook = SkyhookScript.new(self)
 	_skyhook.call("build", race_tracks()[1])
 	_build_race_control()
+	_build_set_pieces()
 	_dress()
 
 
@@ -664,23 +681,112 @@ static func desk_title(track_id: String, machine: String) -> String:
 
 # --- Decoration only: no collision, nothing the game depends on ----------------------
 
+## The set pieces round the circuits, solid on the server as on a client
+## (docs/systems/worlds-and-war.md "Collision"); `_dress` draws them. The
+## lamps along pit row, the breakers' yard's cans (placed with their own
+## random numbers), the relay pylons the chicane threads, the launch ramp's
+## rails and legs, the cooling tower and the Rail's coil rings.
+func _build_set_pieces() -> void:
+	for i in 6:
+		SolidProp.place(nav_region, "Light_Street_2.glb", 7.0, Vector3(-60 + i * 30.0, 0, -TRACK_W * 0.5 - 6.0), 0.0, 0.3)
+	var yard := RandomNumberGenerator.new()
+	yard.seed = LAYOUT_SEED + 9
+	var tries := 0
+	while _yard_cans.size() < 28 and tries < 600:
+		tries += 1
+		var p := Vector3(yard.randf_range(30, 170), 0, yard.randf_range(90, 220))
+		if _dist_to_track(p) < 13.0 or _in_gap(p):
+			continue
+		var h := yard.randf_range(6.0, 13.0)
+		_yard_cans.append([p, h])
+		var can := CylinderShape3D.new()
+		can.radius = 2.7
+		can.height = h
+		_solid_shape(can, Transform3D(Basis.IDENTITY, p + Vector3(0, h * 0.5, 0)))
+	for p: Vector3 in PYLONS:
+		if _dist_to_track(p) < 12.0:
+			continue
+		for s: float in [-1.5, 1.5]:
+			SolidProp.box(nav_region, Vector3(0.6, 26, 0.6), Transform3D(Basis.IDENTITY, p + Vector3(s, 13, 0)))
+	for part: Transform3D in _ramp_parts():
+		SolidProp.box(nav_region, part.basis.get_scale(), Transform3D(part.basis.orthonormalized(), part.origin))
+	for spec: Array in SkylineScript.SEARCHLIGHTS:
+		var lamp := CylinderShape3D.new()
+		lamp.radius = SkylineScript.LAMP_RADIUS
+		lamp.height = SkylineScript.LAMP_HEIGHT
+		_solid_shape(lamp, Transform3D(Basis.IDENTITY, (spec[0] as Vector3) + Vector3(0, SkylineScript.LAMP_HEIGHT * 0.5, 0)))
+	for part: Array in SkylineScript.booster_parts():
+		_solid_shape((part[0] as PrimitiveMesh).create_convex_shape(), part[1])
+	for part: Array in TOWER_PARTS:
+		var cone := CylinderMesh.new()
+		cone.bottom_radius = part[0]
+		cone.top_radius = part[1]
+		cone.height = part[2]
+		cone.radial_segments = 16
+		_solid_shape(cone.create_convex_shape(), Transform3D(Basis.IDENTITY, TOWER_AT + Vector3(0, float(part[3]) + float(part[2]) * 0.5, 0)))
+	var coil := TorusMesh.new()
+	coil.inner_radius = 11.0
+	coil.outer_radius = 13.0
+	coil.rings = 24
+	coil.ring_segments = 8
+	var coil_shape := coil.create_trimesh_shape() as ConcavePolygonShape3D
+	coil_shape.backface_collision = true
+	var x := RAIL_FROM
+	while x <= RAIL_TO:
+		_solid_shape(coil_shape, Transform3D(Basis.from_euler(Vector3(0, 0, PI / 2.0)), Vector3(x, 3.0, 0)))
+		x += 22.0
+
+
+## One static body holding `shape` at `at`, under the map's geometry.
+func _solid_shape(shape: Shape3D, at: Transform3D) -> void:
+	var body := StaticBody3D.new()
+	body.collision_layer = Actor.LAYER_WORLD
+	body.collision_mask = 0
+	body.transform = at
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	body.add_child(col)
+	nav_region.add_child(body)
+
+
+## The launch ramp's two rails and the legs under them, each a box's
+## transform with its size as the basis' scale.
+func _ramp_parts() -> Array[Transform3D]:
+	var out: Array[Transform3D] = []
+	var pitch := deg_to_rad(RAMP_PITCH)
+	var dir := Vector3(cos(pitch), sin(pitch), 0)
+	for s: float in [-6.0, 6.0]:
+		out.append(Transform3D(Basis(Vector3.BACK, pitch) * Basis.from_scale(Vector3(RAMP_LENGTH, 2.5, 2.0)),
+				RAMP_START + dir * RAMP_LENGTH * 0.5 + Vector3(0, 0, s)))
+	var d := 30.0
+	var k := 0
+	while d < RAMP_LENGTH:
+		var at := RAMP_START + dir * d
+		if at.y > 6.0 and k % 2 == 0:
+			for s: float in [-7.0, 7.0]:
+				out.append(Transform3D(Basis.from_scale(Vector3(2.5, at.y, 2.5)), Vector3(at.x, at.y * 0.5, s)))
+		d += 40.0
+		k += 1
+	return out
+
+
 func _dress() -> void:
-	if not Look.enabled:
-		return
 	var art := Node3D.new()
 	art.name = "Dressing"
 	add_child(art)
+	if not Look.enabled:
+		# The spectacle is solid, so its layout is built here too, for its
+		# collision alone; what little it draws outside its builders goes.
+		_dress_spectacle(art)
+		remove_child(art)
+		art.free()
+		return
 	_dress_rail(art)
 	_dress_launch_ramp(art)
 	_dress_yard(art)
 	_dress_tower(art)
 	_dress_pylons(art)
 	_dress_spectacle(art)
-	for i in 6:
-		var lamp := Look.prop("Light_Street_2.glb", 7.0, 0.3)
-		if lamp:
-			lamp.position = Vector3(-60 + i * 30.0, 0, -TRACK_W * 0.5 - 6.0)
-			art.add_child(lamp)
 
 
 func _ring(parent: Node3D, inner: float, outer: float, at: Vector3, rot: Vector3, mat: Material, segments := 8) -> void:
@@ -715,30 +821,21 @@ func _dress_rail(art: Node3D) -> void:
 ## off mid-air, a red beacon at its end: seen from all over the track.
 func _dress_launch_ramp(art: Node3D) -> void:
 	var steel := _metal(Color(0.32, 0.32, 0.36), 0.7)
-	var start := Vector3(240, 0, 0)
-	var pitch := deg_to_rad(16.0)
+	var start := RAMP_START
+	var pitch := deg_to_rad(RAMP_PITCH)
 	var dir := Vector3(cos(pitch), sin(pitch), 0)
-	var length := 900.0
-	for s: float in [-6.0, 6.0]:
-		var beam := MeshInstance3D.new()
-		beam.mesh = BoxMesh.new()
-		beam.mesh.size = Vector3(length, 2.5, 2.0)
-		beam.mesh.material = steel
-		beam.position = start + dir * length * 0.5 + Vector3(0, 0, s)
-		beam.rotation.z = pitch
-		art.add_child(beam)
+	var length := RAMP_LENGTH
+	for part: Transform3D in _ramp_parts():
+		var piece := MeshInstance3D.new()
+		piece.mesh = BoxMesh.new()
+		piece.mesh.size = part.basis.get_scale()
+		piece.mesh.material = steel
+		piece.transform = Transform3D(part.basis.orthonormalized(), part.origin)
+		art.add_child(piece)
 	var d := 30.0
 	var k := 0
 	while d < length:
 		var at := start + dir * d
-		if at.y > 6.0 and k % 2 == 0:
-			for s: float in [-7.0, 7.0]:
-				var leg := MeshInstance3D.new()
-				leg.mesh = BoxMesh.new()
-				leg.mesh.size = Vector3(2.5, at.y, 2.5)
-				leg.mesh.material = steel
-				leg.position = Vector3(at.x, at.y * 0.5, s)
-				art.add_child(leg)
 		_ring(art, 8.0, 9.6, at + Vector3(0, 6, 0), Vector3(0, 0, PI / 2.0 + pitch), steel)
 		if k % 3 == 0:
 			_ring(art, 7.9, 8.15, at + Vector3(0, 6, 0), Vector3(0, 0, PI / 2.0 + pitch), _glow(CYAN, 2.5), 6)
@@ -755,14 +852,9 @@ func _dress_launch_ramp(art: Node3D) -> void:
 
 func _dress_yard(art: Node3D) -> void:
 	var steel := _metal(Color(0.75, 0.7, 0.62), 0.8)
-	var placed := 0
-	var tries := 0
-	while placed < 28 and tries < 600:
-		tries += 1
-		var p := Vector3(_art_rng.randf_range(30, 170), 0, _art_rng.randf_range(90, 220))
-		if _dist_to_track(p) < 13.0 or _in_gap(p):
-			continue
-		var h := _art_rng.randf_range(6.0, 13.0)
+	for spot: Array in _yard_cans:
+		var p: Vector3 = spot[0]
+		var h: float = spot[1]
 		var can := MeshInstance3D.new()
 		can.mesh = CylinderMesh.new()
 		can.mesh.top_radius = 2.6
@@ -779,14 +871,13 @@ func _dress_yard(art: Node3D) -> void:
 		cap.mesh.material = _glow(CYAN, 1.5)
 		cap.position = p + Vector3(0, h + 0.2, 0)
 		art.add_child(cap)
-		placed += 1
 
 
 ## The cracked cooling tower the Tower Sweep runs round.
 func _dress_tower(art: Node3D) -> void:
 	var concrete := Look.surface("concrete", {"tint": Color(0.75, 0.68, 0.6), "grime": 0.7, "scale": 0.05})
-	var c := Vector3(-60, 0, 330)
-	for part: Array in [[38.0, 26.0, 40.0, 0.0], [26.0, 30.0, 34.0, 40.0]]:
+	var c := TOWER_AT
+	for part: Array in TOWER_PARTS:
 		var m := MeshInstance3D.new()
 		m.mesh = CylinderMesh.new()
 		m.mesh.bottom_radius = part[0]
@@ -802,8 +893,7 @@ func _dress_tower(art: Node3D) -> void:
 ## Relay pylons the chicane threads through, red lamps on top.
 func _dress_pylons(art: Node3D) -> void:
 	var steel := _metal(Color(0.32, 0.32, 0.35), 0.5)
-	for p: Vector3 in [Vector3(-190, 0, 185), Vector3(-240, 0, 135), Vector3(-180, 0, 125), Vector3(-255, 0, 85),
-			Vector3(-208, 0, 45)]:
+	for p: Vector3 in PYLONS:
 		if _dist_to_track(p) < 12.0:
 			continue
 		for s: float in [-1.5, 1.5]:
@@ -831,7 +921,8 @@ func _dress_pylons(art: Node3D) -> void:
 
 # --- The spectacle: stands, crowds, the big screen ----------------------------------
 
-## Everything that makes a race an event, decoration only (`stands.gd`):
+## Everything that makes a race an event (`stands.gd`), solid on every
+## machine and drawn where `Look` is on (`spectacle_solid.gd`):
 ## the two-tier Meridian Grandstand along the Rail, stands round Breech
 ## Hairpin and the Spillway landing, terraces round the cooling tower, a
 ## footbridge over the run to the chicane, viewing barges over the infield,
@@ -840,7 +931,9 @@ func _dress_pylons(art: Node3D) -> void:
 ## drones (`skyline.gd`), and the works' districts, roads, car parks, the
 ## infield festival and the trackside fences (`works.gd`).
 func _dress_spectacle(art: Node3D) -> void:
+	var solid: RefCounted = SpectacleSolid.new(self)
 	var st: RefCounted = StandsScript.new(art, LAYOUT_SEED + 1)
+	st.set("solid", solid)
 	_dress_grandstand(st)
 	# Round the outside of Breech Hairpin.
 	var hairpin := Vector3(150, 0, 38)
@@ -860,7 +953,10 @@ func _dress_spectacle(art: Node3D) -> void:
 	_skyhook.call("dress", st)
 	SkylineScript.new(st, LAYOUT_SEED + 2).call("build", race_tracks())
 	st.call("finish")
-	WorksScript.new(art, LAYOUT_SEED + 4, WORKS_KEEP_OUT.duplicate(true)).call("build", race_tracks())
+	var works: RefCounted = WorksScript.new(art, LAYOUT_SEED + 4, WORKS_KEEP_OUT.duplicate(true))
+	works.set("solid", solid)
+	works.call("build", race_tracks())
+	solid.call("finish")
 
 
 ## The Meridian Grandstand: two tiers along the Rail opposite the pits,

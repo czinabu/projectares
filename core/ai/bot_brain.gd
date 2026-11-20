@@ -259,6 +259,11 @@ var leash := 35.0
 ## goes back to its post and lies there crouched and still, never patrols,
 ## so it is where it was left when someone comes close.
 var lies_low := false
+## A keeper that dives is held under the water by the `Raid` (`_tick_dive`):
+## it crouches and does nothing else until let up, then stands still
+## (`held_still`) while it rises.
+var held_under := false
+var held_still := false
 ## The ground it fights on (the enemy AI pass, step 4): its kind and how
 ## much slower it is to notice someone there. `set_ground` sets both.
 var ground := ""
@@ -428,6 +433,8 @@ func _ready() -> void:
 	# A kind that dash-strikes whatever its ring ("dash", a chance).
 	if actor.has_meta("dash"):
 		dash_chance = float(actor.get_meta("dash"))
+	if actor.has_meta("dash_every"):
+		dash_every = float(actor.get_meta("dash_every"))
 	# A world may make a kind feint more than its ring would ("feint_chance":
 	# the marsh's stalkers circle and feint before they strike).
 	if actor.has_meta("feint_chance"):
@@ -507,6 +514,11 @@ func _physics_process(delta: float) -> void:
 	cmd.crouch = false
 	cmd.move = Vector2.ZERO
 	cmd.aim_dir = Vector3.ZERO
+	# Held by its keeper's fight (`Raid._tick_dive`): down and still while
+	# under, still while it rises.
+	if held_under or held_still:
+		cmd.crouch = held_under
+		return
 
 	_think_left -= delta
 	if _think_left <= 0.0:

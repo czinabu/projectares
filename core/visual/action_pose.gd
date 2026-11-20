@@ -1432,19 +1432,39 @@ func technique_blade(melee: MeleeWeapon) -> Variant:
 
 ## The blade `done` of the way through the swing `key` of `melee`'s
 ## technique: turned from the windup through the contact key to the
-## follow-through, the edge leading the way it turns (down, for a thrust
-## straight out, where it barely turns).
+## follow-through, the edge leading the way its tip actually goes, the
+## hand's path and the blade's turn together (a short knife's tip goes
+## mostly where the hand takes it), or the way the blade turns where the tip
+## runs along the blade (down, for a thrust straight out, where it barely
+## turns).
 func _blade_at(melee: MeleeWeapon, key: Variant, done: float) -> Basis:
+	var t := clampf(done, 0.0, 1.0)
+	var dir := _blade_dir(melee, key, t)
+	var keys := _swing_keys(melee, key)
+	var lead: Vector3 = (keys[1][1] as Vector3).normalized() - (keys[0][1] as Vector3).normalized() if t < 0.5 \
+			else (keys[2][1] as Vector3).normalized() - (keys[1][1] as Vector3).normalized()
+	if lead.length() < 0.25:
+		lead = Vector3.DOWN
+	if key is int:
+		var step := 0.04
+		var from := clampf(t - step, 0.0, 1.0)
+		var to := clampf(t + step, 0.0, 1.0)
+		var reach := Look.blade_reach(melee)
+		var tip_way := (keyed_reach(melee, key, to) + _blade_dir(melee, key, to) * reach) \
+				- (keyed_reach(melee, key, from) + _blade_dir(melee, key, from) * reach)
+		var across := tip_way - dir * tip_way.dot(dir)
+		if tip_way.length() > 0.001 and across.length() > tip_way.length() * 0.3:
+			lead = across
+	return blade_basis(dir, lead)
+
+
+## Which way the blade points `t` (0..1) of the way through the swing `key`.
+func _blade_dir(melee: MeleeWeapon, key: Variant, t: float) -> Vector3:
 	var keys := _swing_keys(melee, key)
 	var a := (keys[0][1] as Vector3).normalized()
 	var b := (keys[1][1] as Vector3).normalized()
 	var c := (keys[2][1] as Vector3).normalized()
-	var t := clampf(done, 0.0, 1.0)
-	var dir := a.slerp(b, t * 2.0) if t < 0.5 else b.slerp(c, t * 2.0 - 1.0)
-	var lead := b - a if t < 0.5 else c - b
-	if lead.length() < 0.25:
-		lead = Vector3.DOWN
-	return blade_basis(dir, lead)
+	return a.slerp(b, t * 2.0) if t < 0.5 else b.slerp(c, t * 2.0 - 1.0)
 
 
 ## The weapon's frame with its blade along `dir` and its edge (`cut_edge`)

@@ -9,7 +9,7 @@ static func run(t: Node) -> void:
 	var p := raid.player
 	await t.frames(40)
 	# Stand in the exit cell, which is always open ground.
-	var arena := raid.depots[0].global_position
+	var arena: Vector3 = t._open_ground(raid)
 	arena.y -= 1.9
 	p.global_position = arena + Vector3(0, 0, 3)
 	p.cmd.yaw = 0.0

@@ -39,6 +39,9 @@ signal looted(ids: Array[String])
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
 const LAYER_INTERACT := 4
+## Vehicles (`vehicle.gd`): a person walks into a parked bike rather than
+## through it, and its rider is let through by a collision exception.
+const LAYER_VEHICLES := 8
 ## The body's capsule. `Combat.trace` tests rewound bodies against the same shape.
 const BODY_RADIUS := 0.4
 const BODY_HEIGHT := 1.8
@@ -294,6 +297,9 @@ var protected_left := 0.0
 ## DEV MODE: god mode, set by a solo `Raid` running `dev_cheats`. Checked in
 ## `Combat.deal`, like `protected_left`, so no hit gets through.
 var dev_invulnerable := false
+## A keeper under the water (the `Raid`'s keeper machinery, "boss_pool"):
+## nothing hurts it while it is down. Set on the authority only.
+var submerged := false
 ## Public reputation. Written by the `Raid` that decides it (online, copied
 ## from the server); read by nameplates and the HUD. See `RenownLedger`.
 var renown := 0
@@ -394,7 +400,7 @@ func _init() -> void:
 func _ready() -> void:
 	add_to_group("actors")
 	collision_layer = LAYER_ACTORS
-	collision_mask = LAYER_WORLD | LAYER_ACTORS
+	collision_mask = LAYER_WORLD | LAYER_ACTORS | LAYER_VEHICLES
 	floor_snap_length = 0.3
 	_build_body()
 	health.died.connect(_on_health_died)

@@ -1,7 +1,7 @@
 class_name Emotes
 extends RefCounted
 ## The emotes (DESIGN.md "Emotes"): what each is called and how long it
-## plays. Picked from the watch's emote icon (`Hud.emote_slot`), played by
+## plays. Picked on the emote key's quick wheel (`PlayerController.open_emote_wheel`), played by
 ## the controller as the held `ActorCommand.emote` (its number here, counting
 ## from 1), and posed on the one body by `Locomotion.emote_pose` from
 ## `ActionPose.emote`, so every view and every machine shows the same one.

@@ -98,7 +98,7 @@ static func _inside(t: Node) -> void:
 			[Vector3(0, f - MapScript.SHAFT_DEPTH * 0.5, landing), "the Shaft's landing"],
 			[Vector3(4.0, low, 20.0), "the Shaft's foot"]]:
 		var top: Vector3 = frame * ((spot[0] as Vector3) + Vector3(0, 3.0, 0))
-		var hit := _ray(space, top, top + Vector3(0, -6.0, 0))
+		var hit := _floor_ray(space, top)
 		var floor_y: float = (frame * (spot[0] as Vector3)).y
 		t.check(not hit.is_empty() and absf(hit.position.y - floor_y) < 0.3, "%s has a floor to stand on" % spot[1])
 	# Someone can walk from the hatch to the Shaft's foot.
@@ -192,7 +192,7 @@ static func _deeper(t: Node) -> void:
 			[Vector3(-4.0, g - step * 2.0, 117.0), "the Descent's west landing"], [Vector3(8.0, bottom, 168.0), "the Descent's foot"],
 			[Vector3(18.0, g + MapScript.WALKWAY_UP, 76.0), "the north gallery's walkway"]]:
 		var top: Vector3 = frame * ((spot[0] as Vector3) + Vector3(0, 3.0, 0))
-		var hit := _ray(space, top, top + Vector3(0, -6.0, 0))
+		var hit := _floor_ray(space, top)
 		var floor_y: float = (frame * (spot[0] as Vector3)).y
 		t.check(not hit.is_empty() and absf(hit.position.y - floor_y) < 0.3,
 				"%s has a floor to stand on (%s)" % [spot[1], "none" if hit.is_empty() else "%.2f off" % (hit.position.y - floor_y)])
@@ -336,7 +336,7 @@ static func _heart(t: Node) -> void:
 			[Vector3(-ledge * 0.7071, bottom + up, c - ledge * 0.7071), "the balcony over the door's side"],
 			[Vector3(30.0, bottom + up, c + 11.0), "a ramp's landing"]]:
 		var top: Vector3 = frame * ((spot[0] as Vector3) + Vector3(0, 3.0, 0))
-		var hit := _ray(space, top, top + Vector3(0, -6.0, 0))
+		var hit := _floor_ray(space, top)
 		var floor_y: float = (frame * (spot[0] as Vector3)).y
 		t.check(not hit.is_empty() and absf(hit.position.y - floor_y) < 0.3,
 				"%s has a floor to stand on (%s)" % [spot[1], "none" if hit.is_empty() else "%.2f off" % (hit.position.y - floor_y)])
@@ -499,3 +499,15 @@ static func _heart(t: Node) -> void:
 static func _ray(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(from, to, Actor.LAYER_WORLD)
 	return space.intersect_ray(query)
+
+
+## The floor under `top`, through any loot crate standing there: a crate is
+## solid (docs/systems/worlds-and-war.md "Collision") but is not the floor.
+static func _floor_ray(space: PhysicsDirectSpaceState3D, top: Vector3) -> Dictionary:
+	var query := PhysicsRayQueryParameters3D.create(top, top + Vector3(0, -6.0, 0), Actor.LAYER_WORLD)
+	for i in 4:
+		var hit := space.intersect_ray(query)
+		if hit.is_empty() or not hit.collider is LootContainer:
+			return hit
+		query.exclude = query.exclude + [(hit.collider as CollisionObject3D).get_rid()]
+	return {}

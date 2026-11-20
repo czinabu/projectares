@@ -121,6 +121,9 @@ static func run(t: Node) -> void:
 	await t._wait_until(func() -> bool: return int(race.remote_run.get("place", 0)) > 0, 600)
 	t.check(int(race.remote_run.get("place", 0)) > 0 and Race.place_tag(race.remote_run).begins_with("P"),
 			"and is told its place")
+	# The line is its own message, sent beside the run's: give it the moment
+	# it may take to land after the place does.
+	await t._wait_until(func() -> bool: return radio.size() >= 1, 120)
 	t.check(radio.size() >= 1 and radio[0][0] == me and str(radio[0][1]) != "" and str(radio[0][2]) != "",
 			"a rival's line at the lights reaches the racer's own radio")
 	race.ask("retire")

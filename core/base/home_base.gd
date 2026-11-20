@@ -222,6 +222,11 @@ const STYLE_PIECES := {
 	"bridge": [[Vector3(0, 3.6, -9.6), Vector3(8.5, 2.0, 0.1)], [Vector3(0, 0.5, -4.4), Vector3(0.7, 1.0, 0.7)]],
 	"plinths": [[Vector3(0, 0.01, -4.9), Vector3(1.2, 0.02, 8.9)]],
 	"cargo": [[Vector3(4.3, 1.5, -5.3), Vector3(0.7, 3.0, 7.6)]],
+	"den": [[Vector3(0.3, 0.4, -5.4), Vector3(0.95, 0.8, 2.85)], [Vector3(-1.8, 0.4, -7.6), Vector3(2.0, 0.8, 0.95)],
+		[Vector3(-1.8, 0.2, -5.3), Vector3(0.7, 0.4, 1.2)]],
+	"bar": [[Vector3(3.15, 0.55, -5.0), Vector3(0.85, 1.1, 6.2)], [Vector3(-2.6, 0.4, -8.7), Vector3(2.85, 0.8, 0.95)]],
+	"quarters": [[Vector3(4.05, 1.3, -6.65), Vector3(1.4, 2.6, 2.8)], [Vector3(0.9, 0.4, -9.1), Vector3(1.8, 0.8, 0.8)],
+		[Vector3(-3.9, 0.4, -5.2), Vector3(0.95, 0.8, 2.0)]],
 }
 ## How high the helmet shelf over the armor stands is.
 const HELMET_SHELF_Y := 3.0
@@ -239,6 +244,7 @@ const KIND_ROOMS := {
 const ROOM_COLORS := {
 	"armory": Color(1.0, 0.55, 0.25), "workshop": Color(1.0, 0.78, 0.35), "garage": Color(0.95, 0.8, 0.3),
 	"ops": Color(0.75, 0.55, 1.0), "gear": Color(0.4, 0.75, 1.0), "stores": Color(0.45, 0.9, 0.6),
+	"lounge": Color(1.0, 0.6, 0.42),
 }
 
 ## Each hub shape's size (`room_size`): the ring's is across its flats.
@@ -251,6 +257,14 @@ const HUB_SIZES := {
 const RING_BEARINGS := {
 	"E2": PI / 4.0, "E1": PI / 2.0, "N2": PI * 0.75, "N1": PI * 1.25, "W1": PI * 1.5, "W2": PI * 1.75,
 }
+
+## The seventh socket's doorway on the front wall (the hall, the courtyard):
+## its middle this far in from the hub's left wall, clear of the locker.
+const FRONT_SOCKET_IN := 4.0
+## Where the corridor holds the seventh socket (the spine, the ring): how far
+## past the hub's back wall its room begins, clear of the back rooms (the
+## ring's stand out on the diagonals).
+const CORRIDOR_SOCKET_FROM := {"spine": 0.75, "ring": 7.25}
 
 ## How high the lift rack garage's upper vehicles are parked.
 const LIFT_HIGH := 2.5
@@ -379,6 +393,11 @@ class Station:
 	## Where the station's screen is: centred on it, facing out along its +Z,
 	## `HomeBase.SCREEN_SIZE` across. Whoever shows the screen mounts it here.
 	var screen: Node3D
+
+	func _init() -> void:
+		super()
+		# A console you walk up to, not through.
+		collision_layer |= Actor.LAYER_WORLD
 
 	func get_prompt() -> String:
 		var title: String = base.station_title(id) if base else str(HomeBase.STATIONS[id]["title"])
@@ -984,6 +1003,8 @@ func socket_transform(socket: String) -> Transform3D:
 ## the way out.
 func shape_socket(shape: String, socket: String) -> Transform3D:
 	var size: Vector3 = HUB_SIZES.get(shape, HUB_SIZES["hall"])
+	if socket == "F1":
+		return _lounge_socket(shape, size)
 	match shape:
 		"ring":
 			var bearing: float = RING_BEARINGS.get(socket, 0.0)
@@ -1024,6 +1045,26 @@ func shape_socket(shape: String, socket: String) -> Transform3D:
 		"N2":
 			return _spot(Vector3(back, 0, -back_z), 0.0)
 	return Transform3D.IDENTITY
+
+
+## Where the seventh socket, "F1" (the lounge's), stands in a hub of
+## `shape` that is `size` big: on the front wall left of the way out in the
+## hall and the courtyard, clear of the locker; in the spine and the ring,
+## whose front is the way out, off the left of the corridor to the range,
+## far enough down it to clear the back rooms.
+func _lounge_socket(shape: String, size: Vector3) -> Transform3D:
+	match shape:
+		"spine", "ring":
+			var x := -(corridor.x * 0.5 + 0.5)
+			return _spot(Vector3(x, 0, -(size.z * 0.5 + CORRIDOR_SOCKET_FROM[shape] + socket_size.x * 0.5)), PI / 2.0)
+	var at_x := -(size.x * 0.5 - FRONT_SOCKET_IN)
+	return _spot(Vector3(at_x, 0, size.z * 0.5 + 0.5), PI)
+
+
+## True if the seventh socket stands off the corridor in a hub of `shape`
+## (see `_lounge_socket`), not in the hub's own walls.
+static func corridor_socket(shape: String) -> bool:
+	return shape in CORRIDOR_SOCKET_FROM
 
 
 ## The hub's shape now (`BasePlan.SHAPES`).
@@ -1085,12 +1126,7 @@ func in_corridor(point: Vector3) -> bool:
 ## length behind the hub's back wall (the spine and the ring, whose rooms
 ## stand clear of it).
 func range_from() -> float:
-	match hub_shape():
-		"spine":
-			return room_size.z * 0.5 + 3.5
-		"ring":
-			return room_size.z * 0.5 + 4.0
-	return room_size.z * 0.5 + 0.5 + socket_size.z + 0.5
+	return shape_range_from(hub_shape())
 
 
 ## True if the corridor to the range needs walls of its own: no back rooms
@@ -1536,10 +1572,15 @@ func _build_rect() -> void:
 	var west: Array = []
 	var east: Array = []
 	var back: Array = [Vector2(0.0, corridor.x)]
+	var front: Array = []
 	for socket: String in BasePlan.SOCKETS:
+		if socket == "F1" and corridor_socket(hub_shape()):
+			continue
 		var xf := socket_transform(socket)
 		var inward := xf.basis.z
-		if inward.x > 0.5:
+		if inward.z < -0.5:
+			front.append(Vector2(xf.origin.x, door.x))
+		elif inward.x > 0.5:
 			west.append(Vector2(xf.origin.z, door.x))
 		elif inward.x < -0.5:
 			east.append(Vector2(xf.origin.z, door.x))
@@ -1548,8 +1589,9 @@ func _build_rect() -> void:
 	_wall_run(Vector3(-(x * 0.5 + 0.25), 0, 0), Vector3(0, 0, 1), z + 1.0, west, door.y, Vector3(1, 0, 0))
 	_wall_run(Vector3(x * 0.5 + 0.25, 0, 0), Vector3(0, 0, 1), z + 1.0, east, door.y, Vector3(-1, 0, 0))
 	_wall_run(Vector3(0, 0, -z * 0.5 - 0.25), Vector3(1, 0, 0), x, back, door.y, Vector3.BACK)
-	# The front wall, whole: the door out stands against it.
-	_wall(Vector3(x + 1.0, y, 0.5), Vector3(0, y * 0.5, z * 0.5 + 0.25), Vector3.FORWARD)
+	# The front wall: the door out stands against it, and the lounge's
+	# doorway goes through it left of the door.
+	_wall_run(Vector3(0, 0, z * 0.5 + 0.25), Vector3(1, 0, 0), x + 1.0, front, door.y, Vector3.FORWARD)
 	var lamps: Array[Vector3] = []
 	match hub_shape():
 		"spine":
@@ -1773,13 +1815,22 @@ func _build_corridor() -> void:
 	# hub with no back rooms, walls of its own.
 	for side: float in [-1.0, 1.0]:
 		var wall_at := Vector3(side * (corridor.x * 0.5 + 0.125), corridor.y * 0.5, mid.z - 0.25)
+		if side < 0.0 and corridor_socket(hub_shape()):
+			# The seventh socket's doorway goes through the left wall, which
+			# stands as high as the room behind it.
+			var gap := socket_transform("F1").origin.z - (mid.z - 0.25)
+			_wall_run(Vector3(-(corridor.x * 0.5 + 0.25), 0, mid.z - 0.25), Vector3(0, 0, 1), length - 0.5,
+					[Vector2(gap, room_door.x)], room_door.y, Vector3(1, 0, 0))
+			continue
 		if _corridor_walled():
 			_box(Vector3(0.25, corridor.y, length - 0.5), wall_at, _shell("wall"))
 		_trim(Vector3(0.25, corridor.y, length - 0.5), wall_at, Vector3(-side, 0, 0))
 	if Look.enabled:
-		var light := Look.lamp(_lit(Color(1.0, 0.94, 0.85)), 2.0, 7.0)
-		light.position = mid + Vector3(0, corridor.y - 0.5, 0)
-		add_child(light)
+		var lamps := maxi(1, int(length / 7.0))
+		for i in lamps:
+			var light := Look.lamp(_lit(Color(1.0, 0.94, 0.85)), 2.0, 7.0)
+			light.position = Vector3(0, corridor.y - 0.5, -start - length * (float(i) + 0.5) / float(lamps))
+			add_child(light)
 
 
 ## A small name plate over a doorway, on the hub's side: a dark plate with a
@@ -1830,7 +1881,14 @@ func _build_rooms() -> void:
 				_furnish_style(room, style)
 		_into = null
 		_finish = area_finish(BasePlan.HUB)
-		_keep(_name_plate(BasePlan.title(room), socket_transform(socket), ROOM_COLORS.get(room, Color.WHITE), room_door.y))
+		var plate_at := socket_transform(socket)
+		var plate_high := room_door.y
+		if socket == "F1" and corridor_socket(hub_shape()):
+			# The corridor's ceiling is no higher than the doorway: the plate
+			# goes on the wall beside it.
+			plate_at = plate_at * _spot(Vector3(room_door.x * 0.5 + 0.9, 0, 0), 0.0)
+			plate_high = 1.6
+		_keep(_name_plate(BasePlan.title(room), plate_at, ROOM_COLORS.get(room, Color.WHITE), plate_high))
 
 
 ## A room's shell in its own space, into `_into`: floor and ceiling to its
@@ -1895,6 +1953,8 @@ func _furnish_style(room: String, style: String) -> void:
 	var warm := Color(1.0, 0.85, 0.6)
 	var amber := Color(1.0, 0.62, 0.22)
 	match style:
+		"den", "bar", "quarters":
+			_furnish_lounge(style, whole)
 		"vault":
 			# The island rack down the middle, and heavy vault pillars just
 			# inside the way in.
@@ -2104,6 +2164,318 @@ func _furnish_style(room: String, style: String) -> void:
 				for z: float in [-1.5, -3.5, -5.3, -7.1, -9.1]:
 					_box(Vector3(0.1, 3.0, 0.1), Vector3(side - 0.12, 1.5, z), _shell("seal"))
 					_box(Vector3(0.1, 3.0, 0.1), Vector3(side - 0.78, 1.5, z), _shell("seal"))
+
+
+# --- The lounge (DESIGN.md "The lounge") ----------------------------------------
+# The one room for living in rather than for gear: wood and fabric under a
+# low slatted ceiling and warm lamps, in three styles. Its pieces are plain
+# shapes in shared materials, merged one mesh per material where `Look` is
+# on (`Look.merge_pieces`), with collision of their own for what you would
+# bump into. Nothing in it is a display: it shows nothing from the stash yet.
+
+const LOUNGE_WOOD := Color(0.36, 0.22, 0.13)
+const LOUNGE_WARM := Color(1.0, 0.7, 0.42)
+## How high the lounge's slatted ceiling hangs.
+const LOUNGE_CEILING := 3.9
+## The lounge's pieces' materials by colour and glow, shared so they merge.
+var _lounge_mats := {}
+## Where the lounge's pieces go while it is built.
+var _lounge_root: Node3D
+
+
+## Furnishes the lounge in `style`, whole or in its small form, into `_into`.
+func _furnish_lounge(style: String, whole: bool) -> void:
+	var depth := socket_size.z if whole else small_depth
+	_lounge_root = Node3D.new()
+	_lounge_root.name = "LoungePieces"
+	_target().add_child(_lounge_root)
+	_lounge_shell(depth)
+	match style:
+		"bar":
+			_lounge_bar(whole)
+		"quarters":
+			_lounge_quarters(whole)
+		_:
+			_lounge_den(whole)
+	if Look.enabled:
+		Look.merge_pieces(_lounge_root)
+	_lounge_root = null
+
+
+## The warm shell over the room's steel: a plank floor, a slatted ceiling
+## with a lit cove round it, and warm lamps under it.
+func _lounge_shell(depth: float) -> void:
+	var w := socket_size.x
+	var mid := -depth * 0.5
+	var planks := int(w / 0.525)
+	for i in planks:
+		var tone := LOUNGE_WOOD.darkened(0.05 * float(i % 3))
+		_piece(Vector3(0.52, 0.02, depth - 0.1), Vector3(-w * 0.5 + 0.26 + i * 0.525, 0.012, mid), tone)
+	var y := LOUNGE_CEILING
+	_piece(Vector3(w - 0.1, 0.06, depth - 0.1), Vector3(0, y + 0.3, mid), Color(0.08, 0.07, 0.06))
+	var slats := int((w - 1.2) / 0.56)
+	for i in slats:
+		_piece(Vector3(0.16, 0.08, depth - 1.2), Vector3(-(slats - 1) * 0.28 + i * 0.56, y, mid), LOUNGE_WOOD.lightened(0.1))
+	for side: float in [-1.0, 1.0]:
+		_piece(Vector3(0.06, 0.05, depth - 0.6), Vector3(side * (w * 0.5 - 0.2), y - 0.1, mid), LOUNGE_WARM, 0.0, true)
+	_piece(Vector3(w - 0.6, 0.05, 0.06), Vector3(0, y - 0.1, -depth + 0.25), LOUNGE_WARM, 0.0, true)
+	if Look.enabled:
+		for at_z: float in ([-2.6, -7.0] if depth > 6.0 else [-2.5]):
+			var light := Look.lamp(_lit(LOUNGE_WARM), 1.6, 7.0)
+			light.position = Vector3(0, y - 0.4, at_z)
+			_target().add_child(light)
+
+
+## The den: a sofa round a rug and a low table, a floor lamp and plants; the
+## whole room adds the second sofa, a sideboard and the window.
+func _lounge_den(whole: bool) -> void:
+	var fabric := Color(0.42, 0.3, 0.24)
+	if not whole:
+		_lounge_rug(Vector3(-1.4, 0, -2.6), Vector2(3.0, 2.6), Color(0.45, 0.2, 0.16))
+		_lounge_sofa(Vector3(-3.9, 0, -2.6), PI / 2.0, 3, fabric)
+		_lounge_table(Vector3(-1.9, 0, -2.6), Vector3(0.7, 0.36, 1.2))
+		_lounge_lamp(Vector3(-3.9, 0, -4.4))
+		_lounge_plant(Vector3(3.9, 0, -4.3), 1.1)
+		return
+	_lounge_window(7.0, 2.4, 0.8, 0.0)
+	_lounge_rug(Vector3(-1.6, 0, -5.3), Vector2(3.4, 4.0), Color(0.45, 0.2, 0.16))
+	_lounge_sofa(Vector3(0.3, 0, -5.4), -PI / 2.0, 3, fabric)
+	_lounge_sofa(Vector3(-1.8, 0, -7.6), 0.0, 2, fabric)
+	_lounge_table(Vector3(-1.8, 0, -5.3), Vector3(0.7, 0.36, 1.2))
+	# The sideboard along the left wall (the screen goes over it later).
+	_piece(Vector3(0.45, 0.5, 3.6), Vector3(-4.45, 0.25, -5.3), LOUNGE_WOOD, 0.0, false, true)
+	# A record deck on a low cabinet by the way in.
+	_piece(Vector3(0.5, 0.8, 2.0), Vector3(4.4, 0.4, -3.0), LOUNGE_WOOD, 0.0, false, true)
+	_piece(Vector3(0.36, 0.02, 0.36), Vector3(4.4, 0.81, -3.3), Color(0.05, 0.05, 0.05))
+	_piece(Vector3(0.3, 0.6, 0.4), Vector3(4.45, 1.1, -2.3), Color(0.12, 0.1, 0.09))
+	_piece(Vector3(0.3, 0.6, 0.4), Vector3(4.45, 1.1, -3.7), Color(0.12, 0.1, 0.09))
+	_lounge_lamp(Vector3(1.0, 0, -8.2))
+	_lounge_plant(Vector3(3.8, 0, -8.7), 1.3)
+	_lounge_plant(Vector3(-3.9, 0, -8.8), 1.1)
+
+
+## The bar: a counter down the right wall with stools and lit bottle shelves
+## behind it; the whole room adds a booth round a table under the window.
+func _lounge_bar(whole: bool) -> void:
+	var side := socket_size.x * 0.5
+	var length := 6.0 if whole else 3.4
+	var mid := -5.0 if whole else -2.6
+	_piece(Vector3(0.7, 1.05, length), Vector3(side - 1.6, 0.525, mid), LOUNGE_WOOD, 0.0, false, true)
+	_piece(Vector3(0.85, 0.06, length + 0.2), Vector3(side - 1.6, 1.08, mid), Color(0.12, 0.1, 0.09))
+	_piece(Vector3(0.05, 0.04, length), Vector3(side - 1.98, 0.15, mid), LOUNGE_WARM, 0.0, true)
+	var stools := int(length / 1.2)
+	for k in stools:
+		var z := mid + length * 0.5 - 0.6 - k * 1.2
+		_lounge_round(0.2, 0.06, Vector3(side - 2.35, 0.75, z), Color(0.4, 0.2, 0.15))
+		_lounge_round(0.03, 0.75, Vector3(side - 2.35, 0.37, z), Color(0.15, 0.13, 0.1))
+	_piece(Vector3(0.35, 2.4, length), Vector3(side - 0.2, 1.6, mid), Color(0.07, 0.06, 0.05))
+	var tints := [Color(0.5, 0.3, 0.1), Color(0.2, 0.4, 0.2), Color(0.6, 0.55, 0.4), Color(0.25, 0.2, 0.4)]
+	for level: float in [1.3, 1.85, 2.4]:
+		_piece(Vector3(0.36, 0.04, length - 0.2), Vector3(side - 0.4, level, mid), LOUNGE_WARM, 0.0, true)
+		var bottles := int((length - 0.6) / 0.34)
+		for b in bottles:
+			_lounge_round(0.045, 0.28 + 0.06 * float(b % 3), Vector3(side - 0.42, level + 0.17,
+					mid - (length - 0.6) * 0.5 + 0.17 + b * 0.34), tints[b % 4], true)
+	for k in stools:
+		var z := mid + length * 0.5 - 0.9 - k * 1.2
+		_lounge_round(0.12, 0.2, Vector3(side - 1.6, 2.6, z), LOUNGE_WARM, true)
+		_lounge_round(0.008, 1.1, Vector3(side - 1.6, 3.25, z), Color(0.1, 0.1, 0.1))
+	if not whole:
+		_lounge_plant(Vector3(-3.9, 0, -4.3), 1.1)
+		_lounge_sofa(Vector3(-3.9, 0, -2.6), PI / 2.0, 2, Color(0.45, 0.15, 0.13))
+		return
+	_lounge_window(5.0, 2.2, 1.0, -1.6)
+	_lounge_sofa(Vector3(-2.6, 0, -8.7), 0.0, 3, Color(0.45, 0.15, 0.13))
+	_lounge_sofa(Vector3(-4.05, 0, -6.9), PI / 2.0, 2, Color(0.45, 0.15, 0.13))
+	_lounge_rug(Vector3(-2.5, 0, -7.2), Vector2(3.0, 3.0), Color(0.22, 0.18, 0.15))
+	_lounge_round(0.55, 0.05, Vector3(-2.5, 0.75, -7.2), LOUNGE_WOOD.lightened(0.15))
+	_lounge_round(0.05, 0.75, Vector3(-2.5, 0.37, -7.2), Color(0.15, 0.13, 0.1))
+	_lounge_solid(Vector3(1.1, 0.8, 1.1), Vector3(-2.5, 0.4, -7.2))
+	# A jukebox by the way in.
+	_piece(Vector3(0.6, 1.5, 0.9), Vector3(-3.9, 0.75, -0.9), Color(0.3, 0.12, 0.1), 0.0, false, true)
+	_piece(Vector3(0.05, 0.9, 0.7), Vector3(-3.58, 0.9, -0.9), Color(0.3, 0.9, 1.0), 0.0, true)
+	_piece(Vector3(0.62, 0.2, 0.92), Vector3(-3.9, 1.6, -0.9), Color(1.0, 0.55, 0.2), 0.0, true)
+	_lounge_plant(Vector3(-0.2, 0, -8.8), 1.2)
+
+
+## Quarters: a bunk in a curtained alcove on the right wall with a reading
+## light and a footlocker; the whole room adds a desk under the window, a
+## small sofa and a lamp.
+func _lounge_quarters(whole: bool) -> void:
+	var side := socket_size.x * 0.5
+	var mid := -6.65 if whole else -2.75
+	var shell := Color(0.18, 0.16, 0.14)
+	for end: float in [1.35, -1.35]:
+		_piece(Vector3(1.4, 2.6, 0.12), Vector3(side - 0.7, 1.3, mid + end), shell, 0.0, false, true)
+	_piece(Vector3(1.4, 0.12, 2.8), Vector3(side - 0.7, 2.6, mid), shell)
+	_piece(Vector3(1.2, 0.5, 2.6), Vector3(side - 0.7, 0.25, mid), Color(0.12, 0.1, 0.09), 0.0, false, true)
+	_piece(Vector3(1.15, 0.18, 2.5), Vector3(side - 0.7, 0.59, mid), Color(0.75, 0.72, 0.65))
+	_piece(Vector3(1.0, 0.2, 0.5), Vector3(side - 0.7, 0.76, mid - 0.95), Color(0.85, 0.82, 0.75))
+	_piece(Vector3(1.17, 0.08, 1.5), Vector3(side - 0.7, 0.72, mid + 0.45), Color(0.2, 0.3, 0.36))
+	_piece(Vector3(0.04, 0.04, 2.6), Vector3(side - 1.38, 2.45, mid), LOUNGE_WARM, 0.0, true)
+	for k in 7:
+		_piece(Vector3(0.06, 2.3, 0.22), Vector3(side - 1.42 + 0.06 * float(k % 2), 1.25, mid + 1.15 - k * 0.18),
+				Color(0.3, 0.32, 0.28), 0.5 if k % 2 == 0 else -0.5)
+	_piece(Vector3(0.6, 0.45, 1.0), Vector3(side - 1.9, 0.225, mid - 0.75), Color(0.25, 0.3, 0.22), 0.0, false, true)
+	if Look.enabled:
+		var light := Look.lamp(_lit(LOUNGE_WARM), 1.0, 2.6)
+		light.position = Vector3(side - 0.7, 2.2, mid)
+		_target().add_child(light)
+	if not whole:
+		_lounge_plant(Vector3(-3.9, 0, -4.3), 1.0)
+		_lounge_lamp(Vector3(-3.9, 0, -1.2))
+		return
+	_lounge_window(3.6, 2.0, 1.0, -2.4)
+	_piece(Vector3(1.8, 0.06, 0.8), Vector3(0.9, 0.76, -9.1), LOUNGE_WOOD.lightened(0.1))
+	_lounge_solid(Vector3(1.8, 0.8, 0.8), Vector3(0.9, 0.4, -9.1))
+	for x: float in [0.1, 1.7]:
+		_piece(Vector3(0.06, 0.76, 0.7), Vector3(x, 0.38, -9.1), Color(0.15, 0.13, 0.1))
+	_piece(Vector3(0.8, 0.5, 0.04), Vector3(1.1, 1.1, -9.4), Color(0.3, 0.6, 0.8), 0.0, true)
+	_piece(Vector3(0.55, 0.45, 0.55), Vector3(0.9, 0.45, -8.4), Color(0.2, 0.18, 0.16), 0.0, false, true)
+	_lounge_rug(Vector3(-2.0, 0, -5.2), Vector2(3.0, 2.4), Color(0.25, 0.32, 0.36))
+	_lounge_sofa(Vector3(-3.9, 0, -5.2), PI / 2.0, 2, Color(0.2, 0.3, 0.36))
+	_lounge_table(Vector3(-2.4, 0, -5.2), Vector3(0.7, 0.4, 0.7))
+	_lounge_lamp(Vector3(-3.9, 0, -3.6))
+	_lounge_plant(Vector3(-3.9, 0, -8.8), 1.0)
+
+
+## A box of the lounge in its own space: `yaw` turns it about its middle.
+## `solid` gives it collision too.
+func _piece(size: Vector3, at: Vector3, color: Color, yaw := 0.0, glow := false, solid := false) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	return _lounge_mesh(mesh, at, color, yaw, glow, size if solid else Vector3.ZERO)
+
+
+## An upright cylinder of the lounge (a stool, a pole, a bottle).
+func _lounge_round(radius: float, height: float, at: Vector3, color: Color, glow := false) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = height
+	mesh.radial_segments = 12
+	mesh.rings = 1
+	return _lounge_mesh(mesh, at, color, 0.0, glow, Vector3.ZERO)
+
+
+func _lounge_mesh(mesh: PrimitiveMesh, at: Vector3, color: Color, yaw: float, glow: bool, solid: Vector3) -> MeshInstance3D:
+	var key := "%s:%s" % [color.to_html(), glow]
+	if not _lounge_mats.has(key):
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = color
+		mat.roughness = 0.6
+		if glow:
+			mat.emission_enabled = true
+			mat.emission = color
+			mat.emission_energy_multiplier = 2.2
+		_lounge_mats[key] = mat
+	mesh.material = _lounge_mats[key]
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.position = at
+	node.rotation.y = yaw
+	if glow:
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	(_lounge_root if _lounge_root != null else _target()).add_child(node)
+	if solid != Vector3.ZERO:
+		_lounge_solid(solid, at, yaw)
+	return node
+
+
+## Collision with nothing drawn: what the player bumps into.
+func _lounge_solid(size: Vector3, at: Vector3, yaw := 0.0) -> void:
+	var body := StaticBody3D.new()
+	body.collision_layer = Actor.LAYER_WORLD
+	body.collision_mask = 0
+	body.position = at
+	body.rotation.y = yaw
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	body.add_child(col)
+	_target().add_child(body)
+
+
+## A sofa of `seats` places, its back to local -Z turned by `yaw`, so it
+## faces +Z turned by `yaw`.
+func _lounge_sofa(at: Vector3, yaw: float, seats: int, color: Color) -> void:
+	var w := 0.85 * float(seats)
+	var turn := Basis(Vector3.UP, yaw)
+	var place := func(local: Vector3) -> Vector3: return at + turn * local
+	_piece(Vector3(w + 0.3, 0.22, 0.95), place.call(Vector3(0, 0.16, 0)), Color(0.1, 0.09, 0.08), yaw)
+	_lounge_solid(Vector3(w + 0.3, 0.8, 0.95), place.call(Vector3(0, 0.4, 0)), yaw)
+	for s in seats:
+		var x := -w * 0.5 + 0.425 + s * 0.85
+		_piece(Vector3(0.82, 0.18, 0.78), place.call(Vector3(x, 0.36, 0.05)), color, yaw)
+		_piece(Vector3(0.8, 0.5, 0.2), place.call(Vector3(x, 0.66, -0.36)), color, yaw)
+	for end: float in [-1.0, 1.0]:
+		_piece(Vector3(0.16, 0.42, 0.95), place.call(Vector3(end * (w * 0.5 + 0.08), 0.48, 0)), color, yaw)
+	_piece(Vector3(0.5, 0.36, 0.14), place.call(Vector3(-w * 0.5 + 0.4, 0.62, -0.2)), Color(0.75, 0.6, 0.35), yaw + 0.25)
+
+
+func _lounge_table(at: Vector3, size: Vector3) -> void:
+	_piece(size, at + Vector3(0, size.y * 0.5, 0), LOUNGE_WOOD.lightened(0.1), 0.0, false, true)
+
+
+func _lounge_rug(at: Vector3, size: Vector2, color: Color) -> void:
+	_piece(Vector3(size.x, 0.02, size.y), at + Vector3(0, 0.03, 0), color)
+	_piece(Vector3(size.x - 0.3, 0.021, size.y - 0.3), at + Vector3(0, 0.032, 0), color.lightened(0.15))
+
+
+## A standing lamp with a lit shade and its light.
+func _lounge_lamp(at: Vector3) -> void:
+	var metal := Color(0.15, 0.13, 0.1)
+	_lounge_round(0.02, 1.5, at + Vector3(0, 0.75, 0), metal)
+	_lounge_round(0.2, 0.04, at + Vector3(0, 0.02, 0), metal)
+	var shade := CylinderMesh.new()
+	shade.top_radius = 0.12
+	shade.bottom_radius = 0.24
+	shade.height = 0.3
+	shade.radial_segments = 12
+	shade.rings = 1
+	_lounge_mesh(shade, at + Vector3(0, 1.55, 0), Color(1.0, 0.82, 0.6), 0.0, true, Vector3.ZERO)
+	if Look.enabled:
+		var light := Look.lamp(_lit(LOUNGE_WARM), 1.2, 4.5)
+		light.position = at + Vector3(0, 1.45, 0)
+		_target().add_child(light)
+
+
+## A potted plant: a pot and a spray of blades.
+func _lounge_plant(at: Vector3, scale: float) -> void:
+	_lounge_round(0.22 * scale, 0.45 * scale, at + Vector3(0, 0.225 * scale, 0), Color(0.2, 0.19, 0.18))
+	var leaf := Color(0.2, 0.45, 0.22)
+	for k in 12:
+		var blade := _piece(Vector3(0.12, 0.7 * scale, 0.02), Vector3.ZERO, leaf)
+		blade.rotation = Vector3(0.0, k * 2.4, 0.35 + 0.35 * float(k % 3))
+		blade.position = at + Vector3(0, 0.45 * scale, 0) + blade.basis.y * 0.35 * scale
+
+
+## The window on the back wall: a frame, and where `Look` is on, a view out
+## (`assets/shaders/lounge_view.gdshader`, one panorama, never a world).
+func _lounge_window(width: float, high: float, sill: float, x: float) -> void:
+	var z := -socket_size.z + 0.02
+	var frame := Color(0.12, 0.11, 0.1)
+	_piece(Vector3(width + 0.3, 0.18, 0.3), Vector3(x, sill - 0.05, z + 0.13), frame)
+	_piece(Vector3(width + 0.3, 0.18, 0.3), Vector3(x, sill + high + 0.05, z + 0.13), frame)
+	for k in 4:
+		_piece(Vector3(0.1, high, 0.2), Vector3(x - width * 0.5 + width * k / 3.0, sill + high * 0.5, z + 0.08), frame)
+	if not Look.enabled:
+		return
+	var view := MeshInstance3D.new()
+	view.name = "WindowView"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(width, high)
+	view.mesh = quad
+	var shader := ShaderMaterial.new()
+	shader.shader = load("res://assets/shaders/lounge_view.gdshader")
+	view.material_override = shader
+	view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	view.position = Vector3(x, sill + high * 0.5, z)
+	_target().add_child(view)
+	var spill := Look.lamp(Color(1.0, 0.62, 0.4), 1.4, 6.0)
+	spill.position = Vector3(x, sill + high * 0.6, z + 1.2)
+	_target().add_child(spill)
 
 
 ## A see-through pane `size` big centred on `at`: a case's glass.
@@ -2877,6 +3249,8 @@ func _add_bulkhead(id: String, where: Transform3D, style: String, size := Vector
 				for side: float in [-1.0, 1.0]:
 					gate.add_child(_part(Vector3(1.6, 0.055, 0.08), Vector3(0, 0.03, 1.3 + side * 0.76), accent, true))
 					gate.add_child(_part(Vector3(0.08, 0.055, 1.6), Vector3(side * 0.76, 0.03, 1.3), accent, true))
+			# A post you walk round, not through.
+			gate.collision_layer = Actor.LAYER_WORLD | Actor.LAYER_INTERACT
 			gate.add_child(_part(Vector3(0.24, 1.0, 0.24), Vector3(0, 0.5, 0), dark))
 			gate.add_child(_part(Vector3(0.06, 1.0, 0.02), Vector3(0, 0.5, 0.125), accent, true))
 			s = 0.5
@@ -3722,11 +4096,9 @@ func socket_outline(shape: String, socket: String) -> PackedVector2Array:
 ## `range_from`).
 func shape_range_from(shape: String) -> float:
 	var size: Vector3 = HUB_SIZES.get(shape, HUB_SIZES["hall"])
-	match shape:
-		"spine":
-			return size.z * 0.5 + 3.5
-		"ring":
-			return size.z * 0.5 + 4.0
+	if corridor_socket(shape):
+		# Past the seventh socket's room off the corridor.
+		return size.z * 0.5 + CORRIDOR_SOCKET_FROM[shape] + socket_size.x + 1.0
 	return size.z * 0.5 + 0.5 + socket_size.z + 0.5
 
 

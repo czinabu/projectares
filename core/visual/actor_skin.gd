@@ -2122,7 +2122,7 @@ func _build_creature(kind: String) -> void:
 					_piece(big, "Eye", ball, glow, at + Vector3(side * 0.12, 0.08, -0.1) * h / 1.6, Vector3(0.09, 0.08, 0.09) * h / 1.6)
 				_hang_at(big, "CreatureEyes", "Head", Vector3.ZERO)
 			_creature_legs(hide, Vector2(0.11, 0.13), bone)
-		"shellback":
+		"shellback", "elder":
 			var dome := Node3D.new()
 			var mid := body.y * 0.82
 			_piece(dome, "Shell", ball, hide, Vector3(0, mid + 0.1 * h, 0), Vector3(1.5, 0.95, 1.9) * h / 1.6)
@@ -2177,8 +2177,10 @@ func _build_creature(kind: String) -> void:
 				_piece(growth, "Cap", ball, cap_mat, spot + Vector3(0, tall, 0), Vector3(0.16, 0.05, 0.16) * h / 1.6)
 				_piece(growth, "CapGills", ball, soft_glow, spot + Vector3(0, tall - 0.012 * h, 0), Vector3(0.13, 0.02, 0.13) * h / 1.6)
 			_hang_at(growth, "CreatureGrowth", "Torso", Vector3.ZERO)
+			if kind == "elder":
+				_shellback_elder(at, mid, h / 1.6, ball, tube, horn, hide, dark, bone, soft_glow)
 			_creature_legs(dark, Vector2(0.24, 0.26), bone)
-		"lurker":
+		"lurker", "drowned":
 			# Long and flat, made to lie in the water: a broad, low trunk, a
 			# wide flat skull with a jaw half its length, a lit lure hung
 			# over the snout on a stalk and a heavy tail.
@@ -2219,8 +2221,10 @@ func _build_creature(kind: String) -> void:
 				var root_at := at + Vector3((b - 1.5) * 0.12, -0.12, -0.3 + absf(b - 1.5) * 0.08) * k
 				_strand(skull, "Barbel", tube, dark, root_at, root_at + Vector3((b - 1.5) * 0.05, -0.13, -0.08) * k, 0.016 * k)
 			_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
+			if kind == "drowned":
+				_drowned_lurker(at, low, k, ball, tube, horn, hide, dark, bone, glow, soft_glow)
 			_creature_legs(dark, Vector2(0.15, 0.17), bone)
-		"keeper":
+		"keeper", "brood_mother":
 			# The brood's keeper: a hunched giant of the stalkers' kind,
 			# its back heaped with lit egg sacs, long arms ending in hooks.
 			var k := h / 2.4
@@ -2264,6 +2268,8 @@ func _build_creature(kind: String) -> void:
 							shoulder + Vector3(side * 0.08 + (c - 1) * 0.05, -0.72, -0.3) * k, Vector3(0.04, 0.26, 0.04) * k)
 					hook.rotation.x = -2.0
 				_hang_at(arm, "Foreclaw" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
+			if kind == "brood_mother":
+				_brood_mother(trunk, skull, mid, k, ball, tube, horn, hide, fan, soft_glow, bone)
 			_creature_legs(hide, Vector2(0.2, 0.22), bone)
 		"bloater":
 			var sac := Node3D.new()
@@ -2305,6 +2311,166 @@ func _build_creature(kind: String) -> void:
 			_creature_legs(dark, Vector2(0.14, 0.16), bone)
 
 
+## A brood mother (a keeper's body grown old and huge, `Look.SKINS`
+## A lurker grown old in the deep (the look "drowned_lurker", creature
+## "drowned"): a crown of three more lures on stalks over its skull, a
+## ridge of jagged bony plates down its back, weed hanging in beards from
+## its jaw and flanks, glowcaps grown on it like barnacles, and old roots it
+## dragged down with it still stuck through its back. Built on the lurker's
+## own pieces (`k` its scale).
+func _drowned_lurker(at: Vector3, low: float, k: float, ball: SphereMesh, tube: CylinderMesh,
+		horn: CylinderMesh, _hide: Material, dark: Material, bone: Material, glow: Material, soft_glow: Material) -> void:
+	var head := Node3D.new()
+	var back := Node3D.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 67
+	var weed := _creature_hide(Color(0.1, 0.16, 0.1), 0.0, 0.2)
+	var wood := _creature_hide(Color(0.24, 0.18, 0.15), 0.02, 0.25)
+	# A crown of lures: three stalks fanned over the skull.
+	for i in 3:
+		var side := float(i - 1)
+		var root_at := at + Vector3(side * 0.18, 0.1, 0.12) * k
+		var tip := root_at + Vector3(side * 0.28, 0.42 - absf(side) * 0.1, -0.3) * k
+		_strand(head, "Crown", tube, dark, root_at, tip, 0.03 * k)
+		_piece(head, "CrownLure", ball, glow, tip, Vector3.ONE * 0.08 * k)
+	# Weed in beards from the jaw.
+	for i in 6:
+		var from := at + Vector3(rng.randf_range(-0.28, 0.28), -0.14, rng.randf_range(-0.35, 0.1)) * k
+		_strand(head, "Weed", tube, weed, from, from + Vector3(rng.randf_range(-0.05, 0.05), -rng.randf_range(0.2, 0.4), 0.05) * k, 0.025 * k)
+	# Bony plates down the back, glowcap barnacles and weed on the flanks.
+	for i in 8:
+		var z := (-0.6 + i * 0.22) * k
+		var plate := _piece(back, "BackPlate", horn, bone, Vector3(0, low + 0.2 * k, z), Vector3(0.1, 0.22 - absf(i - 3.5) * 0.02, 0.1) * k)
+		plate.rotation.x = 0.4
+	for i in 10:
+		var spot := Vector3(rng.randf_range(-0.32, 0.32), low + 0.14 * k, rng.randf_range(-0.6, 0.9) * k)
+		spot.x *= k
+		_piece(back, "Barnacle", ball, soft_glow, spot, Vector3(0.09, 0.05, 0.09) * k)
+	for side: float in [-1.0, 1.0]:
+		for i in 4:
+			var from := Vector3(side * 0.4 * k, low - 0.02 * k, (-0.5 + i * 0.4) * k)
+			_strand(back, "FlankWeed", tube, weed, from, from + Vector3(side * 0.05, -0.25, 0.08) * k, 0.03 * k)
+	# Old roots dragged down with it, stuck through its back.
+	for i in 3:
+		var from := Vector3(rng.randf_range(-0.2, 0.2) * k, low, rng.randf_range(-0.3, 0.7) * k)
+		var to := from + Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.5, 0.8), rng.randf_range(0.1, 0.4)) * k
+		_strand(back, "StuckRoot", tube, wood, from, to, 0.06 * k)
+		_piece(back, "RootEnd", ball, wood, to, Vector3.ONE * 0.08 * k)
+	_hang_at(head, "DrownedCrown", "Head", Vector3.ZERO)
+	_hang_at(back, "DrownedBack", "Torso", Vector3.ZERO)
+
+
+## What an old shellback grows into (the look "shellback_elder", creature
+## "elder"): a ram of horn over its brow, two great horns swept forward, a
+## ridge of jagged plates down the dome, a garden of fungus and hanging moss
+## on its back and pale scars on its front. Built on the shellback's own
+## pieces (`k` its scale), so its soft rear still shows.
+func _shellback_elder(at: Vector3, mid: float, k: float, ball: SphereMesh,
+		tube: CylinderMesh, horn: CylinderMesh, hide: Material, dark: Material, bone: Material, soft_glow: Material) -> void:
+	var face := Node3D.new()
+	var dome := Node3D.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 53
+	var old_bone := _solid(Color(0.66, 0.6, 0.48), 0.0)
+	old_bone.metallic = 0.0
+	old_bone.roughness = 0.9
+	# The ram: a thick shield of horn over the brow, scarred pale.
+	_piece(face, "Ram", ball, old_bone, at + Vector3(0, 0.2, -0.12) * k, Vector3(0.82, 0.34, 0.5) * k)
+	for i in 5:
+		var scar := _piece(face, "Scar", ball, bone, at + Vector3(rng.randf_range(-0.3, 0.3), 0.3, -0.34) * k,
+				Vector3(0.05, 0.03, 0.18) * k)
+		scar.rotation = Vector3(0.3, rng.randf_range(-0.6, 0.6), rng.randf_range(-0.4, 0.4))
+	# Two great horns, out from the ram and swept forward, in segments.
+	for side: float in [-1.0, 1.0]:
+		var points: Array[Vector3] = []
+		for seg in 6:
+			var t := seg / 5.0
+			points.append(at + Vector3(side * (0.32 + 0.38 * t), 0.24 + 0.32 * sin(t * 2.4), -0.1 - 0.62 * t) * k)
+		for seg in 5:
+			_strand(face, "Horn", horn if seg == 4 else tube, old_bone, points[seg], points[seg + 1],
+					(0.11 - seg * 0.018) * k)
+	# A ridge of jagged plates down the dome's spine.
+	for i in 6:
+		var pz := -0.65 + i * 0.26
+		var up := 0.475 * sqrt(maxf(0.0, 1.0 - pow(pz / 0.95, 2.0)))
+		var spike := _piece(dome, "Ridge", horn, dark, Vector3(0, mid + 0.1 * 1.6 * k + (up + 0.08) * k, pz * k),
+				Vector3(0.16, 0.3 - absf(pz) * 0.12, 0.12) * k)
+		spike.rotation.x = 0.35
+	# A garden on its back: fungus stalks with lit gills, and moss hanging
+	# in beards from the skirt.
+	var moss := _creature_hide(Color(0.22, 0.27, 0.13), 0.0, 0.2)
+	var cap_mat := _creature_hide(Color(0.5, 0.36, 0.3), 0.25, 0.5)
+	for i in 7:
+		var px := rng.randf_range(-0.55, 0.55)
+		var pz := rng.randf_range(-0.3, 0.6)
+		var up := 0.475 * sqrt(maxf(0.0, 1.0 - pow(px / 0.75, 2.0) - pow(pz / 0.95, 2.0)))
+		var spot := Vector3(px, 0.1 * 1.6 + up, pz) * k + Vector3(0, mid, 0)
+		var tall := rng.randf_range(0.25, 0.5) * k
+		_strand(dome, "GardenStem", tube, bone, spot, spot + Vector3(rng.randf_range(-0.05, 0.05) * k, tall, 0), 0.04 * k)
+		var wide := rng.randf_range(0.2, 0.34) * k
+		_piece(dome, "GardenCap", ball, cap_mat, spot + Vector3(0, tall, 0), Vector3(wide, wide * 0.3, wide))
+		_piece(dome, "GardenGills", ball, soft_glow, spot + Vector3(0, tall - 0.02 * k, 0), Vector3(wide, wide * 0.12, wide) * 0.85)
+	for i in 14:
+		var a := rng.randf() * TAU
+		if absf(sin(a)) < 0.25 and cos(a) > 0.0:
+			continue
+		var rim := Vector3(sin(a) * 0.78, -0.02, cos(a) * 0.98) * k + Vector3(0, mid - 0.05 * 1.6 * k, 0)
+		var hang := rng.randf_range(0.15, 0.35) * k
+		_strand(dome, "Beard", tube, moss, rim, rim + Vector3(0, -hang, 0), 0.05 * k)
+	_piece(dome, "Hide", ball, hide, Vector3(0, mid - 0.1 * k, 0), Vector3(1.3, 0.3, 1.7) * k)
+	_hang_at(face, "ElderRam", "Head", Vector3.ZERO)
+	_hang_at(dome, "ElderBack", "Torso", Vector3.ZERO)
+
+
+## "brood_mother"): a swollen abdomen dragging behind, studded with lit eggs
+## and veined with glow, woody roots grown out of her back and arching down
+## to the ground behind her, and a crown of root horns swept back from the
+## skull. Pieces hang on the keeper's own trunk and skull.
+func _brood_mother(trunk: Node3D, skull: Node3D, mid: float, k: float, ball: SphereMesh, tube: CylinderMesh,
+		horn: CylinderMesh, hide: Material, membrane: Material, soft_glow: Material, bone: Material) -> void:
+	var wood := _creature_hide(Color(0.24, 0.18, 0.15), 0.02, 0.25)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 41
+	var belly := Vector3(0, mid - 0.05 * k, 1.05 * k)
+	var size := Vector3(1.05, 0.95, 1.6) * k
+	_piece(trunk, "Abdomen", ball, membrane, belly, size)
+	_piece(trunk, "AbdomenUnder", ball, hide, belly + Vector3(0, -0.12, 0.05) * k, size * Vector3(0.9, 0.7, 0.95))
+	# Eggs bulging through the abdomen's skin, and veins of glow over it.
+	for i in 16:
+		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.2, 1), rng.randf_range(-0.6, 1)).normalized()
+		_piece(trunk, "Egg", ball, soft_glow, belly + dir * size * 0.47, Vector3.ONE * rng.randf_range(0.14, 0.24) * k)
+	for i in 6:
+		var a := -0.9 + i * 0.36
+		var points: Array[Vector3] = []
+		for seg in 5:
+			var t := -0.9 + seg * 0.45
+			points.append(belly + Vector3(sin(a) * cos(t), sin(t) * 0.8 + 0.25, cos(a) * cos(t) * 0.9).normalized() * size * 0.5)
+		for seg in 4:
+			_strand(trunk, "Vein", tube, soft_glow, points[seg], points[seg + 1], 0.02 * k)
+	# Roots grown out of her back, arching up and down to the ground.
+	for i in 6:
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var spread := 0.25 + float(i >> 1) * 0.3
+		var from := Vector3(side * 0.18 * k, mid + 0.4 * k, (0.1 + float(i >> 1) * 0.35) * k)
+		var peak := from + Vector3(side * spread * 0.6, 0.55 + rng.randf() * 0.25, 0.3) * k
+		var foot := Vector3(side * (0.7 + spread) * k, 0.05, (0.6 + float(i >> 1) * 0.55) * k)
+		var points: Array[Vector3] = []
+		for seg in 7:
+			var t := seg / 6.0
+			points.append(from.lerp(peak, t).lerp(peak.lerp(foot, t), t))
+		for seg in 6:
+			_strand(trunk, "Root", tube, wood, points[seg], points[seg + 1], lerpf(0.09, 0.04, seg / 6.0) * k)
+	# A crown of root horns swept back from the skull.
+	var at := Vector3(0, mid + 0.06 * k, -0.78 * k)
+	for i in 5:
+		var x := (i - 2) * 0.09
+		var base := at + Vector3(x, 0.2, 0.05) * k
+		var tip := base + Vector3(x * 1.5, 0.3 - absf(x) * 0.6, 0.45) * k
+		_strand(skull, "Crown", tube, wood, base, base.lerp(tip, 0.6), 0.045 * k)
+		var point := _piece(skull, "CrownTip", horn, bone, base.lerp(tip, 0.8), Vector3(0.05, 0.22, 0.05) * k)
+		point.rotation.x = 1.2
+
+
 ## A beast's two legs down the skeleton's own (thigh, shank and foot), with
 ## claws on the foot.
 func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
@@ -2344,7 +2510,8 @@ func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
 
 ## How many of a beast's hide cells carry a lit freckle, by kind.
 const CREATURE_FRECKLES := {
-	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
+	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "elder": 0.03, "drowned": 0.16, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
+	"brood_mother": 0.12,
 }
 
 

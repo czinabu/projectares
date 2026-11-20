@@ -137,6 +137,13 @@ func carry_at(at: Vector3) -> float:
 	return lerpf(1.0, floor_share, strength_at(at))
 
 
+## How fast a gun fouls at `at`, as a share of the world's usual
+## (`WorldDef.weather_fouling`; 1 in clear air).
+func fouling_at(at: Vector3) -> float:
+	var most := _world.weather_fouling if _world != null else 1.0
+	return lerpf(1.0, most, strength_at(at))
+
+
 ## How much faster body heat drains at `at` (1 in clear air).
 func cold_at(at: Vector3) -> float:
 	var most := _world.weather_cold if _world != null else 1.0

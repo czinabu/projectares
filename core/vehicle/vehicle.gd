@@ -26,7 +26,7 @@ signal dismounted(actor: Actor)
 
 ## Physics layer 4, "vehicles". Bullets and the camera ignore it, so the rider
 ## stays exposed and the camera never snaps in against the bike.
-const LAYER_VEHICLES := 8
+const LAYER_VEHICLES := Actor.LAYER_VEHICLES
 
 var item_id := ""
 var display_name := "Vehicle"

@@ -103,7 +103,7 @@ static func run(t: Node) -> void:
 	p = raid.player
 	t.check(p.ability.enabled and p.ability.effect == "blink" and "chip_blink" in p.gear_items,
 			"an ability item equips into the ability slot")
-	var arena := raid.depots[0].global_position
+	var arena: Vector3 = t._open_ground(raid)
 	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD

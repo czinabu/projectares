@@ -171,7 +171,8 @@ date in the same PR.
   start together), so a game trusts them all after the first.
 - Travel hides its wait (DESIGN.md section 14): the game connects and
   signs in ahead with a second `NetSession` (`ahead`, `Main._tick_ahead`,
-  `_trip_ahead` says where a doorway, an open portal or a sign-out leads)
+  `_trip_ahead` says where a doorway, an open portal or a sign-out leads;
+  a sign-out through a portal out of a world leads where that portal does)
   and the trip adopts it (`Main._take_ahead` in `_try_join`). A session
   that is ahead never shows anything, never deploys and is never given a
   body: the server reclaims a body left standing only at the join
@@ -183,3 +184,11 @@ date in the same PR.
   when the world stands (`Main._fade_travel`, the one cover allowed over
   the view); the travel screen's text is only for a trip slower than
   `travel_quiet`.
+- A sign-out through a portal to another place (`Portal.goes_on`) settles
+  like any sign-out first: the server sends `run_finished` only after
+  `stash.settle`, so the gear is home before the game goes on.
+  `Main._return_to_lobby` then joins the destination's session straight
+  away (`_onward_route`, worked out before the old session is freed),
+  deploying with `Raid.PORTAL_DROP` for a world; no server sends anyone
+  from one world's session to another, and the result's "door" is checked
+  with `Portal.is_place` like anything else a client is told.

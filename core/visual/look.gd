@@ -183,6 +183,25 @@ const SKINS := {
 		"scenes": ["Leela.glb"], "height": 2.4, "hide": ["Leela"], "creature": "keeper", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# A brood mother: a brood keeper grown old and huge, dragging a swollen
+	# abdomen of lit eggs, roots grown out of her back.
+	"brood_mother": {
+		"scenes": ["Leela.glb"], "height": 3.4, "hide": ["Leela"], "creature": "brood_mother", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# A shellback elder: a shellback grown huge and old, a ram of horn on
+	# its brow, great horns, a garden of fungus on its back.
+	"shellback_elder": {
+		"scenes": ["Leela.glb"], "height": 3.2, "hide": ["Leela"], "creature": "elder", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# A drowned lurker: a lurker grown huge in the deep, crowned with lures,
+	# weed-bearded, roots stuck through its back. It lies right under
+	# ("lurks" its whole height) until it rises.
+	"drowned_lurker": {
+		"scenes": ["Leela.glb"], "height": 2.6, "hide": ["Leela"], "creature": "drowned", "bare": true, "lurks": 3.0,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 	"broodling": {
 		"scenes": ["Leela.glb"], "height": 0.9, "hide": ["Leela"], "creature": "broodling", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
@@ -238,17 +257,27 @@ const GUN_GLOW := [
 ## how far up from the pommel the hand grips it, and how it folds away when holstered (see `set_extend`): "blade" draws the
 ## blade into the hilt, "telescope" slides the shaft into itself, "" keeps
 ## its shape, and how it is held ready in one hand (a key of
-## `ActionPose.ready_holds`; two-handed weapons are carried instead). No file
-## means the model is built in code (see `_spear_model`).
+## `ActionPose.ready_holds`; two-handed weapons are carried instead), and
+## the way its striking face (an axe's bit, a hammer's face, a blade's edge)
+## points in the pack model's own space, across its length. No file means
+## the model is built in code (see `_spear_model`). The model is turned so
+## that face points along `STRIKE_FACE`, the way every technique leads with
+## (`ActionPose.cut_edge`); a pack model may face any way across, so the
+## face is read from the model, never assumed (assuming it held the axe and
+## hammer sideways through their swings). `melee_orientation_tests.gd`
+## checks each face against the model's shape.
 const MELEE_MODELS := [
-	["hammer", "Hammer.glb", 1.15, 0.3, "", "upright"],
-	["knife", "Knife.glb", 0.5, 0.1, "blade", "knife"],
-	["axe", "Axe.glb", 0.85, 0.12, "", "upright"],
-	["spear", "", 2.1, 0.75, "telescope", "upright"],
-	["starter", "Sword.glb", 0.7, 0.085, "blade", "upright"],
-	["blade", "Katana.glb", 1.2, 0.14, "blade", "katana"],
+	["hammer", "Hammer.glb", 1.15, 0.3, "", "upright", Vector3(1, 0, 0)],
+	["knife", "Knife.glb", 0.5, 0.1, "blade", "knife", Vector3(-1, 0, 0)],
+	["axe", "Axe.glb", 0.85, 0.12, "", "upright", Vector3(-1, 0, 0)],
+	["spear", "", 2.1, 0.75, "telescope", "upright", Vector3(1, 0, 0)],
+	["starter", "Sword.glb", 0.7, 0.085, "blade", "upright", Vector3(1, 0, 0)],
+	["blade", "Katana.glb", 1.2, 0.14, "blade", "katana", Vector3(0, 0, 1)],
 ]
-const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade", "upright"]
+const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade", "upright", Vector3(1, 0, 0)]
+## Which way a melee model's striking face points once it is built (its
+## holder's space; the length runs along +Y).
+const STRIKE_FACE := Vector3(0, 0, -1)
 const GUN_LENGTH := 0.72
 
 ## False on a headless server: nothing is dressed and no art is loaded.
@@ -1311,16 +1340,27 @@ class WarMood:
 ## steeply the streaks fall. A world picks a kind; nothing here names one.
 const WEATHER_KITS := {
 	"ash": {
-		"wall_tint": Color(0.18, 0.09, 0.07), "wall_lit": Color(0.55, 0.28, 0.16),
+		"wall_tint": Color(0.15, 0.075, 0.055), "wall_lit": Color(0.44, 0.23, 0.15),
 		"streak": Color(0.55, 0.32, 0.22, 0.55), "streak_size": Vector2(0.025, 0.55),
 		"billow": Color(0.42, 0.24, 0.17, 0.22), "fall": -0.06, "wall_height": 95.0,
 	},
 	"snow": {
-		"wall_tint": Color(0.66, 0.72, 0.8), "wall_lit": Color(0.95, 0.97, 1.0),
+		"wall_tint": Color(0.6, 0.66, 0.75), "wall_lit": Color(0.95, 0.97, 1.0),
 		"streak": Color(1.0, 1.0, 1.0, 0.8), "streak_size": Vector2(0.04, 0.4),
 		"billow": Color(0.92, 0.94, 0.98, 0.28), "fall": -0.22, "wall_height": 70.0,
 		# Spindrift off the edges a map offers (`WeatherView`).
 		"drift": true,
+	},
+	# Rain: long thin streaks falling steeply, a grey-green wall of it.
+	"rain": {
+		"wall_tint": Color(0.2, 0.25, 0.25), "wall_lit": Color(0.5, 0.58, 0.58),
+		"streak": Color(0.75, 0.85, 0.85, 0.35), "streak_size": Vector2(0.012, 0.9),
+		"billow": Color(0.45, 0.52, 0.52, 0.16), "fall": -2.2, "wall_height": 80.0,
+		# What the storm sounds like round you (`Sfx`; "wind" by default).
+		"sound": "rain",
+		# Rain falls out of the air round the camera fast: more streaks,
+		# each shorter lived.
+		"streaks": 6000, "streak_life": 1.6,
 	},
 }
 
@@ -2570,6 +2610,8 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	var pick := _melee_pick(weapon)
 	if pick[1] == "":
 		var spear := _spear_model(pick[2], pick[3], energy_color(weapon.item_id), energy_strength(weapon.item_id))
+		var head := spear.get_node("Spear") as Node3D
+		head.transform = Transform3D(strike_turn(pick[6]), Vector3.ZERO) * head.transform
 		# Its grip is wrapped where the weapon hand goes, so it keeps that spot.
 		_fit_hands(spear, "spear@%.2f" % pick[2], is_two_handed(weapon), pick[3])
 		return spear
@@ -2580,17 +2622,32 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	holder.name = "Model"
 	holder.add_child(model)
 	_fit(model, WEAPONS + pick[1], pick[2], true)
+	# Turned about its length so its striking face leads every swing.
+	var turn := strike_turn(pick[6])
+	model.transform = Transform3D(turn, Vector3.ZERO) * model.transform
 	holder.position.y = -pick[3]
 	var key := "%s@%.2f" % [pick[1], pick[2]]
 	_fit_hands(holder, key, is_two_handed(weapon))
 	var scrap := ItemDB.has_tag(weapon.item_id, "starter")
 	if scrap:
-		_scrap_bits(holder, _handles.get(key, {}))
+		_scrap_bits(holder, _handles.get(key, {}), turn)
 	# Scrap runs dim and worn: a faint edge on beaten metal.
 	_tech_melee(holder, energy_color(weapon.item_id), energy_strength(weapon.item_id) * (scrap_energy if scrap else 1.0),
 			scrap_wear if scrap else (0.7 if weapon.item_id == "" else 0.3), {"mode": pick[4]},
 			not ItemDB.has_tag(weapon.item_id, "hammer"))
 	return holder
+
+
+## How a melee model is turned about its length (+Y) so the striking face
+## it has in its own space (`face`, the last field of `MELEE_MODELS`) points
+## along `STRIKE_FACE`.
+static func strike_turn(face: Vector3) -> Basis:
+	var across := Vector3(face.x, 0.0, face.z)
+	if across.length() < 0.001:
+		return Basis.IDENTITY
+	var angle := Vector2(across.x, across.z).angle_to(Vector2(STRIKE_FACE.x, STRIKE_FACE.z))
+	# A turn of the XZ plane by `angle` is a turn about +Y the other way.
+	return Basis(Vector3.UP, -angle)
 
 
 ## The scrap kit's blade is a sword made from scrap (Caleb's call): welded
@@ -2606,13 +2663,16 @@ var scrap_grip_radius := 0.016
 var scrap_energy := 0.4
 var scrap_wear := 0.95
 
-func _scrap_bits(holder: Node3D, handle: Dictionary) -> void:
+func _scrap_bits(holder: Node3D, handle: Dictionary, turn := Basis.IDENTITY) -> void:
 	if handle.is_empty():
 		return
 	var bits := Node3D.new()
 	bits.name = "Scrap"
 	holder.add_child(bits)
-	var centre: Vector2 = handle["centre"]
+	# Built across the pack model's own flat, then turned with it.
+	bits.basis = turn
+	var flat := turn.inverse() * Vector3(handle["centre"].x, 0.0, handle["centre"].y)
+	var centre := Vector2(flat.x, flat.z)
 	var guard: float = handle["top"]
 	var bottom: float = handle["bottom"]
 	var at := func(y: float, x := 0.0) -> Vector3:
@@ -3106,6 +3166,12 @@ func _spear_part(model: Node3D, mesh: PrimitiveMesh, at: Vector3, mat: Material,
 	model.add_child(part)
 
 
+## How far a melee weapon reaches past the hand that grips it, in meters.
+func blade_reach(weapon: Weapon) -> float:
+	var pick := _melee_pick(weapon)
+	return maxf(float(pick[2]) - float(pick[3]), 0.1)
+
+
 ## How `weapon` is held ready in one hand (see `MELEE_MODELS`).
 func ready_hold(weapon: Weapon) -> String:
 	return _melee_pick(weapon)[5]
@@ -3279,33 +3345,187 @@ func _dress_power_rack(rack: LootContainer, marker: MeshInstance3D, size: Vector
 	marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
+## A depot as an uplink station: a plated pad with a lit green rim (the bank
+## area, so you can see where to stand), lamp posts at its corners, a
+## terminal at the back with a lit screen that says what it does, and a mast
+## with a slow green beacon and a faint uplink beam you find it by from far.
 func _dress_depot(zone: Depot) -> void:
-	if not is_instance_valid(zone) or zone.has_node("Pad"):
+	if not is_instance_valid(zone) or zone.has_meta("dressed"):
 		return
-	# A landing pad under the zone and flares at its corners.
-	var pad := MeshInstance3D.new()
-	pad.name = "Pad"
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(zone.size.x, 0.12, zone.size.z)
-	mesh.material = surface("metal", {"tint": Color(0.5, 0.52, 0.5), "scale": 0.5})
-	pad.mesh = mesh
-	pad.position.y = -zone.size.y * 0.5 + 0.06
-	zone.add_child(pad)
-	var light := lamp(Color(0.25, 1.0, 0.55), 2.5, 14.0)
-	light.position.y = -zone.size.y * 0.5 + 2.0
-	zone.add_child(light)
-	for child in zone.get_children():
-		var mesh_node := child as MeshInstance3D
-		if mesh_node == null or mesh_node == pad:
-			continue
-		var source := mesh_node.mesh.surface_get_material(0) as StandardMaterial3D
-		if source == null:
-			continue
-		var mat := source.duplicate() as StandardMaterial3D
-		mat.albedo_color.a = 0.07
-		mat.emission_energy_multiplier = 1.6
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mesh_node.material_override = mat
+	zone.set_meta("dressed", true)
+	var green := Color(0.3, 1.0, 0.55)
+	var floor_y := -zone.size.y * 0.5
+	var pad := zone.get_node_or_null("Pad") as MeshInstance3D
+	if pad != null:
+		pad.material_override = surface("panels", {"tint": Color(0.42, 0.44, 0.43), "scale": 0.35, "grime": 0.5})
+	var rim := StandardMaterial3D.new()
+	rim.albedo_color = green * 0.3
+	rim.emission_enabled = true
+	rim.emission = green
+	rim.emission_energy_multiplier = 0.9
+	var steel := surface("metal", {"tint": Color(0.36, 0.38, 0.37), "scale": 0.5, "grime": 0.6})
+	var station := Node3D.new()
+	station.name = "Station"
+	station.set_meta("walk_through", "the pad's lit rim and slim corner lamps")
+	zone.add_child(station)
+	# The rim: a lit strip just inside each edge of the pad, so the bank
+	# area's edge reads from any side.
+	var half := Vector2(zone.size.x, zone.size.z) * 0.5 - Vector2(0.25, 0.25)
+	for edge in 4:
+		var along_x := edge < 2
+		var strip := MeshInstance3D.new()
+		var bar := BoxMesh.new()
+		bar.size = Vector3(half.x * 2.0, 0.04, 0.16) if along_x else Vector3(0.16, 0.04, half.y * 2.0)
+		bar.material = rim
+		strip.mesh = bar
+		var side := 1.0 if edge % 2 == 0 else -1.0
+		strip.position = Vector3(0, floor_y + 0.12, side * half.y) if along_x else Vector3(side * half.x, floor_y + 0.12, 0)
+		strip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		station.add_child(strip)
+	# Short posts at the corners, each with a green lamp on top.
+	for corner in 4:
+		var at := Vector3((1.0 if corner % 2 == 0 else -1.0) * half.x, floor_y, (1.0 if corner < 2 else -1.0) * half.y)
+		var post := MeshInstance3D.new()
+		var pole := BoxMesh.new()
+		pole.size = Vector3(0.22, 1.0, 0.22)
+		pole.material = trim("hazard")
+		post.mesh = pole
+		post.position = at + Vector3(0, 0.5, 0)
+		station.add_child(post)
+		var cap := MeshInstance3D.new()
+		var lens := BoxMesh.new()
+		lens.size = Vector3(0.26, 0.14, 0.26)
+		lens.material = rim
+		cap.mesh = lens
+		cap.position = at + Vector3(0, 1.07, 0)
+		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		station.add_child(cap)
+	var light := lamp(green, 0.7, 8.0)
+	light.position.y = floor_y + 3.0
+	station.add_child(light)
+
+	var terminal := zone.get_node_or_null("Terminal") as Node3D
+	if terminal == null:
+		return
+	var body := terminal.get_node_or_null("Body") as MeshInstance3D
+	var size := Depot.TERMINAL_SIZE
+	if body != null:
+		body.material_override = steel
+	# A hazard band round its foot, and a hood over the screen.
+	var band := MeshInstance3D.new()
+	var foot := BoxMesh.new()
+	foot.size = Vector3(size.x + 0.06, 0.22, size.z + 0.06)
+	foot.material = trim("hazard")
+	band.mesh = foot
+	band.position.y = 0.11
+	terminal.add_child(band)
+	# The screen leans back on the face toward the pad (local -Z).
+	var screen_at := Vector3(0, size.y * 0.72, -size.z * 0.5 - 0.02)
+	var screen := MeshInstance3D.new()
+	var glass := BoxMesh.new()
+	glass.size = Vector3(size.x * 0.82, 0.62, 0.05)
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(0.02, 0.08, 0.05)
+	glow.emission_enabled = true
+	glow.emission = green * 0.55
+	glow.emission_energy_multiplier = 1.2
+	glow.roughness = 0.15
+	glass.material = glow
+	screen.mesh = glass
+	screen.position = screen_at
+	screen.rotation.x = deg_to_rad(-14.0)
+	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	terminal.add_child(screen)
+	var hood := MeshInstance3D.new()
+	var lid := BoxMesh.new()
+	lid.size = Vector3(size.x * 0.92, 0.06, 0.32)
+	lid.material = steel
+	hood.mesh = lid
+	hood.position = Vector3(0, size.y * 0.72 + 0.36, -size.z * 0.5 - 0.12)
+	terminal.add_child(hood)
+	# The words sit on the glass, so they lean with it.
+	var label := Label3D.new()
+	label.text = "DEPOT UPLINK\nstand on the pad to send\nyour pack home"
+	label.font_size = 30
+	label.pixel_size = 0.004
+	label.outline_size = 0
+	label.modulate = Color(0.75, 1.0, 0.82)
+	label.double_sided = false
+	label.position = Vector3(0, 0, -0.035)
+	label.rotation.y = PI
+	screen.add_child(label)
+	# A row of status lamps under the screen, and vents down each side.
+	for k in 4:
+		var led := MeshInstance3D.new()
+		var dot := BoxMesh.new()
+		dot.size = Vector3(0.1, 0.06, 0.03)
+		dot.material = rim if k < 3 else trim("orange")
+		led.mesh = dot
+		led.position = Vector3(-0.3 + k * 0.2, size.y * 0.42, -size.z * 0.5 - 0.015)
+		led.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		terminal.add_child(led)
+	for side: float in [-1.0, 1.0]:
+		for k in 4:
+			var vent := MeshInstance3D.new()
+			var slat := BoxMesh.new()
+			slat.size = Vector3(0.03, 0.05, size.z * 0.7)
+			slat.material = trim("rut")
+			vent.mesh = slat
+			vent.position = Vector3(side * (size.x * 0.5 + 0.015), 0.5 + k * 0.12, 0)
+			terminal.add_child(vent)
+	# The mast's beacon, pulsing slowly, and a faint beam up from it.
+	var mast := terminal.get_node_or_null("Mast") as MeshInstance3D
+	if mast == null:
+		return
+	mast.material_override = steel
+	var top := mast.position + Vector3(0, Depot.MAST_HEIGHT * 0.5, 0)
+	for rung in 3:
+		var dish := MeshInstance3D.new()
+		var arm := BoxMesh.new()
+		arm.size = Vector3(0.7 - rung * 0.15, 0.06, 0.06)
+		arm.material = steel
+		dish.mesh = arm
+		dish.position = top - Vector3(0, 1.0 + rung * 0.9, 0)
+		dish.rotation.y = rung * 0.9
+		terminal.add_child(dish)
+	var beacon := MeshInstance3D.new()
+	var bulb := SphereMesh.new()
+	bulb.radius = 0.22
+	bulb.height = 0.44
+	var bright := StandardMaterial3D.new()
+	bright.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bright.albedo_color = Color(0.6, 1.0, 0.75)
+	bright.disable_fog = true
+	bulb.material = bright
+	beacon.mesh = bulb
+	beacon.position = top + Vector3(0, 0.15, 0)
+	beacon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	terminal.add_child(beacon)
+	var beacon_light := lamp(green, 2.0, 12.0)
+	beacon_light.position = beacon.position
+	terminal.add_child(beacon_light)
+	var pulse := beacon_light.create_tween().set_loops()
+	pulse.tween_property(beacon_light, "light_energy", 0.4, 1.1).set_trans(Tween.TRANS_SINE)
+	pulse.tween_property(beacon_light, "light_energy", 2.0, 1.1).set_trans(Tween.TRANS_SINE)
+	var beam := MeshInstance3D.new()
+	var column := CylinderMesh.new()
+	column.top_radius = 0.05
+	column.bottom_radius = 0.12
+	column.height = 60.0
+	column.radial_segments = 8
+	column.rings = 1
+	var faint := StandardMaterial3D.new()
+	faint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	faint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	faint.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	faint.albedo_color = Color(0.3, 1.0, 0.55, 0.22)
+	faint.cull_mode = BaseMaterial3D.CULL_DISABLED
+	column.material = faint
+	beam.mesh = column
+	beam.position = beacon.position + Vector3(0, column.height * 0.5 + 0.2, 0)
+	beam.set_meta("walk_through", "a beam of light")
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	terminal.add_child(beam)
 
 
 ## Something on show (a home base display): a node with the meta

@@ -87,8 +87,12 @@ extends RefCounted
 ##     "purge" lanes (meta "toward", the lane's far end; "width", "damage")
 ##     that warn and then vent across the floor once it is below; a "vault"
 ##     where a share for each player who fought it (`roll_vault`) is laid
-##     out along the marker's x when it falls; and a "beacon" or "warmth"
-##     with the meta stays dark while it stands.
+##     out along the marker's x when it falls; "boss_snag" markers (meta
+##     "radius", "stun"), solid things a keeper that charges can ram: one
+##     that drives into a snag in a dash-strike is staggered "stun" seconds
+##     (`keeper_snag_news`); "boss_pool" markers, where a keeper that dives
+##     comes up (see `keeper_dive_up`); and a "beacon" or "warmth" with the
+##     meta stays dark while it stands.
 ##   - Marker3D nodes in group "spawn_guard": a dungeon's garrison. A bot of
 ##     the marker's "faction" stands guard over "radius" metres (10 by
 ##     default) round it, outside the armies, and another comes back
@@ -189,18 +193,21 @@ var shot_carry := 1.0
 ## leaves guns alone.
 var gun_fouling := 0.0
 ## Weather (DESIGN.md "Weather: ash storms"): with a `weather_kind` ("ash",
-## "snow"; "" for none) storms cross the map one at a time (`Weather`,
+## "snow", "rain"; "" for none) storms cross the map one at a time (`Weather`,
 ## `Raid.weather`), named `weather_name` on the watch and the plaza's signs.
 ## Each is a cell `weather_radius` across its middle, moving at
 ## `weather_speed` along `weather_path`, building and dying away over
 ## `weather_ramp` seconds, with a quiet spell of `weather_gap` seconds
 ## between (the first after `weather_first`). In the thick of it sight
 ## and scan reach drop to `weather_sight` of usual, shots carry
-## `weather_carry` as far, flight rigs are pushed by gusts up to
+## `weather_carry` as far (and so do footsteps, to a bot listening),
+## flight rigs are pushed by gusts up to
 ## `weather_gust` m/s² (times the rig's `gust_mult`), body heat drains
 ## `weather_cold` times as fast, and with `weather_wipes_tracks` the
-## storm wipes the tracks it passes over. With `weather_pushes` the armies
-## go for a strongpoint a storm covers. Off by default.
+## storm wipes the tracks it passes over. Guns foul `weather_fouling`
+## times as fast in its thick (`gun_fouling`: a rain that washes what
+## fouls them out of the air). With `weather_pushes` the armies go for a
+## strongpoint a storm covers. Off by default.
 var weather_kind := ""
 var weather_name := "Storm"
 var weather_radius := 150.0
@@ -212,6 +219,7 @@ var weather_sight := 0.5
 var weather_carry := 0.6
 var weather_gust := 6.0
 var weather_cold := 1.0
+var weather_fouling := 1.0
 var weather_wipes_tracks := false
 var weather_pushes := false
 ## How far from the map's middle storms cross (metres), for the default
@@ -371,6 +379,17 @@ var keeper_purge_every := 5.5
 var keeper_purges_at_once := 2
 var keeper_purge_warn := 1.6
 var keeper_purge_first := 2.0
+## A keeper with "boss_pool" markers dives: up and fighting for
+## `keeper_dive_up` seconds (`keeper_dive_up_hurt` once below
+## `keeper_split`), then under, where nothing hurts it (`Actor.submerged`),
+## for `keeper_dive_under`, then it rises at the pool nearest one of the
+## players in its arena, unhurtable for `keeper_dive_rise` more while it
+## comes up (its brain holds it down and lets it up, so clients see it
+## through its crouch).
+var keeper_dive_up := 6.0
+var keeper_dive_up_hurt := 4.0
+var keeper_dive_under := 2.5
+var keeper_dive_rise := 1.4
 ## Linked factions (DESIGN.md "Frostline", the defence grid): faction to
 ## range in metres. A bot of one that is hurt and lives calls every other
 ## bot of its faction within range to where the hit came from, the way a
@@ -725,6 +744,18 @@ func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
 ## gone). "" says nothing.
 func keeper_news(_bot: Actor, phase: int) -> String:
 	return "A keeper has fallen" if phase == 0 else ""
+
+
+## A standing keeper's phase changed (1 or 2), on the authority: a world
+## may change how it fights.
+func on_keeper_phase(_bot: Actor, _phase: int) -> void:
+	pass
+
+
+## What everyone in a keeper's arena hears when it rams one of its snags
+## and is stuck there. "" says nothing.
+func keeper_snag_news(_bot: Actor) -> String:
+	return ""
 
 
 func on_spawn(_actor: Actor) -> void:

@@ -303,6 +303,10 @@ var keepers := {}
 var purges: Array[Node3D] = []
 var _sockets: Array[Node3D] = []
 var _vaults: Array[Node3D] = []
+## The map's "boss_snag" markers: what a charging keeper can ram.
+var _snags: Array[Node3D] = []
+## The map's "boss_pool" markers: where a keeper that dives comes up.
+var _pools: Array[Node3D] = []
 ## How long a purge lane vents after its warning.
 const PURGE_VENT := 0.8
 ## Bosses' toughness is counted this often (`_scale_boss`).
@@ -1580,12 +1584,12 @@ func reclaim_player(actor: Actor) -> bool:
 	if had.size() == 3 and not fighting:
 		state.sign_out_total = maxf(float(had[0]), state.sign_out_left)
 		state.sign_out_fixed = bool(had[1])
-		state.sign_out_door = bool(had[2])
+		state.sign_out_door = str(had[2])
 		actor.notice.emit("Back in your body. Still signing out")
 	else:
 		state.sign_out_left = -1.0
 		state.sign_out_fixed = false
-		state.sign_out_door = false
+		state.sign_out_door = ""
 		state.at_beacon = null
 		actor.notice.emit("Back in your body")
 	actor.set_sign_out_beacon(false)
@@ -1662,7 +1666,7 @@ func begin_sign_out(actor: Actor, forced := false) -> bool:
 		# A beacon powers up while you hold it; the count runs only inside.
 		state.at_beacon = beacon
 		state.sign_out_fixed = true
-		state.sign_out_door = false
+		state.sign_out_door = ""
 		state.sign_out_left = world.beacon_sign_out_time
 		actor.notice.emit("Powering up %s. Stay close for %d seconds"
 				% [beacon.get_meta("name", "the beacon"), ceili(world.beacon_sign_out_time)])
@@ -1670,12 +1674,12 @@ func begin_sign_out(actor: Actor, forced := false) -> bool:
 		# A gate outpost is the way out: a quick sign-out, and it stays that
 		# long even if they are off the floor inside the bubble.
 		state.sign_out_fixed = true
-		state.sign_out_door = false
+		state.sign_out_door = ""
 		state.sign_out_left = world.outpost_sign_out_time
 		actor.notice.emit("Signing out at the gate")
 	else:
 		state.sign_out_fixed = false
-		state.sign_out_door = false
+		state.sign_out_door = ""
 		var span := _sign_out_span(actor)
 		state.sign_out_left = span
 		if _sign_out_in_air(actor):
@@ -1693,7 +1697,7 @@ func cancel_sign_out(actor: Actor) -> void:
 		return
 	state.sign_out_left = -1.0
 	state.sign_out_fixed = false
-	state.sign_out_door = false
+	state.sign_out_door = ""
 	state.at_beacon = null
 	state.count_rate = 1.0
 	actor.set_sign_out_beacon(false)
@@ -2254,6 +2258,8 @@ func _find_keepers() -> void:
 	purges = _map_nodes("purge")
 	_sockets = _map_nodes("boss_socket")
 	_vaults = _map_nodes("vault")
+	_snags = _map_nodes("boss_snag")
+	_pools = _map_nodes("boss_pool")
 	map.set_meta("keepers", keepers.duplicate())
 	if Look.enabled and map.has_method("show_purge"):
 		var show := Callable(map, "show_purge")
@@ -2323,13 +2329,16 @@ func _tick_keeper(boss: Dictionary, delta: float) -> void:
 		return
 	var keeper := bot as Actor
 	var near := _arena_players(marker)
+	_check_snags(keeper, kind, near)
 	var phase := 2 if keeper.health.health < keeper.health.max_health * world.keeper_split else 1
 	if phase != int(keepers.get(kind, 1)):
 		_set_keeper_phase(kind, phase)
+		world.on_keeper_phase(keeper, phase)
 		var news := world.keeper_news(keeper, phase)
 		for actor in near:
 			if news != "":
 				actor.notice.emit(news)
+	_tick_dive(boss, keeper, kind, near, phase, delta)
 	if near.is_empty():
 		boss.socket_in = world.keeper_socket_first
 		boss.purge_in = world.keeper_purge_first
@@ -2344,6 +2353,95 @@ func _tick_keeper(boss: Dictionary, delta: float) -> void:
 		if boss.purge_in <= 0.0:
 			boss.purge_in = world.keeper_purge_every
 			_start_purges(boss, kind)
+
+
+## A keeper in a dash-strike (`MeleeWeapon.is_dashing`) that has run into
+## one of its snags, facing it, is stuck there: staggered for the snag's
+## "stun" (the stagger cancels the strike and reaches clients with its
+## state), and everyone in its arena is told.
+func _check_snags(keeper: Actor, kind: String, near: Array[Actor]) -> void:
+	var blade := keeper.get_active_weapon() as MeleeWeapon
+	if blade == null or not blade.is_dashing() or keeper.stagger_left > 0.0:
+		return
+	var facing := keeper.get_aim_dir()
+	facing.y = 0.0
+	facing = facing.normalized()
+	for snag in _snags:
+		if str(snag.get_meta("keeper", "")) != kind:
+			continue
+		var to := snag.global_position - keeper.global_position
+		to.y = 0.0
+		var reach := float(snag.get_meta("radius", 1.0)) + Actor.BODY_RADIUS + 0.6
+		if to.length() > reach or facing.dot(to.normalized()) < 0.5:
+			continue
+		keeper.stagger(float(snag.get_meta("stun", 3.0)))
+		var news := world.keeper_snag_news(keeper)
+		if news != "":
+			for actor in near:
+				actor.notice.emit(news)
+		return
+
+
+## A keeper with pools of its own dives (see `WorldDef.keeper_dive_up`):
+## "up" fighting, "under" (submerged, held down by its brain) and "rising"
+## at the pool nearest one of the players in its arena, still unhurtable
+## until it is up. With nobody in its arena it stays up. Its state lives in
+## the boss's "dive" and starts over with each new body.
+func _tick_dive(boss: Dictionary, keeper: Actor, kind: String, near: Array[Actor], phase: int, delta: float) -> void:
+	var pools := _pools.filter(func(pool: Node3D) -> bool: return str(pool.get_meta("keeper", "")) == kind)
+	if pools.is_empty():
+		return
+	var brain := keeper.get_node_or_null("Brain") as BotBrain
+	var dive: Dictionary = boss.get("dive", {})
+	if dive.get("body", 0) != keeper.get_instance_id():
+		dive = {"body": keeper.get_instance_id(), "state": "up", "left": world.keeper_dive_up}
+		boss.dive = dive
+	if near.is_empty():
+		dive.state = "up"
+		dive.left = world.keeper_dive_up
+		keeper.submerged = false
+		if brain != null:
+			brain.held_under = false
+			brain.held_still = false
+		return
+	dive.left = float(dive.left) - delta
+	if float(dive.left) > 0.0:
+		return
+	match str(dive.state):
+		"up":
+			dive.state = "under"
+			dive.left = world.keeper_dive_under
+			keeper.submerged = true
+			if brain != null:
+				brain.held_under = true
+		"under":
+			# Up at the pool nearest one of them, never where it went down.
+			var prey := near[rng.randi() % near.size()]
+			var best: Node3D = null
+			for pool: Node3D in pools:
+				if pool.global_position.distance_to(keeper.global_position) < 2.0:
+					continue
+				if best == null or pool.global_position.distance_to(prey.global_position) \
+						< best.global_position.distance_to(prey.global_position):
+					best = pool
+			if best != null:
+				keeper.global_position = best.global_position
+				keeper.velocity = Vector3.ZERO
+			dive.state = "rising"
+			dive.left = world.keeper_dive_rise
+			dive.prey = prey
+			if brain != null:
+				brain.held_under = false
+				brain.held_still = true
+		"rising":
+			dive.state = "up"
+			dive.left = world.keeper_dive_up_hurt if phase == 2 else world.keeper_dive_up
+			keeper.submerged = false
+			if brain != null:
+				brain.held_still = false
+			var prey: Variant = dive.get("prey")
+			if prey != null and is_instance_valid(prey):
+				keeper.heard.emit((prey as Actor).global_position, prey)
 
 
 ## A keeper calls one of its faction out of its next wall socket, posted to
@@ -3586,7 +3684,8 @@ func squad_of(actor: Actor) -> String:
 ## Whether `actor` may open a squad portal to `destination` where they are
 ## (`Portal.choices_for`): in a safe zone to a world, the arena or home, so a
 ## portal there is a way out to a fight; in a world where gear is at stake
-## only `Portal.HOME`, where opening it is a sign-out (`open_portal`).
+## home, another world, the arena or the plaza, where opening it is a
+## sign-out (`open_portal`).
 func may_open_portal(actor: Actor, destination := "") -> bool:
 	if world == null or actor == null or not is_instance_valid(actor) or actor.is_dead:
 		return false
@@ -3598,15 +3697,17 @@ func may_open_portal(actor: Actor, destination := "") -> bool:
 ## through for `Portal.open_time`. Their last one folds away. Authority
 ## only. Returns "" if it opened, or why not.
 ##
-## Out in a world the only portal is `Portal.HOME`, and opening it is a
-## sign-out (Caleb's call): it starts the opener's sign-out (`begin_sign_out`,
-## so a fight or a bounty still refuses it, and it takes the sign-out's own
-## time: the gate's in an outpost, else the ground's or the air's) and the
-## ring unfolds over that countdown (`_tick_portals` keeps it in step, and
-## folds it away if the sign-out is cancelled). Each squadmate who steps in
-## starts their own. Everyone leaves the usual way, with outcome "left" and
-## the result's "door" saying they went home through a portal, when their
-## own countdown ends; the ring never sends anyone anywhere.
+## Out in a world where gear is at stake every portal is a sign-out (Caleb's
+## call), wherever it leads: it starts the opener's sign-out
+## (`begin_sign_out`, so a fight or a bounty still refuses it, and it takes
+## the sign-out's own time: the gate's in an outpost, else the ground's or
+## the air's) and the ring unfolds over that countdown (`_tick_portals`
+## keeps it in step, and folds it away if the sign-out is cancelled). Each
+## squadmate who steps in starts their own, through the same door. Everyone
+## leaves the usual way, with outcome "left" (everything carried goes home)
+## and the result's "door" saying where the portal led, when their own
+## countdown ends; whoever keeps the stash then sends them on from home
+## (`Main`). The ring never sends anyone anywhere.
 func open_portal(actor: Actor, destination: String) -> String:
 	var state := state_for(actor)
 	if mode == Mode.CLIENT or state == null or state.finished:
@@ -3614,18 +3715,18 @@ func open_portal(actor: Actor, destination: String) -> String:
 	if not may_open_portal(actor, destination):
 		if Portal.choices_for(self, actor).is_empty():
 			return "No portal opens here"
-		if not world.safe_zone:
-			return "Out here a portal only leads home"
+		if destination == world.id:
+			return "You are already here"
 		return "No portal goes there"
 	if clock < state.portal_ready_at:
 		return "Portal recharging"
-	var signing := destination == Portal.HOME and not world.safe_zone
+	var signing := not world.safe_zone
 	if signing:
 		if state.sign_out_left >= 0.0:
 			return "You are already signing out"
 		if not begin_sign_out(actor):
 			return "You cannot sign out now"
-		state.sign_out_door = true
+		state.sign_out_door = destination
 	state.portal_ready_at = clock + portal_cooldown
 	for old in portals.duplicate():
 		if old.opener == state.owner:
@@ -3651,7 +3752,7 @@ func open_portal(actor: Actor, destination: String) -> String:
 ## Shows a portal the server opened, on a client. `p_usable` is whether
 ## the local player's side may walk through it.
 ## `p_unfold` is how long it takes to unfold (a sign-out's countdown for a
-## portal home out in a world), below zero for the usual.
+## portal out of a world), below zero for the usual.
 func show_portal(destination: String, at: Transform3D, p_usable: bool, p_age := 0.0, p_name := "",
 		p_unfold := -1.0) -> Portal:
 	var portal := Portal.new()
@@ -3661,7 +3762,7 @@ func show_portal(destination: String, at: Transform3D, p_usable: bool, p_age := 
 	portal.opener_name = p_name
 	if p_unfold > 0.0:
 		portal.set_unfold(p_unfold)
-		portal.signs_out = destination == Portal.HOME and not world.safe_zone
+		portal.signs_out = not world.safe_zone
 	add_child(portal)
 	portal.global_transform = at
 	portals.append(portal)
@@ -3678,7 +3779,7 @@ func close_portal(portal: Portal) -> void:
 
 ## Ages the open portals and folds away the ones whose time is up. On the
 ## authority, anyone of the opener's side who walks into one is sent
-## through (`portal_entered`), once. A portal home out in a world follows
+## through (`portal_entered`), once. A portal out of a world follows
 ## its opener's sign-out: it unfolds as the countdown runs (longer in the
 ## air) and folds away if the sign-out is cancelled.
 func _tick_portals(delta: float) -> void:
@@ -3704,16 +3805,17 @@ func _tick_portals(delta: float) -> void:
 			if not portal.contains(actor.global_position):
 				continue
 			if portal.signs_out:
-				# Stepping into a portal home starts your own sign-out.
+				# Stepping into a portal out of a world starts your own
+				# sign-out, through the same door.
 				if state.sign_out_left < 0.0 and begin_sign_out(actor):
-					state.sign_out_door = true
+					state.sign_out_door = portal.destination
 					portal.sent.append(actor)
 				continue
 			portal.sent.append(actor)
 			portal_entered.emit(actor, portal.destination)
 
 
-## Keeps a portal home in step with its opener's sign-out. False once the
+## Keeps a portal out of a world in step with its opener's sign-out. False once the
 ## sign-out was cancelled (a fight, or they called it off) or they went down
 ## before it ended: then the ring folds away. Once they are through it stays
 ## open its time for the squad.
@@ -4011,6 +4113,9 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 				_count(killer, "kills:" + actor.faction)
 			if _bosses.any(func(boss: Dictionary) -> bool: return boss.bot == actor):
 				_count(killer, "bosses")
+				# And by its kind, so a contract can name one boss of several.
+				if str(actor.get_meta("boss", "")) != "":
+					_count(killer, "boss:" + str(actor.get_meta("boss")))
 			if warlords.has(actor):
 				pay += Economy.WARLORD_SCRIP
 				_count(killer, "warlords")
@@ -4487,9 +4592,12 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		# Contract counters (`_count`). Only a sign-out counts them.
 		"tally": state.tally.duplicate(),
 	}
-	if left and state.sign_out_door:
-		# Through a portal home: online that leads to your base, not the plaza.
-		result["door"] = Portal.HOME
+	if left and state.sign_out_door != "":
+		# Through a portal out of the world: everything carried goes home as
+		# with any sign-out, and the door says where the trip goes on to
+		# (home: your base, not the plaza; else a world, the arena or the
+		# plaza, from there).
+		result["door"] = state.sign_out_door
 	var standing := renown.get_standing(state.owner)
 	if standing != null:
 		# What this life added to lifetime renown, what dying took from the
@@ -4618,9 +4726,11 @@ class PlayerState:
 	## The sign-out the player had going when their connection dropped, as
 	## [total, fixed, door], or empty: what `Raid.reclaim_player` restores.
 	var dropped_sign_out: Array = []
-	## The sign-out was started through a portal home (`open_portal`), so
-	## the result says they came home by its door ("door": "home").
-	var sign_out_door := false
+	## Where the portal this sign-out was started through leads
+	## (`open_portal`, a `Portal.from_world` id), or "" for a plain sign-out.
+	## The result says it as "door": home, or where the trip goes on to from
+	## home once the gear is in.
+	var sign_out_door := ""
 	## The warm beacon this sign-out is powering, or null (DESIGN.md
 	## "Frostline"), and whether they have stepped away from it.
 	var at_beacon: Node3D = null
