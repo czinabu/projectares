@@ -25,6 +25,8 @@ signal toy_hold_requested(item_id: String)
 signal summon_requested(item_id: String)
 ## The watch's store: put weapon `item_id`, the one in hand, back into the pack.
 signal store_requested(item_id: String)
+## The pack list's drop: put `item_id` out of the pack on the ground.
+signal pack_drop_requested(item_id: String)
 ## The player pinged where they are looking from the watch.
 signal ping_requested
 ## The watch's portal icon was clicked: open a squad portal to `destination`.
@@ -819,6 +821,29 @@ func take_picked_from_pack() -> void:
 	watch_open = ""
 
 
+## True while the raised watch is on the pack list with something in it:
+## the interact key then drops the picked item (`drop_picked_from_pack`).
+func is_on_pack_list() -> bool:
+	return is_watch_on("pack") and _is_open("pack") and not actor.inventory.items.is_empty()
+
+
+## The pack list's drop (Caleb's call: a way to be rid of what you do not
+## want): asks the world to put the picked item out of the pack where you
+## stand, in a bag anyone may loot. The watch stays up on the list, so
+## several can go one after another. The world decides and refuses with a
+## notice (`Raid.drop_item`).
+func drop_picked_from_pack() -> void:
+	var items := actor.inventory.items
+	if items.is_empty():
+		return
+	var id: String = items[clampi(pack_pick, 0, items.size() - 1)]
+	if not Hud.can_drop_here(Raid.of(actor)):
+		# A low buzz; the world says why with a notice.
+		Sfx.play("watch_refused", null, -6.0)
+	# The pick stays where it is, so the next item down moves up under it.
+	pack_drop_requested.emit(id)
+
+
 ## The mouse wheel: the next weapon, or with the watch up, the next icon on
 ## its card (`step` 1 is down the wheel, to the right). With the watch up the
 ## wheel never switches weapons.
@@ -1113,6 +1138,11 @@ func _physics_process(delta: float) -> void:
 	_hold_back_clicks(cmd)
 	cmd.reload_pressed = Input.is_action_just_pressed("reload")
 	cmd.interact_pressed = Input.is_action_just_pressed("interact")
+	if cmd.interact_pressed and is_on_pack_list():
+		# On the opened pack list the interact key drops the picked item,
+		# and never reaches for a door or a cache as well.
+		drop_picked_from_pack()
+		cmd.interact_pressed = false
 	cmd.heal_pressed = Input.is_action_just_pressed("heal")
 	cmd.ability_pressed = captured and Input.is_action_just_pressed("ability")
 	cmd.artifact_pressed = _artifact_click

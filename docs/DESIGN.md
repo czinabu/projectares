@@ -1676,6 +1676,9 @@ the storage behind it.
   the pack with the rounds it had. The weapon in your hand can be stored
   the same way in reverse: a click on it dematerializes it back into the
   pack, leaving its slot empty and your hands free, if the pack has room.
+- **Dropping (Caleb's call).** On the pack's list the interact key drops
+  the picked item where you stand, in a bag anyone may loot. Never in a
+  safe zone or where nothing is at stake.
 - **Three levels (Caleb's call).** Raised, the watch is on its tab row:
   the mouse wheel turns between the three tabs and a click goes into one.
   In a tab the wheel moves across that tab's icons only. A click on an

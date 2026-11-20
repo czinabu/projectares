@@ -183,6 +183,9 @@ var watch_capacity := 2
 var ping_range := 300.0
 var ping_time := 8.0
 var ping_cooldown := 2.0
+## How close to their last drop a player must stand for the next one to go
+## in the same bag (`drop_item`), in metres.
+var drop_bag_reach := 2.5
 ## Squad portals open here (`open_portal`), and how long a player waits
 ## between opening two.
 var portals: Array[Portal] = []
@@ -3639,6 +3642,69 @@ func store(actor: Actor, item_id: String) -> String:
 	return ""
 
 
+## The pack list's drop (Caleb's call: a way to be rid of what you do not
+## want): `item_id` leaves the player's pack and lies at their feet in a
+## bag anyone may loot, like a dead player's, cleared after
+## `WorldDef.bag_lifetime`. Drops made close together go in the same bag
+## (`drop_bag_reach`). A gun put away with rounds keeps them in the bag
+## (`LootContainer.ammo`), so dropping and taking it back never refills it.
+## Refused in a safe zone and where nothing is at stake
+## (`WorldDef.gear_at_risk`), where it would only pass gear between players.
+## Returns "" if it was dropped, or why not (also sent as a notice).
+## Authority only; online it arrives through `NetSession.drop`.
+func drop_item(actor: Actor, item_id: String) -> String:
+	var state := state_for(actor)
+	if mode == Mode.CLIENT or state == null or state.finished or actor.is_dead:
+		return "not now"
+	var why := ""
+	if world.safe_zone or not world.gear_at_risk:
+		why = "Nothing can be dropped here"
+	elif item_id == "" or item_id not in actor.inventory.items:
+		why = "That is not in your pack"
+	if why != "":
+		actor.notice.emit(why)
+		return why
+	actor.inventory.remove_item(item_id)
+	var rounds: Array = []
+	if actor.stowed_rounds.has(item_id) and item_id not in actor.inventory.items:
+		rounds = actor.stowed_rounds[item_id]
+		actor.stowed_rounds.erase(item_id)
+	var at := _ground_below(actor.global_position)
+	var bag := state.drop_bag
+	if bag != null and (not is_instance_valid(bag) or bag.is_queued_for_deletion() \
+			or bag.global_position.distance_to(at) > drop_bag_reach):
+		bag = null
+	if bag == null:
+		bag = LootContainer.new()
+		if not rounds.is_empty():
+			bag.ammo[item_id] = [rounds]
+		bag = spawn_container([item_id], true, "%s's drop" % actor.display_name, at, -1, 0, bag)
+		state.drop_bag = bag
+		get_tree().create_timer(world.bag_lifetime, false, true).timeout.connect(bag.queue_free)
+	else:
+		if not rounds.is_empty():
+			if not bag.ammo.has(item_id):
+				bag.ammo[item_id] = []
+			bag.ammo[item_id].append(rounds)
+		var held := bag.items.duplicate()
+		held.append(item_id)
+		bag.set_items(held)
+		bag.changed.emit()
+	actor.notice.emit("Dropped %s" % ItemDB.item_name(item_id))
+	watch_changed.emit(actor)
+	return ""
+
+
+## The ground under `at` (within 40 m), or `at` itself over nothing, so a
+## drop made in the air lands instead of hanging there.
+func _ground_below(at: Vector3) -> Vector3:
+	if not is_inside_tree():
+		return at
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.5, at + Vector3.DOWN * 40.0, Actor.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return hit.position if not hit.is_empty() else at
+
+
 ## The watch's squad ping: marks the spot a player is looking at for their
 ## side for `ping_time` seconds. Returns "" if it went out, or why not.
 func ping(actor: Actor) -> String:
@@ -4037,8 +4103,8 @@ func remove_vehicle(vehicle: Node3D) -> void:
 
 
 func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3,
-		pile_scrip := -1, pile_bounty := 0) -> LootContainer:
-	var container := LootContainer.new()
+		pile_scrip := -1, pile_bounty := 0, made: LootContainer = null) -> LootContainer:
+	var container := made if made != null else LootContainer.new()
 	container.setup(items, is_bag, label)
 	if pile_scrip >= 0:
 		container.make_pile(pile_scrip, pile_bounty)
@@ -4695,6 +4761,9 @@ class PlayerState:
 	## item recalled home at their death.
 	var insured := ""
 	var recalled := ""
+	## The bag their last drop went in (`Raid.drop_item`), so drops made in
+	## one spot share one bag.
+	var drop_bag: LootContainer
 	## Vehicle items the player deployed with. Lost unless they leave riding one.
 	var deployed_vehicles: Array[String] = []
 	## The toy vehicles on their watch: ones they brought and have not thrown,
