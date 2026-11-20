@@ -522,7 +522,7 @@ func _ready() -> void:
 			var found := _find_animation(def["anims"][key])
 			if found != "":
 				_anims[key] = found
-				if key not in ["death", "attack", "roll", "kick"]:
+				if key not in ["death", "attack", "roll", "kick", "fist"]:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
 		# Sized in the relaxed stand: an idle that bends the knees or
 		# spreads the feet (a person's) would otherwise size the body up.
@@ -559,7 +559,8 @@ func _ready() -> void:
 		arm.skeleton = skeleton
 		arm.look = look
 		add_child(arm)
-		arm.setup(def, _player.get_animation(_anims["idle_melee"]) if _player and _anims.has("idle_melee") else null)
+		var fist: String = _anims.get("fist", _anims.get("idle_melee", ""))
+		arm.setup(def, _player.get_animation(fist) if _player and fist != "" else null)
 		if _player:
 			arm.calibrate(_player.get_animation(_anims["aim_gun"]) if _anims.has("aim_gun") else null,
 					_player.get_animation(_anims["idle_melee"]) if _anims.has("idle_melee") else null)

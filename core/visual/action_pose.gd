@@ -546,7 +546,7 @@ var carry_port_sidearm_turn := Vector3(-0.6, 0.15, 0.15)
 ## port: carried level across the hips in both hands, the muzzle a little to
 ## the off side, and in a sprint only dropped a little lower and turned in.
 var heavy_tags: Array[String] = ["power"]
-var carry_low_heavy := Vector3(0.1, -0.33, -0.14)
+var carry_low_heavy := Vector3(0.1, -0.31, -0.14)
 var carry_low_heavy_turn := Vector3(-0.08, 0.12, 0.05)
 var carry_port_heavy := Vector3(0.1, -0.35, -0.2)
 var carry_port_heavy_turn := Vector3(-0.15, 0.2, 0.1)
