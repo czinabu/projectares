@@ -368,6 +368,18 @@ var convoy_vehicles: Array[String] = []
 var convoy_faction := ""
 var convoy_riders := 1
 var convoy_throttle := 0.55
+## Airships (DESIGN.md "Basalt Rift", the Sky Leviathan): a world event of
+## an armoured airship (`airship_vehicle`, an item tagged "airship") that
+## drifts back and forth along one of the map's `airship_routes` (points
+## with their height) `airship_passes` times, then drifts off. Each of its
+## seats with a "part" holds a weak spot: a bot of `airship_faction` whose
+## `boss` meta is that part, built by `equip_bot`. A weak spot broken drops
+## `roll_loot("airship_part")` under the ship; all of them broken, it goes
+## down and its hold (`roll_loot("airship_hold")` and a supply pod's war
+## loot) lands where it crashes. Empty: no airships.
+var airship_vehicle := ""
+var airship_faction := ""
+var airship_passes := 3
 ## Artifacts (items tagged "artifact", DESIGN.md section 6). Until the PvE
 ## dungeons and arena tournaments that should hand them out exist, world
 ## events do: the chance that a warlord carries one, and that a supply pod

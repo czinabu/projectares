@@ -1,8 +1,10 @@
 # The Basalt Rift
 
 Rules for `worlds/rift/` (DESIGN.md "Basalt Rift", "The Basalt Rift (part
-one, built: the world and updrafts)"). Check it with `tests/rift_tests.gd`
-and by eye with `visual_check.tscn -- <dir> --rift-only`.
+one, built: the world and updrafts)", "(part two, built: the Sky
+Leviathan)"). Check it with `tests/rift_tests.gd` and
+`tests/rift_leviathan_tests.gd`, and by eye with `visual_check.tscn --
+<dir> --rift-only` and `--leviathan-only`.
 
 ## The map
 
@@ -62,6 +64,33 @@ and by eye with `visual_check.tscn -- <dir> --rift-only`.
 - Keep a vent clear of the bridges and the mesas, and keep at least one
   rising past the Crown beside it (the tests check both the Crown's
   height over every rig's ceiling and that ride).
+
+## The Sky Leviathan
+
+- A world event of the core's airship kind (`worlds-and-war.md`, "World
+  events"; `vehicles.md`, the "airship" tag). The world names its ship
+  (`LEVIATHAN`, item `rift_leviathan`, registered in `register_items`,
+  tagged "airship", never "vehicle", so nobody owns one), its faction
+  ("leviathan") and its passes (3); the map gives its routes
+  (`AIRSHIP_ROUTES`, `airship_routes`): each comes in high over a cliff,
+  crosses the rift and climbs out over the other.
+- Its weak spots are `LEVIATHAN_SEATS` (where on the ship, which piece the
+  model builds there) and `LEVIATHAN_PARTS` (each kind's body, health,
+  armor, and metas): four engine pods hung under the keel, two spine
+  plates on its back, two turrets on its tower. `equip_bot` builds one by
+  its `boss` meta (`_make_leviathan_part`): no randomness, a hidden body
+  (skin "ship_part"), a wider one (`Actor.set_body_radius`), nothing
+  carried. Only the turrets fight, with the seat's gun
+  (`rift_leviathan_gun`); a spine plate is soft only to a hit from steeply
+  above (`rear_damage_mult`, `rear_arc_deg` 0).
+- Heights: over the rift a pod's middle is within a Mk1 jetpack's reach
+  held at its ceiling, and the plates and turrets are over it, for whoever
+  rides an updraft or dives off the Crown (the test checks the routes).
+  Keep the routes so, and keep perches out of them (`_in_airship_lane`:
+  none within `AIRSHIP_LANE` of a route stands within `AIRSHIP_HEADROOM`
+  of its keel).
+- A broken weak spot drops `roll_loot("airship_part")` under it; the crash
+  drops the hold, `roll_loot("airship_hold")` with a supply pod's war loot.
 
 ## Rules
 

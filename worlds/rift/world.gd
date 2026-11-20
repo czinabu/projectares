@@ -6,8 +6,12 @@ extends WorldDef
 ## (`molten_level`), and updrafts over its vents carry anyone in the air up
 ## past their rig's ceiling (`updraft_at`), the only way onto the Crown.
 ## Ashfront's death rule: the fallen drop scrip, not gear. Part one (Caleb's
-## call): the world, its map, the lava and the updrafts. The Sky Leviathan
-## and the rig rewards (upgrade data, rig cosmetics) come in later parts.
+## call): the world, its map, the lava and the updrafts. Part two: the Sky
+## Leviathan, an armoured airship that drifts across the rift now and then
+## as a world event (`airship_vehicle`, Caleb's call: "a world event that
+## fights and falls"), its turrets shooting at flyers, weak spots at three
+## heights that drop salvage as they break, and a crash with a big haul.
+## The rig rewards (upgrade data, rig cosmetics) come in part three.
 
 const MapScript := preload("map.gd")
 
@@ -27,6 +31,54 @@ const ROSTER := {
 			"walk": 5.0, "sprint": 8.6, "weapon": "blade", "blade": "Cleaver", "damage": 30.0, "windup": 0.55,
 			"reach": 2.6},
 }
+## The Sky Leviathan (DESIGN.md "Basalt Rift"): its weak spots at three
+## heights, each a bot on one of the ship's seats (its "part", the bot's
+## `boss` meta, built by `equip_bot`): four engine pods hung low under the
+## hull, two spine plates on its back (soft to a dive from above: `rear`
+## multiplies hits from steeply above) and two turrets on top of
+## its bridge tower, which fight. `radius` and `height` are the body's.
+const LEVIATHAN := "rift_leviathan"
+const LEVIATHAN_GUN := "rift_leviathan_gun"
+const LEVIATHAN_FACTION := "leviathan"
+const LEVIATHAN_PARTS := {
+	"leviathan_pod": {"name": "Engine Pod", "health": 420.0, "armor": 0.0, "radius": 1.5, "height": 3.0},
+	"leviathan_spine": {"name": "Spine Plate", "health": 650.0, "armor": 50.0, "radius": 1.3, "height": 2.6,
+			"rear": 2.5},
+	"leviathan_turret": {"name": "Leviathan Turret", "health": 320.0, "armor": 30.0, "radius": 1.1,
+			"height": 2.2, "metas": {"sight": 90.0, "range": 75.0, "fov": 360.0}},
+}
+## Where the weak spots sit on the ship: [part, look of its piece, seat
+## (feet) on the ship, turned round].
+const LEVIATHAN_SEATS := [
+	["leviathan_pod", "pod", Vector3(-8.5, -2.5, -9.0), false],
+	["leviathan_pod", "pod", Vector3(8.5, -2.5, -9.0), false],
+	["leviathan_pod", "pod", Vector3(-8.5, -2.5, 9.0), false],
+	["leviathan_pod", "pod", Vector3(8.5, -2.5, 9.0), false],
+	["leviathan_spine", "plate", Vector3(0.0, 8.4, -8.5), false],
+	["leviathan_spine", "plate", Vector3(0.0, 8.4, 8.5), false],
+	["leviathan_turret", "turret", Vector3(0.0, 13.5, -2.6), false],
+	["leviathan_turret", "turret", Vector3(0.0, 13.5, 2.6), true],
+]
+## What a broken weak spot drops under the ship, and what is in its hold
+## when it crashes (with a supply pod's war loot on top).
+const LEVIATHAN_PART_TABLE := [
+	{"id": "alloy_ingot", "weight": 30.0},
+	{"id": "power_cell", "weight": 30.0},
+	{"id": "circuit_board", "weight": 20.0},
+	{"id": "targeting_chip", "weight": 10.0},
+	{"id": "reactor_core", "weight": 5.0},
+]
+const LEVIATHAN_HOLD_TABLE := [
+	{"id": "reactor_core", "weight": 12.0},
+	{"id": "targeting_chip", "weight": 12.0},
+	{"id": "alloy_ingot", "weight": 12.0},
+	{"id": "boots_thruster", "weight": 6.0},
+	{"id": "wings_glide", "weight": 6.0},
+	{"id": "rifle_carbine", "weight": 5.0},
+	{"id": "frame_runner", "weight": 5.0},
+	{"id": "helm_spotter", "weight": 4.0},
+]
+
 ## What the lava does to whoever goes in, four times a second (armor is no
 ## help): about half a second for anyone.
 const LAVA_DAMAGE := 50.0
@@ -88,12 +140,43 @@ func _init() -> void:
 	# The lava sea (the map's `LAVA_Y`): it burns whoever goes in.
 	molten_level = MapScript.LAVA_Y
 	molten_damage = LAVA_DAMAGE
+	# The Sky Leviathan, along the map's `airship_routes`.
+	airship_vehicle = LEVIATHAN
+	airship_faction = LEVIATHAN_FACTION
+	airship_passes = 3
 
 
 ## Items only this world adds. Ids are global, so prefix them with the
 ## world's id: ItemDB.register("rift_trophy", ...).
 func register_items() -> void:
-	pass
+	ItemDB.register(LEVIATHAN, "Sky Leviathan", ItemDB.Rarity.RELIC, 0, ["airship"],
+			{"model": "airship", "max_speed": 5.0, "accel": 1.5, "turn_rate": 0.22, "climb_rate": 2.5,
+			"climb_accel": 1.2, "gravity": 6.0, "max_fall_speed": 16.0, "coast_decel": 0.5, "lean_amount": 0.08,
+			"body_size": Vector3(9.0, 12.0, 34.0), "body_color": Color(0.56, 0.5, 0.45),
+			"passenger_seat": true, "seats": _leviathan_seats()},
+			"An armoured airship of the rift's warlords. Its turrets shoot at anything in the air; break its "
+			+ "engine pods, spine plates and turrets and it comes down with its hold.")
+	ItemDB.register(LEVIATHAN_GUN, "Leviathan Turret Gun", ItemDB.Rarity.RARE, 0, ["mounted"],
+			{"damage": 9.0, "headshot_mult": 1.0, "fire_interval": 0.14, "mag_size": 60, "ammo_in_mag": 60,
+			"reserve_ammo": 9999, "reload_time": 2.5, "spread_deg": 1.8, "bloom_per_shot": 0.03, "max_bloom": 1.2,
+			"recoil_kick_deg": 0.0, "max_range": 150.0, "tracer_color": Color(1.0, 0.45, 0.2)},
+			"A Sky Leviathan's turret gun, never carried off.")
+
+
+## The ship's seats, one for each weak spot (`Vehicle.seats`; the
+## anchors only matter for a pose nobody sees, the part bots being hidden).
+static func _leviathan_seats() -> Array:
+	var out: Array = []
+	for row: Array in LEVIATHAN_SEATS:
+		var at: Vector3 = row[2]
+		var seat := {"offset": at, "point": at + Vector3(0, 0.8, 0),
+				"grips": [at + Vector3(-0.2, 1.2, -0.3), at + Vector3(0.2, 1.2, -0.3)] as Array[Vector3],
+				"pegs": [at + Vector3(-0.15, 0.4, 0.0), at + Vector3(0.15, 0.4, 0.0)] as Array[Vector3],
+				"lean": 0.0, "exit": at, "part": row[0], "piece": row[1], "turn": PI if row[3] else 0.0}
+		if row[0] == "leviathan_turret":
+			seat["gun"] = LEVIATHAN_GUN
+		out.append(seat)
+	return out
 
 
 func create_map() -> Node3D:
@@ -135,9 +218,20 @@ func starter_loadout() -> Array[String]:
 
 
 func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
-	var table := BOT_TABLE if source == "bot" else CACHE_TABLE
+	var table: Array = CACHE_TABLE
+	var count := rng.randi_range(2, 4)
+	match source:
+		"bot":
+			table = BOT_TABLE
+			count = rng.randi_range(1, 2)
+		"airship_part":
+			table = LEVIATHAN_PART_TABLE
+			count = rng.randi_range(1, 2)
+		"airship_hold":
+			table = LEVIATHAN_HOLD_TABLE
+			count = rng.randi_range(3, 5)
 	var out: Array[String] = []
-	for i in rng.randi_range(1, 2) if source == "bot" else rng.randi_range(2, 4):
+	for i in count:
 		out.append(ItemDB.roll(table, rng))
 	return out
 
@@ -149,6 +243,9 @@ func contract_jobs() -> Dictionary:
 ## Builds a bot from its roster row. Only from `rng` and the bot's metas,
 ## so a client building the same seed gets the same bot.
 func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
+	if LEVIATHAN_PARTS.has(str(bot.get_meta("boss", ""))):
+		_make_leviathan_part(bot)
+		return
 	var kind := _roll_kind(rng)
 	var row: Dictionary = ROSTER[kind]
 	if bot.faction == "":
@@ -187,6 +284,30 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		gun.reserve_ammo = 600
 		gun.headshot_mult = 1.0
 		bot.equip_weapon(gun)
+
+
+## One of the Sky Leviathan's weak spots, from its row: no body you see
+## (the ship's model is its body), nothing carried (its salvage falls when
+## it breaks, `Raid._on_airship_part_died`), and a turret's gun is the
+## seat's own. Free of randomness, so a client builds the same.
+func _make_leviathan_part(bot: Actor) -> void:
+	var kind := str(bot.get_meta("boss"))
+	var row: Dictionary = LEVIATHAN_PARTS[kind]
+	bot.faction = LEVIATHAN_FACTION
+	bot.set_meta("kind", kind)
+	bot.display_name = row["name"]
+	bot.set_meta("look", "ship_part")
+	bot.set_stand_height(row["height"], 0.3)
+	bot.set_body_radius(row["radius"])
+	bot.health.max_health = row["health"]
+	bot.health.health = bot.health.max_health
+	bot.health.set_armor(row["armor"])
+	# Soft only to a dive from steeply above, never from behind.
+	bot.rear_damage_mult = float(row.get("rear", 1.0))
+	bot.rear_arc_deg = 0.0
+	var metas: Dictionary = row.get("metas", {})
+	for key: String in metas:
+		bot.set_meta(key, metas[key])
 
 
 func _roll_kind(rng: RandomNumberGenerator) -> String:

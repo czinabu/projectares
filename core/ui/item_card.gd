@@ -217,7 +217,7 @@ const KINDS := [
 	["knife", "knife"], ["axe", "axe"], ["hammer", "two-handed hammer"], ["spear", "spear"],
 	["blade", "sword"], ["frame_light", "light armor frame"], ["frame_medium", "medium armor frame"],
 	["frame_heavy", "heavy armor frame"], ["helmet", "helmet"], ["attachment", "weapon attachment"],
-	["ability", "ability chip"], ["artifact", "artifact"], ["backpack", "backpack"], ["vehicle", "vehicle"],
+	["ability", "ability chip"], ["artifact", "artifact"], ["backpack", "backpack"], ["vehicle", "vehicle"], ["airship", "airship"],
 	["blueprint", "blueprint"], ["upgrade_data", "crafting data"], ["heal", "healing item"],
 	["paint", "armor paint"], ["cosmetic", "clothing"], ["decor", "decoration"], ["furniture", "furniture"],
 	["relic", "relic"], ["trophy", "trophy"], ["augment", "salvage"], ["material", "crafting material"],
@@ -309,6 +309,10 @@ static func facts(id: String) -> Array[String]:
 		out.append("Rides on your watch as a toy: throw it to unpack it")
 		if stats.has("watch_recharge"):
 			out.append("The watch needs %d s before the next throw" % roundi(float(stats.watch_recharge)))
+	elif ItemDB.has_tag(id, "airship"):
+		out.append("A world event: it drifts across the map, never yours to ride")
+		var parts := (stats.get("seats", []) as Array).filter(func(seat: Dictionary) -> bool: return seat.has("part"))
+		out.append("%d weak spots; break them all and it comes down with its hold" % parts.size())
 	elif ItemDB.has_tag(id, "backpack"):
 		out.append("Pack room: %d slots, against %d with none" % [int(stats.get("capacity", Loadout.FIELD_PACK)), Loadout.FIELD_PACK])
 		out.append("Sprint %d%% slower" % roundi((1.0 - float(stats.get("sprint_mult", 1.0))) * 100.0))

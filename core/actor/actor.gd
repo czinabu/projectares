@@ -125,6 +125,10 @@ var eye_height := 1.6
 ## big body taller (Ashfront's walkers) when it equips the bot; the capsule,
 ## `Combat.trace` and headshots all follow `body_height()`.
 var stand_height := BODY_HEIGHT
+## How wide the body is: `BODY_RADIUS` for a person. A world may make a
+## big target fatter (a Sky Leviathan's engine pod) when it equips the bot;
+## the capsule and `Combat.trace` follow it (`set_body_radius`).
+var body_radius := BODY_RADIUS
 ## A weak spot: hits from behind (and from steeply above) are multiplied by
 ## this, in `modify_incoming`. 1 for no weak spot. Set by the world when it
 ## equips a bot, so it is the same on every machine.
@@ -1253,6 +1257,16 @@ func set_stand_height(height: float, eye_drop := 0.2) -> void:
 	_fit_body()
 
 
+## Makes the body `radius` wide (and at least twice that tall).
+func set_body_radius(radius: float) -> void:
+	body_radius = radius
+	if stand_height < radius * 2.0:
+		set_stand_height(radius * 2.0)
+	if _body_shape != null:
+		_body_shape.radius = radius
+	_fit_body()
+
+
 ## Whether the full standing body fits where the actor is: nothing of the
 ## world in the way overhead.
 func room_to_stand() -> bool:
@@ -1283,6 +1297,7 @@ func _fit_body() -> void:
 	if _body_shape == null:
 		return
 	var height := body_height()
+	height = maxf(height, body_radius * 2.0)
 	if is_equal_approx(_body_shape.height, height):
 		return
 	_body_shape.height = height

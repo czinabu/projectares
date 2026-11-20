@@ -1261,7 +1261,8 @@ vehicle has a job:
 - Inside: a heavy weapon, a chance at an artifact, and a vehicle blueprint
   (unlocks a vehicle for the watch).
 
-**Sky Leviathan** (later; needs the jet and the PvE world's boss work)
+**Sky Leviathan** (built in the Basalt Rift: "The Basalt Rift (part two,
+built: the Sky Leviathan)")
 
 - An armoured airship that drifts across the map, with weak spots at three
   heights: engine pods low (boots and bikes), the spine at mid height (wing
@@ -1392,8 +1393,9 @@ built in this order, cheapest and most connected first:
    flight rigs decide every fight, with updrafts, the Sky Leviathan and
    Ashfront's death rule. It pays rig upgrade data and rig cosmetics.
    Built in three parts (Caleb's call: the world and its updrafts first,
-   then the Sky Leviathan, then the rig rewards); part one is built
-   (below, "The Basalt Rift (part one, built: the world and updrafts)").
+   then the Sky Leviathan, then the rig rewards); parts one and two are
+   built (below, "The Basalt Rift (part one, built: the world and
+   updrafts)" and "(part two, built: the Sky Leviathan)").
 
 The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
 Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
@@ -1745,8 +1747,49 @@ is the point here.
   Crown and the high perches: the updrafts are how you get up there. Two
   of them rise beside the Crown, one beside the Shelf for a first ride,
   and the watch says "updraft" while you are in one.
-- **Still to come.** The Sky Leviathan (part two), and the rig rewards,
-  upgrade data and rig cosmetics (part three).
+- **Still to come.** The rig rewards, upgrade data and rig cosmetics (part
+  three).
+
+### The Basalt Rift (part two, built: the Sky Leviathan)
+
+Caleb's call: a world event that fights and falls. Now and then an
+armoured airship drifts across the rift, its turrets shooting at flyers.
+Breaking its weak spots drops salvage along its path; break them all and it
+crashes with a big haul.
+
+- **Its way across.** It comes in high over the east or west cliff, sinks
+  to about 38 m over the lava and drifts across the rift at 5 m/s, north
+  of the Anvil or between the Stacks and the Shelf, then climbs out over
+  the far cliff, turns and comes back: three crossings, then it drifts off.
+  The war feed says where it comes in. No perch stands up into its way,
+  and its way crosses updrafts, so you can ride one up past it.
+- **Weak spots at three heights.** Four engine pods hang under its keel,
+  low enough that a Mk1 jetpack held at its ceiling over the lava can look
+  one in the eye; two armoured spine plates sit on its back, soft to a
+  dive from above (two and a half times the damage); two turrets stand on
+  its bridge tower above them. The plates and turrets are above every
+  rig's ceiling: you get to them by riding an updraft up past the ship, or
+  diving off the Crown. Each weak spot glows hot so you can pick it out
+  from a mesa. The design's first sketch had the pods for boots and bikes;
+  in the rift no rig climbs from a mesa (a ceiling counts from the lava's
+  floor), so the pods are for jetpacks and for guns from the mesas and
+  bridges instead.
+- **The turrets fight.** Each turret is a gunner on a heavy mounted gun
+  that sees 90 m all round and shoots at anyone in reach; up there that
+  is mostly flyers. The pods and plates only take hits.
+- **Loot along its path.** A broken weak spot shows wrecked on the ship and
+  drops its salvage straight under it, on whatever is below or floating on
+  the lava (alloy, power cells, circuit boards, now and then a reactor
+  core), so players on the mesas and bridges can follow it.
+- **It falls.** With every weak spot broken it noses down and falls,
+  drifting on, and crashes on whatever is under it or on the lava. Its
+  hold lands where it came down: the best haul of any event, a supply
+  pod's war loot and more (reactor cores, targeting chips, rigs, gear),
+  and a chance at an artifact.
+- **Online.** It is a vehicle the server moves and every client draws; its
+  weak spots are bots the server seats on it, built the same on every
+  machine from their kind, and a client shows a piece wrecked once the
+  server empties its seat.
 
 ## 3. The watch
 
@@ -3594,7 +3637,7 @@ no rebinding screen yet; when it gets one these come with the rest.
    mech, jet), and the racing mode (section 9).
    Artifacts arrive with arena tournaments (the Blade Tournament, built)
    and PvE dungeons, and the Sky
-   Leviathan with the jet and the PvE world. The hub's toy RC arena comes
+   Leviathan in the Basalt Rift (built). The hub's toy RC arena comes
    last. Squad visits to a base follow online base visits together;
    trophies follow PvE bosses and arena brackets; blueprints and tech cores
    arrive with the meteor, the PvE world and the arena. The progression
