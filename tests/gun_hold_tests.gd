@@ -24,7 +24,7 @@ const MOVES := [
 static func run(t: Node) -> void:
 	print("Guns held on the body through every way of moving")
 	Look.enabled = true
-	for id: String in ["rifle_carbine", "pistol_service"]:
+	for id: String in ["rifle_carbine", "pistol_service", "power_rail_lance", "power_helion", "power_arc_mortar", "power_storm_cannon"]:
 		await _check_gun(t, id)
 	await _check_weight(t)
 	Look.enabled = false
@@ -33,12 +33,15 @@ static func run(t: Node) -> void:
 static func _check_gun(t: Node, id: String) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
-	raid.start(Worlds.get_world("ashfront"), 42, [id, "blade_scrap", "plate_light"])
+	var power := ItemDB.has_tag(id, "power")
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine" if power else id, "blade_scrap", "plate_light"])
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -500, 0)
 	await t.frames(5)
 	var p := raid.player
+	if power:
+		Loadout.set_power(p, id)
 	for i in p.weapons.size():
 		if p.weapons[i] is Gun and p.weapons[i].item_id == id:
 			p._draw_weapon(i)
@@ -101,8 +104,10 @@ static func _check_gun(t: Node, id: String) -> void:
 			t.check(false, "%s, %s: posed" % [id, name])
 			continue
 		# A sidearm comes into one hand in a sprint or a slide, the other arm
-		# free to pump or catch the ground.
-		var both := not gun.is_sidearm or name not in ["sprint", "slide"]
+		# free to pump or catch the ground; a slide may slip the off hand along
+		# a heavy weapon's long body.
+		var both := not (gun.is_sidearm and name in ["sprint", "slide"]) \
+				and not (ActionPose.of(p).is_heavy_gun(gun) and name == "slide")
 		if seen.has("off_fist") and both:
 			var front: Vector3 = seen["grip"] if gun.is_sidearm else seen["fore"]
 			var line := Geometry3D.get_closest_point_to_segment(seen["off_fist"], front, seen["grip"])
@@ -112,14 +117,19 @@ static func _check_gun(t: Node, id: String) -> void:
 			var aim := p.global_basis * Basis(Vector3.RIGHT, p.cmd.pitch) * Vector3.FORWARD
 			var off_aim := rad_to_deg((seen["ahead"] as Vector3).angle_to(aim))
 			t.check(off_aim < 8.0, "%s, %s: the gun points where it shoots (%.1f deg off)" % [id, name, off_aim])
-		# Some of the gun in the first-person frame: its grip, its muzzle or
-		# the middle between them.
+		# Some of the gun in the first-person frame: its grip, its muzzle, the
+		# middle between them or the middle of its model (a launcher's tube
+		# runs well past its muzzle marker).
 		var shown := 0
-		for spot: Vector3 in [seen["grip"], seen["muzzle"], ((seen["grip"] as Vector3) + (seen["muzzle"] as Vector3)) * 0.5]:
+		var middle := gun.visual.global_transform * ActionPose.model_box(gun).get_center()
+		for spot: Vector3 in [seen["grip"], seen["muzzle"], ((seen["grip"] as Vector3) + (seen["muzzle"] as Vector3)) * 0.5, middle]:
 			if not cam.is_position_behind(spot) and cam.is_position_in_frustum(spot):
 				shown += 1
 		# Carried out of a fight, the gun may sit low, but some of it shows.
-		t.check(shown >= (2 if move[4] or move[5] else 1), "%s, %s: the gun shows in the first-person view (%d of 3 points)" % [id, name, shown])
+		# (In the sights the gun is round the eye: the sight checks have it.)
+		if not move[5]:
+			t.check(shown >= (2 if move[4] else 1),
+					"%s, %s: the gun shows in the first-person view (%d of 4 points)" % [id, name, shown])
 	controller.queue_free()
 	raid.queue_free()
 	await t.frames(3)

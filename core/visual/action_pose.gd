@@ -478,6 +478,9 @@ var ads_stance_sidearm := Vector2(0.3, -0.06)
 ## aiming stance (`ads_stance`).
 var hip_from_eyes_long := Vector3(0.08, -0.27, -0.12)
 var hip_from_eyes_sidearm := Vector3(0.0, -0.23, -0.17)
+## A gun too heavy for the shoulder (`shoulders_never`, a spinning cannon)
+## is braced low at the hip instead, the off hand on its fore grip.
+var hip_from_eyes_braced := Vector3(0.1, -0.45, -0.12)
 var hip_pitch := Vector2(-0.8, 0.7)
 var hip_stance_share := 0.8
 ## The share of the aiming stance a long gun carried at a low ready blades
@@ -539,6 +542,14 @@ var carry_low_sidearm := Vector3(0.03, -0.33, -0.24)
 var carry_low_sidearm_turn := Vector3(-0.2, 0.1, 0.0)
 var carry_port_sidearm := Vector3(0.16, -0.3, -0.4)
 var carry_port_sidearm_turn := Vector3(-0.6, 0.15, 0.15)
+## A heavy weapon (`heavy_tags`) is too heavy to throw across the chest at
+## port: carried level across the hips in both hands, the muzzle a little to
+## the off side, and in a sprint only dropped a little lower and turned in.
+var heavy_tags: Array[String] = ["power"]
+var carry_low_heavy := Vector3(0.1, -0.33, -0.14)
+var carry_low_heavy_turn := Vector3(-0.08, 0.12, 0.05)
+var carry_port_heavy := Vector3(0.1, -0.35, -0.2)
+var carry_port_heavy_turn := Vector3(-0.15, 0.2, 0.1)
 ## How much the off hand holds the gun in each carry: both hands at a low
 ## ready, a long gun at port; a sprinting sidearm leaves the off arm free.
 var carry_support_low := 1.0
@@ -916,15 +927,17 @@ func kick(gun: Gun) -> void:
 ## ready blended toward the sprint carry, plus the stride's bob and the sway.
 func carry_point(gun: Gun) -> Vector3:
 	var side := gun != null and gun.is_sidearm
-	var low_at := carry_low_sidearm if side else carry_low_long
-	var port_at := carry_port_sidearm if side else carry_port_long
+	var heavy := is_heavy_gun(gun)
+	var low_at := carry_low_sidearm if side else (carry_low_heavy if heavy else carry_low_long)
+	var port_at := carry_port_sidearm if side else (carry_port_heavy if heavy else carry_port_long)
 	return low_at.lerp(port_at, sprint) + carry_bob() + sway
 
 
 func carry_turn(gun: Gun) -> Vector3:
 	var side := gun != null and gun.is_sidearm
-	var low_turn := carry_low_sidearm_turn if side else carry_low_long_turn
-	var port_turn := carry_port_sidearm_turn if side else carry_port_long_turn
+	var heavy := is_heavy_gun(gun)
+	var low_turn := carry_low_sidearm_turn if side else (carry_low_heavy_turn if heavy else carry_low_long_turn)
+	var port_turn := carry_port_sidearm_turn if side else (carry_port_heavy_turn if heavy else carry_port_long_turn)
 	var drop := cos(TAU * 2.0 * stride_phase) * stride_amount
 	return low_turn.lerp(port_turn, sprint) + Vector3(-bob_tip * drop, 0.0, 0.0)
 
@@ -933,6 +946,17 @@ func carry_turn(gun: Gun) -> Vector3:
 ## toward the off side), in radians, from straight ahead.
 static func turn_basis(turn: Vector3) -> Basis:
 	return Basis(Vector3.UP, turn.y) * Basis(Vector3.RIGHT, turn.x) * Basis(Vector3.BACK, turn.z)
+
+
+## True for a heavy weapon (`heavy_tags`: the power weapons), carried
+## its own way (`carry_low_heavy`).
+func is_heavy_gun(gun: Gun) -> bool:
+	if gun == null:
+		return false
+	for tag in heavy_tags:
+		if ItemDB.has_tag(gun.item_id, tag):
+			return true
+	return false
 
 
 ## How much the off hand holds the carried gun (0..1).
@@ -1081,6 +1105,8 @@ func ads_wanted(gun: Gun) -> bool:
 ## Where the wrist holds `gun` up at the hip, from the eyes along the aim
 ## (see `hip_from_eyes_long`).
 func hip_from_eyes(gun: Gun) -> Vector3:
+	if gun != null and shoulders_never(gun):
+		return hip_from_eyes_braced
 	return hip_from_eyes_sidearm if gun != null and gun.is_sidearm else hip_from_eyes_long
 
 

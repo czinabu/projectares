@@ -489,7 +489,7 @@ func step(delta: float) -> void:
 	# the off shoulder comes forward and the off hand reaches the fore end.
 	var hip_up := 0.0
 	if gun != null and gun.visual != null and gun.visual.visible and not _let_go() and override_weight <= 0.001 \
-			and _weight <= 0.001 and not shared.shoulders_never(gun):
+			and _weight <= 0.001:
 		hip_up = (1.0 - shared.low) * (1.0 - shared.reload) * (1.0 - shared.inspect_for("gun")) * (1.0 - _gun_carry)
 	# Carried at a low ready in both hands it blades a little too; at port in
 	# a sprint the gun is across the chest and the shoulders stay square.
@@ -719,8 +719,9 @@ func carry_frame() -> Transform3D:
 ## its fore end, and the stride's swing never reaches it (the eyes are
 ## steadied). The new body's arms are shorter than the clip's reach, so the
 ## clip's own hold left the off hand short of the gun (Caleb's gun handling
-## pass). A gun braced at the hip (`ActionPose.shoulders_never`) or held on
-## a vehicle keeps the clip's hold, averaged over the last stride.
+## pass). A gun braced at the hip (`ActionPose.shoulders_never`) is held the
+## same way, lower (`ActionPose.hip_from_eyes_braced`). A gun held on a
+## vehicle keeps the clip's hold, averaged over the last stride.
 func _hold_at_hip() -> void:
 	_body_frame = carry_frame()
 	_hip_raw = skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
@@ -728,7 +729,7 @@ func _hold_at_hip() -> void:
 	_hip_dt = 0.0
 	var gun := actor.get_active_weapon() as Gun
 	var shared := _pose()
-	if gun != null and actor.vehicle == null and not shared.shoulders_never(gun):
+	if gun != null and actor.vehicle == null:
 		_hip_samples.clear()
 		_hip_seen = 0.0
 		_hip_weight = (1.0 - shared.low) if _weight <= 0.001 else 0.0

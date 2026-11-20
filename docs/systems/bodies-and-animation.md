@@ -65,8 +65,12 @@ date in the same PR.
   a long gun's low ready by `carry_stance_share`), so the off hand reaches
   the fore end, the gun shows low in the view and the clip's arm swing
   never reaches it (the clips' own hold put the gun out past the new
-  body's reach). A gun braced at the hip (`shoulders_never`) or held on a
-  vehicle keeps the clip's wrist averaged over a stride.
+  body's reach). A gun braced at the hip (`shoulders_never`, the Storm
+  Cannon) is held the same way, lower (`hip_from_eyes_braced`), both hands
+  on it; a heavy weapon (`heavy_tags`, the power weapons) is carried level
+  across the hips and never thrown up to port (`carry_low_heavy`,
+  `carry_port_heavy`). A gun held on a vehicle keeps the clip's wrist
+  averaged over a stride.
   `_check_hip_after_aim_tap` measures the steadiness, and
   `gun_hold_tests.gd` the off hand on the gun, the gun on the aim and the
   gun in the first-person frame through every way of moving.
