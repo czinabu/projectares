@@ -87,8 +87,11 @@ extends RefCounted
 ##     "purge" lanes (meta "toward", the lane's far end; "width", "damage")
 ##     that warn and then vent across the floor once it is below; a "vault"
 ##     where a share for each player who fought it (`roll_vault`) is laid
-##     out along the marker's x when it falls; and a "beacon" or "warmth"
-##     with the meta stays dark while it stands.
+##     out along the marker's x when it falls; "boss_snag" markers (meta
+##     "radius", "stun"), solid things a keeper that charges can ram: one
+##     that drives into a snag in a dash-strike is staggered "stun" seconds
+##     (`keeper_snag_news`); and a "beacon" or "warmth" with the meta stays
+##     dark while it stands.
 ##   - Marker3D nodes in group "spawn_guard": a dungeon's garrison. A bot of
 ##     the marker's "faction" stands guard over "radius" metres (10 by
 ##     default) round it, outside the armies, and another comes back
@@ -725,6 +728,18 @@ func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
 ## gone). "" says nothing.
 func keeper_news(_bot: Actor, phase: int) -> String:
 	return "A keeper has fallen" if phase == 0 else ""
+
+
+## A standing keeper's phase changed (1 or 2), on the authority: a world
+## may change how it fights.
+func on_keeper_phase(_bot: Actor, _phase: int) -> void:
+	pass
+
+
+## What everyone in a keeper's arena hears when it rams one of its snags
+## and is stuck there. "" says nothing.
+func keeper_snag_news(_bot: Actor) -> String:
+	return ""
 
 
 func on_spawn(_actor: Actor) -> void:

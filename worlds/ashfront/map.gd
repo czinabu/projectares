@@ -168,6 +168,8 @@ const FORGE_AT := Vector2(2, -2)
 const FORGE_TIERS := [Vector2(14.0, 10.0), Vector2(10.0, 14.0), Vector2(7.0, 22.0), Vector2(4.5, 18.0), Vector2(2.0, 16.0)]
 ## The four towers on the plinth's corners: width and height.
 const FORGE_TOWER := Vector2(3.0, 34.0)
+## A dropship wreck's engine, before its `big`.
+const WRECK_ENGINE := Vector3(1.3, 1.3, 2.6)
 ## The old front: which trench lines face across no man's land, so sandbags
 ## go on their lips and tank traps out in front of them.
 const FRONT_LINES := [0, 1, 3, 4, 5]
@@ -291,6 +293,7 @@ func _ready() -> void:
 	_build_spawns()
 	_build_works()
 	_build_field()
+	_build_field_kit()
 	_mark_zones()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
@@ -730,7 +733,9 @@ func _build_sites() -> void:
 				_build_carrier(at)
 		# The depot sits on the side facing the middle of the map, or north at the middle.
 		var inward := -at.normalized() if at.length() > 1.0 else Vector2(0, -1)
-		_add_depot(_open(at + inward * (radius - 10.0), 6.0))
+		# Its terminal backs away from the site; at the middle, where there is no
+		# away, it backs east, across the way in.
+		_add_depot(_open(at + inward * (radius - 10.0), 6.0), inward if at.length() > 1.0 else Vector2(1, 0))
 		# The army that starts here, its garrison, and a bike for whoever takes the place.
 		var army: String = site["army"]
 		if army != "":
@@ -778,6 +783,11 @@ func _build_forge(at: Vector2) -> void:
 		for sz: float in [-1.0, 1.0]:
 			_box(Vector3(FORGE_TOWER.x, FORGE_TOWER.y, FORGE_TOWER.x),
 					base + Vector3(sx * corner, FORGE_TOWER.y * 0.5 - 1.0, sz * corner), dark)
+			# The cap the dressing puts on it (`_dress_forge`).
+			SolidProp.box(nav_region, Vector3(FORGE_TOWER.x + 0.8, 1.0, FORGE_TOWER.x + 0.8),
+					Transform3D(Basis.IDENTITY, base + Vector3(sx * corner, FORGE_TOWER.y - 0.7, sz * corner)))
+	# The beacon on the summit.
+	SolidProp.box(nav_region, Vector3(2.2, 2.2, 2.2), Transform3D(Basis.IDENTITY, base + Vector3(0, y + 0.8, 0)))
 	_buildings.append({"center": base, "size": Vector3(FORGE_TIERS[0].x, y, FORGE_TIERS[0].x), "landmark": true})
 
 
@@ -886,9 +896,23 @@ func _build_outpost(at: Vector2, dir: Vector2, title: String) -> void:
 		var post := at - dir * (OUTPOST_RADIUS + 0.6) + dir.orthogonal() * side * 4.6
 		var base := _ground(post)
 		_box(Vector3(1.0, 7.0, 1.0), base + Vector3(0, 3.0, 0), COVER_CONCRETE)
-	_add_depot(_ground(at + dir * 7.0))
+	# A beam across the post tops: the gate's sign hangs from it.
+	var beam := _box(Vector3(10.2, 0.8, 1.0), _gate_beam_at(at, dir), COVER_CONCRETE)
+	beam.rotation.y = atan2(dir.x, dir.y)
+	# The depot at the back of the yard, its terminal against the back wall.
+	_add_depot(_ground(at + dir * 7.0), dir)
 	for spot: Vector2 in [at + dir.orthogonal() * 4.0, at - dir.orthogonal() * 4.0, at - dir * 3.0]:
 		_add_marker("spawn_player", _ground(spot))
+
+
+## The middle of the beam over an outpost's gate, a little under the lower
+## of the two post tops so it sits on both.
+func _gate_beam_at(at: Vector2, dir: Vector2) -> Vector3:
+	var gate := at - dir * (OUTPOST_RADIUS + 0.6)
+	var low := INF
+	for side: float in [-1.0, 1.0]:
+		low = minf(low, _ground(gate + dir.orthogonal() * side * 4.6).y)
+	return Vector3(gate.x, low + 6.1, gate.y)
 
 
 ## Risk zones: caches pay by the zone they stand in (rooftops keep their own
@@ -1001,6 +1025,47 @@ func _add_cover(center: Vector3) -> void:
 ## The wreck of a war machine: a tank, a fallen strider, a crashed dropship or
 ## a titan. Each sits the way it came to rest, not tumbled at random; plain
 ## boxes that stop bullets, and the dressing adds the rest.
+## The kit standing about the field that you bump into (docs/systems/
+## worlds-and-war.md "Collision"): tents at each army's muster, a gun dug in
+## behind every fourth sandbag wall, and the units on the roofs. Solids on
+## the server as on a client, so they are placed from the layout alone, the
+## roofs with their own random numbers so nothing else moves.
+func _build_field_kit() -> void:
+	for army: String in ARMIES:
+		var muster: Vector2 = ARMIES[army]["muster"]
+		var inward := -muster.normalized()
+		for i in 3:
+			var spot := muster - inward * 9.0 + inward.orthogonal() * (i - 1) * 7.0
+			SolidProp.place(nav_region, "Tent.glb", 4.5, _ground(spot) + Vector3(0, -0.1, 0), atan2(inward.x, inward.y), 1.0)
+	var count := 0
+	for piece in _cover_pieces:
+		if piece.get_meta("cover", "") != "sandbag":
+			continue
+		count += 1
+		if count % 4 != 0:
+			continue
+		# The wall's face, turned to look over it toward the middle.
+		var out := Basis(Vector3.UP, piece.rotation.y).x
+		out = Vector3(-out.z, 0, out.x)
+		if out.dot(-Vector3(piece.position.x, 0, piece.position.z)) < 0.0:
+			out = -out
+		var spot := piece.position - out * 1.6
+		SolidProp.place(nav_region, "Turret_Gun.glb", 2.2, terrain.on_ground(spot.x, spot.z), atan2(out.x, out.z), 1.0)
+	var roofs := RandomNumberGenerator.new()
+	roofs.seed = LAYOUT_SEED + 11
+	for b in _buildings:
+		if b.get("wreck", false) or b.get("landmark", false) or b.get("saw", false):
+			continue
+		var size: Vector3 = b["size"]
+		var top: Vector3 = b["center"] + Vector3(0, size.y, 0)
+		if size.x < 4.0:
+			continue
+		for i in roofs.randi_range(1, 3):
+			var file: String = ["AC.glb", "AC_Side.glb", "AC_Stacked.glb", "Antenna_1.glb", "Antenna_2.glb", "Tank.glb"][roofs.randi() % 6]
+			var at := top + Vector3(roofs.randf_range(-0.35, 0.35) * size.x, 0, roofs.randf_range(-0.35, 0.35) * size.z)
+			SolidProp.place(nav_region, file, 3.2 if file == "Antenna_1.glb" else 1.5, at, roofs.randi() % 4 * PI / 2.0)
+
+
 func _add_wreck(at: Vector2, kind: int, yaw: float, big: float) -> void:
 	var base := _ground(at)
 	var turn := Basis(Vector3.UP, yaw)
@@ -1062,8 +1127,20 @@ func _add_wreck(at: Vector2, kind: int, yaw: float, big: float) -> void:
 				wing.rotation = Vector3(0.0, yaw, -0.12 * side if side > 0.0 else 0.08)
 			var fin := _box(Vector3(0.4, 2.6, 2.6) * big, base + turn * Vector3(0.3, size.y + 0.6 * big, size.z * 0.42), HULL_RUST)
 			fin.rotation = Vector3(-0.05, yaw + 0.12, 0.0)
+			for engine: Transform3D in _wreck_engines(base, yaw, size, big):
+				SolidProp.box(nav_region, WRECK_ENGINE * big, engine)
 	_wrecks.append({"at": base, "size": size, "burning": _rng.randf() < 0.4, "kind": kind, "yaw": yaw, "big": big})
 	_cover_spots.append(_ground(at + Vector2.from_angle(yaw) * (size.x * 0.5 + 2.0)))
+
+
+## Where a dropship wreck's two engines hang off its broken tail.
+func _wreck_engines(base: Vector3, yaw: float, size: Vector3, big: float) -> Array[Transform3D]:
+	var turn := Basis(Vector3.UP, yaw)
+	var tail := Transform3D(Basis.from_euler(Vector3(-0.05, yaw + 0.12, 0.0)), base + turn * Vector3(0.3, size.y * 0.45 - 0.2, size.z * 0.28))
+	var out: Array[Transform3D] = []
+	for side: float in [-1.0, 1.0]:
+		out.append(tail * Transform3D(Basis.IDENTITY, Vector3(side * (size.x * 0.5 + 0.5 * big), 0.2, size.z * 0.15)))
+	return out
 
 
 ## Wrecks where the story put them. Each spot is nudged clear of anything
@@ -1435,10 +1512,14 @@ func _add_ramp_lot(center: Vector3, yaw: float, park: Vector3) -> void:
 	marker.rotation.y = yaw
 
 
-func _add_depot(at: Vector3) -> void:
+## A depot whose uplink terminal stands on the `back` side of its pad (a
+## direction on the ground; zero leaves it on the +Z side).
+func _add_depot(at: Vector3, back := Vector2.ZERO) -> void:
 	var zone := Depot.new()
 	zone.add_to_group("depot")
 	zone.position = at + Vector3(0, 2.0, 0)
+	if back != Vector2.ZERO:
+		zone.rotation.y = atan2(back.x, back.y)
 	add_child(zone)
 
 
@@ -1620,12 +1701,6 @@ func _dress_rooftops(art: Node3D) -> void:
 		var top: Vector3 = b["center"] + Vector3(0, size.y, 0)
 		if size.x < 4.0:
 			continue
-		for i in _art_rng.randi_range(1, 3):
-			var file: String = ["AC.glb", "AC_Side.glb", "AC_Stacked.glb", "Antenna_1.glb", "Antenna_2.glb", "Tank.glb"][_art_rng.randi() % 6]
-			var p := Look.prop(file, 3.2 if file == "Antenna_1.glb" else 1.5)
-			p.position = top + Vector3(_art_rng.randf_range(-0.35, 0.35) * size.x, 0, _art_rng.randf_range(-0.35, 0.35) * size.z)
-			p.rotation.y = _art_rng.randi() % 4 * PI / 2.0
-			art.add_child(p)
 		# A parapet so roofs do not end in a knife edge.
 		var rim := MeshInstance3D.new()
 		var mesh := BoxMesh.new()
@@ -1637,7 +1712,7 @@ func _dress_rooftops(art: Node3D) -> void:
 
 
 ## Litter of a long war, left where people were: kit behind the cover they
-## held, tents at each army's muster, and guns dug in behind the sandbags.
+## held. The tents and dug-in guns are solids (`_build_field_kit`).
 func _dress_field(art: Node3D) -> void:
 	var litter := ["GasCan.glb", "PropaneTank.glb", "Trashcan.glb", "Backpack.glb", "Computer.glb", "Support.glb"]
 	for spot in _cover_spots:
@@ -1648,32 +1723,6 @@ func _dress_field(art: Node3D) -> void:
 		p.position = spot
 		p.rotation.y = _art_rng.randf() * TAU
 		art.add_child(p)
-	for army: String in ARMIES:
-		var muster: Vector2 = ARMIES[army]["muster"]
-		var inward := -muster.normalized()
-		for i in 3:
-			var spot := muster - inward * 9.0 + inward.orthogonal() * (i - 1) * 7.0
-			var tent := Look.prop("Tent.glb", 4.5, 1.0)
-			tent.position = _ground(spot) + Vector3(0, -0.1, 0)
-			tent.rotation.y = atan2(inward.x, inward.y)
-			art.add_child(tent)
-	var count := 0
-	for piece in _cover_pieces:
-		if piece.get_meta("cover", "") != "sandbag":
-			continue
-		count += 1
-		if count % 4 != 0:
-			continue
-		# The wall's face, turned to look over it toward the middle.
-		var out := Basis(Vector3.UP, piece.rotation.y).x
-		out = Vector3(-out.z, 0, out.x)
-		if out.dot(-Vector3(piece.position.x, 0, piece.position.z)) < 0.0:
-			out = -out
-		var gun := Look.prop("Turret_Gun.glb", 2.2, 1.0)
-		var spot := piece.position - out * 1.6
-		gun.position = terrain.on_ground(spot.x, spot.z)
-		gun.rotation.y = atan2(out.x, out.z)
-		art.add_child(gun)
 
 
 ## The core reads as dangerous from across the field: molten slag pooled
@@ -1735,30 +1784,153 @@ func _dress_core(art: Node3D) -> void:
 		art.add_child(piece)
 
 
-## Gate outposts are lit in a calm green, with their name and rule on the gate.
+## Gate outposts read as a sheltered yard without any overlay: a sign hung
+## from the gate beam, its name and rule on the outer face and what waits
+## outside on the inner one; shield emitters on the post tops and lamps along
+## the walls, all in a calm green; and the line where the bubble ends, laid
+## across the gate's mouth as a lit, striped threshold between two emitter
+## bollards. The line follows the bubble's own radius, so crossing it is
+## exactly where protection stops.
 func _dress_outposts(art: Node3D) -> void:
+	var green := Color(0.4, 1.0, 0.6)
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = green * 0.3
+	glow.emission_enabled = true
+	glow.emission = green
+	glow.emission_energy_multiplier = 2.0
+	var plate_mat := Look.surface("metal", {"tint": Color(0.22, 0.24, 0.23), "scale": 0.5, "grime": 0.6})
 	for node in get_children():
 		if not node.is_in_group("outpost"):
 			continue
 		var at := Vector2(node.position.x, node.position.z)
-		var inward := -at.normalized()
-		var gate := at + inward * (OUTPOST_RADIUS + 0.6)
-		var plate := Label3D.new()
-		plate.text = "%s\nSAFE ZONE · WEAPONS LOCKED" % str(node.get_meta("name", "Outpost")).to_upper()
-		plate.font_size = 96
-		plate.pixel_size = 0.01
-		plate.modulate = Color(0.6, 1.0, 0.75)
-		plate.outline_size = 16
-		plate.position = _ground(gate) + Vector3(0, 8.6, 0)
-		plate.rotation.y = atan2(inward.x, inward.y)
-		art.add_child(plate)
+		var dir := at.normalized()
+		var title := str(node.get_meta("name", "Outpost")).to_upper()
+		var radius := float(node.get_meta("radius", OUTPOST_RADIUS))
+		# The sign under the beam.
+		var beam := _gate_beam_at(at, dir)
+		var panel := MeshInstance3D.new()
+		var board := BoxMesh.new()
+		board.size = Vector3(7.6, 1.5, 0.16)
+		board.material = plate_mat
+		panel.mesh = board
+		panel.position = beam - Vector3(0, 1.3, 0)
+		panel.rotation.y = atan2(dir.x, dir.y)
+		art.add_child(panel)
+		for strip_y: float in [0.71, -0.71]:
+			var trim := MeshInstance3D.new()
+			var edge := BoxMesh.new()
+			edge.size = Vector3(7.6, 0.06, 0.2)
+			edge.material = glow
+			trim.mesh = edge
+			trim.position = panel.position + Vector3(0, strip_y, 0)
+			trim.rotation.y = panel.rotation.y
+			trim.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(trim)
+		# Outside (facing the field, -dir) and inside (facing the yard, +dir).
+		for face: Array in [
+				[-dir, title, "SAFE ZONE · WEAPONS LOCKED"],
+				[dir, title, "LEAVING SAFE ZONE · WEAPONS FREE PAST THE LINE"]]:
+			var normal: Vector2 = face[0]
+			var yaw := atan2(normal.x, normal.y)
+			var front := panel.position + Vector3(normal.x, 0, normal.y) * 0.1
+			art.add_child(_gate_label(face[1], front + Vector3(0, 0.25, 0), yaw, 56, Color(0.7, 1.0, 0.8)))
+			art.add_child(_gate_label(face[2], front + Vector3(0, -0.4, 0), yaw, 30, Color(0.9, 0.92, 0.88)))
+		# Shield emitters on the post tops: a lit head on each.
+		var ortho := dir.orthogonal()
 		for side: float in [-1.0, 1.0]:
-			var lamp := OmniLight3D.new()
-			lamp.light_color = Color(0.45, 1.0, 0.6)
-			lamp.light_energy = 2.0
-			lamp.omni_range = 14.0
-			lamp.position = _ground(gate + inward.orthogonal() * side * 4.6) + Vector3(0, 6.8, 0)
+			var post := at - dir * (radius + 0.6) + ortho * side * 4.6
+			var top := _ground(post) + Vector3(0, 6.6, 0)
+			var head := MeshInstance3D.new()
+			var cell := CylinderMesh.new()
+			cell.top_radius = 0.35
+			cell.bottom_radius = 0.5
+			cell.height = 0.5
+			cell.material = glow
+			head.mesh = cell
+			head.position = top
+			head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(head)
+			var lamp := Look.lamp(green, 2.0, 14.0)
+			lamp.position = top + Vector3(0, 0.4, 0)
 			art.add_child(lamp)
+		# Lamps along the wall tops, on the yard side, every other segment.
+		for k in 12:
+			var angle := TAU * (k + 0.5) / 12.0
+			var out := Vector2.from_angle(angle)
+			if out.dot(-dir) > 0.8 or k % 2 == 1:
+				continue
+			var spot := at + out * (radius + 0.6 - 0.5)
+			var fitting := MeshInstance3D.new()
+			var box := BoxMesh.new()
+			box.size = Vector3(0.6, 0.18, 0.22)
+			box.material = glow
+			fitting.mesh = box
+			fitting.position = _ground(spot) + Vector3(0, 2.25, 0)
+			fitting.rotation.y = -angle + PI * 0.5
+			fitting.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(fitting)
+		# The line where the bubble ends, across the open gate: hazard stripes
+		# with a lit edge on the yard side, laid on the ground along the arc.
+		var reach := deg_to_rad(32.0)
+		var middle := (-dir).angle()
+		var pieces := 14
+		for k in pieces + 1:
+			var angle := middle - reach + 2.0 * reach * k / pieces
+			var out := Vector2.from_angle(angle)
+			var spot := at + out * radius
+			var stripe := MeshInstance3D.new()
+			var slab := BoxMesh.new()
+			slab.size = Vector3(radius * 2.0 * reach / pieces + 0.05, 0.08, 0.5)
+			slab.material = Look.trim("hazard")
+			stripe.mesh = slab
+			stripe.position = _ground(spot) + Vector3(0, 0.03, 0)
+			stripe.rotation.y = -angle + PI * 0.5
+			stripe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(stripe)
+			var lit := MeshInstance3D.new()
+			var line := BoxMesh.new()
+			line.size = Vector3(slab.size.x, 0.06, 0.12)
+			line.material = glow
+			lit.mesh = line
+			lit.position = _ground(at + out * (radius - 0.35)) + Vector3(0, 0.04, 0)
+			lit.rotation.y = stripe.rotation.y
+			lit.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(lit)
+		# A bollard with an emitter cap at each end of the line.
+		for end: float in [-1.0, 1.0]:
+			var spot := at + Vector2.from_angle(middle + end * (reach + 0.04)) * radius
+			var foot := _ground(spot)
+			var bollard := MeshInstance3D.new()
+			var pole := BoxMesh.new()
+			pole.size = Vector3(0.35, 1.3, 0.35)
+			pole.material = Look.trim("hazard")
+			bollard.mesh = pole
+			bollard.position = foot + Vector3(0, 0.6, 0)
+			bollard.set_meta("walk_through", "a slim emitter post marking the line")
+			art.add_child(bollard)
+			var cap := MeshInstance3D.new()
+			var lens := BoxMesh.new()
+			lens.size = Vector3(0.4, 0.2, 0.4)
+			lens.material = glow
+			cap.mesh = lens
+			cap.position = foot + Vector3(0, 1.35, 0)
+			cap.set_meta("walk_through", "the lamp on an emitter post")
+			cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			art.add_child(cap)
+
+
+## One face of a gate sign: printed on the board, readable from its front only.
+func _gate_label(text: String, at: Vector3, yaw: float, size: int, color: Color) -> Label3D:
+	var label := Label3D.new()
+	label.text = text
+	label.font_size = size
+	label.pixel_size = 0.01
+	label.outline_size = 0
+	label.modulate = color
+	label.double_sided = false
+	label.position = at
+	label.rotation.y = yaw
+	return label
 
 
 ## Whether a point is within `margin` metres of a building's footprint.
@@ -2048,10 +2220,9 @@ func _dress_wrecks(art: Node3D) -> void:
 				var canopy := _slab(Vector3(size.x * 0.7, 0.5, 1.8 * big), Vector3.ZERO, Look.trim("teal"))
 				canopy.transform = front * Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.5 + 0.1, -size.z * 0.17))
 				art.add_child(canopy)
-				var tail := Transform3D(Basis.from_euler(Vector3(-0.05, yaw + 0.12, 0.0)), base + turn * Vector3(0.3, size.y * 0.45 - 0.2, size.z * 0.28))
-				for side: float in [-1.0, 1.0]:
-					var engine := _slab(Vector3(1.3, 1.3, 2.6) * big, Vector3.ZERO, HULL_RUST, true)
-					engine.transform = tail * Transform3D(Basis.IDENTITY, Vector3(side * (size.x * 0.5 + 0.5 * big), 0.2, size.z * 0.15))
+				for at: Transform3D in _wreck_engines(base, yaw, size, big):
+					var engine := _slab(WRECK_ENGINE * big, Vector3.ZERO, HULL_RUST, true)
+					engine.transform = at
 					art.add_child(engine)
 					var nozzle := _slab(Vector3(1.0, 1.0, 0.1) * big, Vector3.ZERO, Look.trim("scorch"))
 					nozzle.transform = engine.transform * Transform3D(Basis.IDENTITY, Vector3(0, 0, 1.31 * big))

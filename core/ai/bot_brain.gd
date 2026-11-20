@@ -428,6 +428,8 @@ func _ready() -> void:
 	# A kind that dash-strikes whatever its ring ("dash", a chance).
 	if actor.has_meta("dash"):
 		dash_chance = float(actor.get_meta("dash"))
+	if actor.has_meta("dash_every"):
+		dash_every = float(actor.get_meta("dash_every"))
 	# A world may make a kind feint more than its ring would ("feint_chance":
 	# the marsh's stalkers circle and feint before they strike).
 	if actor.has_meta("feint_chance"):

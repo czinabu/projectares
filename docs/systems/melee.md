@@ -15,7 +15,8 @@ date in the same PR.
   `Look.is_two_handed` (the one place views ask) answers for the grip.
   Melee is made to answer guns (DESIGN.md "Melee against guns"): blades go
   past armor (`DamageInfo.armor_pierce`), a heavy started sprinting is a
-  dash-strike (`dash_range`), a light while moving back at a foe behind is a
+  dash-strike (`dash_range`; with `dash_through`, a charge that runs its
+  whole length past a foe who steps aside), a light while moving back at a foe behind is a
   back strike, and a fresh guard deflects small-arms rounds for
   `deflect_window`, rearming after `guard_rearm`; a gun's round carries its
   `DamageInfo.weapon_id` and `undeflectable_tags` (marksman, power) go
@@ -41,7 +42,23 @@ date in the same PR.
   the middle (`swing_centre`). A new melee weapon picks a style, or a new
   technique gets a table; `view_match_tests.gd` (`_check_techniques`)
   checks that every weapon's strikes are in view and its guards show their
-  side. `ActionPose.windup_reach`/`follow_reach` and
+  side. Every swing leads with the weapon's striking face (an axe's bit, a
+  hammer's face, a blade's edge): each model is turned about its length so
+  that face points along `Look.STRIKE_FACE`, the way `ActionPose.cut_edge`
+  says every technique leads, from the face the model has in its own space
+  (the last field of its `MELEE_MODELS` entry; a pack model may face any
+  way across, so it is read from the model, never assumed). The edge turns
+  toward where the tip actually travels, the hand's path and the blade's
+  turn together (`ActionPose._blade_at`). The arm keeps it there: the
+  forearm rolls the fist round toward the blade before the wrist bends
+  (`WeaponArm.forearm_roll_limit`, keeping the way it last rolled near a
+  half turn, `roll_keep`, so a guard held on the move never flips each
+  stride), and the handle turns in the fist so the face matches the
+  technique (`WeaponArm._face_strike`). `melee_orientation_tests.gd` plays
+  every swing of every melee weapon and checks the face leads through the
+  hit, and `melee_guard_move_tests.gd` that a guard holds steady on the
+  move; a new melee model needs its face and an entry in both.
+  `ActionPose.windup_reach`/`follow_reach` and
   `MeleeWeapon._animate` read `style_now()`. The shown swing starts
   `SWING_LEAD` before the strike and speeds into it, half its arc at the
   hit, then eases out (`MeleeWeapon.swing_arc`; both views read it); a

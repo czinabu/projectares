@@ -207,7 +207,8 @@ static func _scatter(map: Node3D, rng: RandomNumberGenerator, count: int, clump:
 		for k in rng.randi_range(1, clump):
 			var p := at + Vector2(rng.randf_range(-1.4, 1.4), rng.randf_range(-1.4, 1.4)) * float(k)
 			var ground := float(map.call("ground_height", p.x, p.y))
-			if ground < water + 0.05 or not bool(map.call("_clear_of_stalks", p, clear)):
+			if ground < water + 0.05 or not bool(map.call("_clear_of_stalks", p, clear)) \
+					or bool(map.call("in_cut", p.x, p.y)):
 				continue
 			var s := rng.randf_range(size.x, size.y)
 			var tilt := Basis(Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized(), rng.randf_range(0.0, 0.18))

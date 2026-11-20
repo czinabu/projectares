@@ -104,12 +104,13 @@ date in the same PR.
   the Mission tab, `Hud.portal_slot`, a carousel of `Portal.choices_for`)
   opens a `Portal` (`core/world/portal.gd`) in front of you, open
   `Portal.open_time` (about 15 s) for your squad to walk through. Where it
-  can lead depends on where you are (Caleb's call: home and other places
-  too): from your base every world, the arena and the plaza
+  can lead depends on where you are (Caleb's call: anywhere from
+  anywhere): from your base every world, the arena and the plaza
   (`Portal.from_base`, `Portal.PLAZA` goes the way the base's door does);
   from a safe-zone world every world, the arena and `Portal.HOME` (the way
-  the quarters door goes); out in a world where gear is at stake only
-  `Portal.HOME`; none in the arena. A squad is `Raid.squad_of`: the key
+  the quarters door goes); out in a world where gear is at stake
+  `Portal.HOME` first, then every other world, the arena and the plaza
+  (`Portal.from_world`), each a sign-out; none in the arena. A squad is `Raid.squad_of`: the key
   `Raid.set_squad` gave the owner (`NetSession` sets the clan, in every
   world), else their side. Only the authority opens one in a world
   (`Raid.open_portal`, `may_open_portal`) and decides who walks through
@@ -118,14 +119,20 @@ date in the same PR.
   unfolds; the squad key never leaves the server) and tells the walker
   (`portal_travel`). `main.gd go_through_portal` takes the trip, and arrival
   in a world is `add_player`'s drop `Raid.PORTAL_DROP`: the same "outpost"
-  marker for a whole squad, else a quiet drop. Out in a world the portal
-  home is a sign-out with a door, never a way round one (`Portal.signs_out`):
+  marker for a whole squad, else a quiet drop. Out in a world every portal
+  is a sign-out with a door, never a way round one (`Portal.signs_out`):
   opening it is `begin_sign_out` (so a fight or a bounty refuses it, and it
   takes the sign-out's own time: the gate's in an outpost, 15 s on the
   ground, 25 s and a beacon in the air), the ring unfolds over that
   countdown where everyone can see it and folds away if it is cancelled
   (`Raid._keep_sign_out_portal`), a squadmate stepping in starts their own
-  sign-out (`_tick_portals`), and everyone leaves through `_leave` as "left"
-  with the result's "door" set to "home", which online takes you to your
-  base rather than the plaza (`main.gd _return_to_lobby`). It never emits
-  `portal_entered`, and no portal leads from one world into another.
+  sign-out through the same door (`_tick_portals`, `PlayerState.sign_out_door`),
+  and everyone leaves through `_leave` as "left" with the result's "door"
+  set to where the ring led. Everything carried goes home with that, as
+  with any sign-out. "home" then lands you in your base rather than the
+  plaza online (`main.gd _return_to_lobby`); anything else
+  (`Portal.goes_on`) carries on from home: solo `_on_solo_finished` goes
+  home and then `go_through_portal`, online `_return_to_lobby` joins the
+  other world's session with a portal drop (`_onward_route`), the arena's,
+  or the plaza's. It never emits `portal_entered`, and no gear goes from
+  one world straight into another (Caleb's call: it banks home first).

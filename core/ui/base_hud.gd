@@ -135,9 +135,7 @@ func _update_wrist(delta: float) -> void:
 	wrist.raised = controller != null and controller.wrist_raised
 	wrist.mount(p, controller, visible, delta)
 	var slots := Hud.base_watch_slots("Home base" if base.owner_name == "" else "%s's base" % base.owner_name, base.loadout,
-			contracts, controller.portal_pick if controller != null else 0, p if is_instance_valid(p) else null,
-			controller.emote_pick if controller != null else 0, controller.emote_playing if controller != null else "",
-			objective, controller.mission_pick if controller != null else 0,
+			contracts, controller.portal_pick if controller != null else 0, objective, controller.mission_pick if controller != null else 0,
 			controller != null and controller.watch_open == "contract")
 	if controller != null:
 		controller.missions = Hud.mission_entries(contracts, objective)
@@ -156,6 +154,7 @@ func _update_wrist(delta: float) -> void:
 	slots[Hud.Wrist.SLOTS.find("vehicle")] = Hud.base_vehicle_slot(toys, toy_pick, controller != null and controller.pack_target() != null)
 	Hud.mark_open(slots, controller.watch_open if controller != null else "")
 	wrist.objective = objective if GameSettings.is_tracked(GameSettings.TOUR_KEY) else ""
+	wrist.tabs = wrist.raised and controller != null and controller.watch_tabs
 	wrist.show_card(slots, focus, "", p.health.health / maxf(p.health.max_health, 1.0), [] as Array[float])
 	var picking_toys := controller != null and controller.is_picking_toys()
 	var picking_weapons := controller != null and controller.is_picking_weapons()

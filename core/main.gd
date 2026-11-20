@@ -119,6 +119,12 @@ var race_view: RaceView
 var net: NetSession
 ## The phone every player carries: the game's menu, in the hub and in a raid.
 var phone: CanvasLayer
+## The Mirror app's light in front of the player (`_make_dressing_light`),
+## how bright it is, and how far (radians) a pixel's drag turns the dressing
+## room's view.
+var _dressing_light: OmniLight3D
+var dressing_light_energy := 0.8
+var dressing_turn_per_pixel := 0.008
 ## The mirror standing in front of the player while the phone's Mirror app is
 ## up, else null.
 var mirror: Node3D
@@ -323,6 +329,7 @@ func _process(delta: float) -> void:
 			_tick_ahead(0.5)
 	if controller != null and is_instance_valid(controller) and controller.wrist_raised:
 		_tour_event("watch")
+	_keep_mirror_view()
 
 
 ## Between places the view goes dark at once and the next place fades in
@@ -968,6 +975,11 @@ func _on_solo_finished(_actor: Actor, result: Dictionary) -> void:
 	# Leave a beat so the player sees what happened before going home.
 	await get_tree().create_timer(1.0).timeout
 	_show_hub(result)
+	# Through a portal out of the world to somewhere else: the gear is home,
+	# and the trip goes on from the base as if through a portal opened there.
+	var door := str(result.get("door", ""))
+	if Portal.goes_on(door):
+		go_through_portal.call_deferred(door)
 
 
 ## The claims office (`SafetyNets`) messages the phone with what a death's
@@ -1229,6 +1241,7 @@ func _setup_phone() -> void:
 	phone.quit_requested.connect(func() -> void: get_tree().quit())
 	phone.set_wardrobe(hub.character)
 	phone.mirror_changed.connect(_on_mirror_changed)
+	phone.dressing_dragged.connect(_on_dressing_dragged)
 	phone.held_changed.connect(_on_phone_held)
 	phone.preview_changed.connect(_on_phone_preview)
 	phone.tour_requested.connect(_on_tour_requested)
@@ -1497,8 +1510,13 @@ func _my_actor() -> Actor:
 	return null
 
 
-## The phone's Mirror app came up or went away. Up, a mirror stands in front
-## of the player, wherever they are; it goes when the app or the phone does.
+## The phone's Mirror app came up or went away. Up, first person gets a
+## mirror standing in front of the player, wherever they are, and third
+## person a dressing room (Caleb's pick): the camera swings round in front
+## of the character (`PlayerController.dressing_room`) with the phone's
+## hologram beside them. Either way a soft light stands in front so the
+## outfit is seen whatever the sun is doing (`dressing_light`). It goes
+## when the app or the phone does.
 func _on_mirror_changed(up: bool) -> void:
 	_put_away_mirror()
 	var me := _my_actor()
@@ -1506,9 +1524,17 @@ func _on_mirror_changed(up: bool) -> void:
 			or controller.actor != me:
 		phone.set_mirror_up(false)
 		return
+	_show_aim(false)
+	_dressing_light = _make_dressing_light(me)
+	if controller.active_view() == PlayerController.ViewMode.THIRD:
+		controller.dressing_room = true
+		controller.dressing_turn = 0.0
+		phone.dressing = true
+		phone.set_mirror_up(false)
+		phone.refresh()
+		return
 	# Level the gaze so the glass is in view. The camera mode stays as it is.
 	controller.pitch = clampf(controller.pitch, -0.15, 0.05)
-	_show_aim(false)
 	mirror = MirrorScript.new()
 	mirror.name = "Mirror"
 	mirror.setup(me, controller.camera)
@@ -1521,9 +1547,45 @@ func _put_away_mirror() -> void:
 	if mirror != null and is_instance_valid(mirror):
 		mirror.queue_free()
 	mirror = null
+	if _dressing_light != null and is_instance_valid(_dressing_light):
+		_dressing_light.queue_free()
+	_dressing_light = null
+	if phone != null:
+		phone.dressing = false
 	if controller != null and is_instance_valid(controller):
 		controller.phone_mirror = null
+		controller.dressing_room = false
 	_show_aim(true)
+
+
+## Switching view with the Mirror app up swaps the mirror for the dressing
+## room or back.
+func _keep_mirror_view() -> void:
+	if phone == null or not phone.mirror_open() or controller == null or not is_instance_valid(controller):
+		return
+	var third := controller.active_view() == PlayerController.ViewMode.THIRD
+	if (mirror != null or phone.dressing) and third != phone.dressing:
+		_on_mirror_changed(true)
+
+
+## A drag beside the phone in the dressing room turns the view round you.
+func _on_dressing_dragged(pixels: float) -> void:
+	if controller != null and is_instance_valid(controller):
+		controller.dressing_turn = wrapf(controller.dressing_turn - pixels * dressing_turn_per_pixel, -PI, PI)
+
+
+## A soft light in front of the character at chest height, view only, so
+## the Mirror app shows the outfit lit even with the sun behind them.
+func _make_dressing_light(me: Actor) -> OmniLight3D:
+	var light := OmniLight3D.new()
+	light.name = "DressingLight"
+	light.light_energy = dressing_light_energy
+	light.omni_range = 4.0
+	light.shadow_enabled = false
+	var ahead := Basis(Vector3.UP, controller.yaw) * Vector3.FORWARD
+	me.get_parent().add_child(light)
+	light.global_position = me.global_position + Vector3.UP * 1.6 + ahead * 1.3
+	return light
 
 
 ## The crosshair (and the melee marks round it) on whichever HUD is up.
@@ -2185,8 +2247,16 @@ func _trip_ahead() -> Array:
 		var state := raid.state_for(me)
 		if destination == "" and state != null and state.sign_out_left >= 0.0 and not raid.world.safe_zone \
 				and not raid is Arena:
-			# Signing out: back to the plaza, unless a portal home leads to your base.
+			# Signing out: back to the plaza, unless a portal out of the world
+			# you are signing out through (the nearest open one of your side)
+			# leads on somewhere else.
 			destination = Portal.PLAZA
+			var nearest := ahead_range
+			for portal in raid.portals:
+				if is_instance_valid(portal) and portal.usable and portal.signs_out \
+						and portal.global_position.distance_to(me.global_position) < nearest:
+					nearest = portal.global_position.distance_to(me.global_position)
+					destination = portal.destination
 	elif raid == null and base != null and hub.in_lobby() and base.portal != null and is_instance_valid(base.portal):
 		destination = base.portal.destination
 	return _where_leads(destination)
@@ -2853,12 +2923,29 @@ func _return_to_lobby(result: Dictionary) -> void:
 	var account := net.account
 	var was_safe := raid != null and raid.world.safe_zone
 	var came_from := "world:%s" % raid.world.id if raid != null else ""
+	# Through a portal out of the world to another world or the arena: the
+	# gear went home with the sign-out, and the trip goes on from there
+	# (worked out while this session still knows the routes).
+	var door := str(result.get("door", ""))
+	var onward: Array = _onward_route(door) if not was_safe and Portal.goes_on(door) else []
 	_leave_raid()
 	hub.update_account(account)
 	hub.refresh(result)
 	if was_safe:
 		# Signing out of the plaza itself leaves the server.
 		leave_server()
+		return
+	if not onward.is_empty():
+		if door == Arena.ArenaVenue.ID:
+			# Leaving the arena comes back to this server's lobby: your base.
+			_lobby_port = _join_port
+			_lobby_address = _join_address
+			_show_travel("Entering the arena...")
+		else:
+			_gate_deploy = true
+			_portal_deploy = true
+			_show_travel("Travelling to %s..." % Portal.title_of(door))
+		_begin_join(onward[0], onward[1], 3)
 		return
 	# Back to the plaza if the server has one, else to the lobby. Through a
 	# portal home it is your base: this world's lobby, whose door leads back
@@ -2870,6 +2957,23 @@ func _return_to_lobby(result: Dictionary) -> void:
 		return
 	_show_travel("Going home..." if result.get("door", "") == Portal.HOME else "Returning to your base...")
 	_begin_join(_join_address, _join_port, 3)
+
+
+## Where a sign-out through a portal out of a world goes on to once the gear
+## is home (`door`, the result's): [host, port] for another world (landing at
+## its gate outpost) or the arena, or [] for home and the plaza, which
+## `_return_to_lobby` reaches the usual way, and for a world these servers do
+## not run (then it ends where any sign-out does).
+func _onward_route(door: String) -> Array:
+	if net == null:
+		return []
+	if door == Arena.ArenaVenue.ID:
+		var arena := _route(door)
+		return arena if not arena.is_empty() else [_join_address, _join_port + ARENA_PORT_OFFSET]
+	var world := Worlds.get_world(door)
+	if world == null or world.safe_zone or door == net.world_id:
+		return []
+	return _route(door)
 
 
 ## Disconnects from the lobby: back to the plaza if the server has one, else

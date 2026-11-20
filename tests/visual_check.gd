@@ -1435,6 +1435,9 @@ func _technique_sheet(out_dir: String, id: String) -> void:
 		bot.queue_free()
 	var player := raid.player
 	await _settle(10)
+	# Out of any safe zone's rules first, or the switch is refused.
+	raid.zone_rules = false
+	player.weapons_locked = false
 	player.cmd.switch_weapon = player.weapons.size() - 1
 	for i in player.weapons.size():
 		if player.weapons[i] is MeleeWeapon:
@@ -1442,8 +1445,6 @@ func _technique_sheet(out_dir: String, id: String) -> void:
 	await _settle(5)
 	player.cmd.switch_weapon = -1
 	await _settle(40)
-	raid.zone_rules = false
-	player.weapons_locked = false
 	var blade := player.get_active_weapon() as MeleeWeapon
 	blade.light_stamina = 0.0
 	blade.heavy_stamina = 0.0

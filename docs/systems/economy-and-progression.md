@@ -103,7 +103,8 @@ date in the same PR.
   through `Contracts.jobs()`, never `JOBS` alone, the board offers one daily
   and one weekly per tag beside the general ones, and a tagged job counts
   only a result whose "contract_tag" matches (`Contracts.counts_in`). Stats
-  include `item:<id>` (brought home), `kills:<faction>`, `bosses`,
+  include `item:<id>` (brought home), `kills:<faction>`, `bosses` (and
+  `boss:<kind>`, by its "boss" meta, for a job that names one boss),
   `cache:<source>` (once per fill, `LootContainer.looted_by`), `banks` and
   `hold_seconds` (stood in a site your side holds, `Raid._count_holding`;
   Ashfront's "warzone" jobs).

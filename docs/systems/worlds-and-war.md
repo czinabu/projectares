@@ -1,6 +1,6 @@
 # Worlds and the war
 
-Rules for death rules per world, renown, the war director, weather, the planet kit, terrain, strongpoints, drops, world heat, shelling, world events, the life log and risk zones. These are part of the rules in `CLAUDE.md` that must not be
+Rules for death rules per world, renown, the war director, weather, the planet kit, terrain, collision, strongpoints, drops, world heat, shelling, world events, the life log and risk zones. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -90,9 +90,37 @@ date in the same PR.
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
   (`Raid._stand`). A heightfield is a surface, not a solid: anything that
   moves an actor by setting its position (a blink, a teleport) must put the
-  feet back on the ground, or the actor falls through. Ashfront's map
+  feet back on the ground, or the actor falls through. A map can leave
+  rectangles of it open (`Terrain.holes`, on the sample lines, set before
+  `collision_data` and `build`): no ground is drawn or stood on there,
+  while `height_at` still answers as if it were whole (the marsh's
+  Rootways go down through them). Ashfront's map
   (`worlds/ashfront/map.gd`) works its ground and navigation mesh out once
   per run and shares them between copies (`_shared`), so a new copy is cheap.
+- Collision: nothing you can see standing in a world is a ghost you walk
+  (or a bot walks, unseen) through. Collision is gameplay, so it is built in
+  the map's gameplay pass on the server and the client alike, never by
+  `Look` and never from a dressing RNG. A prop model that must be solid is
+  placed with `SolidProp.place` (boxes cut to the model in
+  `SolidProp.SHAPES`, the model hung inside only where `Look` is on); a
+  piece the dressing draws gets its collision alone from `SolidProp.box` or
+  a shape of its own, at the same place, worked out by a helper both passes
+  share (Ashfront's `_wreck_engines`, Meridian's `_ramp_parts`,
+  `skyline.gd`'s `booster_parts` and `SEARCHLIGHTS`). Put it under the
+  map's navigation region before the bake, so bots path round it. Simple
+  shapes (boxes, cylinders, convex hulls), never a trimesh where one will
+  do. Litter you step over (a gas can, a backpack) stays decoration. Loot
+  crates and base stations are on `Actor.LAYER_WORLD` as well as the
+  interact layer; a dropped bag or scrip pile is not. People collide with
+  vehicles (`Actor.LAYER_VEHICLES`). A mesh that is meant to be walked
+  through (a zone's glow, a beam, plants, scenery past the rim) carries the meta `"walk_through"`
+  on itself or a parent, its value saying why. `tests/collision_tests.gd`
+  builds every world from `Worlds`, the arena and the home base with
+  `Look` on and flags every mesh big enough to block a person, standing
+  where one could walk, with no world collider through it; a new world is
+  covered the day it is added. A scatter drawn as a MultiMesh is not
+  judged (headless has no instance transforms), so a map whose scatter
+  should block builds that collision itself.
 - Strongpoints (`core/war/strongpoint.gd`, `Raid.strongpoints`): a map only
   marks where they are (Marker3D nodes in the group "strongpoint", see the
   map contract in `WorldDef`); the `Raid` runs them. A side is a string key
@@ -172,3 +200,19 @@ date in the same PR.
   get the lock from `ActorCommand.STATE_SHELTERED` in the state. Hazards
   and zones are shown in the world and on the watch (`Raid.zone_label`),
   never as an overlay.
+- Depots and gate outposts look like places, never like zones: no
+  see-through boxes. A `Depot` builds its own greybox station (a deep pad
+  that is the bank area, a solid uplink terminal at its back edge, local
+  +Z, and a mast), which `Look._dress_depot` dresses: a lit rim round the
+  pad, lamp posts at its corners, a screen saying what it does, and a
+  pulsing beacon with a faint uplink beam on the mast to find it by. The
+  pad's middle stays open (players and tests stand at its centre), and a
+  map turns a depot with `_add_depot(at, back)` so the terminal backs onto
+  a wall or away from a site. The terminal and mast are solid but not in
+  the navigation bake (the depot is not under the nav region), so a bot can
+  brush it; the pad, its rim and corner lamps are `walk_through`. An outpost's bubble is shown by its own
+  walls and, across the open gate, a lit striped threshold laid on the
+  bubble's radius between two emitter bollards, so the line is exactly
+  where protection ends; the gate's sign hangs from a beam over the posts
+  and reads on its front only (the rule outside, "leaving" inside), never
+  floating or mirrored. Ashfront dresses its gates in `_dress_outposts`.

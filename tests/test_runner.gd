@@ -495,10 +495,31 @@ func _check_crouch(p: Actor) -> void:
 	await frames(20)
 
 
+## The middle of a depot (its Area's centre, about 2 m over the ground)
+## whose pad is open along world Z for several metres both ways: groups
+## that need clear, flat ground stage a fight there. A depot's terminal
+## stands at its back edge, so this picks the one turned furthest to the
+## side, which keeps the terminal off that line (and never one in a gate).
+func _open_ground(raid: Raid) -> Vector3:
+	# The first in map order that will do (the quietest: the Foundry's in
+	# Ashfront, where no garrison stands round it), else the one turned
+	# furthest to the side.
+	var best: Depot = raid.depots[0]
+	for depot: Depot in raid.depots:
+		# Not one in a gate outpost: weapons are locked there.
+		if raid.outpost_at(depot.global_position - Vector3(0, 2, 0)) != null:
+			continue
+		if absf(depot.global_basis.z.x) > 0.9:
+			return depot.global_position
+		if absf(depot.global_basis.z.x) > absf(best.global_basis.z.x) + 0.01:
+			best = depot
+	return best.global_position
+
+
 func _duel(raid: Raid) -> Array:
 	var p := raid.player
 	await frames(40)
-	var arena := raid.depots[0].global_position
+	var arena := _open_ground(raid)
 	p.global_position = Vector3(arena.x, arena.y - 1.9, arena.z + 3.0)
 	p.cmd.yaw = 0.0
 	p.cmd.aim_dir = Vector3.FORWARD
@@ -1950,8 +1971,8 @@ func _test_phone_view() -> void:
 	await frames(2)
 	check(not raid.player.cmd.phone, "putting it away lowers it")
 
-	# Third person eases the camera in over the shoulder to read the phone in
-	# the hand; first person only drops the eyes to it.
+	# Third person leaves the camera where it is (the phone throws a hologram,
+	# `phone_hologram_tests.gd`); first person drops the eyes to it and zooms in.
 	var reader := HandSkin.new()
 	reader.name = "Skin"
 	reader.held = Handheld.build()
@@ -1963,34 +1984,26 @@ func _test_phone_view() -> void:
 		await frames(1)
 		var face := controller.phone_panel()
 		check(face != null and face == Handheld.face_of(reader.held), "the controller finds the phone in the hand")
-		check(reader.held.find_child("Holo", true, false) == null and reader.held.find_child("Beam", true, false) == null,
-				"nothing floats off the phone: its screen is read in the hand, in every view")
 		controller.view_mode = PlayerController.ViewMode.THIRD
 		controller.input_blocked = true
 		controller.phone_out = true
 		for i in 40:
 			await frames(1)
-		check(controller.phone_read > 0.99, "with the phone out in third person the camera eases in to read it")
-		check(controller.camera.global_position.distance_to(face.global_position) < 1.5
-				and absf(controller.camera.global_basis.x.normalized().dot(face.global_basis.y.normalized())) < 0.1,
-				"and frames it beside the head with its lines level")
-		var to_face := controller.camera.global_transform.affine_inverse() * face.global_position
-		check(to_face.z < 0.0 and to_face.x > 0.0, "the phone sits in view, right of the crosshair")
-		var square := -(controller.camera.global_basis.z.normalized()).dot(face.global_basis.z.normalized())
-		check(square < -0.7, "the camera looks nearly square onto the screen, so it reads")
-		check(_phone_share(controller) > 0.3, "and the phone stands large in the view")
+		check(controller.is_third_person() and not controller.phone_zoomed()
+				and absf(controller.camera.fov - controller.wanted_base_fov()) < 1.0,
+				"with the phone out in third person the view does not zoom in on the hand")
+		check(absf(controller.camera.global_rotation.x - controller.pitch) < 0.02,
+				"nor drop the eyes to it: the camera stays where it was, the world in view")
 		controller.phone_out = false
 		controller.input_blocked = false
 		for i in 40:
 			await frames(1)
-		check(controller.phone_read == 0.0, "putting it away eases the camera back out")
 		controller.view_mode = PlayerController.ViewMode.FIRST
 		var pitch_before := controller.pitch
 		controller.input_blocked = true
 		controller.phone_out = true
 		for i in 40:
 			await frames(1)
-		check(controller.phone_read == 0.0, "first person reads the phone from the eyes, with no reading camera")
 		check(absf(controller.camera.global_rotation.x - controller.phone_view_pitch) < 0.02
 				and is_equal_approx(controller.pitch, pitch_before),
 				"the eyes drop to the phone in the hand, while the aim stays where it was")

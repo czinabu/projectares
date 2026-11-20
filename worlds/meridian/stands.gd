@@ -2,9 +2,10 @@ extends RefCounted
 ## Meridian's spectacle, decoration only: grandstands, canopies, floodlight
 ## masts, section signs and the crowd that fills them. Shapes are batched
 ## into one mesh per material (`finish`), so a stand of a thousand rows is a
-## handful of draw calls, and the people are one `Crowd`. Nothing here
-## collides or is read by the race; the map builds it only where `Look` is
-## on, with its own RNG so the layout never shifts.
+## handful of draw calls, and the people are one `Crowd`. What it builds is
+## solid (`solid`, a `spectacle_solid.gd`), so the map builds it on every
+## machine, with its own RNG so the layout never shifts, and draws it only
+## where `Look` is on (`drawn`). Nothing here is read by the race.
 
 const CYAN := Color(0.3, 0.85, 1.0)
 const AMBER := Color(1.0, 0.6, 0.2)
@@ -13,6 +14,10 @@ const MAGENTA := Color(1.0, 0.3, 0.7)
 var root: Node3D
 var rng := RandomNumberGenerator.new()
 var crowd: Crowd
+## Where the collision goes (`spectacle_solid.gd`), or null for none.
+var solid: RefCounted
+## False on a machine that draws nothing: the layout and collision only.
+var drawn := Look.enabled
 var steel: Material
 var dark: Material
 var glass: Material
@@ -51,6 +56,10 @@ func glow(color: Color, energy: float, alpha := 1.0) -> StandardMaterial3D:
 
 ## A box of `size` placed by `xf`, merged later with every other in `mat`.
 func box(size: Vector3, xf: Transform3D, mat: Material) -> void:
+	if solid != null:
+		solid.call("box", size, xf)
+	if not drawn:
+		return
 	if not _batches.has(mat):
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -73,6 +82,9 @@ func label(text: String, xf: Transform3D, size: int, color: Color, px := 0.02) -
 
 ## Merges everything into the scene: one mesh per material, then the crowd.
 func finish() -> void:
+	if not drawn:
+		crowd.free()
+		return
 	for mat: Material in _batches:
 		var node := MeshInstance3D.new()
 		node.mesh = (_batches[mat] as SurfaceTool).commit()

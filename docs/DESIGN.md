@@ -180,8 +180,21 @@ residences and Sola at the arena, besides:
   (wardrobe, records, mastery bench, trader), the **Gear hall** (armor
   stands, helmets, rigs, chips) and the **Stores** (supplies and trophies).
   A plate over each doorway names its room; there are no other signs.
+- **The lounge**, a seventh room, is somewhere to sit between lives: warm
+  planks, a slatted ceiling and lamps instead of steel, and a window out
+  over a dusk ridge with fires on it (one painted view, never a world).
+  Its doorway is the seventh: in the front wall left of the door in the
+  hall and the courtyard, and off the corridor to the range in the spine
+  and the ring (their hub walls are full). Like any room it can be moved
+  on the plan table. It starts small (a sofa and a lamp before a sealed
+  wall) and the Lounge upgrade opens the whole room and its window. Three
+  styles: the **Den** (free: two sofas round a rug and a low table, a
+  floor lamp and plants), the **Bar** (a counter with stools and lit
+  shelves, and a booth under the window) and the **Quarters** (a curtained
+  bunk, a desk and a small sofa). It holds no gear and changes nothing in
+  a fight; sitting, a radio and trophies on its walls come later.
 - **Designs** (Caleb's call): beyond moving rooms, the hub itself comes in
-  four shapes, each with the same six doorways: the **Hall** (the square
+  four shapes, each with the same seven doorways: the **Hall** (the square
   hall above, free), the **Ring** (an eight-sided rotunda, every room
   opening onto the table), the **Spine** (a long gallery, three rooms down
   each side) and the **Courtyard** (a big court under a skylight, with
@@ -267,7 +280,7 @@ has. Prices are placeholders until a playtest measures scrip per life.
 | Gunsmith | Master bench | 8,000 | Workshop bench | Looks only |
 | Halls | Gear hall | 1,000 | | 6 armor stands, 4 rig stands, the chip case |
 | Halls | Trophy hall | 1,500 | | The trophy shelf and a full supplies shelf |
-| Halls | Lounge | 800 | | Room for furniture and decor. Not built yet: a seventh room, and no socket for it yet |
+| Halls | Lounge | 800 | | The whole lounge: more to sit on, warm lamps and the window out |
 | Headquarters | Ops consoles | 500 | | The mastery bench and records get their own consoles |
 | Headquarters | Firing range | 2,500 | | The range below |
 | Headquarters | Finish | 1,500 | Any 4 upgrades | Lit trim and light columns |
@@ -1360,7 +1373,9 @@ built in this order, cheapest and most connected first:
    Part one is built (below, "The Spore Marsh"): the world, its map, three
    of the five kinds of wildlife, fouling, spore clouds and its loot. Part
    two is built too: the lurkers, the brood keepers and their hives, and
-   the forests' close air. The Rootways come next.
+   the forests' close air. Part three (atmosphere and scale) is built, and
+   two of the three Rootways, under the Westwood and the Gillwood (below,
+   "The Spore Marsh (the Rootways)"); the third comes next.
 3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
    map several times Ashfront's width, salvage crates too big for a pack
    that ride in a vehicle's cargo space, sandstorms that bury and uncover
@@ -1468,8 +1483,8 @@ and a fight is short. The planet's mist lies low over everything (its
   "banks", Forward+ only, like all volumetric fog). Bots see no further
   than the mist lets a player (`WorldDef.sight_at`: 38 m deep in a
   forest), so it is fair both ways.
-- **Still to come.** The Rootways and their keepers, and the rain storms
-  the planet already has a look for.
+- **Still to come.** The third Rootway and its keeper (two are built,
+  below), and the rain storms the planet already has a look for.
 
 ### The Spore Marsh (part three, built: atmosphere and scale)
 
@@ -1505,6 +1520,73 @@ olive moss, black water, ochre as the warm accent). All of it is view only
   barbels from the jaw and lie on fins; a keeper's eggs glow softly under
   a skin of hide, with tendrils trailing under it; a bloater has lit spore
   vents round its crown and veins of glow down its sac.
+
+### The Spore Marsh (the Rootways)
+
+Caleb's call: three short Rootways, one under each of three forests, each
+with its own keeper, built one at a time. They are the marsh's dungeons,
+part of the one running world like the Engine, never an instance. Two are
+built: the Westwood Rootway, entered from the western shore, the gentlest
+zone, so it is the first a new player finds; and the Gillwood Rootway,
+entered from a dry hummock in the drowned middle south of the Gillwood
+(Caleb's pick). The third goes under a forest nearer the core, each
+keeper harder than the last. Each is laid out alike; each keeper fights in
+its own way.
+
+- **Down, not along.** A Rootway is cut into the ground: its mouth is an
+  open cut on dry ground, a ramp 12 m wide falling 36 m between root walls
+  to 10 m under the marsh, open to the sky (the ground there is a hole,
+  `Terrain.holes`, and the black water is not drawn over it). At its foot
+  the way runs on under the ground and the pools' beds, roofed: a throat,
+  a gallery that loops round a root pillar (two ways round, so a fight
+  there can be flanked), a passage that bends aside round the pillar's
+  far side, so the chamber is not in sight from the gallery, and the
+  keeper's round chamber, 32 m across and 8 m high. No way is narrower than 9 m (Caleb's squad
+  rule), and nothing needs two people.
+- **Inside.** Out of the weather (`WorldDef.sheltered_at`) and in the
+  forests' close air all the way, the mist and dark at their deepest; bots
+  see no further than in a forest (`sight_at`). Roots hang from the roof
+  and climb the walls, glowcaps grow along the walls' feet and jade lights
+  glow in the dark. The walls read as a burrow, not a corridor: thick roots
+  run along them, root ribs arch over the throat and the passage, arches
+  ring the gallery and buttresses and bands hold up the chamber's wall. A garrison of the marsh's beasts stands in the throat
+  and the gallery (stalkers and a bloater), and the gallery holds two
+  caches of the marsh's goods ("rootway").
+- **The Rootmother.** The Westwood Rootway's keeper: the brood's mother, a
+  brood keeper grown to 3.4 m, 1,200 health, 45 armor, slow, her hooks on
+  a long windup you can parry, and the egg sacs on her back her weak spot
+  (twice the damage from behind). Made for one player, she grows tougher
+  with company like every boss. She has a body of her own (Look's
+  "brood_mother"), not a scaled brood keeper: a swollen abdomen of lit
+  eggs, six woody roots arching from her back to the ground, and a crown
+  of root horns. Her fight runs on the Engine's keeper
+  machinery: while she is above half health broodlings come out of four
+  root sockets in her chamber's wall, a few at a time; below half the
+  floor's four spore vents open, two at a time, each glowing ochre before
+  it gushes (22 damage to anyone standing in it). She carries nothing.
+  When she falls her vault opens a share for everyone who hurt her or
+  stood in her chamber: the marsh's goods, upgrade data, often one of its
+  blueprints, now and then an artifact (15%) or the Spore paint. She comes
+  back after 10 minutes, her vault closed.
+- **The Shellback Elder** (Caleb's pick). The Gillwood Rootway's keeper:
+  the oldest grazer, a shellback grown to 3.2 m, 1,600 health and 120
+  armor, its dome a battering ram, its soft rear its weak spot (2.5 times
+  the damage from behind). Its fight is positioning, not adds: it calls
+  nothing out of the walls. It charges: from a sprint it lowers its ram and
+  runs 16 m on a 1.1 s windup at whoever it hunts, and runs its whole
+  length whether they are still there or not, so a player who steps aside
+  lets it run on past (one who stands is caught, 48 damage). Four snags,
+  knots of old roots from floor to roof, stand in its chamber: one it
+  rams holds it stuck for 4.5 seconds, its face in the roots and its soft
+  rear turned to the room, and everyone in the chamber is told to get
+  behind it. So the fight is to stand in front of a snag, wait for the
+  charge and step aside. Below half health it charges more often (every
+  3.5 s, not 6) and the floor's spore vents open as in the Rootmother's
+  chamber. It has a body of its own (Look's "shellback_elder"): a ram of
+  pale horn over its brow, two great horns swept forward, a ridge of
+  plates down its dome, a garden of fungus on its back and moss hanging
+  from its skirt. Its vault, a heap of shed plates, pays as hers does, and
+  it comes back after 10 minutes.
 
 ## 3. The watch
 
@@ -1559,24 +1641,27 @@ Raising the watch opens a holo carousel, like pulling gear out of thin air:
 scroll through what you carry and pick it, and it materializes. The pack is
 the storage behind it.
 
-- **Only what you carry.** The carousel shows your loadout and your pack,
-  never the stash. Whatever you can summon is still what you drop when you
+- **Only what you carry.** The weapon carousel shows the weapons you wear
+  and the pack's list what you carry (Caleb's call: one place to swap gear
+  in), never the stash. Whatever you can summon is still what you drop when you
   die, so the extraction stakes stay. The pack's capacity still applies: a
   summoned weapon swaps places with the one worn in its slot, which goes into
   the pack with the rounds it had. The weapon in your hand can be stored
   the same way in reverse: a click on it dematerializes it back into the
   pack, leaving its slot empty and your hands free, if the pack has room.
-- **Two levels (Caleb's call).** The mouse wheel steps only across the main
-  icons, tab after tab. A click on an icon that holds several things
-  (weapons, vehicles, artifacts, portal places) opens its list, and only
-  then does the wheel turn through what it holds; a click picks, and a
-  right click closes the list and goes back to the icons.
-- **Three tabs**, stepped through with the mouse wheel:
-  - **Summon:** weapons (worn ones are drawn with a click, the one in hand
-    is stored back into the pack, ones in the pack are materialized into
-    your hand), vehicles (the toy carousel) and
-    artifacts (the attuned one is used; others carried are shown but stay
-    loot, one per outing). The pack's fill, worth, heals and scrip sit under
+- **Three levels (Caleb's call).** Raised, the watch is on its tab row:
+  the mouse wheel turns between the three tabs and a click goes into one.
+  In a tab the wheel moves across that tab's icons only. A click on an
+  icon that holds several things (weapons, vehicles, artifacts, portal
+  places) opens its list, and only then does the wheel turn through what
+  it holds; a click picks. A right click always backs out one level: a
+  list to its tab, a tab to the tab row, and the tab row lowers the watch.
+  Turning back to a tab lands on the icon last looked at there.
+- **Three tabs**, turned with the mouse wheel on the tab row:
+  - **Summon:** weapons (only the ones worn: drawn with a click, the one in
+    hand stored back into the pack), vehicles (the toy carousel) and the
+    artifact (one click uses the attuned one; others carried are loot in
+    the pack, one per outing). The pack's fill, worth, heals and scrip sit under
     the tab, and the pack's own icon opens (a click) as a list of what you
     carry, each with its worth, that the wheel turns through. Gear in it
     says the slot it goes in, and a click puts it on (Caleb's call: loot a
@@ -1600,7 +1685,7 @@ the storage behind it.
       renown, any bounty: what dying now would cost), safe (what this life
       has banked, lifetime rank) and this life (time alive, kills, streak,
       the contract nearest done).
-  - **Mission:** the squad portal, the contract tracker, a squad ping, and
+  - **Mission:** the squad portal, the contract tracker, and
     sign-out and banking.
 - **Pop-ups only while they matter:** the death report and landing choices
   when you go down, the flight rig's status while flying, and a brief notice.
@@ -1634,26 +1719,36 @@ the storage behind it.
 
 The watch opens portals to the other places: the way out of your base and
 the plaza, replacing the base's launch pad, arena gate and teleporter pad,
-and the way home from anywhere (Caleb's call: portals to your home base and
-other places, not only to the worlds).
+and a way anywhere from anywhere (Caleb's call: portals to your home base
+and other places, not only to the worlds, and from out in a world to any
+other place too, by way of a sign-out).
 
 - **Where they lead, by where you are:**
   - **Your home base:** every world, the arena, and the plaza (the same
     trip as the base's door).
   - **The plaza (a safe zone):** every world, the arena, and home (the same
     trip as the quarters door).
-  - **Out in a world:** home only. No portal leads from one world straight
-    into another.
+  - **Out in a world:** home first, then every other world, the arena and
+    the plaza. Every one of them is a sign-out (below): your gear goes home
+    first and the trip goes on from your base, so nothing carried goes from
+    one world straight into another.
   - **The arena:** none; leaving it has its own way.
-- **Home from a world is a sign-out with a door, never an escape hatch.**
+- **Out of a world a portal is a sign-out with a door, never an escape
+  hatch**, wherever it leads.
   Opening it starts your sign-out and takes the sign-out's own time: quick
   at a gate outpost, 15 seconds on the ground, 25 seconds and the beacon
   column in the air. A fight or a bounty still refuses it, and a hit
   cancels it, folding the ring away. The ring unfolds over the countdown
   where everyone in the world can see it, so it marks you as clearly as the
-  beacon does. When it ends you go home with your gear like any sign-out,
-  and online it lands you in your base rather than the plaza. A squadmate
-  who steps into the ring starts their own sign-out and follows.
+  beacon does. When it ends everything you carry goes home like any
+  sign-out. A portal home then lands you in your base (online too, rather
+  than the plaza); a portal to somewhere else carries straight on from
+  there, with the loadout as it now stands at home, landing at the other
+  world's gate outpost, in the arena or in the plaza. Carried gear never
+  travels along (Caleb's call): it banks home first, which keeps each
+  world's stakes and kit rules its own. A squadmate who
+  steps into the ring starts their own sign-out through the same door and
+  follows.
 - **Opening one:** raise the watch, go to the portal icon on the Mission
   tab, click to open its list, wheel through the places, click. A portal unfolds in
   front of you and stays open about 15 seconds, then folds away.
@@ -1668,7 +1763,7 @@ other places, not only to the worlds).
 
 | Feature | What it does |
 | --- | --- |
-| Weapon carousel | The weapons worn and in the pack: draw one worn, or materialize one from the pack (above). |
+| Weapon carousel | The weapons worn: draw one, or store the one in hand. Weapons in the pack materialize from the pack's list (above). |
 | Vehicle carousel | The permanent garage: swipe through your vehicles, take one as a toy in your hand, throw it to unpack the full-size vehicle. Packs vehicles back up. |
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |
@@ -1677,8 +1772,7 @@ other places, not only to the worlds).
 | Map and pings | A small holographic map on the Status tab (you and where you face, strongpoints and who holds them, depots, gate outposts, the war's hot zone, the risk zones and your side's pings; never other people), standing, and pings to your squad (the ping marks where you look, for your side only). |
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
 | Landing choices | Where to drop back in after dying: the wheel picks one on the death report and a click drops in (number keys and Enter still work). |
-| Squad portal | Opens a portal to a world, the arena, the plaza or home from your base and the plaza, or home from anywhere in a world as a sign-out (above). |
-| Emotes | A carousel on the Status tab: wave, salute, point, cheer, sit, lean, dance and taunt, played on your own body for everyone to see (section 11). |
+| Squad portal | Opens a portal to a world, the arena, the plaza or home from anywhere: straight there from your base and the plaza, and as a sign-out from out in a world (above). |
 | Pack | What you carry, folded into the Summon tab: its fill, worth, heals and scrip, and later your weight tier (section 4). |
 
 Watch skins are cosmetics, shown off in the hub.
@@ -1830,9 +1924,9 @@ of the shots and their whizz.
 A worn helmet can come off and be clipped to the hip, so faces show where
 people meet (the Concourse, a base) and a helmet is still to hand.
 
-- **From the watch or its key.** The Summon tab's helmet icon takes it off
-  or puts it back on with a click, and so does its own key, K (Caleb's
-  ask). The watch goes down, since the off hand does it.
+- **From its key.** Its own key, K (Caleb's ask), takes it off or puts it
+  back on. It was a Summon tab icon on the watch until it had the key, and
+  left the watch then (Caleb's call).
 - **Shown, not swapped.** Both hands lift the helmet off (Caleb's call),
   so a weapon in hand is put away first. The weapon hand lets go as it
   comes down, and the off hand carries it round the body and clips it to the back of the left hip
@@ -3246,10 +3340,10 @@ players far less than to bots.
 
 Eight to start (Caleb's go-ahead, 19 November 2026): wave, salute, point,
 cheer, sit down, lean back (arms folded), dance and a taunt (a beckon, the
-other hand on the hip). They are picked on the watch, since they are
-something you do in the world: the emote icon on the Status tab opens like
-the other carousels, the wheel turns through them and a click plays one (a
-click on the one playing stops it).
+other hand on the hip). They are picked on the emote key's quick wheel
+(below). They were an icon on the watch's Status tab until the wheel came,
+and left the watch then (Caleb's call): the watch keeps to what you do in
+action.
 
 - **One body, every view.** An emote is a pose on the one body
   (`Locomotion.emote_pose`, `_emote_body`), the same in first and third
@@ -3278,8 +3372,7 @@ points at a slice instead of turning the view (the wheel steps round it
 too) and clicks never shoot. Held, letting go plays the slice pointed at
 (nothing if the mouse never moved); tapped, it stays up until a click
 plays a slice, a right click or the key again puts it away. It closes on
-the watch, the phone, a vehicle or a death. The watch's emote icon still
-works the same way.
+the watch, the phone, a vehicle or a death.
 
 ### Shortcut keys
 
@@ -3310,8 +3403,9 @@ no rebinding screen yet; when it gets one these come with the rest.
   does: from the plaza, the arena or your base, landing at the gate outpost.
   Out in a world where gear is at stake you sign out first. An accepted
   world invite goes the same way.
-- **Pings** stay on the watch (Mission tab), marking where you look for your
-  side.
+- **Pings** are their own key (the middle mouse button), marking where you
+  look for your side. They left the watch (Caleb's call), where the icon
+  only did what the key does.
 - **Later:** squadmates marked on the visor and watch map (today that is
   your clan), a say-nearby line over the head, voice.
 
