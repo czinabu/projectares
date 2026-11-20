@@ -3682,6 +3682,7 @@ func _near_side(model: Node3D, upright: Basis, side: float) -> float:
 
 func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
 	_aim_left = aim_hold
+	ActionPose.of(actor).kick(gun)
 	var parent := actor.get_parent()
 	if parent == null:
 		return

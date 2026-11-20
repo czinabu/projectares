@@ -567,6 +567,38 @@ var sway_turn := 0.012
 var sway_limit := 0.05
 var sway_stiffness := 120.0
 var sway_damping := 18.0
+## Weight in the hands (Caleb's gun handling pass, after how shooters sell
+## a gun's mass): the same spring takes the view's pitch (`sway_pitch`,
+## metres per radian a second: looking up leaves the gun low), the body's
+## rise and fall at `sway_vertical` of the side-to-side gain (a landing dips
+## the gun, a fall floats it), and each shot (`kick`): the gun is driven
+## back into the shoulder and its muzzle up (`tip`, its own spring), scaled
+## by the gun's model kick. It moves the gun held up at the hip and carried;
+## the sights stay on the eye (the view has its own recoil).
+var sway_pitch := 0.01
+var sway_vertical := 0.6
+var kick_push := 1.2
+var kick_rise := 6.0
+## A landing (the fall stopped by more than `land_from` m/s in a frame)
+## throws the gun down at `land_dip` of the speed lost.
+var land_from := 2.0
+var land_dip := 0.06
+var tip_stiffness := 260.0
+var tip_damping := 24.0
+var tip_limit := 0.35
+var tip := 0.0
+var _tip_speed := 0.0
+## A gun held up at the hip with a wall in front of its muzzle is drawn in
+## and tipped up rather than pushed through the wall (`WeaponArm` casts for
+## it): `blocked` is how far (0 clear, 1 as far as it goes, eased), and at
+## its most the wrist comes `wall_back` metres back and `wall_raise` up and
+## the muzzle tips up `wall_tip` radians. `wall_rate` is how fast it eases.
+var blocked := 0.0
+var wall_back := 0.2
+var wall_raise := 0.05
+var wall_tip := 0.9
+var wall_rate := 6.0
+var _last_pitch := 0.0
 
 var actor: Actor
 
@@ -835,27 +867,48 @@ static func blade_point(melee: MeleeWeapon, share: float) -> Variant:
 func _update_sway(delta: float) -> void:
 	var basis := actor.global_basis.orthonormalized()
 	var local := basis.inverse() * actor.velocity
-	local.y = 0.0
 	var yaw := actor.global_rotation.y
+	var pitch := actor.cmd.pitch if actor.cmd != null else 0.0
 	if not _sway_primed or delta <= 0.0:
 		_sway_primed = true
 		_last_velocity = local
 		_last_yaw = yaw
+		_last_pitch = pitch
 		return
 	var accel := (local - _last_velocity) / delta
+	accel.y *= sway_vertical
+	var stopped := local.y - _last_velocity.y
+	if stopped > land_from:
+		_sway_speed.y -= stopped * land_dip
 	var turning := wrapf(yaw - _last_yaw, -PI, PI) / delta
+	var pitching := (pitch - _last_pitch) / delta
 	_last_velocity = local
 	_last_yaw = yaw
+	_last_pitch = pitch
 	# A start pulls the gun back, a stop throws it on, a turn left leaves it
-	# out to the right.
-	var pull := (-accel * sway_gain + Vector3(turning * sway_turn, 0.0, 0.0)).limit_length(sway_limit * 2.0)
+	# out to the right, a look up leaves it low, a landing dips it.
+	var pull := (-accel * sway_gain + Vector3(turning * sway_turn, -pitching * sway_pitch, 0.0)) \
+			.limit_length(sway_limit * 2.0)
 	var step := minf(delta, 1.0 / 30.0)
 	var steps := ceili(delta / step)
 	for i in steps:
 		var force := (pull - sway) * sway_stiffness - _sway_speed * sway_damping
 		_sway_speed += force * step
 		sway += _sway_speed * step
+		_tip_speed += (-tip * tip_stiffness - _tip_speed * tip_damping) * step
+		tip += _tip_speed * step
 	sway = sway.limit_length(sway_limit)
+	tip = clampf(tip, -tip_limit, tip_limit)
+
+
+## A shot from `gun`: the gun is driven back and its muzzle up, on the
+## springs `_update_sway` steps, by the gun's own model kick.
+func kick(gun: Gun) -> void:
+	if gun == null:
+		return
+	var by := gun.model_kick() / Gun.MODEL_KICK
+	_sway_speed.z += kick_push * by.x
+	_tip_speed += kick_rise * by.y
 
 
 ## Where the gun hand's wrist goes in the carry now, from the chest, and how

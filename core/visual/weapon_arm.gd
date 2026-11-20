@@ -203,6 +203,10 @@ var _turn := Vector2.ZERO
 var _gun_carry := 0.0
 var _carry_wrist := Vector3.ZERO
 var _carry_basis := Basis.IDENTITY
+## What the wall check wants `ActionPose.blocked` to ease to, and a count of
+## pose steps so it casts every other one.
+var _wall_want := 0.0
+var _wall_steps := 0
 ## The actor's shared pose: what both views show the weapon hand doing.
 var pose: ActionPose
 
@@ -464,6 +468,7 @@ func step(delta: float) -> void:
 	if shared.toy_throw_t >= 0.0:
 		_turn = shared.toy_turn()
 	var gun := actor.get_active_weapon() as Gun
+	_check_wall(gun, shared, delta)
 	_gun_weight = maxf(shared.reload, shared.inspect_for("gun")) if gun != null and gun.visual != null \
 			and gun.visual.visible and not _let_go() else 0.0
 	# The watch takes the left hand off any two-handed hold while it is up.
@@ -732,6 +737,28 @@ func _hold_at_hip() -> void:
 	_average_clip_wrist(dt)
 
 
+## Whether a wall stands in front of the muzzle of a gun held up at the hip,
+## eased into `ActionPose.blocked`. One ray from the eyes along the aim, as
+## long as the eyes' reach to the muzzle, every other pose step, and only
+## while a gun is up out of the sights; the world only, never bodies.
+func _check_wall(gun: Gun, shared: ActionPose, delta: float) -> void:
+	var up := gun != null and gun.visual != null and gun.visual.visible and not _let_go() \
+			and shared.low < 0.5 and shared.carry < 0.5 and shared.ads < 0.5 and is_inside_tree()
+	_wall_steps += 1
+	if not up:
+		_wall_want = 0.0
+	elif _wall_steps % 2 == 0:
+		var box := ActionPose.model_box(gun)
+		var reach := shared.hip_from_eyes(gun).length() + box.size.z * 0.9
+		var from := actor.get_eye_position()
+		var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch) * Vector3.FORWARD
+		var query := PhysicsRayQueryParameters3D.create(from, from + aim * reach, Actor.LAYER_WORLD)
+		query.exclude = [actor.get_rid()]
+		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
+		_wall_want = 0.0 if hit.is_empty() else clampf((reach - from.distance_to(hit.position)) / maxf(box.size.z * 0.6, 0.1), 0.0, 1.0)
+	shared.blocked = move_toward(shared.blocked, _wall_want, delta * shared.wall_rate)
+
+
 ## Where the gun hand's wrist goes to hold `gun` up at the hip (global): from
 ## the model's eyes along the aim, its pitch clamped to `ActionPose.hip_pitch`
 ## so a look straight up or down does not throw the arm out of reach.
@@ -739,7 +766,9 @@ func hip_point(gun: Gun) -> Vector3:
 	var shared := _pose()
 	var pitch := clampf(actor.cmd.pitch, shared.hip_pitch.x, shared.hip_pitch.y)
 	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, pitch)
-	return _eyes_now(aim) + aim * shared.hip_from_eyes(gun)
+	var body := actor.global_basis.orthonormalized()
+	var drawn_in := Vector3(0.0, shared.wall_raise, shared.wall_back) * shared.blocked
+	return _eyes_now(aim) + aim * (shared.hip_from_eyes(gun) + drawn_in) + body * shared.sway
 
 
 ## The clip's wrist in the steadied frame the carry rides (`carry_frame`,
@@ -1289,6 +1318,11 @@ func hold_weapon() -> void:
 		var turn := aimed
 		if _aim_wrist != null and pose.low > 0.0:
 			turn = aimed.slerp(_follow_turn(_wrist, _held_wrist(gun)), pose.low)
+		# A shot tips the muzzle up and it settles back (`ActionPose.tip`);
+		# in the sights the view takes the recoil instead.
+		var tipped := (pose.tip + pose.blocked * pose.wall_tip) * (1.0 - _ads) * (1.0 - pose.low)
+		if absf(tipped) > 0.0001:
+			turn = turn.orthonormalized() * Basis(Vector3.RIGHT, tipped)
 		# Carried on the move, it turns the way the carry holds it.
 		if _gun_carry > 0.0:
 			turn = turn.orthonormalized().slerp(_carry_basis, _gun_carry)

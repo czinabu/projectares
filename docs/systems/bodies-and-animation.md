@@ -69,7 +69,20 @@ date in the same PR.
   vehicle keeps the clip's wrist averaged over a stride.
   `_check_hip_after_aim_tap` measures the steadiness, and
   `gun_hold_tests.gd` the off hand on the gun, the gun on the aim and the
-  gun in the first-person frame through every way of moving. All of it is read from velocity and the command, so
+  gun in the first-person frame through every way of moving.
+  The gun has weight in the hands, all view only and the same body in both
+  views: the carry's sway spring (`ActionPose._update_sway`) also takes
+  the view's pitch (`sway_pitch`) and the body's rise and fall
+  (`sway_vertical`, a landing throws it down by `land_dip`), and moves the
+  gun held up at the hip as well as carried; a shot (`ActorSkin._on_fired`
+  calls `ActionPose.kick`) drives it back and tips the muzzle up on its own
+  spring (`tip`), scaled by `Gun.model_kick`, never in the sights, where
+  the view has its own recoil. A wall in front of the muzzle of a gun up
+  at the hip draws it in and tips it up instead of letting it through
+  (`WeaponArm._check_wall`, one ray against the world every other pose
+  step, only for a body being posed with its gun up; `ActionPose.blocked`,
+  `wall_back`, `wall_tip`). Skins exist only where `Look` runs, so none of
+  it costs a server anything. All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
