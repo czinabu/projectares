@@ -237,7 +237,7 @@ const STORAGE_ROWS := {"supplies": 0.95, "chip_case": 1.5, "trophy": 2.2}
 const KIND_ROOMS := {
 	"rack_guns": "armory", "rack_sidearms": "armory", "rack_melee": "armory", "heavy_wall": "armory",
 	"armor_stand": "gear", "helmet_shelf": "gear", "rig_stand": "gear", "chip_case": "gear",
-	"artifact_case": "gear", "bay": "garage", "supplies": "stores", "trophy": "stores",
+	"artifact_case": "gear", "pack_hooks": "gear", "bay": "garage", "supplies": "stores", "trophy": "stores",
 }
 ## Each room's colour: the lit edge of its name plate over the doorway and
 ## its tile on the plan table.
@@ -1336,6 +1336,13 @@ func style_room_spot(kind: String, index: int, style: String, whole: bool) -> Tr
 			if not whole:
 				return _spot(Vector3(-side + 0.4, STORAGE_ROWS["chip_case"], -2.2), PI / 2.0)
 			return _spot(Vector3(-side + 0.4, STORAGE_ROWS["chip_case"], -2.0 - 0.95 * (6 + i)), PI / 2.0)
+		"pack_hooks":
+			# Hooks on the wall beside the way in, on the right, the packs
+			# hanging to face into the room: two side by side, a third over
+			# them, clear of the wall's pillar.
+			var col := float(index % 2)
+			var row := float(index / 2)
+			return _spot(Vector3(side - 0.6 - 0.7 * col - 0.35 * row, 1.45 + 0.95 * row, -0.3), PI)
 		"supplies":
 			if not whole:
 				return _spot(Vector3(-0.95 + 0.95 * i, STORAGE_ROWS[kind], back + 0.45), 0.0)
@@ -3481,6 +3488,18 @@ func _fill(display: Display) -> void:
 			model.add_child(chip)
 			box = Vector3(0.7, 0.8, 0.6)
 			plate_at = Vector3(0, 0.42, 0)
+		"pack_hooks":
+			# A hook off the wall, the pack hanging from it by its top: the
+			# model worn on the back (`ActorSkin.build_backpack`).
+			model.add_child(_part(Vector3(0.06, 0.06, 0.2), Vector3(0, 0.36, 0.1), Color(0.3, 0.3, 0.32)))
+			var pack := SkinScript.build_backpack(int(ItemDB.item_stats(id).get("pack_size", 1)), Color(0.33, 0.31, 0.24))
+			# Its back faces the wall; the model's front is -Z, the display's +Z.
+			pack.position = Vector3(0, 0.05, 0.02)
+			model.add_child(pack)
+			box = Vector3(0.6, 0.8, 0.5)
+			box_at = Vector3(0, 0.05, 0.2)
+			plate_at = Vector3(0, -0.45, 0.35)
+			plate_size = 0.09
 		"artifact_case":
 			# A dark plinth, the artifact a glowing core standing on its point.
 			model.add_child(_part(Vector3(0.5, 0.08, 0.5), Vector3(0, -0.3, 0), Color(0.12, 0.12, 0.14)))

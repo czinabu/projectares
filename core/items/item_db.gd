@@ -200,6 +200,20 @@ func _ready() -> void:
 			"slam_damage": 32.0, "slam_radius": 3.0, "move_mult": 1.05, "swing_style": "thrust"},
 			"A light spear of marsh reed and chitin. Long reach and quick to move with, but it hits softer.")
 
+	# Backpacks (Caleb's call: four sizes, bought from the Outfitter). None
+	# worn is the 12-slot field pack everyone has; each bigger one carries
+	# more, so more is at stake, and slows the sprint a little
+	# (`Loadout.wear_pack`). "pack_size" sizes it on the back.
+	register("pack_rucksack", "Rucksack", Rarity.UNCOMMON, 400, ["backpack", "vendor"],
+			{"capacity": 16, "sprint_mult": 0.97, "pack_size": 1},
+			"16 slots in the pack. Sprint 3% slower.")
+	register("pack_hauler", "Hauler Pack", Rarity.UNCOMMON, 900, ["backpack", "vendor"],
+			{"capacity": 20, "sprint_mult": 0.94, "pack_size": 2},
+			"20 slots in the pack. Sprint 6% slower.")
+	register("pack_mule", "Mule Frame", Rarity.UNCOMMON, 1800, ["backpack", "vendor"],
+			{"capacity": 24, "sprint_mult": 0.9, "pack_size": 3},
+			"24 slots on a carrying frame. Sprint 10% slower.")
+
 	# Armor frames
 	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light", "vendor"],
 			{"armor": 45.0, "speed_mult": 1.08, "heat_mult": 0.8, "heat_signature": 0.7},

@@ -206,6 +206,9 @@ var gear_items: Array[String] = []
 var frame_name := "No armor"
 ## The armor frame worn (an item id), "" for none. Set by `Loadout.wear_frame`.
 var frame_id := ""
+## The backpack worn (an item id), "" for the field pack. It sets the
+## pack's capacity and slows the sprint (`Loadout.wear_pack`).
+var pack_id := ""
 ## Armor left on frames taken off into the pack (item id -> armor), so one
 ## put back on is no fresher than it was. A frame found comes whole.
 var stowed_armor := {}

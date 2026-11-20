@@ -1918,6 +1918,14 @@ Alongside those five: an armor frame, headgear (a helmet or goggles, each
 with a visor), a vehicle on the watch, and the heavy weapon chamber, which is
 filled in the field.
 
+**Backpacks (Caleb's call).** A backpack is a progression item in its own
+optional slot. With none worn you carry the 12-slot field pack. The
+Outfitter sells three bigger ones for scrip: the Rucksack (16 slots, sprint
+3% slower), the Hauler Pack (20, 6%) and the Mule Frame (24, 10%). A bigger
+pack carries more home and puts more at stake when you die, and the pack
+itself is gear that drops with you. Each size looks bigger on your back,
+and at home they hang on hooks in the gear room.
+
 ### Gun roles
 
 Every gun has a range and a target it wins against, so the pick is a
