@@ -97,7 +97,9 @@ date in the same PR.
   the pack's jog runs lower and bouncier than the old strafes and gun run,
   and mixed with them it bobbed the first-person view at every switch. A
   body is sized in its relaxed stand (`stand_legs`), never in an idle that
-  bends the knees or spreads the feet, or the whole body grows. Carrying a clip
+  bends the knees or spreads the feet, or the whole body grows. A glide lays the
+  body out over the relaxed stand too: the pack's idle turns the chest,
+  and the wings hang from it. Carrying a clip
   across keeps each bone's turn; limbs are bent to point the old way, the
   trunk and collarbones are not (bent, the chest tips and the long
   collarbone shrugs the shoulder up), and a collarbone's turn is scaled by

@@ -881,7 +881,9 @@ func _update(delta: float) -> void:
 		# armed or blade-holding stand, which still decides the weapon arm.
 		_play("idle_melee" if melee and _anims.has("idle_melee") else stand_key(weapon))
 	elif _glide > 0.0:
-		_play("idle")
+		# Under the glide pose, the square stand: the pack's idle leans and
+		# turns the chest, which would tip the wings hung on it.
+		_play("stand_legs" if _anims.has("stand_legs") else "idle")
 	elif airborne:
 		# No ground under the feet: never a run cycle. A stand plays under
 		# the air pose, so the arms keep their hold on the weapon.
