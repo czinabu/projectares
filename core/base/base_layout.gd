@@ -43,6 +43,9 @@ const KINDS := {
 	# starter bunker shows one: they are the long chase.
 	"artifact_case": {"tag": "artifact", "spots": 2, "starter": 1, "steps": {"gear_hall": 2},
 		"per_copy": false, "title": "Artifacts"},
+	# Backpacks hang on hooks by the gear room's way in.
+	"pack_hooks": {"tag": "backpack", "spots": 3, "starter": 1, "steps": {"gear_hall": 3},
+		"per_copy": false, "title": "Backpacks"},
 	"bay": {"tag": "vehicle", "spots": 4, "starter": 1, "steps": {"bay_second": 2, "garage_full": 4},
 		"per_copy": true, "title": "Garage"},
 	"supplies": {"tag": "consumable", "spots": 6, "starter": 3, "steps": {"trophy_hall": 6},

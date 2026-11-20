@@ -18,6 +18,8 @@ const SLOTS := {
 	"vehicle": "vehicle",
 	# One artifact per outing, carried on the watch (DESIGN.md section 6).
 	"artifact": "artifact",
+	# A bigger backpack: more room in the pack, a slower sprint (`wear_pack`).
+	"pack": "backpack",
 	# Attachments for the primary. Each slot's tag is also the attachment's
 	# second tag in ItemDB.
 	"optic": "optic",
@@ -36,6 +38,7 @@ const SLOT_NAMES := {
 	"ability": "Ability",
 	"vehicle": "Vehicle",
 	"artifact": "Artifact",
+	"pack": "Backpack",
 	"optic": "Optic",
 	"muzzle": "Muzzle",
 	"grip": "Grip",
@@ -45,7 +48,9 @@ const SLOT_NAMES := {
 const ATTACHMENT_SLOTS := ["optic", "muzzle", "grip", "magazine"]
 ## Slots with no free scrap item (`StashRules.free_items`). Any slot can be
 ## left empty, and an empty slot deploys with nothing in it.
-const OPTIONAL_SLOTS := ["power", "ability", "vehicle", "artifact", "optic", "muzzle", "grip", "magazine"]
+const OPTIONAL_SLOTS := ["power", "ability", "vehicle", "artifact", "pack", "optic", "muzzle", "grip", "magazine"]
+## Slots in the pack with no backpack worn: the field pack everyone has.
+const FIELD_PACK := 12
 ## How many healing items are taken from the stash on deploy.
 const MAX_HEAL_ITEMS := 2
 ## Seconds a weapon takes to materialize out of the pack through the watch,
@@ -166,6 +171,12 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 				wear_helmet(actor, id)
 		elif ItemDB.has_tag(id, "armor"):
 			frames.append(id)
+		elif ItemDB.has_tag(id, "backpack"):
+			# One on the back: a second is only carried, as loot.
+			if actor.pack_id != "":
+				actor.inventory.add_item(id)
+			else:
+				wear_pack(actor, id)
 		elif ItemDB.has_tag(id, "vehicle"):
 			# A vehicle is not carried. The Raid parks it next to its owner.
 			pass
@@ -310,6 +321,9 @@ static func refit(actor: Actor, kit: Array) -> void:
 	var helmet := _first_tagged(kit, "helmet")
 	if helmet != (actor.visor.item_id if actor.visor.enabled else ""):
 		wear_helmet(actor, helmet)
+	var pack := _first_tagged(kit, "backpack")
+	if pack != actor.pack_id:
+		wear_pack(actor, pack)
 
 
 static func _first_tagged(kit: Array, tag: String) -> String:
@@ -355,6 +369,26 @@ static func wear_frame(actor: Actor, id: String, armor_left := -1.0) -> float:
 		actor.gear_items.append(id)
 	actor.frame_changed.emit(id)
 	return left
+
+
+## Puts backpack `id` on (`""` takes it off, back to the field pack): the
+## pack holds its `capacity` (`FIELD_PACK` with none) and the sprint is
+## scaled by its `sprint_mult`, the old pack's taken back off first. The
+## pack's contents stay as they are, even past a smaller capacity: nothing
+## more goes in until it is under again.
+static func wear_pack(actor: Actor, id: String) -> void:
+	if id != "" and not ItemDB.has_tag(id, "backpack"):
+		return
+	if actor.pack_id != "":
+		actor.sprint_speed /= maxf(float(ItemDB.item_stats(actor.pack_id).get("sprint_mult", 1.0)), 0.01)
+		actor.gear_items.erase(actor.pack_id)
+	actor.pack_id = id
+	var stats := ItemDB.item_stats(id) if id != "" else {}
+	actor.inventory.capacity = int(stats.get("capacity", FIELD_PACK))
+	if id != "":
+		actor.sprint_speed *= float(stats.get("sprint_mult", 1.0))
+		actor.gear_items.append(id)
+	actor.inventory.changed.emit()
 
 
 ## Applies a frame's speed and heat scaling, or with `undo` takes it back off.
