@@ -103,8 +103,7 @@ date in the same PR.
   crates and base stations are on `Actor.LAYER_WORLD` as well as the
   interact layer; a dropped bag or scrip pile is not. People collide with
   vehicles (`Actor.LAYER_VEHICLES`). A mesh that is meant to be walked
-  through (a zone's glow, a beam, plants, scenery past the rim, Meridian's
-  spectacle, which is decoration only) carries the meta `"walk_through"`
+  through (a zone's glow, a beam, plants, scenery past the rim) carries the meta `"walk_through"`
   on itself or a parent, its value saying why. `tests/collision_tests.gd`
   builds every world from `Worlds`, the arena and the home base with
   `Look` on and flags every mesh big enough to block a person, standing

@@ -67,6 +67,7 @@ const AMBER := Color(1.0, 0.6, 0.2)
 const SkyhookScript := preload("res://worlds/meridian/skyhook.gd")
 const StandsScript := preload("res://worlds/meridian/stands.gd")
 const SkylineScript := preload("res://worlds/meridian/skyline.gd")
+const SpectacleSolid := preload("res://worlds/meridian/spectacle_solid.gd")
 const WorksScript := preload("res://worlds/meridian/works.gd")
 ## Half the salt pan's width: past it the dunes rise (`_build_far_land`),
 ## near enough that the works run up into them.
@@ -770,11 +771,16 @@ func _ramp_parts() -> Array[Transform3D]:
 
 
 func _dress() -> void:
-	if not Look.enabled:
-		return
 	var art := Node3D.new()
 	art.name = "Dressing"
 	add_child(art)
+	if not Look.enabled:
+		# The spectacle is solid, so its layout is built here too, for its
+		# collision alone; what little it draws outside its builders goes.
+		_dress_spectacle(art)
+		remove_child(art)
+		art.free()
+		return
 	_dress_rail(art)
 	_dress_launch_ramp(art)
 	_dress_yard(art)
@@ -915,7 +921,8 @@ func _dress_pylons(art: Node3D) -> void:
 
 # --- The spectacle: stands, crowds, the big screen ----------------------------------
 
-## Everything that makes a race an event, decoration only (`stands.gd`):
+## Everything that makes a race an event (`stands.gd`), solid on every
+## machine and drawn where `Look` is on (`spectacle_solid.gd`):
 ## the two-tier Meridian Grandstand along the Rail, stands round Breech
 ## Hairpin and the Spillway landing, terraces round the cooling tower, a
 ## footbridge over the run to the chicane, viewing barges over the infield,
@@ -924,7 +931,9 @@ func _dress_pylons(art: Node3D) -> void:
 ## drones (`skyline.gd`), and the works' districts, roads, car parks, the
 ## infield festival and the trackside fences (`works.gd`).
 func _dress_spectacle(art: Node3D) -> void:
+	var solid: RefCounted = SpectacleSolid.new(self)
 	var st: RefCounted = StandsScript.new(art, LAYOUT_SEED + 1)
+	st.set("solid", solid)
 	_dress_grandstand(st)
 	# Round the outside of Breech Hairpin.
 	var hairpin := Vector3(150, 0, 38)
@@ -944,7 +953,10 @@ func _dress_spectacle(art: Node3D) -> void:
 	_skyhook.call("dress", st)
 	SkylineScript.new(st, LAYOUT_SEED + 2).call("build", race_tracks())
 	st.call("finish")
-	WorksScript.new(art, LAYOUT_SEED + 4, WORKS_KEEP_OUT.duplicate(true)).call("build", race_tracks())
+	var works: RefCounted = WorksScript.new(art, LAYOUT_SEED + 4, WORKS_KEEP_OUT.duplicate(true))
+	works.set("solid", solid)
+	works.call("build", race_tracks())
+	solid.call("finish")
 
 
 ## The Meridian Grandstand: two tiers along the Rail opposite the pits,
