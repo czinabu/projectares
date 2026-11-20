@@ -85,7 +85,8 @@ date in the same PR.
   the skin rests the weapon's near side on the rail; an empty rail has
   nothing sticking out), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
-  hip. These are view-only copies; the weapon's own node stays on the hand.
+  hip, each moved to sit snug over the body, armor and other gear under it
+  (`ActorSkin._fit_worn`, see gear.md). These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
   (`ActorSkin._update_switch`, reaching through `WeaponArm.override_point`),
   but only the view waits: the actor switches at once. The holster key (Z)
