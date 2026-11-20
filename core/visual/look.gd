@@ -1758,15 +1758,31 @@ func dress_surfaces(mesh_node: MeshInstance3D, def: Dictionary, chosen: Dictiona
 		if source.emission_enabled:
 			mat.set_shader_parameter("emission_color", source.emission * 2.5)
 		_bind_storm(mat)
-		if not chosen.is_empty() and Human.reshape:
+		if not chosen.is_empty():
+			var slot: String = mesh_node.get_meta("slot", "")
+			if source.normal_enabled and source.normal_texture:
+				mat.set_shader_parameter("normal_tex", source.normal_texture)
+				mat.set_shader_parameter("normal_amount", 1.0)
+			if source.roughness_texture:
+				mat.set_shader_parameter("rough_tex", source.roughness_texture)
+				mat.set_shader_parameter("rough_from_tex", 1.0)
 			mat.set_shader_parameter("has_rest", 1.0)
-			mat.set_shader_parameter("surface_kind",
-					Human.surface_kind(mesh_node.get_meta("slot", ""), source.resource_name))
-			var pick := Human.color_for(chosen, mesh_node.get_meta("slot", ""), source.resource_name)
+			var kind := Human.surface_kind(slot, source.resource_name)
+			mat.set_shader_parameter("surface_kind", kind)
+			var pick := Human.color_for(chosen, slot, source.resource_name)
 			if pick.has("color"):
 				mat.set_shader_parameter("recolor", pick["color"])
 				mat.set_shader_parameter("recolor_amount", 1.0)
 				mat.set_shader_parameter("recolor_shading", 1.0 if pick["keep_shading"] else 0.0)
+			var suit := Human.suit_for(chosen, slot)
+			if kind == 2 and not suit.is_empty():
+				# The tactical suit: `ActorSkin._wear_undersuit` recolours it
+				# under a frame and gives this back.
+				mat.set_meta("own_suit", suit)
+				mat.set_meta("suit_slot", slot)
+				mat.set_shader_parameter("suit", 1.0)
+				mat.set_shader_parameter("suit_color", suit["color"])
+				mat.set_shader_parameter("suit_trim", suit["trim"])
 		mesh_node.set_surface_override_material(i, mat)
 		materials.append(mat)
 	return materials

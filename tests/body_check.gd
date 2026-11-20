@@ -3,9 +3,8 @@ extends Node
 ## each look from the front, three quarters, the side and behind, then the
 ## face and the right hand up close. Needs a display (or xvfb):
 ##   godot --path . res://tests/body_check.tscn -- <output_dir> [--suit]
-##       [--before] [--kit] [--world <id>] [--turn <degrees>] [--name <file>]
-## `--suit` shows the undersuit worn under a frame, `--before` the packs'
-## own meshes, `--kit` the world's kit instead of a bare body, `--turn`
+##       [--kit] [--world <id>] [--turn <degrees>] [--name <file>]
+## `--suit` shows the suit as worn under a frame, `--kit` the world's kit instead of a bare body, `--turn`
 ## turns the body toward the light.
 
 const Human := preload("res://core/visual/human.gd")
@@ -23,8 +22,6 @@ func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	var out_dir: String = args[0] if args.size() > 0 else "user://"
 	Profile.persist = false
-	if "--before" in args:
-		Human.reshape = false
 	var raid := Raid.new()
 	add_child(raid)
 	var kit: Array = [Loadout.BARE]

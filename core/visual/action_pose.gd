@@ -512,7 +512,7 @@ const INSPECT_TURNS := [
 ## gun turns from straight ahead (pitch up, yaw toward the off side, roll
 ## toward the off side, radians). The chest carries it, so the run's own lean
 ## and bounce move the gun with the body.
-var carry_low_long := Vector3(0.15, 1.19, -0.27)
+var carry_low_long := Vector3(0.15, 1.2, -0.25)
 var carry_low_long_turn := Vector3(-0.3, 0.15, 0.08)
 var carry_port_long := Vector3(0.13, 1.16, -0.24)
 var carry_port_long_turn := Vector3(0.75, 1.0, 0.6)

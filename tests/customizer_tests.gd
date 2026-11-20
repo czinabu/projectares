@@ -50,29 +50,44 @@ static func run(t: Node) -> void:
 				return picked[slot] in pool["f"])
 	t.check(in_pool, "a random look stays inside the outfits it is given")
 	t.check(Human.for_name("Bot3") == Human.for_name("Bot3"), "someone with no chosen look gets the same one every time")
-	t.check(Human.color_for(mixed, "body", "Skin")["color"] == Human.SKIN_TONES[3], "skin takes the chosen tone on every part")
-	t.check(Human.color_for(plain, "head", "Hair").is_empty() and Human.color_for(mixed, "head", "Hair_Brown").has("color"),
-			"hair keeps its own colour unless one is chosen")
-	t.check(Human.color_for(mixed, "body", "Swat")["keep_shading"] and Human.color_for(mixed, "head", "Swat").is_empty()
-			and Human.color_for(mixed, "legs", "Eye").is_empty(), "clothing is dyed on the body and legs, not hats or eyes")
+	t.check(Human.color_for(mixed, "body", "MI_Superhero_Female")["color"] == Human.SKIN_TONES[3]
+			and Human.color_for(mixed, "head", "MI_Superhero_Female")["color"] == Human.SKIN_TONES[3],
+			"skin takes the chosen tone on every part")
+	t.check(Human.color_for(plain, "head", "MI_Hair_1")["color"] == Human.NATURAL_HAIR
+			and Human.color_for(mixed, "head", "MI_Hair_2")["color"] == Human.HAIR_COLORS[5],
+			"hair is the natural brown unless a colour is chosen")
+	t.check(Human.color_for(mixed, "head", "MI_Eyes").is_empty(), "eyes keep their own colour")
+	# Everyone wears the tactical suit: the outfit picks its colours.
+	var suit_top := Human.suit_for(mixed, "body")
+	var suit_legs := Human.suit_for(mixed, "legs")
+	t.check(suit_top["color"] == Human.CLOTH_COLORS[6] and suit_legs["color"] == Human.CLOTH_COLORS[1]
+			and Human.suit_for(mixed, "head").is_empty(), "a chosen top and bottom colour dye the suit, never the head")
+	var undyed := mixed.duplicate()
+	undyed["top"] = 0
+	t.check(Human.suit_for(undyed, "body")["color"] == Human.SUITS["Soldier"][0]
+			and Human.suit_for(undyed, "body")["trim"] == Human.SUITS["Soldier"][1],
+			"left undyed, the suit wears its outfit's colours")
+	t.check(Human.suit_for(mixed, "feet")["color"].get_luminance() < Human.SUITS["SciFi"][0].get_luminance(),
+			"the boots are a darker shade of their outfit")
+	t.check(Human.BUILDS.all(func(build: String) -> bool: return Human.OUTFITS[build].keys().all(func(outfit: String) -> bool:
+			return Human.SUITS.has(outfit) and Human.HAIR[build].has(outfit))), "every outfit has a suit and a hairstyle")
 
-	# Every outfit ships all four parts on the shared skeleton.
+	# Each build is one body file: four parts and the hairstyles, bound to bones by name.
 	var complete := true
-	var count := 0
 	for build in Human.BUILDS:
-		complete = complete and ResourceLoader.exists(Human.rig_path(build))
-		for outfit: String in Human.OUTFITS[build]:
-			count += 1
-			var scene := load(Human.outfit_path(build, outfit)) as PackedScene
-			if scene == null:
-				complete = false
-				continue
-			var parts: Node = scene.instantiate()
-			for slot in Human.SLOTS:
-				var part := parts.find_child(Human.SLOT_NODES[slot], true, false) as MeshInstance3D
-				complete = complete and part != null and part.skin != null and String(part.skin.get_bind_name(0)) != ""
-			parts.free()
-	t.check(complete and count == 20, "all 20 outfits have a head, body, legs and feet bound to bones by name")
+		var scene := load(Human.rig_path(build)) as PackedScene
+		if scene == null:
+			complete = false
+			continue
+		var body: Node = scene.instantiate()
+		for slot in Human.SLOTS:
+			var part := body.find_child(Human.SLOT_NODES[slot], true, false) as MeshInstance3D
+			complete = complete and part != null and part.skin != null and String(part.skin.get_bind_name(0)) != ""
+		for outfit: String in Human.HAIR[build]:
+			for hair: String in Human.HAIR[build][outfit]:
+				complete = complete and body.find_child(hair, true, false) is MeshInstance3D
+		body.free()
+	t.check(complete, "each build's body has a head, body, legs, feet and every hairstyle, bound to bones by name")
 
 	# A look builds into one animated model wearing the chosen parts.
 	Look.enabled = true
@@ -82,15 +97,17 @@ static func run(t: Node) -> void:
 		var model: Node3D = built["model"]
 		var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
 		var worn := model.find_children("*", "MeshInstance3D", true, false)
-		t.check(worn.size() == 4 and worn.all(func(part: MeshInstance3D) -> bool:
-				return part.get_parent() == skeleton and part.skin != null), "the model wears exactly the four chosen parts")
-		var legs_source := (load(Human.outfit_path("f", "Worker")) as PackedScene).instantiate()
-		var legs := model.find_child("PartLegs", true, false) as MeshInstance3D
-		var legs_from := legs_source.find_child("PartLegs", true, false) as MeshInstance3D
-		t.check(legs != null and legs.mesh == Human.shaped(legs_from.mesh, legs_from.skin),
-				"each part comes from the outfit that was picked for it")
-		legs_source.free()
-		_check_shaped_body(t, model, built["materials"])
+		var hair: Array = Human.HAIR["f"]["Punk"]
+		t.check(worn.size() == 4 + hair.size() and worn.all(func(part: MeshInstance3D) -> bool:
+				return part.get_parent() == skeleton and part.skin != null and part.get_meta("slot", "") != ""),
+				"the model wears the four parts and the head outfit's hair, nothing else")
+		t.check(hair.all(func(h: String) -> bool: return model.find_child(h, true, false) != null),
+				"the hair is the head outfit's")
+		var legs_mat: Array = built["materials"].filter(func(m: ShaderMaterial) -> bool:
+				return m.get_meta("suit_slot", "") == "legs")
+		t.check(not legs_mat.is_empty() and legs_mat[0].get_shader_parameter("suit_color") == Human.CLOTH_COLORS[1]
+				and legs_mat[0].get_shader_parameter("suit") == 1.0, "each part wears the suit picked for it")
+		_check_marked_body(t, model, built["materials"])
 		t.check(model.find_child("AnimationPlayer", true, false) != null, "the built model keeps the rig's animations")
 		var toned := 0
 		for mat: ShaderMaterial in built["materials"]:
@@ -173,23 +190,22 @@ static func run(t: Node) -> void:
 	Look.set_appearance(raid.player, mixed)
 	await t.frames(4)
 	var skin := raid.player.get_node_or_null("Skin")
-	var head := skin.find_child("PartHead", true, false) as MeshInstance3D if skin else null
-	var punk_head := (load(Human.outfit_path("f", "Punk")) as PackedScene).instantiate()
-	var punk_part := punk_head.find_child("PartHead", true, false) as MeshInstance3D
-	t.check(head != null and head.mesh == Human.shaped(punk_part.mesh, punk_part.skin),
+	var punk_hair: String = Human.HAIR["f"]["Punk"][0]
+	t.check(skin != null and skin.find_child(punk_hair, true, false) != null and skin.find_child("PartHead", true, false) != null,
 			"the player wears the chosen look in a raid")
-	punk_head.free()
-	# Under an armor frame the bare skin below the head wears the undersuit.
+	# Under an armor frame the suit below the head takes the frame's colours.
 	Loadout.wear_frame(raid.player, "frame_trooper")
 	await t.frames(8)
 	var covered: Array = skin._materials.filter(func(mat: ShaderMaterial) -> bool:
 		return mat.get_shader_parameter("surface_kind") == 2)
 	t.check(not covered.is_empty() and covered.all(func(mat: ShaderMaterial) -> bool:
-			return mat.get_shader_parameter("suit") == 1.0), "a frame puts the undersuit on the bare skin below the head")
+			return mat.get_shader_parameter("suit") == 1.0 and mat.get_shader_parameter("suit_color") != mat.get_meta("own_suit")["color"]),
+			"a frame recolours the suit below the head")
 	Loadout.wear_frame(raid.player, "")
 	await t.frames(8)
-	t.check(skin._materials.all(func(mat: ShaderMaterial) -> bool: return mat.get_shader_parameter("suit") != 1.0),
-			"taking the frame off takes the undersuit off")
+	t.check(covered.all(func(mat: ShaderMaterial) -> bool:
+			return mat.get_shader_parameter("suit") == 1.0 and mat.get_shader_parameter("suit_color") == mat.get_meta("own_suit")["color"]),
+			"taking the frame off gives the suit its own colours back")
 	var skins := raid.player.get_children().filter(func(child: Node) -> bool: return child.name.begins_with("Skin"))
 	t.check(skins.size() == 1 and skin.arm != null and skin.arm.grip_bone >= 0,
 			"changing the look leaves one model, which still holds its weapon")
@@ -487,69 +503,37 @@ static func _drawn(t: Node, count: int) -> void:
 		await t.get_tree().process_frame
 
 
-## The pack bodies as the game draws them (`Human.shaped`): smooth where
-## faces meet gently, the head drawn in about its bone, each vertex marked
-## with its rest place for the shader, and nothing that changes how it
-## poses or what it costs.
-static func _check_shaped_body(t: Node, model: Node3D, materials: Array) -> void:
-	var source_scene := (load(Human.outfit_path("m", "Casual_2")) as PackedScene).instantiate()
-	var same_size := true
-	var shared := true
-	var spread_was := 0
-	var spread_now := 0
+## The body as the game draws it: every part's vertices carry their rest
+## place and hand share for the suit (baked by `tools/human_rig` and
+## imported as CUSTOM0), the parts keep their tangents for the normal maps,
+## and each material knows its surface.
+static func _check_marked_body(t: Node, model: Node3D, materials: Array) -> void:
 	var marked := true
-	var head_in := false
-	var others_kept := true
+	var gloved := false
+	var detailed := true
 	for slot: String in Human.SLOTS:
-		var part := source_scene.find_child(Human.SLOT_NODES[slot], true, false) as MeshInstance3D
-		var shaped := Human.shaped(part.mesh, part.skin) as ArrayMesh
-		shared = shared and Human.shaped(part.mesh, part.skin) == shaped
-		for i in part.mesh.get_surface_count():
-			var was := part.mesh.surface_get_arrays(i)
-			var now := shaped.surface_get_arrays(i)
-			var verts_was: PackedVector3Array = was[Mesh.ARRAY_VERTEX]
-			var verts_now: PackedVector3Array = now[Mesh.ARRAY_VERTEX]
-			same_size = same_size and verts_was.size() == verts_now.size() \
-					and was[Mesh.ARRAY_BONES] == now[Mesh.ARRAY_BONES] and was[Mesh.ARRAY_WEIGHTS] == now[Mesh.ARRAY_WEIGHTS] \
-					and shaped.surface_get_material(i) == part.mesh.surface_get_material(i)
-			# Smoother: fewer distinct normals at a shared corner.
-			spread_now += _normal_spread(verts_was, now[Mesh.ARRAY_NORMAL])
-			spread_was += _normal_spread(verts_was, was[Mesh.ARRAY_NORMAL])
-			var marks = now[Mesh.ARRAY_CUSTOM0]
-			marked = marked and marks != null and (marks as PackedFloat32Array).size() == verts_now.size() * 4
-			if slot == "head":
-				var pivot := Vector3.ZERO
-				for b in part.skin.get_bind_count():
-					if part.skin.get_bind_name(b) == "Head":
-						pivot = part.skin.get_bind_pose(b).affine_inverse().origin
-				var reach_was := 0.0
-				var reach_now := 0.0
-				for v in verts_was.size():
-					reach_was = maxf(reach_was, verts_was[v].distance_to(pivot))
-					reach_now = maxf(reach_now, verts_now[v].distance_to(pivot))
-				head_in = head_in or reach_now < reach_was * (Human.HEAD_SCALE + 0.02)
-			if slot == "feet":
-				others_kept = others_kept and verts_was == verts_now
-	t.check(same_size, "shaping keeps every vertex, bone weight and material, so a body poses and costs the same")
-	t.check(shared, "a shaped mesh is made once and shared")
-	t.check(spread_now < spread_was * 0.6, "shaping smooths the faceted pack meshes")
-	t.check(marked, "every shaped vertex carries its rest place for the shader")
-	t.check(head_in and others_kept, "the head is drawn in about its bone and nothing else moves")
-	source_scene.free()
-	t.check(Human.surface_kind("body", "Skin") == 2 and Human.surface_kind("head", "Skin") == 1
-			and Human.surface_kind("head", "Eye") == 3 and Human.surface_kind("body", "Swat") == 0,
-			"the shader is told skin, skin the undersuit covers, eyes and cloth apart")
+		var part := model.find_child(Human.SLOT_NODES[slot], true, false) as MeshInstance3D
+		var mesh := part.mesh as ArrayMesh
+		for i in mesh.get_surface_count():
+			var arrays := mesh.surface_get_arrays(i)
+			var marks = arrays[Mesh.ARRAY_CUSTOM0]
+			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			marked = marked and marks != null and (marks as PackedFloat32Array).size() == verts.size() * 4
+			if marks != null and slot == "body":
+				for v in verts.size():
+					gloved = gloved or (marks as PackedFloat32Array)[v * 4 + 3] > 0.9
+			detailed = detailed and arrays[Mesh.ARRAY_TANGENT] != null
+	t.check(marked and gloved, "every part's vertices carry their rest place, and the hands are marked for gloves")
+	t.check(detailed, "the parts keep their tangents for the normal maps")
+	t.check(Human.surface_kind("body", "MI_Superhero_Male") == 2 and Human.surface_kind("head", "MI_Superhero_Male") == 1
+			and Human.surface_kind("head", "MI_Eyes") == 3 and Human.surface_kind("head", "MI_Hair_1") == 0,
+			"the shader is told skin, skin the suit covers, eyes and hair apart")
 	var kinds := {}
+	var mapped := false
 	for mat: ShaderMaterial in materials:
 		kinds[mat.get_shader_parameter("surface_kind")] = true
 		if mat.get_shader_parameter("has_rest") != 1.0:
 			kinds["unmarked"] = true
-	t.check(kinds.has(1) and kinds.has(2) and not kinds.has("unmarked"), "a built person's materials know their surfaces")
-
-
-## How many distinct normals there are, counted per shared corner.
-static func _normal_spread(verts: PackedVector3Array, normals: PackedVector3Array) -> int:
-	var seen := {}
-	for v in verts.size():
-		seen[[(verts[v] * 2000.0).round(), (normals[v] * 100.0).round()]] = true
-	return seen.size()
+		mapped = mapped or (mat.get_shader_parameter("normal_amount") > 0.0 and mat.get_shader_parameter("normal_tex") != null)
+	t.check(kinds.has(1) and kinds.has(2) and kinds.has(3) and not kinds.has("unmarked"), "a built person's materials know their surfaces")
+	t.check(mapped, "the body's normal map reaches its material")
