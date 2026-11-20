@@ -124,7 +124,11 @@ date in the same PR.
   low and a blade out stand on the relaxed stand's legs
   (`ActorSkin.LEGS_FROM_STAND`); the blade's ready stance is the fighting
   pose's stagger on top (`Locomotion.fight_*`). A gun raised to shoot
-  keeps its clip's stance: the sights' relief is tuned on it. The cleft between the
+  keeps its clip's stance: the sights' relief is tuned on it. Worn armor
+  gets room: `Locomotion.arm_clear` (meters, 0 bare; set by whoever
+  dresses the body in a frame) swings each upper arm out so the elbow
+  clears the plates and pouches by that much, before the weapon arm
+  reaches for its grip (`_clear_arms`). The cleft between the
   glutes is filled most of the way out in the mesh (`_fill_cleft`, Caleb's
   call), so the armor is fitted to the filled body. A
   body is sized in its relaxed stand (`stand_legs`), never in an idle that
