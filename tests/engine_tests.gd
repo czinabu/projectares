@@ -105,7 +105,7 @@ static func _inside(t: Node) -> void:
 	# The region is built off the main thread: wait until the map has it.
 	var nav := raid.get_world_3d().navigation_map
 	var goal := frame * Vector3(4.0, low, 20.0)
-	await _wait_for_nav(t, nav, goal)
+	await _wait_for_nav(t, nav, goal, raid)
 	var from := NavigationServer3D.map_get_closest_point(nav, frame * Vector3(-MapScript.ENGINE_RADIUS - 5.0, f, MapScript.HATCH_Z))
 	var path := NavigationServer3D.map_get_path(nav, from, goal, true)
 	t.check(path.size() > 1 and path[path.size() - 1].distance_to(goal) < 2.0,
@@ -195,7 +195,7 @@ static func _deeper(t: Node) -> void:
 	var nav := raid.get_world_3d().navigation_map
 	var low := MapScript.HALL_FLOOR - MapScript.SHAFT_DEPTH
 	var goal := frame * Vector3(8.0, bottom, 168.0)
-	await _wait_for_nav(t, nav, goal)
+	await _wait_for_nav(t, nav, goal, raid)
 	var from := NavigationServer3D.map_get_closest_point(nav, frame * Vector3(4.0, low, 20.0))
 	var path := NavigationServer3D.map_get_path(nav, from, goal, true)
 	t.check(path.size() > 1 and path[path.size() - 1].distance_to(goal) < 2.0,
@@ -339,7 +339,7 @@ static func _heart(t: Node) -> void:
 	t.check(frost.sheltered_at(middle) and frost.cold_at(middle) > frost.cold_at(well), "sheltered, and colder than the Descent")
 	var nav := raid.get_world_3d().navigation_map
 	var goal := frame * Vector3(0, bottom, c - 6.0)
-	await _wait_for_nav(t, nav, goal)
+	await _wait_for_nav(t, nav, goal, raid)
 	var foot := NavigationServer3D.map_get_closest_point(nav, frame * Vector3(8.0, bottom, 168.0))
 	var path := NavigationServer3D.map_get_path(nav, foot, goal, true)
 	t.check(path.size() > 1 and path[path.size() - 1].distance_to(goal) < 2.0,
@@ -504,16 +504,34 @@ static func _floor_ray(space: PhysicsDirectSpaceState3D, top: Vector3) -> Dictio
 ## The Engine's region is built off the main thread and joins the map some
 ## frames later: wait until the map has ground where `spot` is, not just any
 ## region (an earlier world's, or the valley's outside), before asking for a
-## path to it.
-static func _wait_for_nav(t: Node, nav: RID, spot: Vector3) -> void:
+## path to it. Only once the map holds this raid's regions alone: the last
+## check's raid, freed a frame or two ago, can leave its own Engine's region
+## at the very same spot for a sync, and a wait that took that for this one
+## asked for its path just as it left the map, finding nothing.
+static func _wait_for_nav(t: Node, nav: RID, spot: Vector3, raid: Node) -> void:
 	# The bake runs on its own thread in real time, which frames run at
 	# `--fixed-fps` (as fast as the machine goes) do not measure: a busy
 	# machine can take longer than 600 such frames. Wait by the clock.
 	var until := Time.get_ticks_msec() + 30000
+	# The map answers from its last sync, so the sync must come after the
+	# old regions left: count from the first frame they are gone.
+	var clean_from := -1
 	while Time.get_ticks_msec() < until:
-		if NavigationServer3D.map_get_iteration_id(nav) > 0 \
+		if clean_from < 0 and _only_regions_of(nav, raid):
+			clean_from = NavigationServer3D.map_get_iteration_id(nav)
+		if clean_from >= 0 and NavigationServer3D.map_get_iteration_id(nav) > clean_from \
 				and NavigationServer3D.map_get_closest_point(nav, spot).distance_to(spot) < 2.0:
 			break
 		await t.frames(1)
 	# And one more sync, so the regions round it are joined too.
 	await t.frames(2)
+
+
+## Whether every region in the map belongs to `raid` (none left from a raid
+## freed before it).
+static func _only_regions_of(nav: RID, raid: Node) -> bool:
+	for region in NavigationServer3D.map_get_regions(nav):
+		var owner = instance_from_id(NavigationServer3D.region_get_owner_id(region))
+		if owner == null or not is_instance_valid(owner) or not raid.is_ancestor_of(owner):
+			return false
+	return true

@@ -70,6 +70,13 @@ var gravity := 20.0
 var max_fall_speed := 50.0
 ## The steepest ground it can drive up, in degrees. Steeper is a wall.
 var max_slope := 40.0
+## Wheels (and a hover's cushion) keep to the ground over a crest (a dune's
+## top, a rise in the road) while they leave it climbing slower than this, in
+## m/s: only a real ramp, taken fast, throws them in the air. Walkers stride
+## their own way.
+var crest_hold := 6.0
+## How far down a crest's far side the wheels look for the ground, in metres.
+var crest_snap := 1.2
 ## Where the rider's feet are carried, relative to the vehicle. Low and over
 ## the seat, so a seated rider's head (and eyes, and headshot zone) is about
 ## where it shows.
@@ -815,6 +822,8 @@ func _physics_process(delta: float) -> void:
 			aboard_layers[aboard] = aboard.collision_layer
 			aboard.collision_layer = 0
 	move_and_slide()
+	if on_floor and not is_on_floor() and not flying and not floats:
+		_hold_crest()
 	if carried:
 		rider.collision_layer = rider_layer
 	for aboard: Actor in aboard_layers:
@@ -886,6 +895,24 @@ func _fly(throttle: float, steer: float, boosting: bool, lift: float, delta: flo
 		var short := 1.0 - clampf(speed / maxf(stall_speed, 0.1), 0.0, 1.0)
 		vy = maxf(minf(vy, velocity.y) - gravity * short * delta, -max_fall_speed)
 	velocity = forward * speed + Vector3(0.0, vy, 0.0)
+
+
+## Wheels (and a hover) just run over a crest: pulled back onto the ground below
+## (`crest_snap`) unless they left it climbing at `crest_hold` or faster, and
+## then follow the far side. Without it every dune top throws a rover in the
+## air, where it can neither steer nor brake.
+func _hold_crest() -> void:
+	# A walker strides (and hops) its own way; a hover's cushion still holds
+	# it level off a real edge, past `crest_snap`.
+	if (pivot_turn > 0.0 and not hovers) or velocity.y >= crest_hold:
+		return
+	var keep := floor_snap_length
+	floor_snap_length = crest_snap
+	apply_floor_snap()
+	floor_snap_length = keep
+	if is_on_floor():
+		var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+		velocity = horizontal.slide(get_floor_normal()).normalized() * horizontal.length()
 
 
 ## An airship: afloat, it turns towards its `course` at `turn_rate` (slowing
