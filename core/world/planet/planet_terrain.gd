@@ -17,8 +17,11 @@ extends RefCounted
 ##   ridge_amp, ridge_freq, ridge_cover: ridged mountains and where they rise
 ##     inside the field (0 none, 1 everywhere); outside the field they always do
 ##   dune_amp, dune_len, dune_dir (degrees), dune_cover: wind-built dunes,
-##     steep on the lee side
-##   terrace: metres per step, terrace_sharp: 0 smooth to 1 sheer (mesas)
+##     steep on the lee side; dune_slip: the share of each dune its lee
+##     (slip) face takes (0.22 unless set; more is a gentler face)
+##   terrace: metres per step, terrace_sharp: 0 smooth to 1 sheer (mesas),
+##     terrace_field: how much of the stepping happens inside the field (0
+##     none, 1 all, the default); outside the field it always does
 ##   floor, floor_soft: low ground filled flat to this height (salt pans, lakes)
 ##   field: half the width of the play area (metres), field_calm: how much of
 ##     the relief survives inside it (0 flat, 1 all), rim, rim_ramp: the
@@ -85,7 +88,8 @@ func height_at(x: float, z: float) -> float:
 		along += _mask.get_noise_2d(x * 1.7, z * 1.7) * 1.4
 		var s := fposmod(along, 1.0)
 		# A long windward slope and a short, steep slip face.
-		var profile := s / 0.78 if s < 0.78 else (1.0 - s) / 0.22
+		var slip := clampf(float(r.get("dune_slip", 0.22)), 0.05, 0.95)
+		var profile := s / (1.0 - slip) if s < 1.0 - slip else (1.0 - s) / slip
 		profile = profile * profile * (3.0 - 2.0 * profile)
 		var cover := float(r.get("dune_cover", 1.0))
 		var where := smoothstep(0.5 - cover * 0.5, 0.8 - cover * 0.5, (_mask.get_noise_2d(z, x) + 1.0) * 0.5)
@@ -96,7 +100,7 @@ func height_at(x: float, z: float) -> float:
 		var f := t - floorf(t)
 		var sharp := float(r.get("terrace_sharp", 0.6))
 		var k := smoothstep(0.5 - (1.0 - sharp) * 0.5, 0.5 + (1.0 - sharp) * 0.5, f)
-		h = (floorf(t) + k) * step
+		h = lerpf(h, (floorf(t) + k) * step, lerpf(float(r.get("terrace_field", 1.0)), 1.0, out))
 	if r.has("floor"):
 		var floor_h := float(r["floor"])
 		var soft := float(r.get("floor_soft", 2.0))

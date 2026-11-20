@@ -99,8 +99,12 @@ static func ground_material(type: PlanetType) -> Material:
 ## no collision, no shadow, rings spaced wider with distance so the vertex
 ## count stays flat (about 21,000) whatever the reach. Its height is the
 ## planet's own ground, raised into mountains toward the far edge.
-## `inner` is where the map's own ground ends (half its width).
-static func horizon(type: PlanetType, ground: PlanetTerrain, inner: float) -> MeshInstance3D:
+## `inner` is where the map's own ground ends (half its width). `smooth`
+## (0 to 1) averages each height over that share of the gap between rings,
+## for a ground whose sharp, short features (dune slip faces, terraces)
+## would otherwise fold into jagged sheets between samples tens of metres
+## apart.
+static func horizon(type: PlanetType, ground: PlanetTerrain, inner: float, smooth := 0.0) -> MeshInstance3D:
 	var reach := float(type.horizon.get("reach", 2600.0))
 	var peaks := float(type.horizon.get("peaks", 120.0))
 	var rings := 64
@@ -118,11 +122,16 @@ static func horizon(type: PlanetType, ground: PlanetTerrain, inner: float) -> Me
 	for ri in rings + 1:
 		var t := float(ri) / rings
 		var r := start * pow(reach / start, t)
+		# Half the gap to the next ring (about the gap between spokes too).
+		var blur := r * (pow(reach / start, 1.0 / rings) - 1.0) * 0.5 * smooth
 		for si in spokes:
 			var a := TAU * si / spokes
 			var x := cos(a) * r
 			var z := sin(a) * r
 			var h := ground.height_at(x, z)
+			if blur > 0.0:
+				h = (h * 2.0 + ground.height_at(x + blur, z) + ground.height_at(x - blur, z)
+						+ ground.height_at(x, z + blur) + ground.height_at(x, z - blur)) / 6.0
 			var far := smoothstep(start * 1.2, reach * 0.55, r)
 			var k := (ridge.get_noise_2d(x, z) + 1.0) * 0.5
 			h += k * k * peaks * far
