@@ -1,6 +1,6 @@
-# Gear: flight, artifacts, helmets and armor
+# Gear: flight, artifacts, helmets, armor and backpacks
 
-Rules for flight rigs, artifacts, visors and helmets, armor frames and paints. These are part of the rules in `CLAUDE.md` that must not be
+Rules for flight rigs, artifacts, visors and helmets, armor frames and paints, and backpacks. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -283,3 +283,17 @@ date in the same PR.
   stands (`HomeBase.PaintSwatch`, `paint_requested`, `show_paints`).
   Check by eye with
   `visual_check.tscn -- <dir> --armor-only`.
+- Backpacks (DESIGN.md "Backpacks") are data: items tagged "backpack" in the
+  optional `pack` loadout slot, with `capacity`, `sprint_mult` and
+  `pack_size` stats. `Loadout.wear_pack` sets `Actor.pack_id`, the
+  inventory's capacity (`Loadout.FIELD_PACK`, 12, with none) and scales only
+  `sprint_speed`, taking the old pack's scaling back off first, so it
+  stacks with a frame's `speed_mult`. `equip` wears the first and only
+  carries a second; `refit` follows the kit at home. A smaller pack never
+  throws items out: a pack over its capacity just takes no more. The pack
+  is gear (`gear_items`), so it drops with you. It is not put on from the
+  watch's pack list mid-life. The worn model is `ActorSkin.build_backpack`
+  hung on the hips (`_update_pack`, `pack_offset`, lower and further out
+  under a back rig by `pack_rig_shift`), merged like other worn pieces and
+  shadowless when far; the gear room hangs the same model on hooks
+  (`BaseLayout` kind `pack_hooks`). Sold by the Outfitter (`ShopDB`).

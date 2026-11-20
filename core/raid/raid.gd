@@ -288,6 +288,14 @@ var raider_loot_reach := 2.5
 var raider_climb := 2.0
 var _raider_in := 0.0
 var _event_pod: LootContainer
+## The convoy on the road (`WorldDef.convoy_vehicles`), authority only:
+## {"vehicles": [the hauler first], "drivers": [one each], "route": points,
+## "next": [the point each heads for], "stopped": the hauler has stopped}.
+var convoy := {}
+## How close (flat metres) a convoy vehicle comes to a route point before
+## heading for the next, and how near it lets the one ahead get.
+const CONVOY_REACH := 10.0
+const CONVOY_GAP := 16.0
 ## Risk zones (DESIGN.md section 2): the map's gate outposts (Marker3D, metas
 ## "name" and "radius") and its core bosses, { marker, bot, back_in }.
 var outposts: Array[Node3D] = []
@@ -902,12 +910,17 @@ func _tick_events(delta: float) -> void:
 	if world.event_interval <= 0.0:
 		return
 	if not event.is_empty():
+		if event.kind == "convoy":
+			_drive_convoy()
 		if clock >= float(event.ends) or _event_over():
 			end_event(clock >= float(event.ends))
 		return
 	_event_in -= delta * (1.0 + war.intensity)
 	if _event_in <= 0.0:
-		start_event("warlord" if rng.randf() < 0.5 else "supply_pod")
+		var kinds := ["warlord", "supply_pod"]
+		if _convoy_routes().size() > 0:
+			kinds.append("convoy")
+		start_event(kinds[rng.randi() % kinds.size()])
 
 
 ## Starts a world event now. Returns false when one is running or the map
@@ -916,9 +929,15 @@ func start_event(kind: String) -> bool:
 	var spawns := _map_nodes("spawn_bot")
 	if not event.is_empty() or spawns.is_empty():
 		return false
+	if kind == "convoy" and _convoy_routes().is_empty():
+		return false
 	_event_in = world.event_interval
 	var at: Vector3
-	if kind == "warlord":
+	if kind == "convoy":
+		at = _start_convoy()
+		event = {"kind": kind, "title": "Convoy"}
+		war_feed.emit("A convoy has set out %s" % _whereabouts(at))
+	elif kind == "warlord":
 		var marker := spawns[_farthest_from_players(spawns)]
 		at = marker.global_position
 		for i in 1 + maxi(world.warlord_escort, 0):
@@ -955,7 +974,9 @@ func start_event(kind: String) -> bool:
 func end_event(timed_out := false) -> void:
 	if event.is_empty():
 		return
-	if timed_out:
+	if event.kind == "convoy":
+		_end_convoy(timed_out)
+	elif timed_out:
 		war_feed.emit("The warlord has moved on" if event.kind == "warlord" else "The supply pod is gone")
 	for bot in _event_bots:
 		if is_instance_valid(bot) and not bot.is_dead:
@@ -970,11 +991,166 @@ func end_event(timed_out := false) -> void:
 
 ## Whether the event has been dealt with: the pod emptied, or the warlord dead.
 func _event_over() -> bool:
+	if event.kind == "convoy":
+		return convoy.is_empty() or bool(convoy.stopped) or _convoy_through()
 	if event.kind == "warlord":
 		# The event's own warlord, not a core boss standing guard elsewhere.
 		return not _event_bots.any(func(bot: Actor) -> bool:
 			return is_instance_valid(bot) and warlords.has(bot))
 	return not is_instance_valid(_event_pod) or _event_pod.items.is_empty()
+
+
+# --- Convoys (DESIGN.md "The Dune Sea (part three)") ------------------------
+
+func _convoy_routes() -> Array:
+	if world.convoy_vehicles.is_empty() or map == null or not map.has_method("convoy_routes"):
+		return []
+	return map.call("convoy_routes")
+
+
+## Authority: puts the convoy on the road at the start of one of the map's
+## routes (either way along it), the hauler in front with its cargo full,
+## each vehicle driven by a bot with riders aboard. Returns where it starts.
+func _start_convoy() -> Vector3:
+	var routes := _convoy_routes()
+	var route: Array = (routes[rng.randi() % routes.size()] as Array).duplicate()
+	if rng.randf() < 0.5:
+		route.reverse()
+	var start: Vector3 = route[0]
+	var ahead: Vector3 = route[1] - start
+	ahead.y = 0.0
+	ahead = ahead.normalized()
+	var heading := atan2(-ahead.x, -ahead.z)
+	convoy = {"vehicles": [], "drivers": [], "route": route, "next": [], "stopped": false}
+	for i in world.convoy_vehicles.size():
+		var at := _stand(start - ahead * CONVOY_GAP * i)
+		var vehicle := spawn_vehicle(world.convoy_vehicles[i], at + Vector3(0, 0.4, 0), heading)
+		vehicle.set_meta("convoy", true)
+		var driver := _add_bot(vehicle, false, world.convoy_faction)
+		_event_bots.append(driver)
+		# The road drives it, not its brain (`_drive_convoy`).
+		driver.get_node("Brain").process_mode = Node.PROCESS_MODE_DISABLED
+		vehicle.call("mount", driver)
+		for seat in mini(world.convoy_riders, (vehicle.get("seats") as Array).size()):
+			var rider := _add_bot(vehicle, false, world.convoy_faction)
+			_event_bots.append(rider)
+			vehicle.call("mount", rider, true, seat)
+		if i == 0:
+			var cargo: Array = vehicle.get("cargo")
+			for slot in cargo.size():
+				var crate := spawn_crate(world.roll_loot("crate", rng), at)
+				cargo[slot] = crate
+				crate.place(vehicle, slot)
+		convoy.vehicles.append(vehicle)
+		convoy.drivers.append(driver)
+		convoy.next.append(1)
+	return start
+
+
+## Authority: each driver steers for its next route point at the world's
+## pace, slowing for the one ahead. Once the hauler's driver is gone the
+## hauler's cargo spills and the escort gets off to fight.
+func _drive_convoy() -> void:
+	if convoy.is_empty() or bool(convoy.stopped):
+		return
+	var route: Array = convoy.route
+	var hauler: Node3D = convoy.vehicles[0]
+	if not _convoy_driving(0):
+		convoy.stopped = true
+		if is_instance_valid(hauler):
+			spill_cargo(hauler)
+			war_feed.emit("The convoy has been stopped %s" % _whereabouts(hauler.global_position))
+		for vehicle: Variant in convoy.vehicles:
+			if is_instance_valid(vehicle):
+				_unseat_bots(vehicle)
+		return
+	for i in convoy.vehicles.size():
+		if not _convoy_driving(i):
+			continue
+		var vehicle: Node3D = convoy.vehicles[i]
+		var driver: Actor = convoy.drivers[i]
+		var next := int(convoy.next[i])
+		var flat := Vector2(vehicle.global_position.x, vehicle.global_position.z)
+		while next < route.size() and flat.distance_to(Vector2(route[next].x, route[next].z)) < CONVOY_REACH:
+			next += 1
+		convoy.next[i] = next
+		var cmd := driver.cmd
+		if next >= route.size():
+			cmd.move = Vector2.ZERO
+			continue
+		var to: Vector3 = route[next] - vehicle.global_position
+		var want := atan2(-to.x, -to.z)
+		var off := wrapf(want - float(vehicle.get("heading")), -PI, PI)
+		var throttle := world.convoy_throttle
+		if i > 0 and is_instance_valid(convoy.vehicles[i - 1]):
+			var gap: float = vehicle.global_position.distance_to((convoy.vehicles[i - 1] as Node3D).global_position)
+			if gap < CONVOY_GAP * 0.6:
+				throttle = 0.0
+		elif i == 0 and convoy.vehicles.size() > 1 and _convoy_driving(1):
+			# The hauler waits for its escort if it falls far behind.
+			if vehicle.global_position.distance_to((convoy.vehicles[1] as Node3D).global_position) > CONVOY_GAP * 4.0:
+				throttle *= 0.3
+		# Slow into a sharp turn.
+		throttle *= clampf(1.2 - absf(off), 0.35, 1.0)
+		cmd.move = Vector2(clampf(-off * 2.0, -1.0, 1.0), throttle)
+		cmd.sprint = false
+		cmd.jump = false
+
+
+func _convoy_driving(index: int) -> bool:
+	if index >= convoy.vehicles.size():
+		return false
+	var vehicle: Variant = convoy.vehicles[index]
+	var driver: Variant = convoy.drivers[index]
+	return is_instance_valid(vehicle) and is_instance_valid(driver) and not (driver as Actor).is_dead \
+			and vehicle.get("rider") == driver
+
+
+## Whether the hauler has reached the end of its route.
+func _convoy_through() -> bool:
+	return _convoy_driving(0) and int(convoy.next[0]) >= (convoy.route as Array).size()
+
+
+## Every bot aboard `vehicle` gets off and fights on foot, its brain back.
+func _unseat_bots(vehicle: Node3D) -> void:
+	var aboard: Array = (vehicle.get("passengers") as Array).duplicate()
+	aboard.append(vehicle.get("rider"))
+	for actor: Variant in aboard:
+		if actor == null or not is_instance_valid(actor) or state_for(actor) != null:
+			continue
+		vehicle.call("get_off", actor)
+		(actor as Actor).get_node("Brain").process_mode = Node.PROCESS_MODE_INHERIT
+
+
+## Authority: the convoy is over. Stopped, its vehicles and bots stay where
+## they are, ordinary now (the fight goes on, and anyone may drive off in
+## them); through or timed out, it drives off the map, crates and all,
+## save a vehicle a player has taken.
+func _end_convoy(timed_out: bool) -> void:
+	if convoy.is_empty():
+		return
+	if bool(convoy.stopped):
+		_event_bots.clear()
+	else:
+		war_feed.emit("The convoy got through" if not timed_out else "The convoy has gone")
+		for vehicle: Variant in convoy.vehicles:
+			if not is_instance_valid(vehicle) or _has_player_aboard(vehicle):
+				continue
+			for crate: Variant in (vehicle.get("cargo") as Array):
+				if crate != null and is_instance_valid(crate):
+					(crate as SalvageCrate).queue_free()
+			remove_vehicle(vehicle)
+	for vehicle: Variant in convoy.vehicles:
+		if is_instance_valid(vehicle):
+			(vehicle as Node3D).remove_meta("convoy")
+	convoy = {}
+
+
+func _has_player_aboard(vehicle: Node3D) -> bool:
+	var aboard: Array = (vehicle.get("passengers") as Array).duplicate()
+	aboard.append(vehicle.get("rider"))
+	return aboard.any(func(actor: Variant) -> bool:
+		return actor != null and is_instance_valid(actor) and state_for(actor) != null)
 
 
 ## Words for where something is: by a strongpoint, or a compass direction.

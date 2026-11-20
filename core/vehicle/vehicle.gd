@@ -158,7 +158,10 @@ var _puff_wait := 0.0
 # `rider_lean`, `exit_offset`); a passenger only sits, and may shoot. By
 # default it is one pillion seat behind the rider, from the `pillion_*`
 # vars; an item lists more in `seats`, each a dictionary with the keys
-# "offset", "point", "grips", "pegs", "lean" and "exit".
+# "offset", "point", "grips", "pegs", "lean" and "exit". A seat with a
+# "gun" (an item id, tagged "mounted") is a gunner's: whoever sits there
+# has that gun drawn (`_arm_seat`), on every machine, and loses it when
+# they get off.
 var passenger_seat := false
 var seats: Array = []
 var pillion_offset := Vector3(0.0, 0.17, 0.76)
@@ -563,7 +566,9 @@ func mount(actor: Actor, behind := false, seat := -1) -> bool:
 	if not actor.died.is_connected(_on_rider_died):
 		actor.died.connect(_on_rider_died)
 	_place_rider()
-	if seat_of(actor) >= 0:
+	if seat_of(actor) >= 0 and _arm_seat(actor, seat_of(actor)):
+		actor.notice.emit("On the %s's gun. F to get off" % display_name)
+	elif seat_of(actor) >= 0:
 		actor.notice.emit(("Riding behind on %s. F to get off" if seats.size() == 1
 				else "Riding in %s. F to get off") % display_name)
 	else:
@@ -608,6 +613,7 @@ func _let_off(actor: Actor) -> void:
 		rider = null
 	if not is_instance_valid(actor):
 		return
+	_disarm_seat(actor)
 	actor.vehicle = null
 	if actor.died.is_connected(_on_rider_died):
 		actor.died.disconnect(_on_rider_died)
@@ -619,6 +625,44 @@ func _let_off(actor: Actor) -> void:
 	remove_collision_exception_with(actor)
 	actor.remove_collision_exception_with(self)
 	dismounted.emit(actor)
+
+
+## The gunner's seat: `actor` draws its mounted gun (a weapon of their own
+## for as long as they sit there, marked "mounted"). Returns whether the
+## seat has one.
+func _arm_seat(actor: Actor, seat: int) -> bool:
+	var id := str((seats[seat] as Dictionary).get("gun", ""))
+	if id == "" or not ItemDB.has_item(id):
+		return false
+	var gun := Gun.new()
+	gun.item_id = id
+	gun.display_name = ItemDB.item_name(id)
+	for key: String in ItemDB.item_stats(id):
+		if key in gun:
+			gun.set(key, ItemDB.item_stats(id)[key])
+	gun.set_meta("mounted", true)
+	actor.set_meta("unmounted_draw", actor.active_weapon_index)
+	actor.equip_weapon(gun)
+	actor.draw_weapon(actor.weapons.size() - 1)
+	actor.call("_refresh_weapon_visuals")
+	return true
+
+
+## Off the gunner's seat: the mounted gun stays with the vehicle, and what
+## they held before is back in hand.
+func _disarm_seat(actor: Actor) -> void:
+	for i in range(actor.weapons.size() - 1, -1, -1):
+		if actor.weapons[i].has_meta("mounted"):
+			actor.remove_weapon(i)
+	if actor.has_meta("unmounted_draw"):
+		var back := int(actor.get_meta("unmounted_draw"))
+		actor.remove_meta("unmounted_draw")
+		if back >= 0 and back < actor.weapons.size():
+			actor.draw_weapon(back)
+		elif back < 0:
+			# They had nothing in hand: nothing in hand again.
+			actor.active_weapon_index = -1
+			actor.call("_refresh_weapon_visuals")
 
 
 func _on_rider_died(actor: Actor, _info: DamageInfo) -> void:

@@ -131,6 +131,33 @@ func ground_height(x: float, z: float) -> float:
 	return terrain.height_at(x, z)
 
 
+## The roads a convoy drives (the world's `convoy_vehicles`): yard to yard
+## across the open sand, passing the wreck fields at 60 m, clear of their
+## hulks and the yards' walls.
+const CONVOY_ROUTES := [
+	[Vector2(-480.0, 175.0), Vector2(-300.0, 330.0), Vector2(-60.0, 80.0), Vector2(240.0, -160.0), Vector2(0.0, -370.0)],
+	[Vector2(480.0, 175.0), Vector2(580.0, -20.0), Vector2(240.0, -160.0), Vector2(60.0, -420.0)],
+	[Vector2(-480.0, 175.0), Vector2(-600.0, -120.0), Vector2(-340.0, -560.0), Vector2(-60.0, -420.0)],
+	[Vector2(-480.0, 175.0), Vector2(0.0, 140.0), Vector2(480.0, 175.0)],
+]
+
+
+func convoy_routes() -> Array:
+	var out := []
+	for route: Array in CONVOY_ROUTES:
+		var points: Array[Vector3] = []
+		for i in route.size() - 1:
+			# A point every 60 m or so, so the road follows the sand.
+			var from: Vector2 = route[i]
+			var to: Vector2 = route[i + 1]
+			var steps := maxi(1, ceili(from.distance_to(to) / 60.0))
+			for s in steps:
+				points.append(_ground(from.lerp(to, float(s) / steps)))
+		points.append(_ground(route[route.size() - 1]))
+		out.append(points)
+	return out
+
+
 # --- The shape of the ground -------------------------------------------------
 
 ## The planet's dunes, laid flat round the landing, the yards and the wreck

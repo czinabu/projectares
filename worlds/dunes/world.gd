@@ -7,7 +7,8 @@ extends WorldDef
 ## and every crate you haul drop. It pays vehicle blueprints and parts and
 ## the most scrip a trip. Part one: the world, its map, the crates and the
 ## death rule. Part two: sandstorms that bury the wreck fields they cross
-## and uncover buried ones elsewhere (armed convoys come next).
+## and uncover buried ones elsewhere. Part three: armed convoys driving
+## between the yards, and roof guns on the rovers.
 
 const MapScript := preload("map.gd")
 
@@ -41,6 +42,10 @@ const STORM_SIGHT := 0.35
 const STORM_CARRY := 0.5
 ## How many of the eight wreck fields lie buried when the world starts.
 const BURIED_AT_START := 3
+## The convoy (DESIGN.md "The Dune Sea (part three)", Caleb's call: a
+## hauler convoy, roof guns on the rovers): the hauler first, then its
+## escort.
+const CONVOY := ["rover_warden", "rover_warden", "bike_raider"]
 
 ## What a salvage crate holds (`roll_loot("crate")`): `CRATE_ITEMS` picks
 ## from `CRATE_TABLE`, worth several caches together, with the vehicle
@@ -120,6 +125,11 @@ func _init() -> void:
 	weather_field = MapScript.FIELD
 	weather_buries = true
 	fields_buried_at_start = BURIED_AT_START
+	# Convoys (part three): a rover hauling four crates, a second rover and
+	# a bike riding escort.
+	convoy_vehicles.assign(CONVOY)
+	convoy_riders = 1
+	convoy_faction = FACTION
 
 
 ## Items only this world adds. Ids are global, so prefix them with the

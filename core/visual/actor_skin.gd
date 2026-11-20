@@ -266,6 +266,11 @@ var lamp_fade := 60.0
 ## upper arm bones); heavy adds a collar. One model in every view.
 var frame_offset := Vector3(0.0, 0.0, 0.0)
 var pad_offset := Vector3(0.0, 0.0, 0.0)
+## Where a worn backpack sits from the hips: up onto the lower back and
+## against it (+Z is behind). Under a back rig it rides lower and further
+## out by `pack_rig_shift`, so the two never sink into each other.
+var pack_offset := Vector3(0.0, 0.14, 0.06)
+var pack_rig_shift := Vector3(0.0, -0.08, 0.08)
 var vitals_width := 0.13
 var vitals_low := 0.35
 var hip_offset := Vector3(-0.2, 0.08, 0.02)
@@ -366,6 +371,10 @@ var _helmet_at := ""
 var _shadow_body: MeshInstance3D
 var _shadow_parts := 0
 var _frame_parts: Array[Node3D] = []
+## The backpack worn on the lower back (`_update_pack`), and the key it was
+## built for ("" for none).
+var _pack_part: Node3D
+var _pack_key := ""
 ## The frame `_frame_parts` were built for; "" for none.
 var _frame_id := ""
 ## The person this body is dressed as (empty for a skin that is not a person).
@@ -788,6 +797,8 @@ func _gear_shadows(on: bool) -> void:
 	for part: Variant in _frame_parts:
 		if part != null and is_instance_valid(part):
 			holders.append(part)
+	if _pack_part != null and is_instance_valid(_pack_part):
+		holders.append(_pack_part)
 	for holder in holders:
 		for node in holder.find_children("*", "GeometryInstance3D", true, false):
 			var geometry := node as GeometryInstance3D
@@ -816,6 +827,7 @@ func _update(delta: float) -> void:
 	_update_lamp()
 	_update_shadow_body()
 	_update_frame()
+	_update_pack()
 	_update_vitals()
 	_update_phone()
 	_update_watch_glow(delta)
@@ -1794,6 +1806,59 @@ static func build_cooler(color: Color, lit: Color) -> Node3D:
 					Vector3(0.12, 0.012, 0.12))
 	_piece(root, "Coolant", BoxMesh.new(), _solid(lit.lightened(0.25), 1.2), Vector3(0, 0.0, 0.09),
 			Vector3(0.035, 0.28, 0.01))
+	return root
+
+
+## A backpack of `size` (1 a rucksack, 2 a hauler, 3 a mule frame; the
+## item's "pack_size"), front toward -Z (against the back): a canvas bag
+## with a lid, side pouches and compression straps, bigger each size, and
+## the biggest lashed to a metal carrying frame. The same model is worn and
+## hung up at home (`HomeBase`). Built from still boxes, so it merges to a
+## few draws (`Look.merge_pieces`).
+static func build_backpack(size: int, color: Color) -> Node3D:
+	var root := Node3D.new()
+	root.name = "BackpackModel"
+	size = clampi(size, 1, 3)
+	var bag_size: Vector3 = [Vector3(0.3, 0.3, 0.15), Vector3(0.36, 0.42, 0.2), Vector3(0.4, 0.54, 0.24)][size - 1]
+	var canvas := _solid(color, 0.0)
+	canvas.metallic = 0.0
+	canvas.roughness = 0.9
+	var dark := _solid(color.darkened(0.45), 0.0)
+	dark.metallic = 0.0
+	dark.roughness = 0.9
+	var metal := _solid(Color(0.32, 0.33, 0.35), 0.0)
+	var box := BoxMesh.new()
+	var mid := Vector3(0, 0, bag_size.z * 0.5)
+	_piece(root, "Bag", box, canvas, mid, bag_size)
+	_piece(root, "Lid", box, dark, mid + Vector3(0, bag_size.y * 0.5, 0.01),
+			Vector3(bag_size.x * 0.96, 0.05, bag_size.z * 1.05))
+	_piece(root, "Pocket", box, dark, Vector3(0, -bag_size.y * 0.15, bag_size.z + 0.03),
+			Vector3(bag_size.x * 0.7, bag_size.y * 0.45, 0.06))
+	for side: float in [-1.0, 1.0]:
+		_piece(root, "Pouch", box, canvas,
+				Vector3(side * (bag_size.x * 0.5 + 0.03), -bag_size.y * 0.1, bag_size.z * 0.5),
+				Vector3(0.06, bag_size.y * 0.55, bag_size.z * 0.7))
+		_piece(root, "Strap", box, dark, Vector3(side * bag_size.x * 0.28, 0, bag_size.z + 0.005),
+				Vector3(0.035, bag_size.y * 1.02, 0.012))
+	if size >= 2:
+		# A bedroll strapped under the hauler and the mule.
+		var roll := CylinderMesh.new()
+		roll.top_radius = 0.5
+		roll.bottom_radius = 0.5
+		roll.height = 1.0
+		var bedroll := _piece(root, "Bedroll", roll, dark, mid + Vector3(0, -bag_size.y * 0.5 - 0.05, 0.02),
+				Vector3(0.1, bag_size.x * 1.05, 0.1))
+		bedroll.rotation.z = PI / 2.0
+	if size >= 3:
+		# The mule's carrying frame: two rails up the back, a bar over the
+		# top and a shelf under it.
+		for side: float in [-1.0, 1.0]:
+			_piece(root, "Rail", box, metal, Vector3(side * (bag_size.x * 0.5 + 0.07), 0.03, 0.03),
+					Vector3(0.03, bag_size.y * 1.25, 0.03))
+		_piece(root, "TopBar", box, metal, Vector3(0, bag_size.y * 0.66, 0.03),
+				Vector3(bag_size.x + 0.17, 0.03, 0.03))
+		_piece(root, "Shelf", box, metal, Vector3(0, -bag_size.y * 0.6, bag_size.z * 0.5),
+				Vector3(bag_size.x + 0.17, 0.025, bag_size.z + 0.06))
 	return root
 
 
@@ -2933,6 +2998,33 @@ func _update_frame() -> void:
 				piece.free()
 			else:
 				_frame_parts.append(held)
+	if _detail_every > 1:
+		_gear_shadows(false)
+
+
+## Puts the worn backpack (`Actor.pack_id`) on the lower back, hung on the
+## hips so it moves with them, rebuilt when another goes on. Below a back
+## rig, and pushed out behind one so the two never sink into each other.
+## The same model in both views. None for the field pack.
+func _update_pack() -> void:
+	var id := actor.pack_id
+	var rig := actor.flight.enabled and actor.flight.item_id != ""
+	var key := id + ("|rig" if rig else "") if id != "" else ""
+	if key == _pack_key and (id == "" or (_pack_part != null and is_instance_valid(_pack_part))):
+		return
+	_pack_key = key
+	if _pack_part != null and is_instance_valid(_pack_part):
+		_pack_part.queue_free()
+	_pack_part = null
+	if id == "" or _skeleton == null or not ItemDB.has_item(id):
+		return
+	var hips: String = _def.get("hip_bone", "")
+	var height: float = _def.get("height", 1.8)
+	var size := int(ItemDB.item_stats(id).get("pack_size", 1))
+	var color := Color(0.33, 0.31, 0.24)
+	var behind := pack_offset + (pack_rig_shift if rig else Vector3.ZERO)
+	_pack_part = _hang(build_backpack(size, color), "Backpack", hips if hips != "" and _skeleton.find_bone(hips) >= 0 else "",
+			behind, Vector3(0.0, height * 0.55, 0.0) + behind, true)
 	if _detail_every > 1:
 		_gear_shadows(false)
 

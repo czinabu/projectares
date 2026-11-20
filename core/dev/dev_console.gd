@@ -22,7 +22,7 @@ const COMMANDS := {
 	"clear": ["clear [metres]", "remove every bot within range (30 m)"],
 	"war": ["war <0-1>", "set the war's heat, centred on you"],
 	"storm": ["storm start | here | stop", "start a storm (on you with 'here') or end it"],
-	"event": ["event warlord | supply_pod | end", "start or end a world event"],
+	"event": ["event warlord | supply_pod | convoy | end", "start or end a world event"],
 	"shells": ["shells", "call an artillery salvo near the fighting"],
 	"skip": ["skip event | storm | shells | signout | all", "run out a timer now"],
 	"heal": ["heal", "full health and armor"],
@@ -208,7 +208,7 @@ static func _event(raid: Raid, args: Array[String]) -> Array[String]:
 	if what == "end":
 		raid.end_event()
 		return ["Event ended."]
-	if what not in ["warlord", "supply_pod"]:
+	if what not in ["warlord", "supply_pod", "convoy"]:
 		return ["Usage: " + COMMANDS.event[0]]
 	if not raid.event.is_empty():
 		return ["An event is running (%s). event end first." % raid.event.get("title", "")]

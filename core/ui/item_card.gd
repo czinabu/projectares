@@ -211,13 +211,13 @@ func _label(text: String, font_size: int, color: Color) -> Label:
 
 ## What kinds of thing the tags name, first match wins.
 const KINDS := [
-	["power", "heavy weapon"], ["railgun", "rail gun"], ["marksman", "marksman rifle"],
+	["power", "heavy weapon"], ["mounted", "mounted gun"], ["railgun", "rail gun"], ["marksman", "marksman rifle"],
 	["shotgun", "shotgun"], ["smg", "submachine gun"], ["machine_pistol", "machine pistol"],
 	["hand_cannon", "revolver"], ["pistol", "pistol"], ["rifle", "assault rifle"],
 	["knife", "knife"], ["axe", "axe"], ["hammer", "two-handed hammer"], ["spear", "spear"],
 	["blade", "sword"], ["frame_light", "light armor frame"], ["frame_medium", "medium armor frame"],
 	["frame_heavy", "heavy armor frame"], ["helmet", "helmet"], ["attachment", "weapon attachment"],
-	["ability", "ability chip"], ["artifact", "artifact"], ["vehicle", "vehicle"],
+	["ability", "ability chip"], ["artifact", "artifact"], ["backpack", "backpack"], ["vehicle", "vehicle"],
 	["blueprint", "blueprint"], ["upgrade_data", "crafting data"], ["heal", "healing item"],
 	["paint", "armor paint"], ["cosmetic", "clothing"], ["decor", "decoration"], ["furniture", "furniture"],
 	["relic", "relic"], ["trophy", "trophy"], ["augment", "salvage"], ["material", "crafting material"],
@@ -268,7 +268,7 @@ static func about_text(id: String) -> String:
 static func facts(id: String) -> Array[String]:
 	var out: Array[String] = []
 	var stats := ItemDB.item_stats(id)
-	if ItemDB.has_tag(id, "firearm"):
+	if ItemDB.has_tag(id, "firearm") or ItemDB.has_tag(id, "mounted"):
 		out.append_array(_gun_facts(id, stats))
 	elif ItemDB.has_tag(id, "melee"):
 		out.append_array(_melee_facts(id, stats))
@@ -309,6 +309,10 @@ static func facts(id: String) -> Array[String]:
 		out.append("Rides on your watch as a toy: throw it to unpack it")
 		if stats.has("watch_recharge"):
 			out.append("The watch needs %d s before the next throw" % roundi(float(stats.watch_recharge)))
+	elif ItemDB.has_tag(id, "backpack"):
+		out.append("Pack room: %d slots, against %d with none" % [int(stats.get("capacity", Loadout.FIELD_PACK)), Loadout.FIELD_PACK])
+		out.append("Sprint %d%% slower" % roundi((1.0 - float(stats.get("sprint_mult", 1.0))) * 100.0))
+		out.append("Worn on your back: it drops with you")
 	elif ItemDB.has_tag(id, "ability"):
 		out.append("Cooldown %d s" % roundi(float(stats.get("cooldown", 0.0))))
 	elif ItemDB.has_tag(id, "artifact"):
