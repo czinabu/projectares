@@ -6,7 +6,10 @@ anything it covers, and keep it up to date in the same PR.
 
 - The Dune Sea (DESIGN.md "The Dune Sea (part one, built: the haul)"):
   its map is the dunes planet's ground (`PlanetTerrain`, the type's recipe
-  with `field` set to `FIELD`) laid flat round the landing, the yards
+  with `field` set to `FIELD`, no terrace steps on the playable sand,
+  `terrace_field` 0, and slip faces a wheel climbs, `dune_slip`
+  `DUNE_SLIP`: under 1% of it steeper than a vehicle's 40 degrees) laid
+  flat round the landing, the yards
   (`SITES`) and the wreck fields (`WRECKS`), each flat at the dunes' own
   height there, about 1.8 km across. Its navigation is baked coarser than
   a small map's (`cell_size` 1 m), which keeps the bake to a few seconds
@@ -14,8 +17,14 @@ anything it covers, and keep it up to date in the same PR.
   sand is a solid (the hulks are `_box`es); the planet's props stand only
   past the field. Its enemies are the roster (`ROSTER` in
   `worlds/dunes/world.gd`), built by `equip_bot`. You keep what you wear
-  on death (`keep_gear_on_death`). Check it with `tests/dunes_tests.gd`
-  and by eye with `visual_check.tscn -- <dir> --dunes-only`.
+  on death (`keep_gear_on_death`). The far ring past the walls
+  (`Planet.horizon`) is built from that same ground (`far_land`), so it
+  meets the sand at the map's edge, and drawn smoothed (`HORIZON_SMOOTH`);
+  a ring from another recipe stood tens of metres over the edge and its
+  dunes folded into sheets jutting into the sky. Check it with
+  `tests/dunes_tests.gd`, `tests/dunes_ground_tests.gd` (the ring meets the
+  sand, the sand is drivable, a rover crosses it at speed with its wheels
+  down) and by eye with `visual_check.tscn -- <dir> --dunes-only`.
 - Salvage crates are generic (`core/interact/salvage_crate.gd`): any map
   may put "spawn_crate" markers down, filled from `roll_loot("crate")`.
   Only the authority moves one (`Raid.lift_crate`, `set_down_crate`,
