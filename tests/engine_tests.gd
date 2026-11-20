@@ -506,7 +506,11 @@ static func _floor_ray(space: PhysicsDirectSpaceState3D, top: Vector3) -> Dictio
 ## region (an earlier world's, or the valley's outside), before asking for a
 ## path to it.
 static func _wait_for_nav(t: Node, nav: RID, spot: Vector3) -> void:
-	for i in 600:
+	# The bake runs on its own thread in real time, which frames run at
+	# `--fixed-fps` (as fast as the machine goes) do not measure: a busy
+	# machine can take longer than 600 such frames. Wait by the clock.
+	var until := Time.get_ticks_msec() + 30000
+	while Time.get_ticks_msec() < until:
 		if NavigationServer3D.map_get_iteration_id(nav) > 0 \
 				and NavigationServer3D.map_get_closest_point(nav, spot).distance_to(spot) < 2.0:
 			break
