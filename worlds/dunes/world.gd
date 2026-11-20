@@ -6,7 +6,8 @@ extends WorldDef
 ## cargo, banked at a depot. You keep what you wear when you die; the pack
 ## and every crate you haul drop. It pays vehicle blueprints and parts and
 ## the most scrip a trip. Part one: the world, its map, the crates and the
-## death rule (sandstorms over the wrecks and armed convoys come next).
+## death rule. Part two: sandstorms that bury the wreck fields they cross
+## and uncover buried ones elsewhere (armed convoys come next).
 
 const MapScript := preload("map.gd")
 
@@ -29,6 +30,17 @@ const ROSTER := {
 ## The faction every roster kind fights for. A second army is a second
 ## faction on some "spawn_bot" markers (their meta "faction").
 const FACTION := "dunes"
+
+## Sandstorms (DESIGN.md "The Dune Sea (part two)", Caleb's call: shifting
+## fields). Wide and quick, sight cut hard in the thick of it, and each one
+## aimed through a wreck field (`weather_path`), burying the fields its
+## heart crosses and uncovering buried ones elsewhere.
+const STORM_RADIUS := 200.0
+const STORM_SPEED := 4.5
+const STORM_SIGHT := 0.35
+const STORM_CARRY := 0.5
+## How many of the eight wreck fields lie buried when the world starts.
+const BURIED_AT_START := 3
 
 ## What a salvage crate holds (`roll_loot("crate")`): `CRATE_ITEMS` picks
 ## from `CRATE_TABLE`, worth several caches together, with the vehicle
@@ -88,13 +100,26 @@ func _init() -> void:
 	take_planet("dunes")
 	id = "dunes"
 	display_name = "Dune Sea"
-	description = "A sea of dunes and wreck fields, three times Ashfront's width. Haul salvage crates home in your vehicle's cargo; keep what you wear when you die, lose the pack and every crate."
+	description = "A sea of dunes and wreck fields, three times Ashfront's width. Haul salvage crates home in your vehicle's cargo; keep what you wear when you die, lose the pack and every crate. Sandstorms bury the wreck fields and uncover others."
 	bot_count = 16
 	contract_tag = "dunes"
 	# You keep what you wear; the pack drops in a bag and every crate you
 	# haul falls where you die (Caleb's call).
 	keep_gear_on_death = true
 	war_scale = 0.5
+	weather_kind = "sand"
+	weather_name = "Sandstorm"
+	weather_radius = STORM_RADIUS
+	weather_speed = STORM_SPEED
+	weather_gap = Vector2(240.0, 480.0)
+	weather_first = Vector2(90.0, 240.0)
+	weather_sight = STORM_SIGHT
+	weather_carry = STORM_CARRY
+	weather_gust = 7.0
+	weather_wipes_tracks = true
+	weather_field = MapScript.FIELD
+	weather_buries = true
+	fields_buried_at_start = BURIED_AT_START
 
 
 ## Items only this world adds. Ids are global, so prefix them with the
@@ -127,6 +152,17 @@ func zone_at(pos: Vector3) -> int:
 	if pos.z <= MapScript.MIDDLE_FROM_Z:
 		return 1
 	return 0
+
+
+## A sandstorm comes in off the sand from any side, crosses one of the
+## wreck fields and goes out the far side.
+func weather_path(rng: RandomNumberGenerator) -> Array:
+	var wreck: Dictionary = MapScript.WRECKS[rng.randi_range(0, MapScript.WRECKS.size() - 1)]
+	var through := Vector3(wreck["at"].x, 0.0, wreck["at"].y)
+	var angle := rng.randf() * TAU
+	var wind := Vector3(cos(angle), 0.0, sin(angle))
+	var reach := weather_field + weather_radius
+	return [through - wind * reach, through + wind * reach]
 
 
 func zone_name(tier: int) -> String:

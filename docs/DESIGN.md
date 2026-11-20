@@ -1384,8 +1384,9 @@ built in this order, cheapest and most connected first:
    vehicle drop (Caleb's call). It pays vehicle blueprints and parts,
    mounted weapons and the most scrip a trip. Built in three parts
    (Caleb's call: the haul first, then sandstorms over the wreck fields,
-   then armed convoys and mounted guns); part one is built (below, "The
-   Dune Sea (part one, built: the haul)").
+   then armed convoys and mounted guns); parts one and two are built
+   (below, "The Dune Sea (part one, built: the haul)" and "(part two,
+   built: sandstorms)").
 4. **Basalt Rift, the sky fight.** Last, and only once there are players
    enough for three PvP worlds: a small vertical world over lava where
    flight rigs decide every fight, with updrafts, the Sky Leviathan and
@@ -1655,9 +1656,28 @@ Scrap Brutes) pick over the wrecks and hold the yards.
 - **The endless world.** A wreck field's emptied spot gets a new crate
   after 4 minutes (`WorldDef.crate_respawn_time`), and a crate left lying
   anywhere else is cleared after 10 (`crate_lifetime`).
-- **Still to come.** Sandstorms that bury and uncover the wreck fields
-  (part two), then armed AI convoys as a world event and mounted guns
+- **Still to come.** Armed AI convoys as a world event and mounted guns
   (part three).
+
+### The Dune Sea (part two, built: sandstorms)
+
+Sandstorms cross the Dune Sea one at a time (Caleb's call: shifting
+fields). Each comes in off the sand from any side, aimed through one of
+the wreck fields, about 400 m across and quicker than other worlds'
+storms. In its thick, sight drops to about a third, shots and footsteps
+carry half as far, the wind throws flight rigs about and the sand wipes
+out tracks; it looks like an ochre wall of driven grit.
+
+- **Burying.** Three of the eight wreck fields start buried, their hulks
+  under the sand and nothing on their spots. A storm in full cry buries
+  every open wreck field its heart passes over: the hulks sink, and the
+  crates lying there are gone, though not the one in someone's hands or a
+  vehicle's cargo. A buried field's spots stay empty.
+- **Uncovering.** For each field it buries, the storm uncovers a buried
+  field out of its reach (one it has already passed if it can), with a
+  fresh crate on every spot at once. The war feed tells everyone what the
+  storm buried and uncovered and roughly where, so a storm starts a race
+  to the new field.
 
 ## 3. The watch
 

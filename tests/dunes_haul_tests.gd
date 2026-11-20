@@ -20,9 +20,11 @@ static func run(t: Node) -> void:
 	for bot in raid.bots:
 		bot.process_mode = Node.PROCESS_MODE_DISABLED
 	var wanted := 0
-	for wreck: Dictionary in raid.map.WRECKS:
-		wanted += int(wreck["crates"])
-	t.check(raid.crates.size() == wanted and wanted > 0, "a salvage crate stands at every wreck field's spot (%d)" % raid.crates.size())
+	for i in raid.map.WRECKS.size():
+		if not raid.is_field_buried(i):
+			wanted += int(raid.map.WRECKS[i]["crates"])
+	t.check(raid.crates.size() == wanted and wanted > 0,
+			"a salvage crate stands at every spot of the wreck fields not buried (%d)" % raid.crates.size())
 	await _carry(t, raid, me)
 	await _cargo(t, raid, me)
 	await _death(t, raid, world)
@@ -211,6 +213,8 @@ static func _respawn(t: Node, raid: Raid) -> void:
 	var empty := 0
 	for spot: Dictionary in spots:
 		var crate: Variant = spot.crate
+		if raid.is_field_buried(int(spot.field)):
+			continue
 		if crate == null or not is_instance_valid(crate) or (crate as SalvageCrate).holder != null \
 				or (crate as SalvageCrate).global_position.distance_to((spot.marker as Node3D).global_position) > 3.0:
 			empty += 1

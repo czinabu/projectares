@@ -46,6 +46,9 @@ const WRECKS := [
 const WRECK_RADIUS := 34.0
 ## A buried hauler's hull: long, half sunk in the sand.
 const HULK := Vector3(5.0, 3.4, 14.0)
+## How far a buried wreck field's hulks go down under the sand: past their
+## tops, tilt and all.
+const BURY_DEPTH := 4.0
 ## The Wreck Baron's ground in the deep sea.
 const BOSS_AT := Vector2(0.0, -760.0)
 
@@ -237,9 +240,19 @@ func _build_wrecks() -> void:
 		var at: Vector2 = wreck["at"]
 		var hulks := int(wreck["hulks"])
 		var lie := _rng.randf() * TAU
+		# The field a sandstorm can bury: its hulks are its children, so
+		# they sink with it.
+		var field := Marker3D.new()
+		field.name = "WreckField%d" % index
+		field.add_to_group("salvage_field")
+		field.position = _ground(at)
+		field.set_meta("radius", WRECK_RADIUS)
+		field.set_meta("sink", BURY_DEPTH)
+		field.set_meta("title", "a wreck field")
+		nav_region.add_child(field)
 		for i in hulks:
 			var spot := at + Vector2.from_angle(lie + i * TAU / hulks) * _rng.randf_range(12.0, WRECK_RADIUS - 10.0)
-			var hull := _box(HULK, _ground(spot) + Vector3(0, HULK.y * 0.5 - 1.2, 0), HULL)
+			var hull := _box(HULK, _ground(spot) + Vector3(0, HULK.y * 0.5 - 1.2, 0) - field.position, HULL, field)
 			hull.rotation = Vector3(_rng.randf_range(-0.12, 0.12), _rng.randf() * TAU, _rng.randf_range(-0.1, 0.1))
 			hull.name = "Hulk"
 		for i in int(wreck["crates"]):
@@ -322,7 +335,7 @@ func _add_marker(group: String, at: Vector3) -> Marker3D:
 
 
 ## A solid greybox block (collision and a mesh `Look` dresses).
-func _box(size: Vector3, at: Vector3, material: Material) -> StaticBody3D:
+func _box(size: Vector3, at: Vector3, material: Material, parent: Node3D = null) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.collision_layer = Actor.LAYER_WORLD
 	body.collision_mask = 0
@@ -338,5 +351,5 @@ func _box(size: Vector3, at: Vector3, material: Material) -> StaticBody3D:
 	var mesh_node := MeshInstance3D.new()
 	mesh_node.mesh = mesh
 	body.add_child(mesh_node)
-	nav_region.add_child(body)
+	(parent if parent != null else nav_region).add_child(body)
 	return body
