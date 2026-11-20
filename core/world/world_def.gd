@@ -257,6 +257,14 @@ var weather_field := 280.0
 ## (sooner the hotter the war). Each spot is marked before its shell lands,
 ## and the shells hurt. 0 keeps the world unshelled.
 var shelling := 0.0
+## A sea of lava (DESIGN.md "Basalt Rift"): anything whose feet go under
+## `molten_level` (a height in metres) burns for `molten_damage` four times
+## a second through `Combat.deal`, players and bots alike, whatever the
+## zone rules (`Raid._tick_molten`). A death over it leaves its bag or pile
+## floating on it, where a flyer can still reach it (`Raid.drop_spot`).
+## -INF: no lava.
+var molten_level := -INF
+var molten_damage := 50.0
 ## Thin ice (DESIGN.md "Frostline"): with `thin_ice` on, the ground where
 ## `thin_ice_at` says so bears a ground vehicle up to `ice_holds` tonnes
 ## (its "weight" stat). A heavier one strains it by its weight over that a
@@ -683,6 +691,15 @@ func ground_at(_pos: Vector3) -> String:
 ## What a zone tier is called on the watch.
 func zone_name(tier: int) -> String:
 	return ["Outer ring", "Middle zone", "Core"][tier] if tier >= 0 and tier <= 2 else ""
+
+
+## How fast the air rises at a point, in m/s (DESIGN.md "Basalt Rift",
+## updrafts), or 0. Anyone in the air there is carried up by it on top of
+## whatever they are doing (`Actor._ride_updraft`), a rig's ceiling or not,
+## and wings spend no glide stamina in it. Worked out from the world's own
+## data only, so a client predicts it the same.
+func updraft_at(_pos: Vector3) -> float:
+	return 0.0
 
 
 ## Damage a second that the ground at a point does to a player standing in it

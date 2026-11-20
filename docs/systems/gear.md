@@ -66,7 +66,11 @@ date in the same PR.
   `ground_height`, else its origin; the home base is its own ground), and
   only limits lift: the climb eases
   off under it (`FlightRig.climb_room`) and a kick, launch or boost is cut
-  to top out on it (`lift_cap`), or refused. Only Mk1 drops or
+  to top out on it (`lift_cap`), or refused. A world's updrafts
+  (`WorldDef.updraft_at`, the Basalt Rift's vents) carry a body up on top
+  of whatever its rig does, past the ceiling (`Actor._ride_updraft`), and
+  wings spend no glide stamina in one (`FlightRig.in_updraft`); see
+  docs/systems/rift.md. Only Mk1 drops or
   is sold: Mk2 and up are crafted from blueprints (DESIGN.md section 10),
   so no loot table may list them.
   The keys fly every rig and the mouse only looks and aims
