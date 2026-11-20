@@ -749,7 +749,11 @@ shots: `ares/ash-storms/concept/` in the project files.
   they move it on between updates. What it looks like is `WeatherView`
   (view only): the wall, the driven ash around the camera and the fog,
   which deepens with how far into the storm the camera is. Both views are
-  the same.
+  the same. The wall is a billowing front, not a shape: a steep dome of
+  churning ash or snow with no hard outline or top rim anywhere, heaped
+  with rolling billows that break the skyline, soft where it meets the
+  ground, and thinning as you walk up to it while the storm's own haze
+  closes in, so going in only ever thickens.
 - **Per world.** A world turns storms on with `WorldDef.weather_kind`
   ("ash", "snow"), names them (`weather_name`) and tunes them with
   `weather_*` (gap, radius, speed, sight, carry, gust, cold). It picks their

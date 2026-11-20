@@ -5,8 +5,11 @@ extends Node3D
 ## world has weather; it reads `Raid.weather` (the server's word on a client)
 ## and never changes it.
 ##
-## From outside a storm is a wall: a churning curtain of ash or snow on an
-## open cylinder as wide as the cell. Inside it, streaks are driven past on
+## From outside a storm is a front: a churning mass of ash or snow on a
+## steep dome as wide as the cell, with no hard outline (its sides and crown
+## fade where they are seen edge on), its top heaped with billows that
+## break the outline, and soft where it meets the ground. It thins as the
+## camera comes up to it, so the way in is a thickening haze. Inside it, streaks are driven past on
 ## the wind and billows drift through around whichever camera draws the
 ## world, the wind howls, and the map's storm mood closes the fog in by how
 ## far in the camera is (the map's "weather_here" meta, read by
@@ -14,9 +17,22 @@ extends Node3D
 ## differs.
 
 const WALL_SHADER := preload("res://assets/shaders/storm_wall.gdshader")
-## The wall is drawn in layers, each a little narrower and lower, so its
-## edge has depth.
-const WALL_LAYERS := 3
+const BILLOW_SHADER := preload("res://assets/shaders/storm_billow.gdshader")
+## The dome is drawn in layers, each a little narrower and lower, churning
+## at their own pace, so the front has depth.
+const WALL_LAYERS := 2
+## The dome's profile: rings up its side, cuts round it, and how square its
+## shoulder is (2 a half ellipse, higher a steeper wall with a rounder crown).
+const WALL_RINGS := 12
+const WALL_CUTS := 64
+const WALL_SHOULDER := 3.0
+## The billows heaped round the dome's upper half (one draw for all).
+const HEADS := 56
+## The dome stands this far out from the cell's middle, as a share of its
+## radius: inside the cell's soft edge (`Weather.core_share`), so when the
+## camera reaches the dome and it thins away, the storm's own haze has
+## already begun closing in. Walking in only ever thickens.
+const WALL_REACH := 0.8
 const STREAKS := 2000
 const BILLOWS := 60
 ## Below this, inside a storm, the air around the camera is left empty.
@@ -43,6 +59,7 @@ var here := 0.0
 var _kit := {}
 var _wall: Node3D
 var _wall_mats: Array[ShaderMaterial] = []
+var _heads_mat: ShaderMaterial
 var _air: Node3D
 var _streaks: GPUParticles3D
 var _billows: GPUParticles3D
@@ -93,7 +110,9 @@ func _process(delta: float) -> void:
 	var camera := get_viewport().get_camera_3d()
 	here = weather.strength_at(camera.global_position) if camera != null else 0.0
 	raid.map.set_meta("weather_here", here)
-	var on := weather.kind != "" and weather.strength > 0.0
+	# Deep inside, the fog has the storm and the dome would be all but clear:
+	# it is not drawn at all.
+	var on := weather.kind != "" and weather.strength > 0.0 and here < 0.75
 	_wall.visible = on
 	if on:
 		if not _has_centre or _shown_centre.distance_to(weather.centre) > 40.0:
@@ -101,11 +120,14 @@ func _process(delta: float) -> void:
 		_shown_centre = _shown_centre.lerp(weather.centre, clampf(delta * 2.0, 0.0, 1.0))
 		_has_centre = true
 		_wall.global_position = Vector3(_shown_centre.x, _ground_under(_shown_centre) - 6.0, _shown_centre.z)
-		var size := weather.radius / 100.0
+		var size := weather.radius * WALL_REACH / 100.0
 		_wall.scale = Vector3(size, 1.0, size)
-		# Seen from inside, the wall thins: the fog does that work there.
+		# Seen from inside, the dome thins away: the fog does that work there.
+		var opacity := 0.95 * weather.strength * lerpf(1.0, 0.0, smoothstep(0.1, 0.75, here))
 		for mat in _wall_mats:
-			mat.set_shader_parameter("opacity", 0.95 * weather.strength * lerpf(1.0, 0.3, here))
+			mat.set_shader_parameter("opacity", opacity)
+		_heads_mat.set_shader_parameter("opacity", opacity)
+		_heads_mat.set_shader_parameter("size_scale", sqrt(size))
 	else:
 		_has_centre = false
 	var in_air := here > AIR_FROM and camera != null
@@ -269,7 +291,8 @@ func _ground_under(at: Vector3) -> float:
 	return 0.0
 
 
-## The wall, built for a 100 m radius and scaled to the cell.
+## The front, built for a 100 m radius and scaled to the cell: the dome's
+## layers and the billows heaped on it.
 func _build_wall() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Wall"
@@ -277,35 +300,120 @@ func _build_wall() -> Node3D:
 	var noise := NoiseTexture2D.new()
 	noise.seamless = true
 	var fast := FastNoiseLite.new()
-	fast.frequency = 0.02
-	fast.fractal_octaves = 5
+	# Broad and soft: a storm's billows are tens of metres across.
+	fast.frequency = 0.008
+	fast.fractal_octaves = 4
 	fast.seed = 7
 	noise.noise = fast
+	var tint: Color = _kit.get("wall_tint", Color(0.2, 0.1, 0.08))
+	var lit: Color = _kit.get("wall_lit", Color(0.5, 0.3, 0.2))
 	for layer in WALL_LAYERS:
-		var cylinder := CylinderMesh.new()
-		cylinder.top_radius = 100.0 * (1.0 - layer * 0.08)
-		cylinder.bottom_radius = 100.0 * (1.0 - layer * 0.04)
-		cylinder.height = height * (1.0 - layer * 0.15)
-		cylinder.cap_top = false
-		cylinder.cap_bottom = false
-		cylinder.radial_segments = 64
-		cylinder.rings = 1
 		var mat := ShaderMaterial.new()
 		mat.shader = WALL_SHADER
 		mat.set_shader_parameter("noise_tex", noise)
-		mat.set_shader_parameter("tint", _kit.get("wall_tint", Color(0.2, 0.1, 0.08)))
-		mat.set_shader_parameter("lit", _kit.get("wall_lit", Color(0.5, 0.3, 0.2)))
-		mat.set_shader_parameter("churn", 1.0 + layer * 0.4)
-		cylinder.material = mat
+		mat.set_shader_parameter("tint", tint)
+		mat.set_shader_parameter("lit", lit)
+		mat.set_shader_parameter("churn", 1.0 + layer * 0.5)
+		mat.set_shader_parameter("seed", layer * 0.31)
 		_wall_mats.append(mat)
 		var mesh := MeshInstance3D.new()
 		mesh.name = "Layer%d" % layer
-		mesh.mesh = cylinder
-		mesh.position.y = cylinder.height * 0.5
+		mesh.mesh = dome_mesh(100.0 * (1.0 - layer * 0.1), height * (1.0 - layer * 0.18))
+		mesh.material_override = mat
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mesh)
+	_heads_mat = ShaderMaterial.new()
+	_heads_mat.shader = BILLOW_SHADER
+	_heads_mat.set_shader_parameter("noise_tex", noise)
+	_heads_mat.set_shader_parameter("tint", tint)
+	_heads_mat.set_shader_parameter("lit", lit)
+	root.add_child(_build_heads(height))
 	root.visible = false
 	return root
+
+
+## The radius of the dome `height` high at `up` metres, over a base of
+## `radius`: a steep wall with a rounded crown, a little flared at the foot.
+static func dome_radius(radius: float, height: float, up: float) -> float:
+	var h := clampf(up / height, 0.0, 1.0)
+	var r := pow(maxf(1.0 - pow(h, WALL_SHOULDER), 0.0), 1.0 / WALL_SHOULDER)
+	return radius * r * (1.0 + 0.06 * (1.0 - h) * (1.0 - h))
+
+
+## One layer of the dome: rings up a revolved profile, closed at the crown,
+## open at the foot (it stands below the ground). u runs round it, v up it.
+static func dome_mesh(radius: float, height: float) -> ArrayMesh:
+	var points := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	for ring in WALL_RINGS + 1:
+		# Rings bunch towards the crown, where the profile turns.
+		var v := sin(float(ring) / WALL_RINGS * PI * 0.5)
+		var up := v * height
+		var r := dome_radius(radius, height, up)
+		var step := height * 0.01
+		var slope := (dome_radius(radius, height, minf(up + step, height)) - dome_radius(radius, height, maxf(up - step, 0.0))) / (minf(up + step, height) - maxf(up - step, 0.0))
+		# The profile's outward normal in (out, up): its tangent is (slope, 1).
+		var flat := Vector2(1.0, -slope).normalized()
+		if ring == WALL_RINGS:
+			flat = Vector2(0.0, 1.0)
+		for cut in WALL_CUTS + 1:
+			var u := float(cut) / WALL_CUTS
+			var angle := u * TAU
+			var out := Vector3(cos(angle), 0.0, sin(angle))
+			points.append(out * r + Vector3(0.0, up, 0.0))
+			normals.append((out * flat.x + Vector3.UP * flat.y).normalized())
+			uvs.append(Vector2(u, v))
+	var row := WALL_CUTS + 1
+	for ring in WALL_RINGS:
+		for cut in WALL_CUTS:
+			var a := ring * row + cut
+			var b := a + row
+			indices.append_array([a, b, a + 1, a + 1, b, b + 1])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = points
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## The billows heaped on the dome: soft puffs round its upper half and
+## crown, each facing the camera (`storm_billow.gdshader`), all one draw.
+## Laid out with their own RNG, so they never touch the game's.
+func _build_heads(height: float) -> MultiMeshInstance3D:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.use_custom_data = true
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0, 2.0)
+	multi.mesh = quad
+	multi.instance_count = HEADS
+	for i in HEADS:
+		var angle := (float(i) + rng.randf_range(-0.4, 0.4)) / HEADS * TAU
+		# Most ride the shoulder, where the outline is; a quarter heap the
+		# crown, so from above it is a cloud top, not a lid.
+		var crown := i % 4 == 0
+		var h := rng.randf_range(0.82, 0.96) if crown else rng.randf_range(0.4, 0.85)
+		var up := h * height
+		var r := dome_radius(100.0, height, up) * (sqrt(rng.randf()) * 0.8 if crown else rng.randf_range(0.88, 0.98))
+		var at := Vector3(cos(angle) * r, up, sin(angle) * r)
+		multi.set_instance_transform(i, Transform3D(Basis.IDENTITY, at))
+		multi.set_instance_custom_data(i, Color(rng.randf(), rng.randf_range(20.0, 38.0) * height / 90.0, 0.0, 0.0))
+	var heads := MultiMeshInstance3D.new()
+	heads.name = "Heads"
+	heads.multimesh = multi
+	heads.material_override = _heads_mat
+	heads.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# The puffs swell past the points they are set on.
+	heads.custom_aabb = AABB(Vector3(-140, -20, -140), Vector3(280, height + 60.0, 280))
+	return heads
 
 
 ## Thin streaks of ash or snow driven past on the wind, close round the camera.
