@@ -3472,6 +3472,7 @@ func _dress_depot(zone: Depot) -> void:
 
 	var terminal := zone.get_node_or_null("Terminal") as Node3D
 	if terminal == null:
+		merge_pieces(station, true)
 		return
 	var body := terminal.get_node_or_null("Body") as MeshInstance3D
 	var size := Depot.TERMINAL_SIZE
@@ -3542,6 +3543,8 @@ func _dress_depot(zone: Depot) -> void:
 	# The mast's beacon, pulsing slowly, and a faint beam up from it.
 	var mast := terminal.get_node_or_null("Mast") as MeshInstance3D
 	if mast == null:
+		merge_pieces(station, true)
+		merge_pieces(terminal, true)
 		return
 	mast.material_override = steel
 	var top := mast.position + Vector3(0, Depot.MAST_HEIGHT * 0.5, 0)
@@ -3592,6 +3595,10 @@ func _dress_depot(zone: Depot) -> void:
 	beam.set_meta("walk_through", "a beam of light")
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	terminal.add_child(beam)
+	# Thirty-odd boxes a depot: one mesh per material (the named body and
+	# mast, the screen with its words and the lights stay apart).
+	merge_pieces(station, true)
+	merge_pieces(terminal, true)
 
 
 ## Something on show (a home base display): a node with the meta
