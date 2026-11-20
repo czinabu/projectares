@@ -468,6 +468,21 @@ var ads_cup := Vector3(-0.03, -0.035, -0.01)
 ## squares up and leans in so the arms reach out.
 var ads_stance_long := Vector2(-0.35, -0.06)
 var ads_stance_sidearm := Vector2(0.3, -0.06)
+## Held up at the hip (in a fight, out of the sights and the carry): where
+## the gun hand's wrist goes, from the eyes along the aim (metres right, up
+## and ahead), a long gun's stock tucked under the shoulder and a sidearm
+## pushed out lower, so the gun shows in the lower part of the view and
+## both hands reach it on the new body (`WeaponArm.hip_point`). The aim's
+## pitch is clamped to `hip_pitch` for the place (the gun still turns to the
+## full aim), and the body blades `hip_stance_share` of the way into its
+## aiming stance (`ads_stance`).
+var hip_from_eyes_long := Vector3(0.08, -0.27, -0.12)
+var hip_from_eyes_sidearm := Vector3(0.0, -0.23, -0.17)
+var hip_pitch := Vector2(-0.8, 0.7)
+var hip_stance_share := 0.8
+## The share of the aiming stance a long gun carried at a low ready blades
+## the body by, so the off hand reaches the fore end.
+var carry_stance_share := 0.6
 ## Inspecting what is in the hand (`ActorCommand.inspect`, the inspect key):
 ## the hand brings it in closer, a little up and toward the middle of the
 ## body, and turns it through `INSPECT_TURNS` so each side shows, then it
@@ -508,18 +523,22 @@ const INSPECT_TURNS := [
 ## to the chest muzzle down in one hand while the other arm pumps. Shooting,
 ## aiming or reloading takes it straight back up (`carry_out_rate` is quick,
 ## the way a sprint-to-fire is). Each pose is where the gun hand's wrist goes
-## from the chest, in the actor's frame (x right, y up, z back), and how the
-## gun turns from straight ahead (pitch up, yaw toward the off side, roll
-## toward the off side, radians). The chest carries it, so the run's own lean
-## and bounce move the gun with the body.
-var carry_low_long := Vector3(0.15, 1.2, -0.25)
-var carry_low_long_turn := Vector3(-0.3, 0.15, 0.08)
-var carry_port_long := Vector3(0.13, 1.16, -0.24)
+## (x right, y up, z back, in the upright body's frame) from level with the
+## eyes and in line with the shoulders (`WeaponArm._carry_anchor`), and how
+## the gun turns from straight ahead (pitch up, yaw toward the off side,
+## roll toward the off side, radians). Set from the eyes, not the chest, so
+## the gun keeps its place in the first-person view whatever body wears it
+## (on the new body the chest-set carries hung half a metre under the eyes
+## and out of view), and from the shoulders, so both arms reach it however
+## far a run or a crouch puts the head forward.
+var carry_low_long := Vector3(0.1, -0.33, -0.2)
+var carry_low_long_turn := Vector3(-0.15, 0.15, 0.08)
+var carry_port_long := Vector3(0.13, -0.4, -0.42)
 var carry_port_long_turn := Vector3(0.75, 1.0, 0.6)
-var carry_low_sidearm := Vector3(0.05, 1.24, -0.3)
-var carry_low_sidearm_turn := Vector3(-0.5, 0.1, 0.0)
-var carry_port_sidearm := Vector3(0.17, 1.16, -0.2)
-var carry_port_sidearm_turn := Vector3(-1.0, 0.15, 0.15)
+var carry_low_sidearm := Vector3(0.03, -0.33, -0.24)
+var carry_low_sidearm_turn := Vector3(-0.2, 0.1, 0.0)
+var carry_port_sidearm := Vector3(0.16, -0.3, -0.4)
+var carry_port_sidearm_turn := Vector3(-0.6, 0.15, 0.15)
 ## How much the off hand holds the gun in each carry: both hands at a low
 ## ready, a long gun at port; a sprinting sidearm leaves the off arm free.
 var carry_support_low := 1.0
@@ -532,7 +551,7 @@ var carry_out_rate := 9.0
 var sprint_rate := 4.0
 ## The share of the chest's lean (a sprint's, a slide's) the carried gun
 ## follows: most, so it rides the body, but it stays steadier than the chest.
-var carry_body_follow := 0.8
+var carry_body_follow := 0.25
 ## The bob of a carried gun with each stride: the run's footfalls drop it
 ## twice a cycle and it swings side to side once, metres at a jog and at a
 ## sprint, and a little tip of the muzzle with the drop (radians).
@@ -1004,6 +1023,12 @@ func ads_wanted(gun: Gun) -> bool:
 	if gun.visual == null or not gun.visual.visible:
 		return false
 	return not shoulders_never(gun)
+
+
+## Where the wrist holds `gun` up at the hip, from the eyes along the aim
+## (see `hip_from_eyes_long`).
+func hip_from_eyes(gun: Gun) -> Vector3:
+	return hip_from_eyes_sidearm if gun != null and gun.is_sidearm else hip_from_eyes_long
 
 
 ## The aiming stance for `gun` (see `ads_stance_long`).

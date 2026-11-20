@@ -43,9 +43,11 @@ date in the same PR.
   goes across the chest at port in a sprint (a pistol tucked muzzle down in
   one hand while the other arm pumps), bobs with the stride and lags on a
   spring as the body speeds up, stops or turns (`ActionPose.carry`,
-  `sprint`, `carry_point`, `carry_turn`, `sway`; placed from the chest by
-  `WeaponArm._reach_carry` and `carry_frame`), and the legs run the plain
-  run. The arms take up the run's bounce (playtest feedback: the gun
+  `sprint`, `carry_point`, `carry_turn`, `sway`; placed by
+  `WeaponArm._reach_carry` from level with the eyes and in line with the
+  shoulders, `_carry_anchor`, in the upright body's frame, so the gun
+  keeps its place in the first-person view and both arms reach it on any
+  body), and the legs run the plain run. The arms take up the run's bounce (playtest feedback: the gun
   bobbed all over the first-person view): the carry moves with the eyes
   as they are steadied (`ActorSkin.eye_steadying`, `carry_steady`) and
   follows the chest's rocking with a lag, so every carry pose must keep
@@ -55,11 +57,19 @@ date in the same PR.
   it shoots; a shot, aim or reload takes it out of the carry at once
   (`carry_out_rate`). A tap of aim is not a fight: let go without a shot,
   the gun goes back to its carry after `ActorSkin.aim_release_hold`, not
-  `aim_hold` (Caleb's in-between wobble). Held up at the hip on the move,
-  the gun rides the same steadied frame as the carry at the clip's wrist
-  averaged over a stride, turned to the aim (`WeaponArm._hold_at_hip`), so
-  the clip's arm swing never reaches it; `_check_hip_after_aim_tap`
-  measures it. All of it is read from velocity and the command, so
+  `aim_hold` (Caleb's in-between wobble). Held up at the hip, standing or
+  on the move, the gun is the anchor and the hands follow it, as in true
+  first-person shooters: the wrist goes to a spot set from the steadied
+  eyes along the aim (`ActionPose.hip_from_eyes`, `WeaponArm.hip_point`),
+  the body blades part way into its aiming stance (`hip_stance_share`;
+  a long gun's low ready by `carry_stance_share`), so the off hand reaches
+  the fore end, the gun shows low in the view and the clip's arm swing
+  never reaches it (the clips' own hold put the gun out past the new
+  body's reach). A gun braced at the hip (`shoulders_never`) or held on a
+  vehicle keeps the clip's wrist averaged over a stride.
+  `_check_hip_after_aim_tap` measures the steadiness, and
+  `gun_hold_tests.gd` the off hand on the gun, the gun on the aim and the
+  gun in the first-person frame through every way of moving. All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
