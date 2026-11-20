@@ -730,7 +730,14 @@ class _Baker:
 			if mi.mesh == null or not mi.is_visible_in_tree() \
 					or mi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
 				continue
-			var mesh: Mesh = mi.bake_mesh_from_current_skeleton_pose() if mi.skin != null else mi.mesh
+			var mesh: Mesh = mi.mesh
+			if mi.skin != null:
+				# A skinned part with no skeleton on the renderer (not yet bound,
+				# or a headless run) cannot be baked, and asking logs an error.
+				var ref := mi.get_skin_reference()
+				if ref == null or not ref.get_skeleton().is_valid():
+					continue
+				mesh = mi.bake_mesh_from_current_skeleton_pose()
 			if mesh == null:
 				continue
 			var xf := inv * mi.global_transform
