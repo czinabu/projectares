@@ -58,10 +58,11 @@ const SURFACES := {
 ## build. `saturation`, `brightness`, `metal` and
 ## `rough` are optional and tune the character shader: people keep their
 ## colors, machines are pulled toward worn metal.
-## `idle` is a relaxed stand with the hands empty, `idle_gun` holds a gun low
+## `idle` is a relaxed stand with the hands empty (the pack's own idle on
+## people), `idle_gun` holds a gun low
 ## and `aim_gun` raises it to shoot from a stand (see `actor_skin.gd`).
 ## `stand_legs` is where the legs stand while a gun is held low.
-const HUMAN_ANIMS := {"idle": "Idle_Neutral", "idle_gun": "Idle_Gun", "aim_gun": "Idle_Gun_Pointing",
+const HUMAN_ANIMS := {"idle": "Idle", "idle_gun": "Idle_Gun", "aim_gun": "Idle_Gun_Pointing",
 	"stand_legs": "Idle_Neutral", "walk": "Walk", "run": "Run", "death": "Death",
 	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot",
 	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right", "roll": "Roll",
@@ -1800,15 +1801,31 @@ func dress_surfaces(mesh_node: MeshInstance3D, def: Dictionary, chosen: Dictiona
 		if source.emission_enabled:
 			mat.set_shader_parameter("emission_color", source.emission * 2.5)
 		_bind_storm(mat)
-		if not chosen.is_empty() and Human.reshape:
+		if not chosen.is_empty():
+			var slot: String = mesh_node.get_meta("slot", "")
+			if source.normal_enabled and source.normal_texture:
+				mat.set_shader_parameter("normal_tex", source.normal_texture)
+				mat.set_shader_parameter("normal_amount", 1.0)
+			if source.roughness_texture:
+				mat.set_shader_parameter("rough_tex", source.roughness_texture)
+				mat.set_shader_parameter("rough_from_tex", 1.0)
 			mat.set_shader_parameter("has_rest", 1.0)
-			mat.set_shader_parameter("surface_kind",
-					Human.surface_kind(mesh_node.get_meta("slot", ""), source.resource_name))
-			var pick := Human.color_for(chosen, mesh_node.get_meta("slot", ""), source.resource_name)
+			var kind := Human.surface_kind(slot, source.resource_name)
+			mat.set_shader_parameter("surface_kind", kind)
+			var pick := Human.color_for(chosen, slot, source.resource_name)
 			if pick.has("color"):
 				mat.set_shader_parameter("recolor", pick["color"])
 				mat.set_shader_parameter("recolor_amount", 1.0)
 				mat.set_shader_parameter("recolor_shading", 1.0 if pick["keep_shading"] else 0.0)
+			var suit := Human.suit_for(chosen, slot)
+			if kind == 2 and not suit.is_empty():
+				# The tactical suit: `ActorSkin._wear_undersuit` recolours it
+				# under a frame and gives this back.
+				mat.set_meta("own_suit", suit)
+				mat.set_meta("suit_slot", slot)
+				mat.set_shader_parameter("suit", 1.0)
+				mat.set_shader_parameter("suit_color", suit["color"])
+				mat.set_shader_parameter("suit_trim", suit["trim"])
 		mesh_node.set_surface_override_material(i, mat)
 		materials.append(mat)
 	return materials

@@ -875,6 +875,11 @@ func _place_weapon() -> void:
 					# way it rolled last frame, or it flips each step.
 					if absf(wanted) > PI - roll_keep and signf(wanted) != signf(_last_roll) and _last_roll != 0.0:
 						wanted -= signf(wanted) * TAU
+					# With the blade nearly along the forearm the roll it asks
+					# for is barely defined and can swing half a turn in a
+					# frame, throwing the hand across: there the forearm keeps
+					# most of the roll it had.
+					wanted = lerpf(_last_roll, wanted, smoothstep(0.1, 0.4, want_flat.length()))
 					_last_roll = wanted
 					var roll := clampf(wanted, -forearm_roll_limit, forearm_roll_limit) * _grip_weight
 					if absf(roll) > 0.001:

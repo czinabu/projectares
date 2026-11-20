@@ -80,22 +80,41 @@ date in the same PR.
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,
-  which is safe on a headless server. The pack meshes are worn as
-  `Human.shaped` copies (made once per mesh, view only): smooth shading
-  where faces meet gently, the head drawn in to `HEAD_SCALE` about its
-  bone (the bone, the eyes and anything worn on it stay put), and each
-  vertex's rest place and hand share in CUSTOM0, so `character.gdshader`
-  draws patterns that stay on the body as it moves. Never change a
-  vertex count, bone or weight there: a body must pose and cost the same.
-  Under an armor frame a person wears a fitted undersuit (Caleb's
-  tactical pass): the body, legs and boots of their build's
-  `ActorSkin.SUIT_OUTFITS` go on in place of their clothes
-  (`_wear_undersuit`, view only, the clothes given back when the frame
-  comes off, the appearance untouched), and the shader draws every
-  surface below the head as the suit in the frame's "suit" colour, with
-  gloves and a cuff lit in its accent (`suit`, `suit_color`,
-  `suit_trim`; `Human.surface_kind` says which surfaces it covers). Check
-  by eye with `body_check.tscn -- <dir> [--suit] [--before]`.
+  which is safe on a headless server. Every person is one of two
+  detailed bodies, `body_m.glb` and `body_f.glb` (Quaternius's Universal
+  Base Characters), built offline by `tools/human_rig` (see the top of
+  `build_rig.gd` for the command): the body cut into the four parts
+  (`PartHead`, `PartBody`, `PartLegs`, `PartFeet`) on the game's bone
+  names, the pack's hairstyles on the same skeleton, each vertex's rest
+  place and hand share in CUSTOM0 (so `character.gdshader` draws patterns
+  that stay on the body as it moves), and the clips. Never edit the
+  `.glb` by hand: change the tool and build again. The clips come from the
+  Universal Animation Library packs where they fit (`build_rig.gd`
+  `CLIPS`; the empty-handed stand is the pack's "Idle"); the ones the
+  game's poses are tuned on (the relaxed stand under a gun, the run, the
+  gun holds, the strafes, the sword) are the old bodies' own, carried
+  across from `rig_m.glb` and `rig_f.glb` (`_retarget`). They are one set:
+  the pack's jog runs lower and bouncier than the old strafes and gun run,
+  and mixed with them it bobbed the first-person view at every switch. A
+  body is sized in its relaxed stand (`stand_legs`), never in an idle that
+  bends the knees or spreads the feet, or the whole body grows. A glide lays the
+  body out over the relaxed stand too: the pack's idle turns the chest,
+  and the wings hang from it. Carrying a clip
+  across keeps each bone's turn; limbs are bent to point the old way, the
+  trunk and collarbones are not (bent, the chest tips and the long
+  collarbone shrugs the shoulder up), and a collarbone's turn is scaled by
+  how much longer it is. A foot is placed relative to how it stands in the
+  old idle (the old feet are IK bones that lie differently), and a finger
+  takes only how far the old one curls, about its own curl axis from the
+  pack's closed hand (turned over whole, the fingers splay into a claw). An outfit no longer swaps meshes: it picks the
+  hair (`Human.HAIR`) and the suit's colours (`Human.SUITS`), and the
+  shader draws every surface below the head as a fitted tactical suit
+  (`suit`, `suit_color`, `suit_trim`, gloves and a lit cuff;
+  `Human.surface_kind` says which surfaces it covers) over the body's own
+  normal and roughness maps. An armor frame recolours the same suit in its
+  "suit" and "accent" colours (`ActorSkin._wear_undersuit`, view only, the
+  outfit's colours given back when it comes off, the appearance
+  untouched). Check by eye with `body_check.tscn -- <dir> [--suit]`.
   Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.

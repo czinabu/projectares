@@ -368,8 +368,6 @@ var _shadow_parts := 0
 var _frame_parts: Array[Node3D] = []
 ## The frame `_frame_parts` were built for; "" for none.
 var _frame_id := ""
-## The clothes the undersuit replaced, by slot, to give back (`_wear_undersuit`).
-var _street := {}
 ## The person this body is dressed as (empty for a skin that is not a person).
 var _appearance := {}
 ## The helmet `_helmet` was built for; "" while bare-headed.
@@ -510,9 +508,16 @@ func _ready() -> void:
 				_anims[key] = found
 				if key not in ["death", "attack", "roll", "kick"]:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
+		# Sized in the relaxed stand: an idle that bends the knees or
+		# spreads the feet (a person's) would otherwise size the body up.
+		var sized_in := "stand_legs" if _anims.has("stand_legs") else "idle"
+		if _anims.has(sized_in):
+			_player.play(_anims[sized_in])
+			_player.advance(0.0)
 		_play("idle")
-		_player.advance(0.0)
 	look.stand_model(self, model, def["height"])
+	if _player:
+		_player.advance(0.0)
 	_def = def
 	_lurk_model = model
 	_lurk_base = model.position.y
@@ -876,7 +881,9 @@ func _update(delta: float) -> void:
 		# armed or blade-holding stand, which still decides the weapon arm.
 		_play("idle_melee" if melee and _anims.has("idle_melee") else stand_key(weapon))
 	elif _glide > 0.0:
-		_play("idle")
+		# Under the glide pose, the square stand: the pack's idle leans and
+		# turns the chest, which would tip the wings hung on it.
+		_play("stand_legs" if _anims.has("stand_legs") else "idle")
 	elif airborne:
 		# No ground under the feet: never a run cycle. A stand plays under
 		# the air pose, so the arms keep their hold on the weapon.
@@ -1653,43 +1660,6 @@ func _show_head(on: bool) -> void:
 			(node as MeshInstance3D).visible = on
 
 
-## Heads in the packs that are headgear, not a face (a helmet and visor, a
-## void suit's hood): with the worn helmet taken off, a face shows instead.
-const HEADGEAR_HEADS := {"m": ["Swat", "Spacesuit"], "f": []}
-
-
-## With the helmet off the head (`_place_helmet`), a person whose head part is
-## itself headgear (`HEADGEAR_HEADS`) shows their build's plain face in its
-## place, so a helmet never comes off another helmet; it goes back once the
-## helmet is on. View only: the appearance is untouched.
-func _bare_face(on: bool) -> void:
-	var build: String = _appearance.get("build", "")
-	if _skeleton == null or build == "":
-		return
-	for node in _skeleton.get_children():
-		var part := node as MeshInstance3D
-		if part == null or part.get_meta("slot", "") != "head":
-			continue
-		if on and not _street.has("head") and _appearance.get("head", "") in HEADGEAR_HEADS.get(build, []):
-			_suit_part(part, "head", Human.STARTER[build][0])
-		elif not on and _street.has("head"):
-			_give_back(part, "head")
-
-
-## Puts back the part `_suit_part` took off `slot`.
-func _give_back(part: MeshInstance3D, slot: String) -> void:
-	var kept: Dictionary = _street[slot]
-	_street.erase(slot)
-	_drop_materials(part)
-	part.mesh = kept["mesh"]
-	part.skin = kept["skin"]
-	var mats: Array = kept["mats"]
-	for i in mats.size():
-		part.set_surface_override_material(i, mats[i])
-		if mats[i] is ShaderMaterial:
-			_materials.append(mats[i])
-
-
 ## The node a `_hang` holder keeps its part in (moved and turned with it).
 func _held_part(hung: Node3D) -> Node3D:
 	return hung.get_child(0) as Node3D if hung is BoneAttachment3D else hung
@@ -1714,7 +1684,6 @@ func _place_helmet(may_stow: bool) -> void:
 			# Off the head it is no longer left out of first person with it.
 			_unhide(_helmet_model)
 		_show_head(at != "head")
-		_bare_face(at != "head")
 		_helmet_at = at
 	if at == "hand":
 		_helmet_carry.global_transform = helmet_carried(ActionPose.helmet_carry(stow))
@@ -2888,9 +2857,6 @@ const FRAME_LOOKS := {"plate_light": "scrap", "frame_runner": "runner", "frame_t
 		"frame_thermal": "thermal", "frame_bulwark": "bulwark"}
 const WEIGHT_LOOKS := {"light": "runner", "medium": "trooper", "heavy": "bulwark"}
 
-## The outfit whose fitted body, legs and boots a person wears under any
-## frame, by build: its cloth becomes the undersuit (`_wear_undersuit`).
-const SUIT_OUTFITS := {"m": "Swat", "f": "Soldier"}
 
 
 ## How heavy a frame looks: "light", "medium" or "heavy", from its tags. A
@@ -2987,61 +2953,21 @@ func _hang_limb(part: Node3D, bone: String, child: String, offset: Vector3) -> N
 	return held
 
 
-## Under a frame a person wears the fitted undersuit: the body, legs and
-## boots of their build's `SUIT_OUTFITS` (street clothes would bunch out
-## through the plates), every surface below the head drawn as the suit in
-## the look's colour, its cuffs lit in the accent. `style` empty takes it off
-## and gives the clothes back. View only; the appearance is untouched.
+## Everyone wears the tactical suit (`Human.suit_for`); under a frame it
+## takes the frame look's colours, the cuffs lit in its accent. `style`
+## empty gives each part its own suit back. View only; the appearance is
+## untouched.
 func _wear_undersuit(style: Dictionary) -> void:
-	var on := not style.is_empty()
-	var outfit: String = SUIT_OUTFITS.get(_appearance.get("build", ""), "")
-	if _skeleton != null and outfit != "":
-		for node in _skeleton.get_children():
-			var part := node as MeshInstance3D
-			var slot: String = part.get_meta("slot", "") if part else ""
-			if not slot in ["body", "legs", "feet"]:
-				continue
-			if on and not _street.has(slot) and _appearance.get(slot, "") != outfit:
-				_suit_part(part, slot, outfit)
-			elif not on and _street.has(slot):
-				_give_back(part, slot)
 	for mat in _materials:
-		mat.set_shader_parameter("suit", 1.0 if on else 0.0)
-		if on:
-			mat.set_shader_parameter("suit_color", style["suit"])
-			mat.set_shader_parameter("suit_trim", style["accent"])
-
-
-## Puts `outfit`'s `slot` part on in place of `part`'s, keeping the clothes
-## to give back, its cloth worn as undersuit.
-func _suit_part(part: MeshInstance3D, slot: String, outfit: String) -> void:
-	var donor: Node3D = look._instance(Human.outfit_path(_appearance["build"], outfit))
-	if donor == null:
-		return
-	var source := donor.find_child(Human.SLOT_NODES[slot], true, false) as MeshInstance3D
-	if source != null:
-		var mats := []
-		for i in part.mesh.get_surface_count():
-			mats.append(part.get_surface_override_material(i))
-		_street[slot] = {"mesh": part.mesh, "skin": part.skin, "mats": mats}
-		_drop_materials(part)
-		part.mesh = Human.shaped(source.mesh, source.skin) if Human.reshape else source.mesh
-		part.skin = source.skin
-		for i in part.mesh.get_surface_count():
-			part.set_surface_override_material(i, null)
-		for mat in look.dress_surfaces(part, _def, _appearance):
-			if int(mat.get_shader_parameter("surface_kind")) == 0:
-				mat.set_shader_parameter("surface_kind", 2)
-			_materials.append(mat)
-	donor.free()
-
-
-## Lets go of `part`'s materials from the body's list.
-func _drop_materials(part: MeshInstance3D) -> void:
-	for i in part.get_surface_override_material_count():
-		var mat := part.get_surface_override_material(i)
-		if mat is ShaderMaterial:
-			_materials.erase(mat)
+		if not mat.has_meta("own_suit"):
+			continue
+		var own: Dictionary = mat.get_meta("own_suit")
+		var feet: bool = mat.get_meta("suit_slot", "") == "feet"
+		var cloth: Color = style["suit"] if not style.is_empty() else own["color"]
+		if not style.is_empty() and feet:
+			cloth = cloth.darkened(0.4)
+		mat.set_shader_parameter("suit_color", cloth)
+		mat.set_shader_parameter("suit_trim", style["accent"] if not style.is_empty() else own["trim"])
 
 
 ## A frame's carrier and plates, front toward -Z, built round the chest

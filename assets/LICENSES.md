@@ -12,8 +12,10 @@ and add a row for each new source.
 | --- | --- | --- | --- | --- |
 | `assets/characters` `George` `Leela` `Mike` `Stan` | Animated Mech Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/animatedmech.html |
 | `assets/characters` `Enemy_*` | Cyberpunk Game Kit | Quaternius | CC0 1.0 | https://quaternius.com/packs/cyberpunkgamekit.html |
-| `assets/characters/humans` `m_*` `rig_m` | Ultimate Modular Men (all 10 individual characters; `rig_m` is `Swat` repacked as GLB with its animations; each `m_*` is one character repacked as GLB with only its head, body, legs and feet meshes, renamed `PartHead` and so on, and no animations) | Quaternius | CC0 1.0 | https://quaternius.com/packs/ultimatemodularcharacters.html |
-| `assets/characters/humans` `f_*` `rig_f` | Ultimate Modular Women (all 10 individual characters; `rig_f` is `Soldier`; repacked the same way) | Quaternius | CC0 1.0 | https://quaternius.com/packs/ultimatemodularwomen.html |
+| `assets/characters/humans` `rig_m` | Ultimate Modular Men (`Swat` repacked as GLB with its animations; kept only as the source `tools/human_rig` carries the game's own clips from) | Quaternius | CC0 1.0 | https://quaternius.com/packs/ultimatemodularcharacters.html |
+| `assets/characters/humans` `rig_f` | Ultimate Modular Women (`Soldier`, repacked and kept the same way) | Quaternius | CC0 1.0 | https://quaternius.com/packs/ultimatemodularwomen.html |
+| `assets/characters/humans` `body_m` `body_f` and their textures | Universal Base Characters, Standard (`Superhero_Male` and `Superhero_Female` with the pack's hairstyles and eyebrows, rebuilt by `tools/human_rig` with textures shrunk to 2048 and 1024) | Quaternius | CC0 1.0 | https://quaternius.itch.io/universal-base-characters |
+| `assets/characters/humans` `body_m` `body_f` (animations) | Universal Animation Library and Universal Animation Library 2, Standard (clips carried onto the bodies by `tools/human_rig`) | Quaternius | CC0 1.0 | https://quaternius.itch.io/universal-animation-library |
 | `assets/weapons` `AR_*` `SMG_*` `Sniper_*` `Pistol_1` | Sci-Fi Modular Gun Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/scifimodularguns.html |
 | `assets/weapons` `Shotgun_1` `Knife` `Axe` | Survival Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/survival.html |
 | `assets/weapons` `Sword` `Hammer` | Modular Weapons Pack (`Sword.glb`, and `Hammer_Double.glb` renamed) | Quaternius | CC0 1.0 | https://quaternius.com/packs/medievalweapons.html |

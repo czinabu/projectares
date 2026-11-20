@@ -3,6 +3,13 @@ shader_type spatial;
 // tinted by faction. `flash` whitens the whole model for a hit.
 
 uniform sampler2D base_tex : source_color, hint_default_white;
+// The detailed bodies' normal and roughness maps (`Look.dress_surfaces`);
+// `normal_amount` 0 leaves the mesh's own normals, `rough_from_tex` 0 uses
+// `rough`. The roughness is the green of an ORM map.
+uniform sampler2D normal_tex : hint_normal;
+uniform float normal_amount = 0.0;
+uniform sampler2D rough_tex : hint_default_white;
+uniform float rough_from_tex = 0.0;
 uniform vec3 base_color : source_color = vec3(1.0);
 uniform vec3 tint : source_color = vec3(1.0);
 uniform float saturation = 0.35;
@@ -84,7 +91,11 @@ void fragment() {
 	// Darker in the creases the flat pack colors cannot show.
 	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
 	c *= mix(0.6, 1.0, facing);
-	float r = rough;
+	float r = mix(rough, texture(rough_tex, UV).g, rough_from_tex);
+	if (normal_amount > 0.0) {
+		NORMAL_MAP = texture(normal_tex, UV).rgb;
+		NORMAL_MAP_DEPTH = normal_amount;
+	}
 	float m = metal;
 	vec3 glow = vec3(0.0);
 	float dist0 = length(VERTEX);
@@ -110,8 +121,14 @@ void fragment() {
 		float near = 1.0 - smoothstep(2.5, 6.0, dist0);
 		float glove = smoothstep(0.45, 0.6, rest.w);
 		vec3 cloth = mix(suit_color, glove_color, glove);
-		// The outfit's own panels kept as tone, so pads and seams still read.
-		cloth *= mix(0.7 + 0.9 * own, 1.0, glove);
+		// A flat pack outfit's own panels kept as tone, so pads and seams
+		// still read; a detailed body's texture is skin, so it is left out
+		// and its normal map, softened, gives the suit its form.
+		if (normal_amount <= 0.0) {
+			cloth *= mix(0.7 + 0.9 * own, 1.0, glove);
+		} else {
+			NORMAL_MAP_DEPTH = mix(normal_amount, normal_amount * 0.45, suited);
+		}
 		// A fine hex weave, faint, gloves left smooth.
 		float seam = 1.0 - smoothstep(0.03, 0.12, edge);
 		cloth *= mix(1.0, 0.86, seam * (1.0 - glove) * near);

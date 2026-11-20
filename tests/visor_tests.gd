@@ -331,20 +331,18 @@ static func _worn_kit(t: Node) -> void:
 		if node is MeshInstance3D and node.has_meta("slot"):
 			parts[node.get_meta("slot")] = node
 	var street: Mesh = parts["body"].mesh
-	var donor: Node3D = Look._instance(Human.outfit_path("m", SkinScript.SUIT_OUTFITS["m"]))
-	var source := donor.find_child(Human.SLOT_NODES["body"], true, false) as MeshInstance3D
-	var suit_body := Human.shaped(source.mesh, source.skin)
-	donor.free()
-	t.check(suit_body != null and street == suit_body,
-			"under a frame a person wears the fitted suit outfit, not their street clothes")
+	t.check(street == parts["body"].mesh, "the suit is drawn on the body itself: no part is swapped under a frame")
 	var mats: Array = skin.get("_materials")
-	t.check(mats.all(func(m: ShaderMaterial) -> bool: return is_instance_valid(m) and float(m.get_shader_parameter("suit")) == 1.0)
-			and mats.any(func(m: ShaderMaterial) -> bool: return m.get_shader_parameter("suit_color") == SkinScript.FRAME_STYLES["trooper"]["suit"]),
-			"the undersuit wears the frame's own colour")
+	var suited: Array = mats.filter(func(m: ShaderMaterial) -> bool: return is_instance_valid(m) and m.has_meta("own_suit"))
+	t.check(not suited.is_empty() and suited.all(func(m: ShaderMaterial) -> bool: return m.get_shader_parameter("suit") == 1.0)
+			and suited.any(func(m: ShaderMaterial) -> bool: return m.get_shader_parameter("suit_color") == SkinScript.FRAME_STYLES["trooper"]["suit"]),
+			"the suit wears the frame's own colour")
 	Loadout.wear_frame(p, "")
 	await t.frames(3)
-	t.check(parts["body"].mesh != suit_body and not str(skeleton.get_children().map(func(n: Node) -> String: return n.name)).contains("Belt"),
-			"taken off, the clothes come back and the kit goes")
+	var own: Dictionary = Human.suit_for(skin.get("_appearance"), "body")
+	t.check(parts["body"].mesh == street and not str(skeleton.get_children().map(func(n: Node) -> String: return n.name)).contains("Belt")
+			and mats.any(func(m: ShaderMaterial) -> bool: return is_instance_valid(m) and m.get_shader_parameter("suit_color") == own["color"]),
+			"taken off, the suit goes back to the person's own colours and the kit goes")
 	Look.enabled = false
 	raid.queue_free()
 	await t.frames(2)

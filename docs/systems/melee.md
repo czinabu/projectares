@@ -53,7 +53,9 @@ date in the same PR.
   forearm rolls the fist round toward the blade before the wrist bends
   (`WeaponArm.forearm_roll_limit`, keeping the way it last rolled near a
   half turn, `roll_keep`, so a guard held on the move never flips each
-  stride), and the handle turns in the fist so the face matches the
+  stride, and keeping most of the roll it had while the blade lies nearly
+  along the forearm, where the roll is barely defined and could throw the
+  hand across mid-swing), and the handle turns in the fist so the face matches the
   technique (`WeaponArm._face_strike`). `melee_orientation_tests.gd` plays
   every swing of every melee weapon and checks the face leads through the
   hit, and `melee_guard_move_tests.gd` that a guard holds steady on the
