@@ -37,7 +37,11 @@ date in the same PR.
   leaves alone, a lamp a surface glow it hangs a beam on) round the
   item's own anchors, so a restyle never moves a seat or a hitbox; check
   them side by side with `visual_check.tscn -- <dir> --vehicles-only`,
-  `body_size` its collision box, `pivot_turn` lets a walker turn on the
+  `body_size` its collision box, wheels (and a hover) keep to the ground
+  over a crest (`Vehicle._hold_crest`: pulled back within `crest_snap`
+  unless they left it climbing at `crest_hold` or faster, so a dune top
+  never throws a rover in the air where it cannot steer, while a ramp
+  taken fast still launches it), `pivot_turn` lets a walker turn on the
   spot, `jump_speed` gives it a jump-jet hop, the "hover" tag floats it on
   a cushion ("hoverbike", the Raider: it drifts through turns by `slip`,
   which travels in the ride state and is corrected like `speed`, holds
