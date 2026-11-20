@@ -942,9 +942,10 @@ static func _test_ghost_data(t: Node) -> void:
 			and RaceGhost.from_packed(12) == null, "packed junk is refused")
 
 
-## Meridian's works (`works.gd`) fill the salt round the circuits as
-## decoration only: nothing collides, it is drawn in a bounded number of
-## merged blocks, and nothing stands on either road.
+## Meridian's works (`works.gd`) fill the salt round the circuits: drawn in
+## a bounded number of merged blocks, with no collision node of their own
+## (their shapes go to the map's `spectacle_solid.gd`, checked in
+## `spectacle_tests.gd`), and nothing stands on either road.
 static func _test_works(t: Node) -> void:
 	var map: Node3D = Worlds.get_world("meridian").create_map()
 	var works_script: GDScript = load("res://worlds/meridian/works.gd")
@@ -952,9 +953,11 @@ static func _test_works(t: Node) -> void:
 	var holder := Node3D.new()
 	var consts := (map.get_script() as Script).get_script_constant_map()
 	var works: RefCounted = works_script.new(holder, int(consts["LAYOUT_SEED"]) + 4, consts["WORKS_KEEP_OUT"].duplicate(true))
+	# Drawn as a client draws them, though this run has `Look` off.
+	works.set("drawn", true)
 	works.call("build", tracks)
 	var root := holder.get_child(0)
-	t.check(root.find_children("*", "CollisionObject3D", true, false).is_empty(), "the works never collide")
+	t.check(root.find_children("*", "CollisionObject3D", true, false).is_empty(), "the works hang no collision nodes of their own")
 	var meshes := root.find_children("*", "MeshInstance3D", true, false)
 	t.check(meshes.size() > 20 and meshes.size() < 200, "the works are merged into blocks (%d meshes)" % meshes.size())
 	# Caleb found car parks and a service road across Coilrun: the works'

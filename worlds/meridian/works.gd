@@ -7,8 +7,10 @@ extends RefCounted
 ## car parks and camps just outside the tracks; the infield festival; and
 ## catch fences, hoardings and tyre walls along both tracks.
 ##
-## Nothing here collides or is read by the race, and the map builds it only
-## where `Look` is on, with its own RNG so the layout never shifts. Shapes
+## Everything here is solid (`solid`, a `spectacle_solid.gd`), so the map
+## builds it on every machine, with its own RNG so the layout never shifts
+## and is the same everywhere; only where `Look` is on is it drawn
+## (`drawn`). Nothing here is read by the race. Shapes
 ## are merged into one mesh per material per block (`BIG_CHUNK` for
 ## buildings, `FINE_CHUNK` for the small things, which stop being drawn past
 ## `FINE_RANGE`), so blocks out of view are culled and the whole belt costs
@@ -35,6 +37,10 @@ const DISTRICTS := ["tanks", "hangars", "port", "cooling", "launch", "hangars", 
 var root: Node3D
 var rng := RandomNumberGenerator.new()
 var crowd: Crowd
+## Where the collision goes (`spectacle_solid.gd`), or null for none.
+var solid: RefCounted
+## False on a machine that draws nothing: the layout and collision only.
+var drawn := Look.enabled
 var steel: Material
 var dark: Material
 var rust: Material
@@ -62,7 +68,6 @@ var _paint: StandardMaterial3D
 func _init(p_parent: Node3D, p_seed: int, p_keep_out: Array) -> void:
 	root = Node3D.new()
 	root.name = "Works"
-	root.set_meta("walk_through", "the works are decoration only (docs/systems/arena-and-race.md)")
 	p_parent.add_child(root)
 	rng.seed = p_seed
 	keep_out = p_keep_out
@@ -174,6 +179,8 @@ func glow(color: Color, _energy := 1.0) -> Color:
 
 
 func _add(mesh: PrimitiveMesh, xf: Transform3D, mat: Variant, fine: bool) -> void:
+	if not drawn:
+		return
 	var size := FINE_CHUNK if fine else BIG_CHUNK
 	var source: Mesh = mesh
 	if mat is Color or mat is Array:
@@ -200,12 +207,20 @@ func _add(mesh: PrimitiveMesh, xf: Transform3D, mat: Variant, fine: bool) -> voi
 
 
 func box(size: Vector3, xf: Transform3D, mat: Variant, fine := false) -> void:
+	if solid != null:
+		solid.call("box", size, xf)
+	if not drawn:
+		return
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	_add(mesh, xf, mat, fine)
 
 
 func cyl(r_top: float, r_bottom: float, h: float, xf: Transform3D, mat: Variant, sides := 16, fine := false) -> void:
+	if solid != null:
+		solid.call("cyl", r_top, r_bottom, h, xf)
+	if not drawn:
+		return
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = r_top
 	mesh.bottom_radius = r_bottom
@@ -216,6 +231,10 @@ func cyl(r_top: float, r_bottom: float, h: float, xf: Transform3D, mat: Variant,
 
 
 func ball(r: float, xf: Transform3D, mat: Variant) -> void:
+	if solid != null:
+		solid.call("ball", r, xf)
+	if not drawn:
+		return
 	var mesh := SphereMesh.new()
 	mesh.radius = r
 	mesh.height = r * 2.0
@@ -229,6 +248,9 @@ func at(p: Vector3, yaw := 0.0) -> Transform3D:
 
 
 func _finish() -> void:
+	if not drawn:
+		crowd.free()
+		return
 	for key: String in _batches:
 		var parts := key.split("|")
 		var mat := _mats[int(parts[1])]

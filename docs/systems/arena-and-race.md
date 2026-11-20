@@ -103,13 +103,17 @@ date in the same PR.
   (`race_bench.tscn -- --tunes`). Where a road runs over
   another (Skyhook), `RaceTrack.locate`'s full search counts height and a
   gate is passed only within `GATE_HEIGHT` of it. The stands, crowd
-  (`Crowd`, `assets/shaders/crowd.gdshader`), skyline and works are
-  decoration (`worlds/meridian/stands.gd`, `skyline.gd`, `works.gd`),
-  merged into one mesh per material (the works per material per block,
-  every lit and painted shape in one vertex-coloured material each), and
-  marked `"walk_through"` for the collision check; the searchlights' lamps
-  and the fallen booster are solid, from `skyline.gd`'s `SEARCHLIGHTS` and
-  `booster_parts` in the map's gameplay pass. The
+  (`Crowd`, `assets/shaders/crowd.gdshader`), skyline and works
+  (`worlds/meridian/stands.gd`, `skyline.gd`, `works.gd`) are drawn only
+  where `Look` is on, merged into one mesh per material (the works per
+  material per block, every lit and painted shape in one vertex-coloured
+  material each), but they are solid on every machine: the map builds
+  their layout on the server too (`drawn` off), and every box, cylinder
+  and ball the stands and works place becomes a shape in one static body
+  per block (`spectacle_solid.gd`; Caleb's call, so nothing you see is a
+  ghost, trackside fences and tyre walls included). The searchlights'
+  lamps and the fallen booster are solid from `skyline.gd`'s
+  `SEARCHLIGHTS` and `booster_parts` in the map's gameplay pass. The
   works fill the salt out to the dunes (`GROUND_HALF`) and keep off the
   roads (`track_dist`; `race_tests.gd` checks every road point at any
   height) and what `WORKS_KEEP_OUT` lists, and the view draws out to the
