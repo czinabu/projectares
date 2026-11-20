@@ -339,7 +339,7 @@ static func _heart(t: Node) -> void:
 	t.check(frost.sheltered_at(middle) and frost.cold_at(middle) > frost.cold_at(well), "sheltered, and colder than the Descent")
 	var nav := raid.get_world_3d().navigation_map
 	var goal := frame * Vector3(0, bottom, c - 6.0)
-	await _wait_for_nav(t, nav, goal)
+	await _wait_for_nav(t, nav, goal, frame * Vector3(8.0, bottom, 168.0))
 	var foot := NavigationServer3D.map_get_closest_point(nav, frame * Vector3(8.0, bottom, 168.0))
 	var path := NavigationServer3D.map_get_path(nav, foot, goal, true)
 	t.check(path.size() > 1 and path[path.size() - 1].distance_to(goal) < 2.0,
@@ -505,7 +505,9 @@ static func _floor_ray(space: PhysicsDirectSpaceState3D, top: Vector3) -> Dictio
 ## frames later: wait until the map has ground where `spot` is, not just any
 ## region (an earlier world's, or the valley's outside), before asking for a
 ## path to it.
-static func _wait_for_nav(t: Node, nav: RID, spot: Vector3) -> void:
+## Waits for the bake to reach `spot` and, given a `from`, to join a path
+## from there to it: the regions bake one by one, so one ready is not all.
+static func _wait_for_nav(t: Node, nav: RID, spot: Vector3, from = null) -> void:
 	# The bake runs on its own thread in real time, which frames run at
 	# `--fixed-fps` (as fast as the machine goes) do not measure: a busy
 	# machine can take longer than 600 such frames. Wait by the clock.
@@ -513,7 +515,12 @@ static func _wait_for_nav(t: Node, nav: RID, spot: Vector3) -> void:
 	while Time.get_ticks_msec() < until:
 		if NavigationServer3D.map_get_iteration_id(nav) > 0 \
 				and NavigationServer3D.map_get_closest_point(nav, spot).distance_to(spot) < 2.0:
-			break
+			if from == null:
+				break
+			var start := NavigationServer3D.map_get_closest_point(nav, from as Vector3)
+			var path := NavigationServer3D.map_get_path(nav, start, spot, true)
+			if path.size() > 1 and path[path.size() - 1].distance_to(spot) < 2.0:
+				break
 		await t.frames(1)
 	# And one more sync, so the regions round it are joined too.
 	await t.frames(2)
