@@ -1,22 +1,29 @@
 extends RefCounted
 ## The armor frame models, built in code and worn the same in every view
 ## (`ActorSkin._update_frame` hangs each piece on the bone it moves with).
-## Grounded military sci-fi (Caleb's tactical pass, concept in the shared
-## folder's ares/tactical-gear): a fabric plate carrier with hard plates
-## over it, padded straps, a cummerbund with webbing rows, pouches with
-## flaps and buckles, a battle belt, segmented shoulder pads, bracers, and
-## knee and shin pads, over the fitted undersuit (`ActorSkin.suit_outfit`).
+## Grounded military sci-fi, made for the people's bodies (Quaternius'
+## Superhero builds): every plate is laid over the body's own measured shape
+## (`body_fit.gd`, `GearShapes.sheet`), so it hugs the chest, the back, the
+## shoulders and the limbs of whichever build wears it, standing off it by
+## the padding under it and bridging the hollows, never a box or a tube.
 ##
-## A frame's weight sets the bulk (light a slim carrier and caps, medium
-## the full kit, heavy layered plate, a gorget, abdominal lames and
-## greaves); its look (`ActorSkin.FRAME_STYLES`) the colours and the
-## details that say what it does. Every piece is merged into a mesh per
-## material (`GearShapes.merge`), listing its parts in the "parts" meta.
-## Pieces on the torso are built round the chest bone, the belt round the
-## hips; a limb piece stands up its limb (Y from the far joint toward this
-## one, front -Z, +X out on the right) from the joint it hangs on.
+## A frame's weight sets the bulk: light a sculpted chest and back shell on
+## a slim harness, shoulder caps, forearm guards and knee and shin plates;
+## medium a plate carrier with a cummerbund, pouches, layered pauldrons and
+## thigh plates; heavy a full cuirass with a gorget, abdominal lames,
+## faulds, big three-lame pauldrons, vambraces, cuisses and greaves. Its
+## look (`ActorSkin.FRAME_STYLES`) sets the colours and the details that
+## say what it does. Every piece is merged into a mesh per material
+## (`GearShapes.merge`), listing its parts in the "parts" meta.
+##
+## Built in the body's own metres (the measured rig, before `Look` sizes
+## it): `ActorSkin` scales a piece by the body's size as it hangs it. The
+## torso is built round the "Chest" bone, the belt round the "Hips" bone;
+## a limb piece stands up its limb (Y from the far joint toward this one,
+## front -Z, +X out on the right) from the joint it hangs on.
 
 const G := preload("res://core/visual/gear_shapes.gd")
+const BodyFit := preload("res://core/visual/body_fit.gd")
 
 
 ## The materials one frame is made of.
@@ -44,312 +51,629 @@ class Kit:
 		details = style.get("details", [])
 
 
+## The trunk of the body a torso piece is built round: heights as a share
+## `f` of the way from the hips bone (0) to the neck bone (1), so a plate
+## lands on the same part of either build, and points relative to the bone
+## the piece hangs on.
+class Trunk:
+	var build: String
+	var origin: Vector3
+	var low: float
+	var high: float
+
+	func _init(b: String, bone: String, side := -1.0) -> void:
+		build = b
+		origin = BodyFit.bone(b, bone)
+		# A limb's bone is its left one: the right one is its mirror.
+		origin.x *= -side
+		low = BodyFit.bone(b, "Hips").y
+		high = BodyFit.bone(b, "Neck").y
+
+	## The height `f` of the way up the trunk, the body's frame.
+	func y(f: float) -> float:
+		return lerpf(low, high, f)
+
+	## The skin at `f` toward angle `a` (0 front, PI/2 right), `gap` out,
+	## relative to the bone. With `drape` (a share of the trunk) it hangs
+	## straight down from the fullest point that far above, as a plate
+	## falls from the chest instead of tucking in under it.
+	func at(f: float, a: float, gap := 0.0, drape := 0.0) -> Vector3:
+		var r := BodyFit.reach(build, y(f), a)
+		for k in 4:
+			if drape != 0.0:
+				r = maxf(r, BodyFit.reach(build, y(f + drape * (k + 1) / 4.0), a))
+		r += gap
+		return Vector3(r * sin(a), y(f), BodyFit.axis_z() - r * cos(a)) - origin
+
+	## Which way is out from the skin there, level.
+	func out(a: float) -> Vector3:
+		return Vector3(sin(a), 0.0, -cos(a))
+
+	## Where a ray from `from` (the body's frame) along `dir` leaves the
+	## skin, `gap` out, relative to the bone: lays a piece over the body
+	## any way round, not only level from its axis (a strap over the top
+	## of a shoulder).
+	func cast(from: Vector3, dir: Vector3, gap: float) -> Vector3:
+		var d := 0.0
+		while d < 0.4 and BodyFit.inside(build, from + dir * d, gap):
+			d += 0.002
+		return from + dir * d - origin
+
+	## A collar's inner face round the base of the neck: laid from a point
+	## inside the neck out over the skin, `e0` to `e1` up from level and
+	## `half` either side of the front, steeper at the sides so it sits on
+	## the tops of the shoulders, not out over them.
+	func collar(e0: float, e1: float, half: float, gap: float) -> Callable:
+		var neck := Vector3(0.0, y(0.84), BodyFit.axis_z())
+		return func(u: float, v: float) -> Vector3:
+			var a := (u * 2.0 - 1.0) * half
+			var e := lerpf(lerpf(e0, maxf(e0, e1 - 0.2), absf(sin(a))), e1, v)
+			return cast(neck, Vector3(sin(a) * cos(e), sin(e), -cos(a) * cos(e)), gap)
+
+	## Which way is out from the skin at `f`, `a`, `gap` out: square to the
+	## surface, so up on the top of a shoulder.
+	func normal(f: float, a: float, gap := 0.0) -> Vector3:
+		var e := 0.01
+		var n := (at(f + e, a, gap) - at(f - e, a, gap)).cross(at(f, a + e, gap) - at(f, a - e, gap))
+		return n.normalized() if n.length() > 0.000001 else out(a)
+
+	## A plate's inner face for `GearShapes.sheet`: from `f0` to `f1` up the
+	## trunk and angle `a0` to `a1` round it, `gap` off the skin. `scoop`
+	## lowers the top edge in the middle (a neckline), `bulge` swells the
+	## middle out, `taper` narrows the top (+) or bottom (-) toward the middle.
+	func wrap(f0: float, f1: float, a0: float, a1: float, gap: float, scoop := 0.0, bulge := 0.0, taper := 0.0,
+			drape := 0.0) -> Callable:
+		return func(u: float, v: float) -> Vector3:
+			var mid := (a0 + a1) * 0.5
+			var half := (a1 - a0) * 0.5 * (1.0 - maxf(taper, 0.0) * v - maxf(-taper, 0.0) * (1.0 - v))
+			var a := mid + (u * 2.0 - 1.0) * half
+			var w := 1.0 - absf(u * 2.0 - 1.0)
+			var top := f1 - scoop * w * w
+			var f := lerpf(f0, top, v)
+			# Never hung from as high as the shoulders: below them, every
+			# plate hangs from the same fullest point, so layers stay layered.
+			return at(f, a, gap + bulge * sin(PI * u) * sin(PI * v), clampf(minf(drape, 0.9 - f), 0.0, drape))
+
+
+## One limb of the body a limb piece is built round (`BodyFit.limb_point`).
+class Limb:
+	var build: String
+	var name: String
+	var side: float
+	var length: float
+
+	## The limb's frame in the body's (as `ActorSkin._hang_limb` hangs it).
+	var frame: Transform3D
+	## The limb above this one (a shin's thigh), whose skin a piece reaching
+	## up past the joint goes over instead of rolling in like a dome.
+	var parent := ""
+
+	func _init(b: String, limb: String, out: float) -> void:
+		build = b
+		name = limb
+		side = out
+		length = BodyFit.limb_length(b, limb)
+		var next: String = {"UpperArm": "LowerArm", "LowerArm": "Wrist", "UpperLeg": "LowerLeg", "LowerLeg": "Foot"}[limb]
+		parent = {"LowerArm": "UpperArm", "LowerLeg": "UpperLeg"}.get(limb, "")
+		var mirror := Vector3(-out, 1, 1)
+		var at := BodyFit.bone(b, limb) * mirror
+		var up := (at - BodyFit.bone(b, next) * mirror).normalized()
+		var front := Vector3.FORWARD - up * up.dot(Vector3.FORWARD)
+		front = front.normalized() if front.length() > 0.1 else Vector3.FORWARD
+		frame = Transform3D(Basis(up.cross(-front).normalized(), up, -front), at)
+
+	## How far the dome from `t0` to the joint must be pushed out at each
+	## of `n` angles across its span (`centre`, `half` either side), a scale
+	## out from the limb's axis, so it clears the trunk's skin by `gap`;
+	## eased across so the cap stays smooth.
+	func _lifts(t0: float, centre: float, half: float, g: float, gap: float, taper: float, n := 24) -> PackedFloat32Array:
+		var lift := PackedFloat32Array()
+		lift.resize(n)
+		for i in n:
+			var need := 1.0
+			for k in 9:
+				var t := lerpf(t0, 0.0, k / 8.0)
+				var a := centre + (float(i) / (n - 1) * 2.0 - 1.0) * half * lerpf(1.0, taper, t / t0)
+				var p := _dome(t, a, g)
+				var s := 1.0
+				while s < 1.25 and _sinks(frame * (p * Vector3(s, 1.0, s)), gap):
+					s += 0.01
+				need = maxf(need, s)
+			lift[i] = need
+		var eased := lift.duplicate()
+		for i in n:
+			eased[i] = maxf(lift[i], maxf(lift[mini(i + 1, n - 1)], lift[maxi(i - 1, 0)]) * 0.97)
+		return eased
+
+	## Whether `p` (the limb's rest place, the body's frame) is in the
+	## trunk in any stance the limb is carried in (an upper arm's, hanging
+	## down, `BodyFit.arm_poses`), or at rest for another limb.
+	func _sinks(p: Vector3, gap: float) -> bool:
+		if name != "UpperArm":
+			return BodyFit.inside(build, p, gap)
+		for pose: Transform3D in BodyFit.arm_poses(build, side):
+			if BodyFit.inside(build, pose * p, gap):
+				return true
+		return false
+
+	func _dome(t: float, a: float, g: float) -> Vector3:
+		var rim := at(0.0, a, g)
+		var r := Vector2(rim.x, rim.z).length()
+		var past := minf(-t * length, r * 0.92)
+		var ring := sqrt(r * r - past * past)
+		return Vector3(rim.x * ring / r, past, rim.z * ring / r)
+
+	## The skin `t` of the way down the limb (0 the joint) toward angle `a`
+	## (0 front, PI/2 the piece's +X), `gap` out.
+	func at(t: float, a: float, gap := 0.0) -> Vector3:
+		return BodyFit.limb_point(build, name, t * length, a, side, gap)
+
+	## A plate's inner face: from `t0` to `t1` down the limb, `half` either
+	## side of angle `centre`, `gap` off the skin; `bulge` swells it out in
+	## the middle, `flare` opens its top end (+) out. Past the joint (`t`
+	## under 0) it rolls in over the end of the limb like a dome (a
+	## shoulder cap), never standing out as a shelf.
+	## A dome lifts off the trunk where it would sink into it (`clear`, the
+	## gap it keeps, so a shoulder cap rides over the straps). Below a
+	## parent limb (a knee, an elbow) it carries on up over the parent's
+	## skin instead.
+	func wrap(t0: float, t1: float, centre: float, half: float, gap: float, bulge := 0.0, flare := 0.0, clear := -1.0,
+			taper := 1.0) -> Callable:
+		var lifts := _lifts(t0, centre, half, gap + bulge, clear, taper) if t0 < 0.0 and clear >= 0.0 and parent == "" else PackedFloat32Array()
+		return func(u: float, v: float) -> Vector3:
+			var t := lerpf(t1, t0, v)
+			# Past the joint the dome narrows by `taper` toward its crown, so it
+			# caps the shoulder instead of reaching round onto the chest and back.
+			var a := centre + (u * 2.0 - 1.0) * half * (lerpf(1.0, taper, t / t0) if t < 0.0 else 1.0)
+			var g := gap + bulge * sin(PI * u) * sin(PI * v) + flare * v * v
+			if t >= 0.0:
+				return at(t, a, g)
+			if parent != "":
+				var up := -t * length
+				# The parent's last cuts, at the joint, are ragged (little of
+				# its skin reaches them): read it a little up, eased round.
+				var pt := minf(0.88, 1.0 - up / BodyFit.limb_length(build, parent))
+				var r := 0.0
+				for da: float in [-0.25, 0.0, 0.25]:
+					r = maxf(r, maxf(BodyFit.limb_reach(build, name, 0.0, a + da, side),
+							BodyFit.limb_reach(build, parent, pt, a + da, side)))
+				r += g
+				return Vector3(r * sin(a), up, -r * cos(a))
+			var p := _dome(t, a, g)
+			if lifts.is_empty():
+				return p
+			var f := u * (lifts.size() - 1)
+			var i := mini(int(f), lifts.size() - 2)
+			var s := lerpf(lifts[i], lifts[i + 1], f - i)
+			# Lifted over the trunk, none at the joint's rim.
+			var k := lerpf(1.0, s, smoothstep(0.0, -t0 * 0.5, -t))
+			return p * Vector3(k, 1.0, k)
+
+
 static func _root(piece: String) -> Node3D:
 	var root := Node3D.new()
 	root.name = piece
 	return root
 
 
-## A pouch: a body, a flap over its top with a buckle, a seam along its foot.
-static func pouch(root: Node3D, m: Kit, size: Vector3, at: Vector3, basis := Basis.IDENTITY, body: Material = null) -> void:
-	G.box(root, "Pouch", size, body if body else m.fabric, at, minf(0.007, size.x * 0.15), basis)
+## A plate over the body: `point` from a `Trunk.wrap` or `Limb.wrap`.
+static func plate(root: Node3D, part: String, point: Callable, thick: float, material: Material, cols := 16, rows := 7) -> void:
+	# Marked as a plate laid over the body, so `tools/armor_fit` checks it
+	# against the other plates of its piece.
+	G.add(root, part, G.sheet(point, thick, cols, rows, minf(0.02, thick * 1.4 + 0.006)), material).set_meta("sheet", true)
+
+
+## Something flat stood on the skin at `at` facing `out`: a box `size`
+## (x across, y up, z off the surface).
+static func on(root: Node3D, part: String, size: Vector3, material: Material, at: Vector3, out: Vector3, r := 0.003,
+		turn := 0.0) -> void:
+	var z := -out.normalized()
+	var x := Vector3.UP.cross(z).normalized() if absf(z.y) < 0.95 else Vector3.RIGHT
+	var y := z.cross(x)
+	var b := Basis(x, y, z) * Basis(Vector3.BACK, turn)
+	G.box(root, part, size, material, at + out.normalized() * size.z * 0.5, r, b)
+
+
+## A pouch on a surface facing `out`: a body, a flap over its top with a
+## buckle, a seam along its foot.
+static func pouch(root: Node3D, m: Kit, size: Vector3, at: Vector3, out: Vector3, body: Material = null) -> void:
+	var z := -out.normalized()
+	var x := Vector3.UP.cross(z).normalized() if absf(z.y) < 0.95 else Vector3.RIGHT
+	var basis := Basis(x, z.cross(x), z)
+	var mid := at + out.normalized() * size.z * 0.5
+	G.box(root, "Pouch", size, body if body else m.fabric, mid, minf(0.007, size.x * 0.15), basis)
 	var flap := Vector3(size.x * 1.05, size.y * 0.34, size.z * 1.08)
-	var top := at + basis * Vector3(0, size.y * 0.5 - flap.y * 0.45, -size.z * 0.02)
+	var top := mid + basis * Vector3(0, size.y * 0.5 - flap.y * 0.45, 0)
 	G.box(root, "Flap", flap, m.strap, top, minf(0.006, flap.y * 0.3), basis)
 	G.box(root, "Buckle", Vector3(size.x * 0.32, flap.y * 0.5, 0.006), m.metal, top + basis * Vector3(0, -flap.y * 0.35, -flap.z * 0.5),
 			0.0015, basis)
-	G.box(root, "Seam", Vector3(size.x * 1.02, 0.005, size.z * 1.03), m.strap, at + basis * Vector3(0, -size.y * 0.42, 0), 0.0015, basis)
+	G.box(root, "Seam", Vector3(size.x * 1.02, 0.005, size.z * 1.03), m.strap, mid + basis * Vector3(0, -size.y * 0.42, 0), 0.0015, basis)
 
 
-## The torso: the carrier, its plates and what hangs on it, round the chest
-## bone. Named plates: "Chest" and "Back" always, "Side" for a cummerbund,
-## "Collar" (the gorget) and "Belly" lames on heavy.
-static func torso(weight: String, style: Dictionary) -> Node3D:
+## ---------------------------------------------------------------- torso
+
+## The torso round the chest bone. Named plates: "Chest" and "Back" always,
+## "Carrier" under them, "Strap" over the shoulders, "Side" for a
+## cummerbund (not light), "Collar" (the gorget) and "Belly" lames on heavy.
+static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 	var root := _root("FrameModel")
 	var m := Kit.new(style)
+	var b := Trunk.new(build, "Chest")
 	var heavy := weight == "heavy"
 	var light := weight == "light"
-	var mid := Vector3(0, -0.02, 0.0)
 	# Scrap is strapped on crooked.
-	var tilt := Basis(Vector3.BACK, 0.06) if "patches" in m.details else Basis.IDENTITY
-	var rx := 0.15
-	var rz := 0.125
-	var low := -0.2
-	var high := 0.12
-	# The carrier: fabric front and back panels.
-	var wrap := 0.95 if heavy else 0.82
-	G.add(root, "Carrier", G.band(rx, rz, -wrap, wrap, low, high, 0.018, 0.012, 0.06), m.fabric, mid)
-	G.add(root, "Carrier", G.band(rx, rz, PI - wrap, PI + wrap, low, high - 0.01, 0.018, 0.008, 0.06), m.fabric, mid)
-	# The hard plates over them, thicker and further out the heavier it is.
-	var pw := wrap * 0.82
-	var front_z := -(rz + 0.018)
+	var skew := 0.08 if "patches" in m.details else 0.0
+	# The carrier (fabric) under the plates, front and back.
+	var cw := 1.1 if light else 1.25
+	var cg := 0.009
+	plate(root, "Carrier", b.wrap(0.36 if light else 0.3, 0.86, -cw, cw, cg, 0.07, 0.0, 0.0, 0.25), 0.01, m.fabric)
+	var bw := cw * 0.78
+	plate(root, "Carrier", b.wrap(0.34 if light else 0.3, 0.88, PI - bw, PI + bw, cg, 0.03, 0.0, 0.18, 0.08), 0.01, m.fabric)
+	# The hard plates: sculpted over the chest, thicker and further out the
+	# heavier the frame.
+	# Out past the carrier (and the straps' ends) under it.
+	var pg := 0.036
+	var pt: float = {"light": 0.012, "medium": 0.016, "heavy": 0.018}[weight]
+	var pw: float = {"light": 0.85, "medium": 0.98, "heavy": 1.12}[weight]
+	var chest_low := 0.42 if heavy else 0.5
+	# Heavy is a cuirass with a keel down its middle, narrowing to the
+	# shoulders so it never reads as a box.
+	plate(root, "Chest", b.wrap(chest_low, 0.88, -pw + skew, pw + skew, pg, 0.1 if heavy else 0.07, 0.014 if heavy else 0.008, 0.2 if heavy else 0.12,
+			0.25), pt, m.plate, 20, 9)
+	# The back plate stays between the shoulder blades and narrows to the
+	# top, so from behind it never reads wider than the back.
+	var back_w: float = {"light": 0.68, "medium": 0.76, "heavy": 0.98}[weight]
+	plate(root, "Back", b.wrap(0.44 if heavy else 0.48, 0.9, PI - back_w, PI + back_w, pg, 0.03, 0.004, 0.2, 0.2), pt, m.plate, 20, 9)
+	_plate_lines(root, m, b, chest_low, pw, pg + pt, heavy, back_w)
 	if heavy:
-		G.add(root, "Chest", G.band(rx + 0.018, rz + 0.02, -pw * 1.1, pw * 1.1, low + 0.04, high + 0.005, 0.024, 0.02, 0.1),
-				m.plate, mid, tilt)
-		# Layered abdominal lames below, each edged in steel.
+		# The cuirass closes down the sides, layered abdominal lames under it,
+		# each edged in steel.
+		for side: float in [-1.0, 1.0]:
+			plate(root, "SidePlate", b.wrap(0.44, 0.62, side * 1.5 - 0.26, side * 1.5 + 0.26, 0.048, 0.0, 0.0, 0.0, 0.25), pt * 0.7, m.plate2, 8, 6)
+		# Edge to edge down from the chest plate, over the carrier; the
+		# lowest stops above the belt.
 		for k in 3:
-			var top := low + 0.045 - k * 0.055
-			G.add(root, "Belly" if k == 0 else "Belly%d" % k, G.band(rx + 0.012 + k * 0.004, rz + 0.016 + k * 0.004,
-					-0.95 + k * 0.08, 0.95 - k * 0.08, top - 0.06, top, 0.016, 0.006), m.plate2 if k % 2 else m.plate, mid)
-			G.add(root, "LameEdge", G.band(rx + 0.03 + k * 0.004, rz + 0.034 + k * 0.004, -0.9 + k * 0.08, 0.9 - k * 0.08,
-					top - 0.008, top - 0.002, 0.004), m.metal, mid)
-		G.add(root, "Back", G.band(rx + 0.018, rz + 0.02, PI - pw, PI + pw, low + 0.02, high, 0.024, 0.016, 0.08), m.plate, mid)
-		# The gorget, edged in steel.
-		G.add(root, "Collar", G.band(0.105, 0.098, -2.3, 2.3, high - 0.01, high + 0.06, 0.016, 0.0, -0.35), m.plate2,
-				mid + Vector3(0, 0, -0.005))
-		G.add(root, "CollarEdge", G.band(0.112, 0.105, -2.2, 2.2, high + 0.045, high + 0.055, 0.006, 0.0, -0.3), m.metal,
-				mid + Vector3(0, 0, -0.005))
-		G.add(root, "ChestEdge", G.band(rx + 0.04, rz + 0.042, -pw * 1.05, pw * 1.05, high - 0.012, high - 0.002, 0.006, 0.0, 0.1),
-				m.metal, mid)
-	else:
-		var t := 0.014 if light else 0.018
-		G.add(root, "Chest", G.band(rx + 0.016, rz + 0.018, -pw, pw, low + 0.06, high - 0.01, t, 0.016, 0.08), m.plate, mid, tilt)
-		G.add(root, "Back", G.band(rx + 0.016, rz + 0.018, PI - pw, PI + pw, low + 0.04, high - 0.02, t, 0.012, 0.08), m.plate, mid)
-	_plate_depth(root, m, mid, rx, rz, low, high, pw, heavy, light)
-	# Padded shoulder straps over the top of each shoulder, buckled onto
-	# the top of the plate in front and behind.
-	var plate_z := rz + (0.044 if heavy else 0.036)
-	for x: float in [-0.085, 0.085]:
-		G.add(root, "Strap", G.band(0.07, 0.125, -0.15, PI + 0.15, -0.022, 0.022, 0.014), m.fabric,
-				mid + Vector3(x, high - 0.015, 0.0), Basis(Vector3.BACK, PI * 0.5))
-		for z: float in [-plate_z, plate_z]:
-			G.box(root, "StrapBuckle", Vector3(0.048, 0.03, 0.01), m.strap, mid + Vector3(x, high - 0.032, z), 0.004,
-					Basis(Vector3.RIGHT, 0.18 * signf(z)))
+			var top := chest_low - k * 0.075
+			var w := 1.05 - k * 0.08
+			plate(root, "Belly" if k == 0 else "Belly%d" % k, b.wrap(top - 0.073, top - 0.002, -w, w, 0.022 + k * 0.004, 0.0, 0.004, 0.0, 0.25),
+					pt * 0.8,
+					m.plate2 if k % 2 else m.plate, 16, 4)
+			plate(root, "LameEdge", b.wrap(top - 0.078, top - 0.063, -w + 0.04, w - 0.04, 0.022 + pt * 0.8 + k * 0.004, 0.0, 0.0, 0.0, 0.25), 0.004,
+					m.metal, 16, 1)
+		# A keel down the middle of the cuirass, and a pressed V from each
+		# shoulder to it, so the chest reads sculpted, not boxed.
+		plate(root, "Keel", b.wrap(0.5, 0.82, -0.07, 0.07, pg + pt - 0.002, 0.0, 0.006), 0.008, m.plate2, 3, 6)
+		for side: float in [-1.0, 1.0]:
+			var points := []
+			for k in 5:
+				var s := float(k) / 4.0
+				points.append(b.at(lerpf(0.84, 0.6, s), side * lerpf(0.95, 0.08, s), pg + pt - 0.001))
+			_strap(root, m, points, 0.01, 0.004, m.plate2, "VLine")
+		# The gorget round the neck, edged in steel.
+		# Over the shoulder straps.
+		plate(root, "Collar", b.collar(0.25, 0.78, 1.9, 0.048), 0.014, m.plate2, 20, 5)
+		plate(root, "CollarEdge", b.collar(0.75, 0.79, 1.85, 0.063), 0.005, m.metal, 20, 1)
+	# Shoulder straps from under the chest plate, over the top of each
+	# shoulder between the neck and the joint, to under the back plate,
+	# laid on the skin all the way across.
+	var joint := absf(BodyFit.bone(build, "UpperArm").x)
+	var sw := 0.055 if heavy else 0.045
+	for side: float in [-1.0, 1.0]:
+		var sx := side * joint * 0.6
+		var from := Vector3(sx, b.y(0.8), BodyFit.axis_z())
+		# Over the carrier, tucked under the plates at each end.
+		var strap := func(u: float, v: float) -> Vector3:
+			var phi := lerpf(0.12, PI - 0.12, v)
+			return b.cast(from + Vector3((u - 0.5) * sw, 0.0, 0.0), Vector3(0.0, sin(phi), -cos(phi)), cg + 0.015)
+		plate(root, "Strap", strap, 0.008, m.fabric, 2, 14)
 	# The cummerbund round the sides with webbing rows; elastic on light.
 	for side: float in [-1.0, 1.0]:
-		var from := wrap * 0.85 if side > 0 else -PI + wrap * 0.85
-		var to := PI - wrap * 0.85 if side > 0 else -wrap * 0.85
+		var a0 := side * (cw - 0.15)
+		var a1 := side * (PI - cw + 0.15)
 		if light:
 			for k in 2:
-				G.add(root, "Elastic", G.band(rx - 0.004, rz - 0.004, from, to, low + 0.03 + k * 0.05, low + 0.055 + k * 0.05, 0.008),
-						m.strap, mid)
+				var f := 0.42 + k * 0.08
+				plate(root, "Elastic", b.wrap(f, f + 0.035, minf(a0, a1), maxf(a0, a1), 0.022), 0.006, m.strap, 10, 1)
 			continue
-		G.add(root, "Side", G.band(rx - 0.004, rz - 0.004, from, to, low, low + 0.13, 0.016, 0.004), m.fabric, mid)
+		# Over the carrier's edges.
+		plate(root, "Side", b.wrap(0.28, 0.55, minf(a0, a1), maxf(a0, a1), 0.026, 0.0, 0.0, 0.0, 0.25), 0.014, m.fabric, 10, 4)
 		for k in 3:
-			G.add(root, "Webbing", G.band(rx + 0.013, rz + 0.013, from + 0.05, to - 0.05, low + 0.025 + k * 0.035,
-					low + 0.035 + k * 0.035, 0.004), m.strap, mid)
-	# Magazine pouches across the front, each with its cell's lit gauge.
-	var pz := front_z - 0.03 - (0.02 if heavy else 0.0)
+			var f := 0.32 + k * 0.07
+			plate(root, "Webbing", b.wrap(f, f + 0.018, minf(a0, a1) + 0.06, maxf(a0, a1) - 0.06, 0.044, 0.0, 0.0, 0.0, 0.25), 0.004, m.strap, 10, 1)
+	# Magazine pouches across the front below the plate, each with its cell's
+	# lit gauge.
 	var mags := 2 if light else 3
-	var py := low - 0.01 if heavy else low + 0.03
+	var pf := 0.36 if heavy else 0.42
 	for i in mags:
-		var x := (i - (mags - 1) * 0.5) * 0.062
-		pouch(root, m, Vector3(0.056, 0.085, 0.036), mid + Vector3(x, py, pz), Basis.IDENTITY, m.plate2 if heavy else m.fabric)
-		G.box(root, "Gauge", Vector3(0.022, 0.005, 0.004), m.dim, mid + Vector3(x, py - 0.012, pz - 0.019), 0.001)
+		var a := (i - (mags - 1) * 0.5) * 0.36
+		var at := b.at(pf, a, pg + pt + (0.004 if not heavy else 0.008))
+		pouch(root, m, Vector3(0.058, 0.09, 0.036), at, b.out(a), m.plate2 if heavy else m.fabric)
+		on(root, "Gauge", Vector3(0.022, 0.005, 0.004), m.dim, at + b.out(a) * 0.036 + Vector3(0, -0.012, 0), b.out(a), 0.001)
 	if not heavy:
-		# A thin status strip on the plate.
-		G.box(root, "Status", Vector3(0.045, 0.006, 0.004), m.glow, mid + Vector3(-0.06, 0.06, front_z - 0.042), 0.001,
-				Basis(Vector3.UP, 0.35))
-	# A drag handle on every carrier.
-	G.box(root, "Handle", Vector3(0.07, 0.018, 0.012), m.strap, mid + Vector3(0, high, rz + 0.045), 0.005)
-	_torso_details(root, m, mid, rx, rz, low, high, front_z, pz, light)
+		# A thin status strip high on the plate.
+		on(root, "Status", Vector3(0.045, 0.006, 0.004), m.glow, b.at(0.8, -0.32, pg + pt), b.out(-0.32), 0.001)
+	# A drag handle at the top of the back plate.
+	on(root, "Handle", Vector3(0.08, 0.02, 0.014), m.strap, b.at(0.9, PI, pg + pt), b.out(PI) + Vector3(0, 0.3, 0), 0.005)
+	_torso_details(root, m, b, pg + pt, light, heavy)
 	return G.merge(root)
 
 
-## Depth on the hard plates, so they read as moulded armor, never slabs: a
-## raised rim along the top and down each side, two pressed panel lines
-## across them, and an ID placard on the chest plate.
-static func _plate_depth(root: Node3D, m: Kit, mid: Vector3, rx: float, rz: float, low: float, high: float, pw: float,
-		heavy: bool, light: bool) -> void:
-	# Where the plate's face is: its offset off the carrier plus its thickness.
-	var out := 0.044 if heavy else (0.032 if light else 0.036)
-	var top := high + (0.005 if heavy else -0.01)
-	var bottom := low + (0.04 if heavy else 0.06)
+## A strap laid along `points` (on the body), `width` wide, `thick` thick.
+## `normals`, one a point, lay it flat on the surface; without them it
+## stands square to the level out from the trunk's axis.
+static func _strap(root: Node3D, m: Kit, points: Array, width: float, thick: float, material: Material = null, part := "Strap",
+		normals: Array = []) -> void:
+	var n := points.size()
+	var point := func(u: float, v: float) -> Vector3:
+		var f := v * (n - 1)
+		var k := mini(int(f), n - 2)
+		var p: Vector3 = (points[k] as Vector3).lerp(points[k + 1], f - k)
+		var along: Vector3 = (points[k + 1] - points[k]).normalized()
+		var level := Vector3(p.x, 0.0, p.z).normalized() if Vector3(p.x, 0, p.z).length() > 0.01 else Vector3.FORWARD
+		var up: Vector3 = (normals[k] as Vector3).lerp(normals[k + 1], f - k).normalized() if not normals.is_empty() else level
+		# Across the strap: square to its run, flat on the surface.
+		var across := along.cross(up)
+		across = across.normalized() if across.length() > 0.001 else Vector3.RIGHT
+		return p + across * (u - 0.5) * width
+	G.add(root, part, G.sheet(point, thick, 2, (n - 1) * 2, 0.008), material if material else m.fabric).set_meta("sheet", true)
+
+
+## Depth on the chest and back plates, so they read as moulded armor: a
+## raised rim round the top, a pressed line under the pecs and down the
+## middle, and an ID placard on the chest.
+static func _plate_lines(root: Node3D, m: Kit, b: Trunk, low: float, front_w: float, out: float, heavy: bool,
+		back_w := 0.8) -> void:
 	for back: float in [0.0, PI]:
-		var span := pw * (1.1 if heavy and back == 0.0 else 1.0)
-		var top_here := top - (0.01 if back > 0.0 else 0.0)
-		var bottom_here := bottom - (0.02 if back > 0.0 else 0.0)
-		G.add(root, "PlateRim", G.band(rx + out - 0.006, rz + out - 0.006, back - span, back + span, top_here - 0.012, top_here, 0.008),
-				m.plate2, mid)
-		for side: float in [-1.0, 1.0]:
-			var a := back + side * (span - 0.04)
-			G.add(root, "PlateRim", G.band(rx + out - 0.006, rz + out - 0.006, minf(a, a - side * 0.06), maxf(a, a - side * 0.06),
-					bottom_here, top_here - 0.012, 0.007), m.plate2, mid)
-		for k in 2:
-			var y := lerpf(bottom_here, top_here, 0.36 + k * 0.3)
-			# Following the plate's swell, just proud of it.
-			G.add(root, "PanelLine", G.band(rx + out - 0.002, rz + out - 0.002, back - span * 0.82, back + span * 0.82, y, y + 0.004, 0.004,
-					0.014), m.plate2, mid)
-	if not light:
-		# An ID placard high on the chest, with a lit tag.
-		G.box(root, "Placard", Vector3(0.09, 0.034, 0.008), m.plate2, mid + Vector3(0.0, top - 0.04, -rz - out - 0.012), 0.003)
-		G.box(root, "PlacardTag", Vector3(0.024, 0.01, 0.004), m.dim, mid + Vector3(-0.026, top - 0.04, -rz - out - 0.017), 0.001)
+		var pw := front_w if back == 0.0 else back_w * 0.85
+		var top := 0.88 if back == 0.0 else 0.9
+		var scoop := 0.07 if back == 0.0 else 0.03
+		plate(root, "PlateRim", b.wrap(top - 0.03, top, back - pw + 0.04, back + pw - 0.04, out - 0.004, scoop), 0.007, m.plate2, 18, 1)
+		# Under the pecs (front) or the shoulder blades (back).
+		var f := lerpf(low, top, 0.42)
+		plate(root, "PanelLine", b.wrap(f, f + 0.012, back - pw * 0.8, back + pw * 0.8, out - 0.002, -0.05), 0.004, m.plate2, 16, 1)
+		# Down the middle.
+		plate(root, "PanelLine", b.wrap(low + 0.04, top - 0.12, back - 0.02, back + 0.02, out - 0.002), 0.004, m.plate2, 1, 6)
+	if heavy or front_w > 0.9:
+		var at := b.at(0.78, 0.0, out)
+		on(root, "Placard", Vector3(0.09, 0.034, 0.008), m.plate2, at, Vector3.FORWARD)
+		on(root, "PlacardTag", Vector3(0.024, 0.01, 0.004), m.dim, at + Vector3(-0.026, 0, -0.008), Vector3.FORWARD, 0.001)
 
 
 ## What says which frame it is, on top of its weight.
-static func _torso_details(root: Node3D, m: Kit, mid: Vector3, rx: float, rz: float, low: float, high: float,
-		front_z: float, pz: float, light: bool) -> void:
+static func _torso_details(root: Node3D, m: Kit, b: Trunk, out: float, light: bool, heavy: bool) -> void:
 	var d := m.details
 	if "patches" in d:
 		# Patch plates bolted over the rust, a rivet at each corner.
-		for p: Array in [[Vector3(0.05, 0.03, 0.0), Vector2(0.07, 0.05), 0.25], [Vector3(-0.06, -0.02, 0.0), Vector2(0.055, 0.05), -0.18]]:
-			var at: Vector3 = mid + p[0] + Vector3(0, 0, front_z - 0.02)
-			var size: Vector2 = p[1]
-			var b := Basis(Vector3.BACK, p[2])
-			G.box(root, "Patch", Vector3(size.x, size.y, 0.007), m.metal, at, 0.002, b)
+		for p: Array in [[0.7, 0.35, Vector2(0.075, 0.055), 0.25], [0.58, -0.4, Vector2(0.06, 0.05), -0.18]]:
+			var at := b.at(p[0], p[1], out)
+			var size: Vector2 = p[2]
+			on(root, "Patch", Vector3(size.x, size.y, 0.007), m.metal, at, b.out(p[1]), 0.002, p[3])
 			for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-				G.box(root, "Rivet", Vector3.ONE * 0.01, m.plate2, at + b * Vector3(c.x * size.x * 0.38, c.y * size.y * 0.36, -0.004), 0.003)
+				var turn := Basis(Vector3.UP, -float(p[1])) * Basis(Vector3.BACK, p[3])
+				on(root, "Rivet", Vector3.ONE * 0.01, m.plate2, at + turn * Vector3(c.x * size.x * 0.38, c.y * size.y * 0.36, 0) + b.out(p[1]) * 0.006,
+						b.out(p[1]), 0.003)
 	if "spine" in d or light:
-		# A slim utility panel on the back; a runner's with cool vents down it.
-		G.box(root, "BackPanel", Vector3(0.12, 0.12, 0.025), m.fabric, mid + Vector3(0, -0.02, rz + 0.04), 0.008)
-		G.box(root, "PanelLight", Vector3(0.006, 0.08, 0.004), m.glow, mid + Vector3(0, -0.02, rz + 0.054), 0.001)
+		# A slim spine panel on the back; a runner's lit down its length.
+		on(root, "BackPanel", Vector3(0.06, 0.16, 0.022), m.plate2, b.at(0.66, PI, out), b.out(PI), 0.008)
+		on(root, "PanelLight", Vector3(0.008, 0.12, 0.004), m.glow, b.at(0.66, PI, out + 0.022), b.out(PI), 0.001)
 	if "radio" in d:
 		# A radio on the left side, its antenna up the back.
-		G.box(root, "Radio", Vector3(0.04, 0.1, 0.06), m.fabric, mid + Vector3(-rx - 0.03, low + 0.07, 0.01), 0.008)
-		G.box(root, "RadioHead", Vector3(0.03, 0.03, 0.045), m.plate2, mid + Vector3(-rx - 0.03, low + 0.13, 0.01), 0.005)
-		G.box(root, "RadioLight", Vector3(0.006, 0.006, 0.006), m.glow, mid + Vector3(-rx - 0.05, low + 0.13, -0.005), 0.001)
-		G.cyl(root, "Antenna", 0.003, 0.3, m.rubber, mid + Vector3(-rx + 0.01, high + 0.06, rz + 0.04), Basis(Vector3.BACK, 0.12), 6)
+		# Behind the arm, so the arm hanging by the side never meets it.
+		var a := -2.35
+		var up := 0.07 / (b.high - b.low)
+		on(root, "Radio", Vector3(0.05, 0.11, 0.04), m.fabric, b.at(0.45, a, 0.034), b.out(a), 0.008)
+		on(root, "RadioHead", Vector3(0.035, 0.03, 0.045), m.plate2, b.at(0.45 + up, a, 0.038), b.out(a), 0.005)
+		on(root, "RadioLight", Vector3(0.006, 0.006, 0.006), m.glow, b.at(0.45 + up, a, 0.062), b.out(a), 0.001)
+		G.cyl(root, "Antenna", 0.003, 0.32, m.rubber, b.at(0.86, -2.6, out + 0.01) + Vector3(0, 0.14, 0), Basis(Vector3.BACK, 0.12), 6)
 	if "admin" in d:
 		# An admin pouch over the mags, its tag lit.
-		G.box(root, "Admin", Vector3(0.12, 0.06, 0.02), m.fabric, mid + Vector3(0, low + 0.12, pz + 0.012), 0.006)
-		G.box(root, "AdminTag", Vector3(0.05, 0.022, 0.004), m.glow, mid + Vector3(0.025, low + 0.125, pz), 0.001)
+		var at := b.at(0.53, 0.0, out + 0.002)
+		on(root, "Admin", Vector3(0.12, 0.06, 0.02), m.fabric, at, Vector3.FORWARD, 0.006)
+		on(root, "AdminTag", Vector3(0.05, 0.02, 0.004), m.glow, at + Vector3(0.025, 0, -0.02), Vector3.FORWARD, 0.001)
 	if "hydration" in d:
 		# A hydration carrier on the back, webbing across it.
-		G.box(root, "Hydration", Vector3(0.15, 0.2, 0.04), m.fabric, mid + Vector3(0, -0.04, rz + 0.05), 0.012)
+		# Hung like the back plate under it.
+		plate(root, "Hydration", b.wrap(0.48, 0.82, PI - 0.55, PI + 0.55, out + 0.008, 0.0, 0.0, 0.0, 0.2), 0.03, m.fabric, 10, 6)
 		for k in 4:
-			G.box(root, "Webbing", Vector3(0.152, 0.006, 0.042), m.strap, mid + Vector3(0, -0.11 + k * 0.04, rz + 0.05), 0.002)
+			var f := 0.52 + k * 0.08
+			plate(root, "Webbing", b.wrap(f, f + 0.014, PI - 0.56, PI + 0.56, out + 0.048, 0.0, 0.0, 0.0, 0.2), 0.004, m.strap, 10, 1)
 	if "vents" in d:
 		# Heat vents in the back plate, glowing: it runs hot.
-		for x: float in [-0.05, 0.05]:
-			G.box(root, "VentFrame", Vector3(0.055, 0.1, 0.012), m.plate2, mid + Vector3(x, -0.02, rz + 0.065), 0.003)
+		for x: float in [-0.32, 0.32]:
+			on(root, "VentFrame", Vector3(0.06, 0.12, 0.012), m.plate2, b.at(0.68, PI + x, out), b.out(PI + x), 0.003)
 			for k in 4:
-				G.box(root, "Vent", Vector3(0.04, 0.007, 0.006), m.glow, mid + Vector3(x, -0.055 + k * 0.024, rz + 0.072), 0.001)
+				on(root, "Vent", Vector3(0.044, 0.008, 0.006), m.glow, b.at(0.68, PI + x, out + 0.01) + Vector3(0, -0.04 + k * 0.026, 0),
+						b.out(PI + x), 0.001)
 	if "chevrons" in d:
 		for x: float in [-1.0, 1.0]:
-			G.box(root, "Chevron", Vector3(0.05, 0.008, 0.004), m.glow, mid + Vector3(x * 0.075, 0.04, front_z - 0.055), 0.001,
-					Basis(Vector3.BACK, x * 0.35))
+			on(root, "Chevron", Vector3(0.05, 0.008, 0.004), m.glow, b.at(0.66, x * 0.42, out), b.out(x * 0.42), 0.001, x * 0.35)
 	if "quilt" in d:
 		# A padded collar and quilted rings at the waist.
-		G.add(root, "Quilt", G.band(0.098, 0.088, -PI, PI, high - 0.01, high + 0.035, 0.016, 0.012, -0.2), m.fabric,
-				mid + Vector3(0, 0, -0.005))
-		for k in 2:
-			var top := low - 0.004 - k * 0.034
-			G.add(root, "Quilt", G.band(rx - 0.01, rz - 0.01, -PI, PI, top - 0.032, top, 0.012, 0.01), m.fabric, mid)
+		plate(root, "Quilt", b.collar(0.55, 0.85, PI, 0.05), 0.016, m.fabric, 24, 4)
+		# Between the belt and the carrier.
+		plate(root, "Quilt", b.wrap(0.205, 0.28, -PI, PI, 0.008, 0.0, 0.006), 0.012, m.fabric, 24, 2)
 	if "coils" in d:
 		# Heat coils glowing across the chest plate.
 		for k in 3:
-			var y := low + 0.09 + k * 0.03
-			G.add(root, "Coil", G.band(rx + 0.034, rz + 0.04, -0.6, 0.6, y, y + 0.006, 0.003), m.glow, mid)
+			var f := 0.6 + k * 0.06
+			plate(root, "Coil", b.wrap(f, f + 0.012, -0.55, 0.55, out + 0.001), 0.003, m.glow, 12, 1)
 	if "heater" in d:
 		# A heater pack low on the back, its grille lit.
-		G.box(root, "Heater", Vector3(0.15, 0.1, 0.05), m.plate, mid + Vector3(0, low + 0.02, rz + 0.06), 0.01)
+		on(root, "Heater", Vector3(0.16, 0.1, 0.05), m.plate, b.at(0.4, PI, out), b.out(PI), 0.01)
 		for k in 3:
-			G.box(root, "Grille", Vector3(0.11, 0.008, 0.004), m.glow, mid + Vector3(0, low - 0.005 + k * 0.025, rz + 0.087), 0.001)
+			on(root, "Grille", Vector3(0.11, 0.008, 0.004), m.glow, b.at(0.4, PI, out + 0.05) + Vector3(0, -0.025 + k * 0.025, 0),
+					b.out(PI), 0.001)
 
+
+## ---------------------------------------------------------------- belt
 
 ## A battle belt round the hips with pouches; heavy adds armored faulds.
-static func belt(weight: String, style: Dictionary) -> Node3D:
+static func belt(weight: String, style: Dictionary, build := "m") -> Node3D:
 	var root := _root("BeltModel")
 	var m := Kit.new(style)
-	var mid := Vector3(0, 0.07, 0.02)
-	var rx := 0.15
-	var rz := 0.12
-	G.add(root, "Belt", G.band(rx, rz, -PI, PI, -0.02, 0.025, 0.014), m.strap, mid)
-	G.box(root, "BeltBuckle", Vector3(0.05, 0.035, 0.01), m.metal, mid + Vector3(0, 0.002, -rz - 0.016), 0.003)
-	var pouches := [[-1.3, Vector3(0.05, 0.07, 0.04)], [1.3, Vector3(0.05, 0.07, 0.04)], [2.2, Vector3(0.07, 0.06, 0.04)]]
+	var b := Trunk.new(build, "Hips")
+	# A padded battle belt under a webbing belt, wide enough to read on
+	# every frame.
+	var f0 := 0.06
+	var f1 := 0.19
+	for half: float in [0.0, PI]:
+		plate(root, "BeltPad", b.wrap(f0, f1, half - PI * 0.5, half + PI * 0.5, 0.006), 0.014, m.fabric, 16, 3)
+		plate(root, "Belt", b.wrap(f0 + 0.025, f1 - 0.025, half - PI * 0.5, half + PI * 0.5, 0.028), 0.01, m.strap, 16, 2)
+	var mid := (f0 + f1) * 0.5
+	on(root, "BeltBuckle", Vector3(0.075, 0.05, 0.014), m.metal, b.at(mid, 0.0, 0.03), Vector3.FORWARD, 0.004)
+	on(root, "BeltBuckle", Vector3(0.03, 0.022, 0.006), m.strap, b.at(mid, 0.0, 0.04), Vector3.FORWARD, 0.002)
+	# Loops of webbing round the belt, and a ring each side to hang kit from.
+	for a: float in [-2.6, -2.0, -0.9, 0.9, 2.0, 2.6]:
+		on(root, "BeltLoop", Vector3(0.018, 0.072, 0.008), m.strap, b.at(mid, a, 0.034), b.out(a), 0.002)
+	for a: float in [-1.15, 1.15]:
+		on(root, "BeltRing", Vector3(0.022, 0.026, 0.006), m.metal, b.at(f0 - 0.005, a, 0.03), b.out(a), 0.004)
+	var pouches := [[-1.4, Vector3(0.06, 0.08, 0.045)], [1.4, Vector3(0.06, 0.08, 0.045)], [2.35, Vector3(0.085, 0.07, 0.045)],
+			[-2.35, Vector3(0.07, 0.07, 0.045)]]
 	if weight == "light":
-		pouches = [[-1.4, Vector3(0.045, 0.06, 0.03)]]
+		pouches = [[-1.45, Vector3(0.055, 0.07, 0.038)], [2.35, Vector3(0.075, 0.065, 0.04)]]
 	for p: Array in pouches:
 		var a: float = p[0]
-		pouch(root, m, p[1], mid + Vector3(sin(a) * (rx + 0.03), -0.02, -cos(a) * (rz + 0.03)), Basis(Vector3.UP, -a))
+		pouch(root, m, p[1], b.at(mid - 0.03, a, 0.03), b.out(a))
+	# The seat of the trousers: a layer of cloth, near the suit's colour,
+	# over the backside that spans the cleft instead of hugging it, cut
+	# higher at the hips like the seat of a pair of trousers.
+	var cloth := G.mat((style["fabric"] as Color).lerp(Color(0.06, 0.06, 0.065), 0.7), 0.97)
+	var seat := func(u: float, v: float) -> Vector3:
+		var w := absf(u * 2.0 - 1.0)
+		var bottom := lerpf(-0.17, -0.04, w * w)
+		return b.at(lerpf(bottom, f0, v), PI + (u * 2.0 - 1.0) * 1.35, 0.007 + 0.003 * sin(PI * u) * sin(PI * v))
+	plate(root, "Seat", seat, 0.008, cloth, 16, 6)
 	if weight == "heavy":
+		# Faulds: plates hung from the belt over the front of the hips.
 		for side: float in [-1.0, 1.0]:
-			var from := 0.15 if side > 0 else -1.1
-			var to := 1.1 if side > 0 else -0.15
-			G.add(root, "Fauld", G.band(rx + 0.02, rz + 0.02, from, to, -0.08, 0.0, 0.016, 0.004, -0.1), m.plate, mid)
+			plate(root, "Fauld", b.wrap(0.03, f0 + 0.01, minf(side * 0.18, side * 1.15), maxf(side * 0.18, side * 1.15), 0.045, 0.0, 0.006,
+					-0.15), 0.016, m.plate, 10, 4)
 	return G.merge(root)
 
 
-## A shoulder pad for the side `out` (-1 left, 1 right): a dome over the
-## shoulder and lames down the outside of the arm ("Pad", "Pad1", ...), more
-## and bigger the heavier the frame, each with an edge; medium and heavy
-## add a plate down the upper arm.
-static func pauldron(weight: String, style: Dictionary, out: float) -> Node3D:
+## ---------------------------------------------------------------- limbs
+
+## A shoulder pad for the side `out` (-1 left, 1 right): a cap over the
+## shoulder ("Pad") and lames down the outside of the upper arm ("Pad1",
+## ...), more and bigger the heavier the frame, each with an edge; medium
+## and heavy add a plate down the upper arm ("Rerebrace").
+static func pauldron(weight: String, style: Dictionary, out: float, build := "m") -> Node3D:
 	var root := _root("PadModel")
 	var m := Kit.new(style)
+	var arm := Limb.new(build, "UpperArm", out)
 	var lames: int = {"light": 1, "medium": 2, "heavy": 3}[weight]
-	var r: float = {"light": 0.06, "medium": 0.068, "heavy": 0.078}[weight]
-	var thick: float = {"light": 0.01, "medium": 0.013, "heavy": 0.018}[weight]
-	var centre := PI * 0.5 * out
-	var dome_r := Vector3(r * 1.1, r * 0.9, r * 1.15)
-	G.add(root, "Pad", G.cap(dome_r, G.const_of(0.0), G.const_of(1.35), centre - 1.9, centre + 1.9, thick, 16, 5), m.plate,
-			Vector3(out * 0.012, 0.0, 0.0))
-	G.add(root, "PadEdge", G.cap(dome_r + Vector3.ONE * thick, G.const_of(1.25), G.const_of(1.35), centre - 1.9, centre + 1.9, 0.005, 16, 1),
-			m.plate2 if weight == "light" else m.metal, Vector3(out * 0.012, 0.0, 0.0))
+	var gap: float = {"light": 0.006, "medium": 0.009, "heavy": 0.01}[weight]
+	var thick: float = {"light": 0.009, "medium": 0.012, "heavy": 0.014}[weight]
+	var spread: float = {"light": 1.3, "medium": 1.5, "heavy": 1.5}[weight]
+	var lateral := PI * 0.5 * out
+	# The cap: over the top of the shoulder, from in past the joint out
+	# over the deltoid, swelling at its crown.
+	var cap_end: float = {"light": 0.2, "medium": 0.24, "heavy": 0.28}[weight]
+	# Clear of the straps and the gorget on the trunk, and ending short of
+	# the strap's run over the shoulder (`torso`) so it rides on it.
+	var joint := absf(BodyFit.bone(build, "UpperArm").x)
+	var t0 := -minf(0.16, (joint * 0.4 - 0.0275 - 0.015) / arm.length)
+	plate(root, "Pad", arm.wrap(t0, cap_end, lateral, spread, gap, 0.004 + thick * 0.4, 0.0, 0.034, 0.6), thick, m.plate, 14, 9)
+	plate(root, "PadEdge", arm.wrap(cap_end - 0.025, cap_end, lateral, spread - 0.05, gap + thick + 0.002), 0.005,
+			m.plate2 if weight == "light" else m.metal, 14, 1)
 	for i in lames:
-		var top := -0.012 - i * 0.042
-		var rr := r * 1.02 + i * 0.004
-		G.add(root, "Pad%d" % (i + 1), G.band(rr, rr * 1.04, centre - 1.35 + i * 0.1, centre + 1.35 - i * 0.1, top - 0.045, top, thick, 0.004),
-				m.plate2 if i % 2 == 0 else m.plate, Vector3(out * 0.01, 0, 0))
-		G.add(root, "LameEdge", G.band(rr + thick, rr * 1.04 + thick, centre - 1.3 + i * 0.1, centre + 1.3 - i * 0.1, top - 0.045, top - 0.039,
-				0.004), m.metal if weight == "heavy" else m.rubber, Vector3(out * 0.01, 0, 0))
+		var top := cap_end - 0.06 + i * 0.1
+		var g := gap + 0.004 + i * 0.002
+		plate(root, "Pad%d" % (i + 1), arm.wrap(top, top + 0.12, lateral, spread - 0.25 - i * 0.12, g, 0.006), thick,
+				m.plate2 if i % 2 == 0 else m.plate, 12, 4)
+		plate(root, "LameEdge", arm.wrap(top + 0.11, top + 0.12, lateral, spread - 0.3 - i * 0.12, g + thick), 0.004,
+				m.metal if weight == "heavy" else m.rubber, 12, 1)
 	if "admin" in m.details or "stripe" in m.details:
-		# A unit patch on the lower lame.
-		G.box(root, "Patch", Vector3(0.006, 0.026, 0.036), m.glow, Vector3(out * (r + 0.022), -0.06, 0), 0.002)
+		# A unit patch on the cap.
+		on(root, "Patch", Vector3(0.036, 0.026, 0.004), m.glow, arm.at(0.12, lateral, gap + thick + 0.012), arm.at(0.12, lateral) - arm.at(0.12, lateral + PI))
 	if weight != "light":
-		G.add(root, "Rerebrace", G.band(0.052, 0.056, centre - 1.2, centre + 1.2, -0.24, -0.11, thick * 0.8, 0.004), m.plate)
+		plate(root, "Rerebrace", arm.wrap(0.5, 0.82, lateral, 1.3, gap * 0.6), thick * 0.8, m.plate, 10, 4)
 	return G.merge(root)
 
 
-## A forearm piece: an elbow pad and a bracer down the outside of the arm;
-## the left arm's carries a small lit display.
-static func forearm(weight: String, style: Dictionary, out: float) -> Node3D:
+## A forearm piece: an elbow cop and a guard down the back of the forearm
+## (a full vambrace on heavy); the left arm's carries a small lit display.
+static func forearm(weight: String, style: Dictionary, out: float, build := "m") -> Node3D:
 	var root := _root("BracerModel")
 	var m := Kit.new(style)
+	var arm := Limb.new(build, "LowerArm", out)
 	var thick := 0.008 if weight == "light" else 0.012
-	G.add(root, "Elbow", G.cap(Vector3(0.045, 0.045, 0.045), G.const_of(0.6), G.const_of(2.4), PI - 1.3, PI + 1.3, thick, 10, 5),
-			m.plate if weight == "heavy" else m.rubber, Vector3(0, -0.01, 0.006))
-	var centre := PI * 0.5 * out
-	G.add(root, "Bracer", G.band(0.042, 0.04, centre - 1.6, centre + 1.6, -0.19, -0.05, thick, 0.004, -0.08), m.plate)
+	var lateral := PI * 0.5 * out
+	# The elbow: round the point of it, at the back in the rest pose.
+	plate(root, "Elbow", arm.wrap(-0.12, 0.12, PI, 1.2, 0.01, 0.014), thick, m.plate if weight == "heavy" else m.rubber, 10, 5)
+	var half: float = {"light": 1.3, "medium": 1.6, "heavy": 2.5}[weight]
+	plate(root, "Bracer", arm.wrap(0.3, 0.9, lateral, half, 0.013, 0.004, -0.005), thick, m.plate, 14, 6)
 	if weight != "light":
-		G.add(root, "BracerEdge", G.band(0.042 + thick, 0.04 + thick, centre - 1.5, centre + 1.5, -0.12, -0.11, 0.004), m.metal)
+		plate(root, "BracerEdge", arm.wrap(0.3, 0.33, lateral, half - 0.05, 0.01 + thick), 0.004, m.metal, 14, 1)
 	if out < 0.0:
-		G.box(root, "Display", Vector3(0.006, 0.028, 0.04), m.dim, Vector3(out * 0.052, -0.15, 0.0), 0.001)
+		var at := arm.at(0.62, lateral, 0.012 + thick)
+		on(root, "Display", Vector3(0.04, 0.028, 0.004), m.dim, at, arm.at(0.62, lateral) - arm.at(0.62, lateral + PI), 0.001)
 	return G.merge(root)
 
 
-## A thigh piece for the side `out`: a plate down the front ("Tasset", two
-## lames on heavy), and on the right a drop-leg pouch on two straps.
-static func thigh(weight: String, style: Dictionary, out: float) -> Node3D:
+## A thigh piece for the side `out`: a plate down the front and outside
+## ("Tasset", two lames on heavy), and on the right a drop-leg pouch on two
+## straps.
+static func thigh(weight: String, style: Dictionary, out: float, build := "m") -> Node3D:
 	var root := _root("TassetModel")
 	var m := Kit.new(style)
+	var leg := Limb.new(build, "UpperLeg", out)
+	# Turned out from the groin, so the inner edge clears the hips.
+	var centre := 0.65 * out
 	match weight:
 		"heavy":
-			for k in 2:
-				var top := -0.03 - k * 0.11
-				G.add(root, "Tasset" if k == 0 else "Tasset%d" % k, G.band(0.09 + k * 0.006, 0.085 + k * 0.006, -0.6 + out * 0.4,
-						0.6 + out * 0.9, top - 0.13, top, 0.016, 0.006, -0.06), m.plate if k == 0 else m.plate2)
+			# A full cuisse: three lames down the front and outside, and a
+			# plate over the back of the thigh.
+			for k in 3:
+				var top := 0.13 + k * 0.24
+				plate(root, "Tasset" if k == 0 else "Tasset%d" % k, leg.wrap(top, top + (0.24 if k < 2 else 0.26), centre, 1.3 - k * 0.08, 0.018 + (2 - k) * 0.004, 0.006),
+						0.016, m.plate if k % 2 == 0 else m.plate2, 14, 5)
+				var end := top + (0.24 if k < 2 else 0.26)
+				plate(root, "LameEdge", leg.wrap(end - 0.02, end, centre, 1.25 - k * 0.08, 0.034 + (2 - k) * 0.004), 0.004, m.metal, 14, 1)
+			plate(root, "ThighBack", leg.wrap(0.3, 0.74, PI, 1.05, 0.014, 0.006), 0.014, m.plate2, 12, 5)
 		"medium":
-			G.add(root, "Tasset", G.band(0.088, 0.084, -0.7, 0.7, -0.24, -0.08, 0.012, 0.006), m.plate)
+			# Two plates down the front and outside, the lower one over the
+			# knee's top.
+			plate(root, "Tasset", leg.wrap(0.13, 0.52, centre, 1.15, 0.016, 0.006), 0.013, m.plate, 14, 5)
+			plate(root, "Tasset1", leg.wrap(0.53, 0.84, centre * 0.6, 1.05, 0.013, 0.005), 0.012, m.plate2, 12, 4)
 		_:
-			G.add(root, "Tasset", G.band(0.086, 0.082, -0.5, 0.5, -0.22, -0.12, 0.008, 0.005), m.plate)
+			plate(root, "Tasset", leg.wrap(0.13, 0.6, centre, 0.85, 0.012, 0.005), 0.009, m.plate, 12, 5)
 	if out > 0.0:
 		for k in 2:
-			G.add(root, "LegStrap", G.band(0.082, 0.08, -PI, PI, -0.1 - k * 0.09, -0.085 - k * 0.09, 0.006), m.strap)
-		pouch(root, m, Vector3(0.07, 0.12, 0.03), Vector3(0.1, -0.15, 0.0), Basis(Vector3.UP, -PI * 0.5))
+			var t := 0.32 + k * 0.2
+			plate(root, "LegStrap", leg.wrap(t, t + 0.035, PI, PI - 0.001, 0.008), 0.006, m.strap, 24, 1)
+		var at := leg.at(0.38, PI * 0.5, 0.01)
+		pouch(root, m, Vector3(0.075, 0.13, 0.032), at, Vector3(1, 0, 0))
 		if "spine" in m.details:
-			G.box(root, "LegLight", Vector3(0.006, 0.04, 0.004), m.glow, Vector3(0.117, -0.16, -0.02), 0.001)
+			on(root, "LegLight", Vector3(0.006, 0.05, 0.004), m.glow, at + Vector3(0.034, -0.01, -0.02), Vector3(1, 0, 0), 0.001)
 	return G.merge(root)
 
 
-## A shin piece: a knee pad on straps and a guard down the shin, a full
+## A shin piece: a knee cop over the knee and a guard down the shin, a full
 ## greave with a steel ridge on heavy.
-static func shin(weight: String, style: Dictionary, _out: float) -> Node3D:
+static func shin(weight: String, style: Dictionary, out: float, build := "m") -> Node3D:
 	var root := _root("ShinModel")
 	var m := Kit.new(style)
-	var r: float = {"light": 0.058, "medium": 0.064, "heavy": 0.07}[weight]
-	G.add(root, "Knee", G.cap(Vector3(r, r * 1.2, r), G.const_of(0.5), G.const_of(2.3), -1.4, 1.4, 0.016, 12, 6),
-			m.rubber if weight == "light" else m.plate, Vector3(0, 0.0, -0.01))
-	G.add(root, "KneeCap", G.cap(Vector3(r, r * 1.2, r) * 0.6 + Vector3(0, 0, 0.02), G.const_of(0.9), G.const_of(1.9), -0.7, 0.7, 0.008, 6, 3),
-			m.plate if weight == "light" else m.plate2, Vector3(0, 0.0, -0.045))
+	var leg := Limb.new(build, "LowerLeg", out)
+	var knee_gap: float = {"light": 0.016, "medium": 0.016, "heavy": 0.02}[weight]
+	plate(root, "Knee", leg.wrap(-0.1, 0.1, 0.0, 1.25, knee_gap, 0.02), 0.016, m.rubber if weight == "light" else m.plate, 12, 6)
+	plate(root, "KneeCap", leg.wrap(-0.06, 0.06, 0.0, 0.6, knee_gap + 0.046, 0.01), 0.008, m.plate if weight == "light" else m.plate2, 8, 4)
 	for k in 2:
-		G.add(root, "KneeStrap", G.band(0.055, 0.055, -PI, PI, 0.03 - k * 0.11, 0.045 - k * 0.11, 0.006), m.strap, Vector3(0, -0.02, 0))
+		var t := 0.05 + k * 0.13
+		plate(root, "KneeStrap", leg.wrap(t, t + 0.03, PI, PI - 0.001, 0.003), 0.006, m.strap, 20, 1)
 	match weight:
 		"heavy":
-			G.add(root, "Greave", G.band(0.056, 0.058, -1.3, 1.3, -0.36, -0.07, 0.016, 0.008, -0.08), m.plate)
-			G.add(root, "GreaveRidge", G.band(0.074, 0.076, -0.15, 0.15, -0.34, -0.09, 0.006), m.metal)
+			# A full greave: the front shell, a calf plate behind and wings
+			# off the sides of the knee.
+			plate(root, "Greave", leg.wrap(0.14, 0.9, 0.0, 1.9, 0.014, 0.006), 0.016, m.plate, 16, 8)
+			plate(root, "GreaveRidge", leg.wrap(0.16, 0.86, 0.0, 0.12, 0.032), 0.006, m.metal, 2, 8)
+			plate(root, "Calf", leg.wrap(0.18, 0.8, PI, 1.15, 0.012, 0.008), 0.014, m.plate2, 12, 7)
+			# On the outside only: inside, the knees meet.
+			for side: float in [out]:
+				plate(root, "KneeWing", leg.wrap(-0.08, 0.12, side * 1.35, 0.4, knee_gap + 0.03, 0.01), 0.012, m.plate2, 6, 4)
 		"medium":
-			G.add(root, "Greave", G.band(0.052, 0.054, -0.9, 0.9, -0.3, -0.12, 0.01, 0.006, -0.06), m.plate2)
+			plate(root, "Greave", leg.wrap(0.15, 0.86, 0.0, 1.4, 0.013, 0.005), 0.012, m.plate2, 14, 7)
+			plate(root, "Calf", leg.wrap(0.24, 0.66, PI, 0.9, 0.01, 0.006), 0.01, m.plate, 10, 5)
 		_:
-			G.add(root, "Greave", G.band(0.05, 0.052, -0.6, 0.6, -0.26, -0.13, 0.007, 0.004, -0.05), m.plate)
+			plate(root, "Greave", leg.wrap(0.18, 0.8, 0.0, 1.0, 0.011, 0.004), 0.008, m.plate, 12, 6)
 	return G.merge(root)

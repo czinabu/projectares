@@ -4343,17 +4343,22 @@ func _build_armor(model: Node3D, id: String, _color: Color) -> void:
 	# A torso the carrier fits, about a body's (0.3 m by 0.25 m at the chest).
 	model.add_child(_part(Vector3(0.28, 0.52, 0.22), Vector3(0, 1.22, 0), dummy))
 	model.add_child(_part(Vector3(0.14, 0.2, 0.14), Vector3(0, 1.6, 0), dummy))
-	# The mannequin faces +Z, the plates are built facing -Z.
-	for piece: Array in [[SkinScript.build_frame(id, paint), Vector3(0, 1.36, 0)], [SkinScript.build_belt(id, paint), Vector3(0, 0.98, 0)]]:
+	# Hung as a body wears them (the first build, its arms down), on a frame
+	# turned to face +Z with the mannequin; the plates are built facing -Z.
+	var Fit = SkinScript.ArmorModel.BodyFit
+	var worn := Node3D.new()
+	worn.rotation.y = PI
+	model.add_child(worn)
+	for piece: Array in [[SkinScript.build_frame(id, paint), "Chest"], [SkinScript.build_belt(id, paint), "Hips"]]:
 		var plates: Node3D = piece[0]
-		plates.position = piece[1]
-		plates.rotation.y = PI
-		model.add_child(plates)
+		plates.position = Fit.bone("m", piece[1])
+		worn.add_child(plates)
 	for out: float in [-1.0, 1.0]:
 		var pad := SkinScript.build_pad(id, out, paint)
-		pad.position = Vector3(-out * 0.18, 1.44, 0)
-		pad.rotation.y = PI
-		model.add_child(pad)
+		var arm = SkinScript.ArmorModel.Limb.new("m", "UpperArm", out)
+		var poses: Array = Fit.arm_poses("m", out)
+		pad.transform = (poses[0] if not poses.is_empty() else Transform3D.IDENTITY) * arm.frame
+		worn.add_child(pad)
 
 
 ## A flight rig on a stand. Its stats pick the shape: wings glide, boots only

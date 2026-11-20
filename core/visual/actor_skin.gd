@@ -229,7 +229,7 @@ var vitals_offset := Vector3(0.0, 0.05, 0.172)
 ## wide, tall and deep. The one model is worn in every view: first person
 ## leaves it out with the head (`hide_head`), never a copy of its own.
 var helmet_offset := Vector3(0.0, 0.1, 0.0)
-var helmet_size := Vector3(0.27, 0.31, 0.31)
+var helmet_size := Vector3(0.215, 0.258, 0.258)
 var helmet_shell_color := Color(0.22, 0.23, 0.25)
 ## A helmet taken off (`Actor.helmet_stow`) is clipped to the belt at the
 ## back of the left hip, behind a sheathed blade (`hip_offset`), its face
@@ -262,7 +262,7 @@ var helmet_reach_ahead := 0.18
 ## metres, `lamp_angle` degrees out from its middle, fading out for viewers
 ## past `lamp_fade` metres. One model in every view; first person leaves the
 ## barrel out with the head, never the beam.
-var lamp_at := Vector3(0.15, 0.04, -0.07)
+var lamp_at := Vector3(0.138, 0.05, -0.06)
 var lamp_color := Color(1.0, 0.95, 0.84)
 var lamp_energy := 4.0
 var lamp_range := 30.0
@@ -272,6 +272,9 @@ var lamp_fade := 60.0
 ## toward -Z), and from medium up a belly plate and shoulder pads (on the
 ## upper arm bones); heavy adds a collar. One model in every view.
 var frame_offset := Vector3(0.0, 0.0, 0.0)
+## How much `Look` sized the body from its own model (`Look.stand_model`):
+## armor is fitted in the model's metres (`body_fit.gd`) and scaled by it.
+var _body_scale := 1.0
 var pad_offset := Vector3(0.0, 0.0, 0.0)
 ## Where a worn backpack sits from the hips: up onto the lower back and
 ## against it (+Z is behind). Under a back rig it rides lower and further
@@ -532,6 +535,7 @@ func _ready() -> void:
 			_player.advance(0.0)
 		_play("idle")
 	look.stand_model(self, model, def["height"])
+	_body_scale = model.scale.y
 	if _player:
 		_player.advance(0.0)
 	_def = def
@@ -1621,7 +1625,7 @@ func _build_lamp(model: Node3D) -> MeshInstance3D:
 	barrel.radial_segments = 10
 	barrel.rings = 1
 	var housing := _piece(lamp, "Barrel", barrel, _solid(Color(0.13, 0.13, 0.14), 0.0), Vector3.ZERO,
-			Vector3(0.042, 0.075, 0.042))
+			Vector3(0.03, 0.052, 0.03))
 	housing.rotation.x = PI * 0.5
 	# The beam starts at the lens: the lamp must not shade its own light.
 	housing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1629,7 +1633,7 @@ func _build_lamp(model: Node3D) -> MeshInstance3D:
 	lens_mat.emission_enabled = true
 	lens_mat.emission = lamp_color
 	lens_mat.emission_energy_multiplier = 0.0
-	var lens := _piece(lamp, "Lens", barrel, lens_mat, Vector3(0.0, 0.0, -0.039), Vector3(0.034, 0.006, 0.034))
+	var lens := _piece(lamp, "Lens", barrel, lens_mat, Vector3(0.0, 0.0, -0.027), Vector3(0.024, 0.006, 0.024))
 	lens.rotation.x = PI * 0.5
 	lens.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return lens
@@ -2930,6 +2934,9 @@ const FRAME_STYLES := {
 ## Which look each frame wears; a frame not listed wears its weight's.
 const FRAME_LOOKS := {"plate_light": "scrap", "frame_runner": "runner", "frame_trooper": "trooper",
 		"frame_thermal": "thermal", "frame_bulwark": "bulwark"}
+## How far out armor of each weight holds the arms (`Locomotion.arm_clear`,
+## metres at the elbow).
+const ARM_CLEAR := {"light": 0.025, "medium": 0.035, "heavy": 0.05}
 const WEIGHT_LOOKS := {"light": "runner", "medium": "trooper", "heavy": "bulwark"}
 
 
@@ -2967,6 +2974,12 @@ func frame_paint(id: String) -> String:
 	return str(paints.get(frame_look(id), "")) if typeof(paints) == TYPE_DICTIONARY else ""
 
 
+## The build of this body (`Human.BUILDS`) its armor is fitted to: a
+## person's own, "m" for any other skin.
+func body_build() -> String:
+	return str(_appearance.get("build", "m"))
+
+
 ## Puts the worn armor frame on the body, rebuilt when another goes on: the
 ## carrier on the chest, the belt on the hips and a piece on each upper arm,
 ## forearm, thigh and shin, every one hung on the bone it moves with, over
@@ -2984,6 +2997,10 @@ func _update_frame() -> void:
 		return
 	_frame_id = key
 	_wear_undersuit(frame_style(id, paint) if id != "" else {})
+	# Armor holds the arms out from the body, so a hanging hand clears the
+	# belt and thigh plates (`tools/armor_fit/clip_check.tscn -- --arms`).
+	if locomotion and "arm_clear" in locomotion:
+		locomotion.set("arm_clear", ARM_CLEAR.get(frame_weight(id), 0.0) if id != "" else 0.0)
 	for part in _frame_parts:
 		if is_instance_valid(part):
 			part.queue_free()
@@ -2991,17 +3008,22 @@ func _update_frame() -> void:
 	if id == "" or _skeleton == null:
 		return
 	var height: float = _def.get("height", 1.8)
-	_frame_parts.append(_hang(build_frame(id, paint), "Frame", _def.get("back_bone", ""), frame_offset,
+	var build := body_build()
+	var frame := build_frame(id, paint, build)
+	frame.scale = Vector3.ONE * _body_scale
+	_frame_parts.append(_hang(frame, "Frame", _def.get("back_bone", ""), frame_offset,
 			Vector3(0.0, height * 0.72, 0.0) + frame_offset, true))
 	var hips: String = _def.get("hip_bone", "")
 	if hips != "" and _skeleton.find_bone(hips) >= 0:
-		_frame_parts.append(_hang(build_belt(id, paint), "Belt", hips, Vector3.ZERO, Vector3.ZERO, true))
+		var belt := build_belt(id, paint, build)
+		belt.scale = Vector3.ONE * _body_scale
+		_frame_parts.append(_hang(belt, "Belt", hips, Vector3.ZERO, Vector3.ZERO, true))
 	for side: String in ["L", "R"]:
 		var out := -1.0 if side == "L" else 1.0
-		for limb: Array in [["UpperArm", "LowerArm", build_pad(id, out, paint), Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z)],
-				["LowerArm", "Wrist", build_bracer(id, out, paint), Vector3.ZERO],
-				["UpperLeg", "LowerLeg", build_tasset(id, out, paint), Vector3.ZERO],
-				["LowerLeg", "Foot", build_shin(id, out, paint), Vector3.ZERO]]:
+		for limb: Array in [["UpperArm", "LowerArm", build_pad(id, out, paint, build), Vector3(pad_offset.x * out, pad_offset.y, pad_offset.z)],
+				["LowerArm", "Wrist", build_bracer(id, out, paint, build), Vector3.ZERO],
+				["UpperLeg", "LowerLeg", build_tasset(id, out, paint, build), Vector3.ZERO],
+				["LowerLeg", "Foot", build_shin(id, out, paint, build), Vector3.ZERO]]:
 			var piece: Node3D = limb[2]
 			var held := _hang_limb(piece, limb[0] + "." + side, limb[1] + "." + side, limb[3])
 			if held == null:
@@ -3051,7 +3073,7 @@ func _hang_limb(part: Node3D, bone: String, child: String, offset: Vector3) -> N
 	var front := Vector3.FORWARD - up * up.dot(Vector3.FORWARD)
 	front = front.normalized() if front.length() > 0.1 else Vector3.FORWARD
 	var held := _hang(part, part.name, bone, offset, at, true)
-	part.basis = Basis(up.cross(-front).normalized(), up, -front)
+	part.basis = Basis(up.cross(-front).normalized(), up, -front).scaled(Vector3.ONE * _body_scale)
 	return held
 
 
@@ -3077,60 +3099,63 @@ func _wear_undersuit(style: Dictionary) -> void:
 ## (`FRAME_STYLES`, in its armor paint, `frame_style`) the colours and the
 ## details. `id` is a frame's item id, a weight or "skin:<weight>". One mesh per material; the named plates are
 ## in its "parts" meta (`GearShapes.has_part`).
-static func build_frame(id: String, paint := "") -> Node3D:
-	return _armor("torso", id, 0.0, paint)
+static func build_frame(id: String, paint := "", build := "m") -> Node3D:
+	return _armor("torso", id, 0.0, paint, build)
 
 
 ## The frame's battle belt, built round the hips bone.
-static func build_belt(id: String, paint := "") -> Node3D:
-	return _armor("belt", id, 0.0, paint)
+static func build_belt(id: String, paint := "", build := "m") -> Node3D:
+	return _armor("belt", id, 0.0, paint, build)
 
 
 ## A shoulder pad for the side `out` (-1 left, 1 right): a dome over the
 ## shoulder and `FRAME_BULK` "pads" lames down the arm, built standing up
 ## the upper arm from the shoulder joint.
-static func build_pad(id: String, out: float, paint := "") -> Node3D:
-	return _armor("pauldron", id, out, paint)
+static func build_pad(id: String, out: float, paint := "", build := "m") -> Node3D:
+	return _armor("pauldron", id, out, paint, build)
 
 
 ## An elbow pad and bracer for the side `out`, built down the forearm.
-static func build_bracer(id: String, out: float, paint := "") -> Node3D:
-	return _armor("forearm", id, out, paint)
+static func build_bracer(id: String, out: float, paint := "", build := "m") -> Node3D:
+	return _armor("forearm", id, out, paint, build)
 
 
 ## A thigh plate (tassets) for the side `out`, built down the thigh from
 ## the hip; the right one carries a drop-leg pouch.
-static func build_tasset(id: String, out: float, paint := "") -> Node3D:
-	return _armor("thigh", id, out, paint)
+static func build_tasset(id: String, out: float, paint := "", build := "m") -> Node3D:
+	return _armor("thigh", id, out, paint, build)
 
 
 ## A knee pad and shin guard (a greave on heavy), built down the shin.
-static func build_shin(id: String, out: float, paint := "") -> Node3D:
-	return _armor("shin", id, out, paint)
+static func build_shin(id: String, out: float, paint := "", build := "m") -> Node3D:
+	return _armor("shin", id, out, paint, build)
 
 
 ## A frame's `piece` ("torso", "belt", "pauldron", "forearm", "thigh",
-## "shin") for the side `out`, built once per weight, look and side and
-## shared after (`GearShapes.cached`). `paint` is an armor paint
-## (`ArmorPaint`) or "" for the look's own colours.
-static func _armor(piece: String, id: String, out := 0.0, paint := "") -> Node3D:
+## "shin") for the side `out`, fitted to the body `build` (`Human.BUILDS`,
+## `body_fit.gd`), built once per weight, look, side and build and shared
+## after (`GearShapes.cached`). `paint` is an armor paint (`ArmorPaint`) or
+## "" for the look's own colours. Built in the body's own metres: hung on a
+## body, it is scaled by the body's size (`_body_scale`).
+static func _armor(piece: String, id: String, out := 0.0, paint := "", build := "m") -> Node3D:
 	var weight := frame_weight(id)
 	if not ArmorPaint.PAINTS.has(paint):
 		paint = ""
+	build = ArmorModel.BodyFit.build_of(build)
 	var style := frame_style(id, paint)
-	return ArmorModel.G.cached("%s:%s:%s:%s:%s" % [piece, weight, frame_look(id), out, paint], func() -> Node3D:
+	return ArmorModel.G.cached("%s:%s:%s:%s:%s:%s" % [piece, weight, frame_look(id), out, paint, build], func() -> Node3D:
 		match piece:
 			"torso":
-				return ArmorModel.torso(weight, style)
+				return ArmorModel.torso(weight, style, build)
 			"belt":
-				return ArmorModel.belt(weight, style)
+				return ArmorModel.belt(weight, style, build)
 			"pauldron":
-				return ArmorModel.pauldron(weight, style, out)
+				return ArmorModel.pauldron(weight, style, out, build)
 			"forearm":
-				return ArmorModel.forearm(weight, style, out)
+				return ArmorModel.forearm(weight, style, out, build)
 			"thigh":
-				return ArmorModel.thigh(weight, style, out)
-		return ArmorModel.shin(weight, style, out))
+				return ArmorModel.thigh(weight, style, out, build)
+		return ArmorModel.shin(weight, style, out, build))
 
 
 static func _solid(color: Color, energy: float) -> StandardMaterial3D:
