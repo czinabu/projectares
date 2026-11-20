@@ -129,12 +129,19 @@ date in the same PR.
   a third of the speed. The clips the game's gun poses are tuned on (the
   relaxed stand under a gun, the gun holds and the run with the gun up,
   the sword) are the old bodies' own, carried across from `rig_m.glb` and
-  `rig_f.glb` (`_retarget`); the pack has no rifle clips. Those old
+  `rig_f.glb` (`_retarget`); the pack has no rifle clips. The old hands
+  have a metacarpal bone the new ones lack, so the old `Index2` (the
+  knuckle) drives the new `Index1` and so on out (`_old_bone`), and a
+  finger tip with no old bone holds its rest. Those old
   stands spread the new bodies' feet wide and bow the knees, so a gun held
   low and a blade out stand on the relaxed stand's legs
   (`ActorSkin.LEGS_FROM_STAND`); the blade's ready stance is the fighting
   pose's stagger on top (`Locomotion.fight_*`). A gun raised to shoot
-  keeps its clip's stance: the sights' relief is tuned on it. The cleft between the
+  keeps its clip's stance: the sights' relief is tuned on it. Worn armor
+  gets room: `Locomotion.arm_clear` (meters, 0 bare; set by whoever
+  dresses the body in a frame) swings each upper arm out so the elbow
+  clears the plates and pouches by that much, before the weapon arm
+  reaches for its grip (`_clear_arms`). The cleft between the
   glutes is filled most of the way out in the mesh (`_fill_cleft`, Caleb's
   call), so the armor is fitted to the filled body. A
   body is sized in its relaxed stand (`stand_legs`), never in an idle that

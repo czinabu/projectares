@@ -878,6 +878,26 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 	player.slide_left = 0.0
 	player.slide_low = 0.0
 
+	# Room for armor: the elbows swing out from the body by `arm_clear`.
+	if skeleton and loco._arms.size() == 2 and not loco._arms[1].is_empty():
+		var saved_arms := {}
+		for bone in skeleton.get_bone_count():
+			saved_arms[bone] = skeleton.get_bone_pose_rotation(bone)
+		var to_actor_arm := player.global_transform.affine_inverse() * skeleton.global_transform
+		var elbows_apart := func() -> float:
+			var a := to_actor_arm * skeleton.get_bone_global_pose(loco._arms[0][1]).origin
+			var b := to_actor_arm * skeleton.get_bone_global_pose(loco._arms[1][1]).origin
+			return absf(a.x - b.x)
+		var narrow: float = elbows_apart.call()
+		loco.arm_clear = 0.04
+		loco._clear_arms()
+		var wide: float = elbows_apart.call()
+		loco.arm_clear = 0.0
+		t.check(wide - narrow > 0.05 and wide - narrow < 0.1,
+				tag + "worn armor swings the elbows out to clear it (%.3f m wider)" % (wide - narrow))
+		for bone: int in saved_arms:
+			skeleton.set_bone_pose_rotation(bone, saved_arms[bone])
+
 	# A crouch sinks the model onto bent knees, feet still on the ground, the
 	# head down about as far as the eyes go (the same body in both views).
 	player.velocity = player.global_basis * Vector3(0, 0, -player.crouch_speed)

@@ -223,6 +223,12 @@ var stand_legs := false
 ## Whether the relaxed stand also sets the hips, or only the legs below
 ## them: a blade keeps its clip's hips, which the swings are tuned on.
 var stand_legs_hips := true
+## Room for worn armor: each upper arm swings out from the body so the
+## elbow sits `arm_clear` m further out (a hanging hand about half again
+## as much), past the plates and pouches a frame hangs at the sides. Set
+## by whoever dresses the body in armor; 0 without it. The weapon arm's
+## reach comes after, so a hand on a gun still finds its grip.
+var arm_clear := 0.0
 var stand_legs_weight := 0.0
 ## True while the phone is up; `phone_weight` is how far, read from the
 ## actor's shared `ActionPose.phone` so every view holds it the same way.
@@ -368,6 +374,10 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	stand.name = "StandLegs"
 	stand.run = _stand_legs
 	skeleton.add_child(stand)
+	var clear := WeaponArm.Hook.new()
+	clear.name = "ArmsClearArmor"
+	clear.run = _clear_arms
+	skeleton.add_child(clear)
 	# The arm's hooks are added after these, so it reaches from where the
 	# turned body has put the shoulders.
 	var upper := WeaponArm.Hook.new()
@@ -652,6 +662,26 @@ func _stand_legs() -> void:
 		else:
 			var at := _stand_anim.position_track_interpolate(entry[1], _stand_time)
 			skeleton.set_bone_pose_position(bone, skeleton.get_bone_pose_position(bone).lerp(at, stand_legs_weight))
+
+
+## Swings each upper arm out from the body by `arm_clear` at the elbow:
+## out along the line from the middle of the shoulders, across the arm.
+func _clear_arms() -> void:
+	if arm_clear <= 0.0 or _arms.size() < 2 or _arms[0].is_empty() or _arms[1].is_empty():
+		return
+	var meter := 1.0 / skeleton.global_basis.get_scale().y
+	var middle := (skeleton.get_bone_global_pose(_arms[0][0]).origin + skeleton.get_bone_global_pose(_arms[1][0]).origin) * 0.5
+	for arm: Array[int] in _arms:
+		var pose := skeleton.get_bone_global_pose(arm[0])
+		var along := skeleton.get_bone_global_pose(arm[1]).origin - pose.origin
+		var length := along.length()
+		var outward := pose.origin - middle
+		outward -= along.normalized() * outward.dot(along.normalized())
+		if length < 0.001 or outward.length() < 0.001:
+			continue
+		var axis := along.cross(outward).normalized()
+		pose.basis = Basis(axis, atan(arm_clear * meter / length)) * pose.basis
+		skeleton.set_bone_global_pose(arm[0], pose)
 
 
 ## Lays the slide's clip over the hips, legs and spine,
