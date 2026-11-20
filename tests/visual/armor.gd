@@ -12,10 +12,25 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 	v.add_child(raid)
 	raid.start(Worlds.get_world("ashfront"), 42, [Loadout.BARE])
 	v._armed(raid)
+	var player := raid.player
+	# ARMOR_BUILD=<build> wears the kits on a body of that build (a bot's).
+	var want := OS.get_environment("ARMOR_BUILD")
+	if want != "":
+		await v.get_tree().process_frame
+	if want != "" and str(player.get_node("Skin")._appearance.get("build", "")) != want:
+		for bot in raid.bots:
+			var skin_b: Node = bot.get_node_or_null("Skin")
+			if skin_b != null and str(skin_b._appearance.get("build", "")) == want and skin_b._def.get("frame", "") == "" \
+					and skin_b._def.has("people"):
+				raid.bots.erase(bot)
+				bot.get_node("Brain").set_physics_process(false)
+				bot.global_transform = player.global_transform
+				player.global_position += Vector3(0, -200, 0)
+				player = bot
+				break
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -200, 0)
-	var player := raid.player
 	player.set_physics_process(false)
 	player.cmd.yaw = player.rotation.y
 	player.cmd.pitch = 0.0
@@ -49,8 +64,10 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 		var r := player.global_basis.x
 		var views := [f, (f + r).normalized(), r, -f]
 		for i in views.size():
-			var mid := player.global_position + Vector3(0, 1.12, 0)
-			cam.global_position = mid + (views[i] as Vector3) * 3.5 + Vector3(0, 0.3, 0)
+			# ARMOR_CLOSE=1 comes in on the trunk and shoulders.
+			var close := OS.get_environment("ARMOR_CLOSE") != ""
+			var mid := player.global_position + Vector3(0, 1.3 if close else 1.12, 0)
+			cam.global_position = mid + (views[i] as Vector3) * (1.7 if close else 3.5) + Vector3(0, 0.15 if close else 0.3, 0)
 			cam.look_at(mid)
 			await RenderingServer.frame_post_draw
 			var frame := v.get_viewport().get_texture().get_image()
