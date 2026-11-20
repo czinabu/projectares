@@ -66,7 +66,9 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 		for i in views.size():
 			# ARMOR_CLOSE=1 comes in on the trunk and shoulders.
 			var close := OS.get_environment("ARMOR_CLOSE") != ""
-			var mid := player.global_position + Vector3(0, 1.3 if close else 1.12, 0)
+			# ARMOR_CLOSE=legs comes in on the hips and legs instead.
+			var legs := OS.get_environment("ARMOR_CLOSE") == "legs"
+			var mid := player.global_position + Vector3(0, 0.75 if legs else (1.3 if close else 1.12), 0)
 			cam.global_position = mid + (views[i] as Vector3) * (1.7 if close else 3.5) + Vector3(0, 0.15 if close else 0.3, 0)
 			cam.look_at(mid)
 			await RenderingServer.frame_post_draw

@@ -17,7 +17,7 @@ extends Node
 
 const Human := preload("res://core/visual/human.gd")
 const OUT := "res://core/visual/body_fit_data.gd"
-const TRUNK_LOW := 0.86
+const TRUNK_LOW := 0.76
 const TRUNK_HIGH := 1.56
 const TRUNK_STEP := 0.02
 const TRUNK_Z := 0.015
