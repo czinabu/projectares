@@ -3681,7 +3681,7 @@ func drop_item(actor: Actor, item_id: String) -> String:
 	if actor.stowed_rounds.has(item_id) and item_id not in actor.inventory.items:
 		rounds = actor.stowed_rounds[item_id]
 		actor.stowed_rounds.erase(item_id)
-	var at := _ground_below(actor.global_position)
+	var at := _drop_ground(actor.global_position)
 	var bag := state.drop_bag
 	if bag != null and (not is_instance_valid(bag) or bag.is_queued_for_deletion() \
 			or bag.global_position.distance_to(at) > drop_bag_reach):
@@ -3709,7 +3709,7 @@ func drop_item(actor: Actor, item_id: String) -> String:
 
 ## The ground under `at` (within 40 m), or `at` itself over nothing, so a
 ## drop made in the air lands instead of hanging there.
-func _ground_below(at: Vector3) -> Vector3:
+func _drop_ground(at: Vector3) -> Vector3:
 	if not is_inside_tree():
 		return at
 	var query := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.5, at + Vector3.DOWN * 40.0, Actor.LAYER_WORLD)
