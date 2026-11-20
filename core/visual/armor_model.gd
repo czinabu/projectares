@@ -61,9 +61,11 @@ class Trunk:
 	var low: float
 	var high: float
 
-	func _init(b: String, bone: String) -> void:
+	func _init(b: String, bone: String, side := -1.0) -> void:
 		build = b
 		origin = BodyFit.bone(b, bone)
+		# A limb's bone is its left one: the right one is its mirror.
+		origin.x *= -side
 		low = BodyFit.bone(b, "Hips").y
 		high = BodyFit.bone(b, "Neck").y
 
@@ -78,7 +80,7 @@ class Trunk:
 	func at(f: float, a: float, gap := 0.0, drape := 0.0) -> Vector3:
 		var r := BodyFit.reach(build, y(f), a)
 		for k in 4:
-			if drape > 0.0:
+			if drape != 0.0:
 				r = maxf(r, BodyFit.reach(build, y(f + drape * (k + 1) / 4.0), a))
 		r += gap
 		return Vector3(r * sin(a), y(f), BodyFit.axis_z() - r * cos(a)) - origin
@@ -199,11 +201,14 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 	plate(root, "Carrier", b.wrap(0.34 if light else 0.3, 0.88, PI - bw, PI + bw, cg, 0.03, 0.0, 0.18, 0.2), 0.01, m.fabric)
 	# The hard plates: sculpted over the chest, thicker and further out the
 	# heavier the frame.
-	var pg: float = {"light": 0.018, "medium": 0.022, "heavy": 0.026}[weight]
-	var pt: float = {"light": 0.012, "medium": 0.016, "heavy": 0.022}[weight]
-	var pw: float = {"light": 0.85, "medium": 0.98, "heavy": 1.4}[weight]
+	var pg: float = {"light": 0.018, "medium": 0.02, "heavy": 0.02}[weight]
+	var pt: float = {"light": 0.012, "medium": 0.016, "heavy": 0.018}[weight]
+	var pw: float = {"light": 0.85, "medium": 0.98, "heavy": 1.12}[weight]
 	var chest_low := 0.42 if heavy else 0.5
-	plate(root, "Chest", b.wrap(chest_low, 0.88, -pw + skew, pw + skew, pg, 0.07, 0.008, 0.12 if not heavy else 0.0, 0.25), pt, m.plate, 20, 9)
+	# Heavy is a cuirass with a keel down its middle, narrowing to the
+	# shoulders so it never reads as a box.
+	plate(root, "Chest", b.wrap(chest_low, 0.88, -pw + skew, pw + skew, pg, 0.1 if heavy else 0.07, 0.014 if heavy else 0.008, 0.2 if heavy else 0.12,
+			0.25), pt, m.plate, 20, 9)
 	# The back plate stays between the shoulder blades and narrows to the
 	# top, so from behind it never reads wider than the back.
 	var back_w: float = {"light": 0.68, "medium": 0.76, "heavy": 0.98}[weight]
@@ -213,16 +218,25 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 		# The cuirass closes down the sides, layered abdominal lames under it,
 		# each edged in steel.
 		for side: float in [-1.0, 1.0]:
-			plate(root, "SidePlate", b.wrap(0.46, 0.76, side * 1.5 - 0.42, side * 1.5 + 0.42, pg - 0.008), pt * 0.8, m.plate2, 8, 6)
+			plate(root, "SidePlate", b.wrap(0.46, 0.7, side * 1.45 - 0.32, side * 1.45 + 0.32, pg - 0.01), pt * 0.7, m.plate2, 8, 6)
 		for k in 3:
 			var top := 0.46 - k * 0.1
-			var w := 1.3 - k * 0.1
+			var w := 1.05 - k * 0.08
 			plate(root, "Belly" if k == 0 else "Belly%d" % k, b.wrap(top - 0.13, top, -w, w, pg - 0.004 + k * 0.004, 0.0, 0.004), pt * 0.8,
 					m.plate2 if k % 2 else m.plate, 16, 4)
 			plate(root, "LameEdge", b.wrap(top - 0.135, top - 0.12, -w + 0.04, w - 0.04, pg + pt * 0.8 + k * 0.004 - 0.006), 0.004, m.metal, 16, 1)
+		# A keel down the middle of the cuirass, and a pressed V from each
+		# shoulder to it, so the chest reads sculpted, not boxed.
+		plate(root, "Keel", b.wrap(0.5, 0.82, -0.07, 0.07, pg + pt - 0.002, 0.0, 0.006), 0.008, m.plate2, 3, 6)
+		for side: float in [-1.0, 1.0]:
+			var points := []
+			for k in 5:
+				var s := float(k) / 4.0
+				points.append(b.at(lerpf(0.84, 0.6, s), side * lerpf(0.95, 0.08, s), pg + pt - 0.001))
+			_strap(root, m, points, 0.01, 0.004, m.plate2, "VLine")
 		# The gorget round the neck, edged in steel.
-		plate(root, "Collar", b.wrap(0.86, 1.0, -2.4, 2.4, 0.02, 0.0, 0.0, -0.1), 0.016, m.plate2, 24, 4)
-		plate(root, "CollarEdge", b.wrap(0.985, 1.0, -2.3, 2.3, 0.036), 0.006, m.metal, 24, 1)
+		plate(root, "Collar", b.wrap(0.87, 1.0, -1.9, 1.9, 0.012, 0.0, 0.0, -0.1), 0.014, m.plate2, 20, 4)
+		plate(root, "CollarEdge", b.wrap(0.985, 1.0, -1.8, 1.8, 0.026), 0.005, m.metal, 20, 1)
 	# Shoulder straps over each shoulder from the chest plate to the back.
 	for side: float in [-1.0, 1.0]:
 		var a := side * 0.42
@@ -253,7 +267,7 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 	var pf := 0.36 if heavy else 0.42
 	for i in mags:
 		var a := (i - (mags - 1) * 0.5) * 0.36
-		var at := b.at(pf, a, pg + pt + (0.004 if not heavy else 0.02))
+		var at := b.at(pf, a, pg + pt + (0.004 if not heavy else 0.008))
 		pouch(root, m, Vector3(0.058, 0.09, 0.036), at, b.out(a), m.plate2 if heavy else m.fabric)
 		on(root, "Gauge", Vector3(0.022, 0.005, 0.004), m.dim, at + b.out(a) * 0.036 + Vector3(0, -0.012, 0), b.out(a), 0.001)
 	if not heavy:
@@ -266,7 +280,7 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 
 
 ## A strap laid along `points` (on the body), `width` wide, `thick` thick.
-static func _strap(root: Node3D, m: Kit, points: Array, width: float, thick: float) -> void:
+static func _strap(root: Node3D, m: Kit, points: Array, width: float, thick: float, material: Material = null, part := "Strap") -> void:
 	var n := points.size()
 	var point := func(u: float, v: float) -> Vector3:
 		var f := v * (n - 1)
@@ -277,7 +291,7 @@ static func _strap(root: Node3D, m: Kit, points: Array, width: float, thick: flo
 		var across := along.cross(Vector3(p.x, 0.0, p.z).normalized() if Vector3(p.x, 0, p.z).length() > 0.01 else Vector3.FORWARD)
 		across = across.normalized() if across.length() > 0.001 else Vector3.RIGHT
 		return p + across * (u - 0.5) * width
-	G.add(root, "Strap", G.sheet(point, thick, 2, (n - 1) * 2, 0.008), m.fabric)
+	G.add(root, part, G.sheet(point, thick, 2, (n - 1) * 2, 0.008), material if material else m.fabric)
 
 
 ## Depth on the chest and back plates, so they read as moulded armor: a
@@ -384,18 +398,6 @@ static func belt(weight: String, style: Dictionary, build := "m") -> Node3D:
 	for p: Array in pouches:
 		var a: float = p[0]
 		pouch(root, m, p[1], b.at(mid - 0.04, a, 0.016), b.out(a))
-	# Plates hung from the back of the belt over the seat (a culet): one on
-	# light, two lames on medium, three on heavy, bridging the glutes.
-	var lames: int = {"light": 1, "medium": 2, "heavy": 3}[weight]
-	var half: float = {"light": 0.75, "medium": 0.95, "heavy": 1.15}[weight]
-	var drop: float = {"light": 0.22, "medium": 0.17, "heavy": 0.15}[weight]
-	for k in lames:
-		var top := f0 + 0.02 - k * (drop - 0.04)
-		var g := 0.012 + k * 0.004
-		plate(root, "Rear" if k == 0 else "Rear%d" % k, b.wrap(top - drop, top, PI - half + k * 0.06, PI + half - k * 0.06, g, 0.0, 0.006),
-				0.012 if weight == "light" else 0.015, m.plate if k % 2 == 0 else m.plate2, 14, 4)
-		plate(root, "LameEdge", b.wrap(top - drop - 0.005, top - drop + 0.01, PI - half + k * 0.06 + 0.04, PI + half - k * 0.06 - 0.04, g + 0.012), 0.004,
-				m.metal if weight == "heavy" else m.rubber, 14, 1)
 	if weight == "heavy":
 		# Faulds: plates hung from the belt over the front of the hips.
 		for side: float in [-1.0, 1.0]:
@@ -415,9 +417,9 @@ static func pauldron(weight: String, style: Dictionary, out: float, build := "m"
 	var m := Kit.new(style)
 	var arm := Limb.new(build, "UpperArm", out)
 	var lames: int = {"light": 1, "medium": 2, "heavy": 3}[weight]
-	var gap: float = {"light": 0.006, "medium": 0.009, "heavy": 0.013}[weight]
-	var thick: float = {"light": 0.009, "medium": 0.012, "heavy": 0.016}[weight]
-	var spread: float = {"light": 1.3, "medium": 1.5, "heavy": 1.75}[weight]
+	var gap: float = {"light": 0.006, "medium": 0.009, "heavy": 0.01}[weight]
+	var thick: float = {"light": 0.009, "medium": 0.012, "heavy": 0.014}[weight]
+	var spread: float = {"light": 1.3, "medium": 1.5, "heavy": 1.5}[weight]
 	var lateral := PI * 0.5 * out
 	# The cap: over the top of the shoulder, from in past the joint out
 	# over the deltoid, swelling at its crown.
@@ -468,6 +470,22 @@ static func thigh(weight: String, style: Dictionary, out: float, build := "m") -
 	var m := Kit.new(style)
 	var leg := Limb.new(build, "UpperLeg", out)
 	var centre := 0.45 * out
+	# A plate over this side's seat, laid over the trunk's shape round the
+	# hip joint so it moves with the leg: one on light, two lames from
+	# medium. The leg's frame stands like the body's at rest.
+	var seat := Trunk.new(build, "UpperLeg", out)
+	var lames: int = {"light": 1, "medium": 2, "heavy": 2}[weight]
+	# A gap down the middle, so the two read as plates, not a panel.
+	var inner := PI - out * 0.2
+	var outer := PI - out * 0.95
+	for k in lames:
+		var top := 0.02 - k * 0.13
+		var low := top - 0.17
+		# Hung straight down from the fullest point, never cupping the seat.
+		plate(root, "Rear" if k == 0 else "Rear%d" % k, seat.wrap(low, top, minf(inner, outer), maxf(inner, outer), 0.012 + k * 0.006, 0.0,
+				0.004, 0.0, 0.3), 0.01 if weight == "light" else 0.012, m.fabric if weight == "light" else m.plate2, 10, 5)
+		plate(root, "LameEdge", seat.wrap(low - 0.004, low + 0.012, minf(inner, outer) + 0.04, maxf(inner, outer) - 0.04, 0.024 + k * 0.006,
+				0.0, 0.0, 0.0, 0.3), 0.004, m.rubber if weight == "light" else m.metal, 10, 1)
 	match weight:
 		"heavy":
 			# A full cuisse: three lames down the front and outside, and a

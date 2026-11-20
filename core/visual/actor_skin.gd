@@ -255,7 +255,7 @@ var helmet_reach_ahead := 0.18
 ## metres, `lamp_angle` degrees out from its middle, fading out for viewers
 ## past `lamp_fade` metres. One model in every view; first person leaves the
 ## barrel out with the head, never the beam.
-var lamp_at := Vector3(0.15, 0.04, -0.07)
+var lamp_at := Vector3(0.138, 0.05, -0.06)
 var lamp_color := Color(1.0, 0.95, 0.84)
 var lamp_energy := 4.0
 var lamp_range := 30.0
@@ -1615,7 +1615,7 @@ func _build_lamp(model: Node3D) -> MeshInstance3D:
 	barrel.radial_segments = 10
 	barrel.rings = 1
 	var housing := _piece(lamp, "Barrel", barrel, _solid(Color(0.13, 0.13, 0.14), 0.0), Vector3.ZERO,
-			Vector3(0.042, 0.075, 0.042))
+			Vector3(0.03, 0.052, 0.03))
 	housing.rotation.x = PI * 0.5
 	# The beam starts at the lens: the lamp must not shade its own light.
 	housing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1623,7 +1623,7 @@ func _build_lamp(model: Node3D) -> MeshInstance3D:
 	lens_mat.emission_enabled = true
 	lens_mat.emission = lamp_color
 	lens_mat.emission_energy_multiplier = 0.0
-	var lens := _piece(lamp, "Lens", barrel, lens_mat, Vector3(0.0, 0.0, -0.039), Vector3(0.034, 0.006, 0.034))
+	var lens := _piece(lamp, "Lens", barrel, lens_mat, Vector3(0.0, 0.0, -0.027), Vector3(0.024, 0.006, 0.024))
 	lens.rotation.x = PI * 0.5
 	lens.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return lens
