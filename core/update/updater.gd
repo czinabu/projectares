@@ -86,8 +86,10 @@ func _ready() -> void:
 	var from := args.find(FROM_ARG)
 	if from >= 0 and from + 1 < args.size():
 		_base = args[from + 1].trim_suffix("/") + "/"
+	# Only the playtest build updates itself: the latest release is that
+	# build, and the dev build (every world) must never be swapped for it.
 	if not enabled(OS.has_feature("template"), build, args, DisplayServer.get_name(),
-			OS.has_feature("dedicated_server")):
+			OS.has_feature("dedicated_server")) or not OS.has_feature("playtest"):
 		set_process(false)
 		return
 	just_updated = UPDATED_ARG in args

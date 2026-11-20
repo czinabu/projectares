@@ -41,6 +41,12 @@ var _main: Node
 ## The world's seed for a solo run (`--seed`), -1 for a random one.
 var _main_seed := -1
 var _server_pid := -1
+## The world measured (`--world`, Ashfront by default).
+var _world_id := "ashfront"
+## `--tour`: instead of standing by the fighting, the player is carried
+## round the map's spots (player spawns, caches, depots) turning slowly, so
+## a world with no army is measured everywhere it is played.
+var _tour := false
 ## The last measurement (`_measure`): median and 1% worst frame in ms,
 ## frames a second and hitches.
 var _result := {}
@@ -54,6 +60,12 @@ func _ready() -> void:
 	var warmup := float(_arg(args, "--warmup", "20"))
 	var third := _arg(args, "--view", "first") == "third"
 	Profile.persist = false
+	# Measured with the worlds' enemies unless `--no-enemies` (`Raid.enemies`),
+	# here and in any server this starts.
+	Raid.enemies = "--no-enemies" not in args
+	OS.set_environment("ARES_ENEMIES", "1" if Raid.enemies else "0")
+	# No enemy budget unless `--enemy-cap <n>` asks for one, to measure it.
+	OS.set_environment("ARES_ENEMY_CAP", _arg(args, "--enemy-cap", "0"))
 	if "--look" in args:
 		Look.enabled = true
 	var fixed_seed := int(_arg(args, "--seed", "-1"))
@@ -65,7 +77,13 @@ func _ready() -> void:
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_size(Vector2i(1600, 900))
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
-	var world := Worlds.get_world("ashfront")
+	_world_id = _arg(args, "--world", "ashfront")
+	_tour = "--tour" in args or not Raid.enemies
+	var world := Worlds.get_world(_world_id)
+	if world == null:
+		print("Frame bench: no world '%s'" % _world_id)
+		_finish(1)
+		return
 	world.bot_count = bots
 	# A steady army for a fair measurement: no war reinforcements on top.
 	world.war_reinforcements = 0
@@ -106,6 +124,8 @@ func _ready() -> void:
 		await _seconds(3.0)
 	if "--probe" in args:
 		await _probe()
+	elif "--probe-process" in args:
+		await _probe_process()
 	else:
 		await _measure(mode, seconds)
 		if not _judge(args):
@@ -121,7 +141,7 @@ func _ready() -> void:
 
 func _start_solo(warmup: float) -> bool:
 	_main.raid_seed = _main_seed
-	_main.start_raid("ashfront")
+	_main.start_raid(_world_id)
 	await _frames(5)
 	var raid: Raid = _main.raid
 	if raid == null or raid.player == null:
@@ -129,6 +149,10 @@ func _start_solo(warmup: float) -> bool:
 	_toughen(raid.player)
 	print("Frame bench: solo, %d bots, marching for %.0f s" % [raid.bots.size(), warmup])
 	await _seconds(warmup)
+	if _tour:
+		_tour_spots = _spots(raid)
+		print("Frame bench: touring %d spots in %s" % [_tour_spots.size(), _world_id])
+		return true
 	# Drop the player beside the thickest fighting, facing it.
 	var hot := _hot_spot(raid.bots)
 	var out := Vector3(hot.x, 0, hot.z).normalized() if Vector3(hot.x, 0, hot.z).length() > 1.0 else Vector3.FORWARD
@@ -149,7 +173,7 @@ func _start_online(bots: int, warmup: float) -> bool:
 		for file in DirAccess.get_files_at(accounts):
 			DirAccess.remove_absolute(accounts.path_join(file))
 	var args := PackedStringArray(["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server", "--world", "ashfront", "--no-plaza", "--no-arena", "--port", str(PORT),
+			"--", "--server", "--world", _world_id, "--no-plaza", "--no-arena", "--port", str(PORT),
 			"--bots", str(bots), "--accounts", accounts])
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
 	if _server_pid <= 0:
@@ -189,6 +213,45 @@ func _toughen(actor: Actor) -> void:
 	actor.health.max_health = 1.0e9
 	actor.health.health = 1.0e9
 	actor.protected_left = 1.0e9
+
+
+var _tour_spots: Array[Vector3] = []
+var _tour_at := -1
+
+
+## Where a tour goes: the map's player spawns, depots and caches, at most a
+## dozen spread over the list.
+func _spots(raid: Raid) -> Array[Vector3]:
+	var all: Array[Vector3] = []
+	for group: String in ["spawn_player", "depot", "spawn_cache"]:
+		for node in raid._map_nodes(group):
+			all.append((node as Node3D).global_position)
+	var out: Array[Vector3] = []
+	var step := maxf(1.0, all.size() / 12.0)
+	var i := 0.0
+	while int(i) < all.size():
+		out.append(all[int(i)])
+		i += step
+	return out
+
+
+## Puts the player at the tour's spot for `done` (0..1 of the run), turning
+## a full circle at each.
+func _tour_step(raid: Raid, done: float) -> void:
+	var player := raid.player
+	if player == null or not is_instance_valid(player):
+		return
+	var share := done * _tour_spots.size()
+	var index := mini(int(share), _tour_spots.size() - 1)
+	if index != _tour_at:
+		_tour_at = index
+		var at := _tour_spots[index]
+		if raid.map.has_method("ground_height"):
+			at.y = maxf(at.y, raid.map.call("ground_height", at.x, at.z)) + 0.2
+		player.global_position = at
+		player.velocity = Vector3.ZERO
+	(_main.controller as PlayerController).yaw = TAU * (share - index)
+	(_main.controller as PlayerController).pitch = -0.05
 
 
 ## The bot with the most other bots within 50 m.
@@ -241,6 +304,8 @@ func _measure(mode: String, seconds: float) -> void:
 	var began := Time.get_ticks_usec()
 	var last := began
 	while Time.get_ticks_usec() - began < seconds * 1000000.0:
+		if _tour and not _tour_spots.is_empty():
+			_tour_step(raid, (Time.get_ticks_usec() - began) / (seconds * 1000000.0))
 		await get_tree().process_frame
 		var now := Time.get_ticks_usec()
 		frame_ms.append((now - last) / 1000.0)
@@ -395,6 +460,81 @@ func _probe() -> void:
 		part.visible = false
 		await _probe_line("  without %s (%d)" % [part.name, geometry])
 		part.visible = true
+
+
+## `--probe-process`: where the frame's processing goes. Every node that
+## processes is grouped by its script (or its class, for an engine node such
+## as an AnimationPlayer); each group is switched off for a moment in turn
+## and what the frame and the process time drop by is printed, biggest
+## first. Read the drops against each other roughly: the world goes on
+## meanwhile, and a group switched off can stall what reads from it.
+func _probe_process() -> void:
+	var groups := {}
+	for node in get_tree().root.find_children("*", "", true, false):
+		if not (node.is_processing() or node.is_physics_processing() or node.is_processing_internal() \
+				or node.is_physics_processing_internal()):
+			continue
+		if node == self or node.get_tree() == null:
+			continue
+		var script: Script = node.get_script()
+		var key := script.resource_path.get_file() if script != null and script.resource_path != "" else node.get_class()
+		if not groups.has(key):
+			groups[key] = []
+		(groups[key] as Array).append(node)
+	var keys := groups.keys()
+	keys.sort_custom(func(a: String, b: String) -> bool: return (groups[a] as Array).size() > (groups[b] as Array).size())
+	var base := await _process_sample()
+	print("  process probe: frame %.2f ms, process %.2f ms, physics %.2f ms with everything on" % [base.x, base.y, base.z])
+	var rows := []
+	for key: String in keys.slice(0, 40):
+		var nodes: Array = groups[key]
+		var was := []
+		for n: Variant in nodes:
+			if not is_instance_valid(n):
+				was.append(null)
+				continue
+			var node := n as Node
+			was.append([node.is_processing(), node.is_physics_processing(), node.process_mode])
+			# A script's own callbacks only, so its children carry on; an
+			# engine node (an AnimationPlayer, particles) by its mode.
+			if node.get_script() != null:
+				node.set_process(false)
+				node.set_physics_process(false)
+			else:
+				node.process_mode = Node.PROCESS_MODE_DISABLED
+		var off := await _process_sample()
+		for i in nodes.size():
+			if was[i] != null and is_instance_valid(nodes[i]):
+				var node := nodes[i] as Node
+				node.set_process(was[i][0])
+				node.set_physics_process(was[i][1])
+				node.process_mode = was[i][2]
+		await _frames(10)
+		var again := await _process_sample()
+		var ref := (base + again) * 0.5
+		base = again
+		rows.append([ref.x - off.x, ref.y - off.y, ref.z - off.z, key, nodes.size()])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	for row: Array in rows:
+		print("    %-38s x%-4d frame -%.2f ms, process -%.2f ms, physics -%.2f ms" % [row[3], row[4], row[0], row[1], row[2]])
+
+
+## The average frame, process and physics time over a short stretch, in ms.
+func _process_sample() -> Vector3:
+	await _frames(5)
+	var frame := 0.0
+	var process := 0.0
+	var physics := 0.0
+	var count := 30
+	var last := Time.get_ticks_usec()
+	for i in count:
+		await get_tree().process_frame
+		var now := Time.get_ticks_usec()
+		frame += (now - last) / 1000.0
+		last = now
+		process += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	return Vector3(frame, process, physics) / count
 
 
 func _probe_line(what: String) -> void:

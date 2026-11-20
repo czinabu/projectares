@@ -1,6 +1,10 @@
 name: Windows client build
 
 # Exports the "Windows Client" preset on Godot 4.7 and zips it for playtesters.
+#   That preset is the playtest build (feature tag "playtest"): only the worlds
+#   in ares/release/playtest_worlds (core/world/world_registry.gd). The
+#   "Windows Dev" preset, every world, is exported beside it as a workflow
+#   artifact only, never on the release the installed games update from.
 #   Pull requests that touch the preset or this file: build only, so a broken
 #   export is caught before it matters.
 #   Every push to main: builds and replaces the zip on the rolling "latest"
@@ -115,6 +119,20 @@ jobs:
            "size": $(stat -c %s "$pck"), "sha256": "$(sha256sum "$pck" | cut -d ' ' -f 1)"}
           EOF
           python3 -c 'import json; print(json.load(open("dist/update.json")))'
+      - name: Export the dev build
+        run: |
+          mkdir -p build/windows-dev
+          "$GODOT" --headless --path . --export-release "Windows Dev" build/windows-dev/ProjectAresDev.exe
+          test -s build/windows-dev/ProjectAresDev.exe
+          name="ProjectAresDev-windows-$(git rev-parse --short HEAD)"
+          mkdir -p "dist-dev/$name"
+          cp build/windows-dev/ProjectAresDev.exe build/windows-dev/ProjectAresDev.pck "dist-dev/$name/"
+          (cd dist-dev && zip -qr "$name.zip" "$name")
+          echo "DEV_NAME=$name" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DEV_NAME }}
+          path: dist-dev/*.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.zip.outputs.name }}

@@ -4,6 +4,33 @@ Rules for armies, commanders, kinds, doctrine, group fights, senses, grudges, co
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
+- The enemies switch (`Raid.enemies`, the stability pass). One flag turns
+  every world's enemies off: the army (`Raid.army_size()` is 0, so
+  `bot_target`, bosses and guards see an empty world, as with `--bots 0`),
+  respawns and reinforcements, rival raiders, and the events that bring
+  bots (warlord, convoy, airship and its Sky Leviathan). Caches, vehicles,
+  weather and supply pods carry on. `Main` reads it at boot
+  (`Raid.enemies_wanted`): `--enemies` / `--no-enemies`, then
+  `ARES_ENEMIES`, then a `--bots` count over 0, then the project setting
+  `ares/stability/enemies` (false during the stability pass). The test
+  runner and the benches keep enemies on and set `ARES_ENEMIES` for the
+  servers they start. In a solo world the dev console's `enemies on|off`
+  flips it live. Never delete an enemy system to get a quiet world: gate it
+  on `Raid.enemies`. The arena's gladiators and the race's AI riders are
+  that venue's rules and are not switched.
+- The enemy budget (with enemies on). `Raid.enemy_cap` is the most
+  enemies a world holds at once, all counted (`bots`): the army takes
+  `army_size()` (its `bot_count` up to the cap, leaving room for the map's
+  bosses and guards but never under half the cap), and reinforcements,
+  respawns, broods, keeper adds, raiders and the bot events wait for
+  `enemy_room()`. `Raid.near_full_cap` lets only that many of the bots in
+  full-detail range of a player run every tick (`_tick_detail`); the rest
+  there take every second tick. `Main` reads `ares/stability/enemy_cap`
+  (8, from the frame bench on an RTX 5070: Ashfront holds about 58 fps at 8 bots and 30 at 60) and `ares/stability/enemies_full_detail` (12), or `--enemy-cap <n>`
+  / `ARES_ENEMY_CAP`; 0 is no cap, and with no enemy cap there is no near
+  cap either. The tests and benches run without a budget unless a bench is
+  given `--enemy-cap`. Raise the cap only with a frame bench showing the
+  frame steady at the new count.
 - Bot armies. A "spawn_bot" marker may name a faction (meta "faction");
   the `Raid` sets it on the bot before `WorldDef.equip_bot`, and `NetSession`
   sends it so a client builds the same soldier. Where

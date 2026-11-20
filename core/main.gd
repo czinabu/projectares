@@ -236,6 +236,12 @@ var _tour_stash_size := -1
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	# Enemies on or off in every world this program runs (`Raid.enemies`).
+	Raid.enemies = Raid.enemies_wanted(args)
+	Raid.enemy_cap = Raid.enemy_cap_wanted(args)
+	# The near cap is part of the same budget: no enemy cap, no near cap.
+	Raid.near_full_cap = maxi(int(ProjectSettings.get_setting("ares/stability/enemies_full_detail", 0)), 0) \
+			if Raid.enemy_cap > 0 else 0
 	# Every life a raid here finishes goes in the life log (`LifeLog`), to
 	# tune the worlds from: `--life-log <dir>` puts it elsewhere.
 	var log_at := args.find("--life-log")
