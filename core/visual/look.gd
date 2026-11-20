@@ -188,6 +188,12 @@ const SKINS := {
 		"scenes": ["Leela.glb"], "height": 3.4, "hide": ["Leela"], "creature": "brood_mother", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# A shellback elder: a shellback grown huge and old, a ram of horn on
+	# its brow, great horns, a garden of fungus on its back.
+	"shellback_elder": {
+		"scenes": ["Leela.glb"], "height": 3.2, "hide": ["Leela"], "creature": "elder", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 	"broodling": {
 		"scenes": ["Leela.glb"], "height": 0.9, "hide": ["Leela"], "creature": "broodling", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},

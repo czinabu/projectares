@@ -15,7 +15,9 @@ const Rootway := preload("res://worlds/marsh/rootway.gd")
 static func run(t: Node) -> void:
 	_shape(t)
 	await _built(t)
-	await _keeper(t)
+	for i in Rootway.ROOTWAYS.size():
+		await _keeper(t, i)
+	await _charge(t)
 
 
 ## The layout's numbers (Caleb's ask: no way narrower than 9 m) and the
@@ -69,8 +71,18 @@ static func _built(t: Node) -> void:
 	t.add_child(raid)
 	raid.start_server(marsh, 31)
 	await t.frames(2)
+	for i in Rootway.ROOTWAYS.size():
+		await _built_way(t, raid, marsh, i)
+	raid.queue_free()
+	await t.frames(2)
+
+
+## One Rootway as built, `i` in `Rootway.ROOTWAYS`.
+static func _built_way(t: Node, raid: Raid, marsh: WorldDef, i: int) -> void:
 	var map := raid.map
-	var way: Dictionary = Rootway.ROOTWAYS[0]
+	var way: Dictionary = Rootway.ROOTWAYS[i]
+	var name: String = way["name"]
+	print("  %s" % name)
 	var f := Rootway.frame(way)
 	var space := raid.get_world_3d().direct_space_state
 	var top := float(map.call("ground_height", f.origin.x, f.origin.z))
@@ -126,7 +138,7 @@ static func _built(t: Node) -> void:
 		z += 2.0
 	t.check(shallow.is_empty(), "the ground and the pools' beds lie over its roof all the way %s" % str(shallow))
 	# Nothing of the marsh stands in the cut.
-	var hole: Rect2 = Rootway.holes()[0]
+	var hole: Rect2 = Rootway.holes()[i]
 	var stalks: Array = map.get("_stalks")
 	var in_cut := stalks.filter(func(stalk: Dictionary) -> bool:
 		return hole.grow(float(stalk.radius) + 1.5).has_point(Vector2(stalk.at.x, stalk.at.z)))
@@ -140,7 +152,7 @@ static func _built(t: Node) -> void:
 	var nav := raid.get_world_3d().navigation_map
 	var outside := f * Vector3(0, top, -12.0)
 	var goal := f * Vector3(Rootway.BEND, Rootway.CHAMBER_FLOOR, Rootway.CHAMBER_Z - 6.0)
-	for i in 600:
+	for step in 600:
 		if NavigationServer3D.map_get_iteration_id(nav) > 0 \
 				and NavigationServer3D.map_get_closest_point(nav, goal).distance_to(goal) < 1.0 \
 				and NavigationServer3D.map_get_closest_point(nav, outside).distance_to(outside) < 1.0:
@@ -172,47 +184,50 @@ static func _built(t: Node) -> void:
 			"a bot sees no further down there than in a forest's close air")
 	# The garrison and the caches.
 	var guards: Array = raid._guards.filter(func(entry: Dictionary) -> bool:
-		return Rootway.inside((entry.marker as Node3D).global_position + Vector3(0, 1.0, 0)))
+		return Rootway.way_at((entry.marker as Node3D).global_position + Vector3(0, 1.0, 0)) == i)
 	var standing := guards.filter(func(entry: Dictionary) -> bool: return entry.bot != null and raid._is_extra(entry.bot as Actor))
 	t.check(guards.size() >= 3 and standing.size() == guards.size(), "a garrison of the marsh's beasts stands guard (%d)" % guards.size())
-	var caches: Array = raid._caches.filter(func(c: Dictionary) -> bool: return c.source == "rootway")
+	var caches: Array = raid._caches.filter(func(c: Dictionary) -> bool:
+		return c.source == "rootway" and Rootway.way_at((c.container as Node3D).global_position + Vector3(0, 1.0, 0)) == i)
 	t.check(caches.size() >= 2, "its gallery holds caches of its own (%d)" % caches.size())
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
 	var goods := 0
-	for i in 40:
+	for roll in 40:
 		goods += marsh.roll_loot("rootway", rng).filter(func(id: String) -> bool: return id in ["glowcap", "spore_sac", "chitin_plate"]).size()
 	t.check(goods > 40, "they pay the marsh's goods (%d in 40)" % goods)
-	raid.queue_free()
-	await t.frames(2)
 
 
-## The keeper's fight, as the Engine's Heart Warden's runs.
-static func _keeper(t: Node) -> void:
-	print("Rootways: the keeper")
+## A keeper's fight, as the Engine's Heart Warden's runs: the keeper of
+## `Rootway.ROOTWAYS[i]`.
+static func _keeper(t: Node, i: int) -> void:
+	var way: Dictionary = Rootway.ROOTWAYS[i]
+	var who: String = way["boss_name"]
+	print("Rootways: %s" % who)
 	var marsh := Worlds.get_world("marsh")
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(marsh, 33)
 	await t.frames(2)
-	var way: Dictionary = Rootway.ROOTWAYS[0]
 	var f := Rootway.frame(way)
 	var kind: String = way["keeper"]
 	var found := raid._bosses.filter(func(entry: Dictionary) -> bool:
 		return (entry.marker as Node3D).get_meta("boss", "") == kind)
-	t.check(found.size() == 1, "the Rootway has its keeper")
+	t.check(found.size() == 1, "%s has its keeper" % way["name"])
 	if found.is_empty():
 		raid.queue_free()
 		return
 	var boss: Dictionary = found[0]
 	var keeper := boss.bot as Actor
-	t.check(keeper != null and keeper.display_name == "The Rootmother" and keeper.rear_damage_mult > 1.5
-			and keeper.body_height() > 3.0 and keeper.health.max_health >= 1000.0 and keeper.health.armor > 0.0,
-			"the Rootmother waits in the chamber: huge, armored, her back her weak spot")
-	t.check(keeper.inventory.items.is_empty(), "she carries nothing: her vault pays")
+	t.check(keeper != null and keeper.display_name == who and keeper.rear_damage_mult > 1.5
+			and keeper.body_height() > 3.0 and keeper.health.max_health >= 1000.0 and keeper.health.armor > 0.0
+			and Rootway.way_at(keeper.global_position + Vector3(0, 1.0, 0)) == i,
+			"%s waits in the chamber: huge, armored, the back its weak spot" % who)
+	t.check(keeper.inventory.items.is_empty(), "it carries nothing: its vault pays")
 	var hooks := keeper.get_active_weapon() as MeleeWeapon
-	t.check(hooks != null and hooks.light_windup >= 0.5, "her hooks keep a long windup, so they can be parried")
-	t.check(int(raid.keepers.get(kind, -1)) == 1, "she starts standing")
+	t.check(hooks != null and hooks.light_windup >= 0.5 and (not hooks.dash_through or hooks.heavy_windup >= 0.8),
+			"its strikes keep a long windup, so they can be parried or stepped out of")
+	t.check(int(raid.keepers.get(kind, -1)) == 1, "it starts standing")
 	var me := raid.add_player([], {}, "Delver", "delver")
 	var mate := raid.add_player([], {}, "Second", "second")
 	await t.frames(2)
@@ -221,26 +236,32 @@ static func _keeper(t: Node) -> void:
 	var floor_y := Rootway.CHAMBER_FLOOR + 0.2
 	me.global_position = f * Vector3(Rootway.BEND, floor_y, Rootway.CHAMBER_Z - 10.0)
 	mate.global_position = f * Vector3(0, Rootway.FLOOR + 0.2, 40.0)
-	# Phase one: broodlings out of the wall.
+	# Phase one: what it calls out of the wall, if anything.
 	raid._tick_keeper(boss, marsh.keeper_socket_first + 0.1)
 	var adds: Array = boss.adds
-	t.check(adds.size() == 1, "with someone in her chamber, a broodling comes out of a root socket")
+	if str(way["adds"]) == "":
+		t.check(adds.is_empty(), "%s calls nothing out of the walls: its fight is its charge" % who)
+	else:
+		t.check(adds.size() == 1, "with someone in its chamber, a %s comes out of a root socket" % way["adds"])
 	if adds.size() == 1:
 		var add := adds[0] as Actor
-		t.check(add.faction == "broodling" and raid._is_extra(add) and not marsh.can_damage(add, keeper, DamageInfo.new()),
-				"a broodling, outside the armies, her own kind")
+		t.check(add.faction == str(way["adds"]) and raid._is_extra(add) and not marsh.can_damage(add, keeper, DamageInfo.new()),
+				"one of the adds, outside the armies, its own kind")
 	# Phase two: the vents.
 	var lanes := []
 	raid.purge_changed.connect(func(index: int, state: int) -> void: lanes.append([index, state]))
 	keeper.health.health = keeper.health.max_health * 0.4
 	raid._tick_keeper(boss, 0.05)
-	t.check(int(raid.keepers[kind]) == 2, "below half she turns to her spore vents")
+	t.check(int(raid.keepers[kind]) == 2, "below half it turns to its spore vents")
+	var brain := keeper.get_node("Brain") as BotBrain
+	if hooks.dash_through:
+		t.check(brain.dash_every < float(keeper.get_meta("dash_every")), "and charges more often (every %.1f s)" % brain.dash_every)
 	raid._tick_keeper(boss, marsh.keeper_purge_first + 0.05)
 	var warned := lanes.filter(func(e: Array) -> bool: return e[1] == 1)
 	t.check(warned.size() == marsh.keeper_purges_at_once, "the vents warn first (%d)" % warned.size())
 	if not warned.is_empty():
 		var lane := raid.purges[int(warned[0][0])]
-		t.check(Rootway.inside(lane.global_position + Vector3(0, 1.0, 0)), "on her chamber's floor")
+		t.check(Rootway.way_at(lane.global_position + Vector3(0, 1.0, 0)) == i, "on its chamber's floor")
 		var to: Vector3 = lane.get_meta("toward")
 		me.global_position = lane.global_position.lerp(to, 0.3) + Vector3(0, 0.1, 0)
 		var mine := me.health.health
@@ -253,25 +274,25 @@ static func _keeper(t: Node) -> void:
 	me.global_position = f * Vector3(Rootway.BEND, floor_y, Rootway.CHAMBER_Z - 10.0)
 	keeper.kill("test", me)
 	raid._tick_bosses(0.1)
-	t.check(int(raid.keepers.get(kind, -1)) == 0, "she falls")
+	t.check(int(raid.keepers.get(kind, -1)) == 0, "it falls")
 	var shares: Array = boss.shares
 	var labels := shares.map(func(share: LootContainer) -> String: return share.label)
 	t.check(shares.size() == 1 and labels.has("Delver's share"),
-			"her vault opens a share for the one in her chamber, none for the one up the throat (%s)" % str(labels))
+			"its vault opens a share for the one in its chamber, none for the one up the throat (%s)" % str(labels))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	var relics := 0
 	var data := true
-	for i in 1000:
+	for draw in 1000:
 		var roll := marsh.roll_vault(kind, rng)
 		data = data and roll.has("upgrade_data")
 		relics += roll.filter(func(id: String) -> bool: return ItemDB.has_tag(id, "artifact")).size()
 	t.check(data and relics > 50 and relics < 300, "a share holds upgrade data and now and then an artifact (%d in 1000)" % relics)
-	t.check(float(boss.back_in) == Rootway.RESPAWN, "she comes back on her own timer")
+	t.check(float(boss.back_in) == Rootway.RESPAWN, "it comes back on its own timer")
 	raid._tick_bosses(Rootway.RESPAWN + 0.1)
 	var back: Variant = boss.bot
 	t.check(back != null and is_instance_valid(back) and not (back as Actor).is_dead and int(raid.keepers[kind]) == 1
-			and (boss.shares as Array).is_empty(), "and wakes again, her vault closed")
+			and (boss.shares as Array).is_empty(), "and wakes again, its vault closed")
 	raid.queue_free()
 	await t.frames(2)
 
@@ -279,3 +300,117 @@ static func _keeper(t: Node) -> void:
 static func _ray(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(from, to, Actor.LAYER_WORLD)
 	return space.intersect_ray(query)
+
+
+## The Shellback Elder's charge: it runs its whole length past a player who
+## steps aside, rams a snag behind them and is stuck there, its rear open;
+## a player who stands is caught and hurt.
+static func _charge(t: Node) -> void:
+	print("Rootways: the Elder's charge")
+	var ways := Rootway.ROOTWAYS.filter(func(way: Dictionary) -> bool: return bool(way["snags"]))
+	t.check(not ways.is_empty(), "a Rootway's chamber stands snags for its keeper to ram")
+	if ways.is_empty():
+		return
+	var way: Dictionary = ways[0]
+	var marsh := Worlds.get_world("marsh")
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(marsh, 35)
+	await t.frames(2)
+	var f := Rootway.frame(way)
+	var boss: Dictionary = raid._bosses.filter(func(entry: Dictionary) -> bool:
+		return (entry.marker as Node3D).get_meta("boss", "") == way["keeper"])[0]
+	var elder := boss.bot as Actor
+	var horns := elder.get_active_weapon() as MeleeWeapon
+	t.check(horns.dash_through and horns.dash_range >= 12.0, "the Elder charges: its dash runs its whole length (%.0f m)" % horns.dash_range)
+	elder.get_node("Brain").set_physics_process(false)
+	var snags := raid._snags.filter(func(snag: Node3D) -> bool: return snag.get_meta("keeper", "") == way["keeper"])
+	t.check(snags.size() == Rootway.SNAGS.size() and snags.all(func(snag: Node3D) -> bool:
+		return Rootway.way_at(snag.global_position + Vector3(0, 1.0, 0)) == Rootway.ROOTWAYS.find(way)),
+			"its chamber stands %d snags" % snags.size())
+	var me := raid.add_player([], {}, "Delver", "delver")
+	await t.frames(2)
+	me.protected_left = 0.0
+	me.set_physics_process(false)
+	var heard := []
+	me.notice.connect(func(text: String) -> void: heard.append(text))
+	# Stand before a snag, the Elder 11 m off on the far side, and step aside
+	# as it comes.
+	var floor_y := Rootway.CHAMBER_FLOOR + 0.1
+	var snag_at: Vector2 = Rootway.SNAGS[0]
+	var snag := f * Vector3(Rootway.BEND + snag_at.x, floor_y, snag_at.y)
+	var toward := (f * Vector3(Rootway.BEND, floor_y, snag_at.y) - snag).normalized()
+	me.global_position = snag + toward * 2.2
+	elder.global_position = snag + toward * 13.0
+	await t.frames(3)
+	var run := await _charge_at(t, elder, me)
+	me.global_position += f.basis.z * 3.0
+	var stuck := false
+	for step in 90:
+		await t.frames(1)
+		if elder.stagger_left > 0.0:
+			stuck = true
+			break
+	var past := elder.global_position.distance_to(snag + toward * 13.0)
+	t.check(run and stuck and past > 8.0, "stepped aside, the Elder runs on into the snag behind and is stuck (%.1f m run)" % past)
+	t.check(elder.stagger_left > 2.0 and heard.any(func(text: String) -> bool: return "stuck" in text),
+			"for seconds, and everyone in its chamber is told to get behind it")
+	var front := elder.health.health
+	var info := DamageInfo.new()
+	info.amount = 40.0
+	info.source = me
+	info.kind = "melee"
+	me.global_position = elder.global_position + (elder.global_position - snag).normalized() * 2.0
+	var behind := elder.hit_from_behind(info)
+	Combat.deal(elder, info)
+	t.check(behind and elder.health.health < front, "stuck facing the roots, its soft rear is turned to the room")
+	# In the open, a player who stands is caught.
+	await t.frames(1)
+	elder.stagger_left = 0.0
+	elder.global_position = f * Vector3(Rootway.BEND, floor_y, Rootway.CHAMBER_Z - 6.0)
+	me.global_position = f * Vector3(Rootway.BEND, floor_y, Rootway.CHAMBER_Z + 4.0)
+	for step in 180:
+		if not horns.is_busy():
+			break
+		await t.frames(1)
+	var mine := me.health.health
+	await _charge_at(t, elder, me)
+	for step in 90:
+		await t.frames(1)
+		if me.health.health < mine:
+			break
+	t.check(me.health.health < mine, "a player who stands in its way is caught (%.0f damage)" % (mine - me.health.health))
+	# Left to itself, it charges a player across its chamber.
+	me.health.health = me.health.max_health
+	elder.global_position = f * Vector3(Rootway.BEND, floor_y, Rootway.CHAMBER_Z + 6.0)
+	me.global_position = f * Vector3(Rootway.BEND, floor_y, Rootway.CHAMBER_Z - 7.0)
+	elder.get_node("Brain").set_physics_process(true)
+	elder.heard.emit(me.global_position, me)
+	var charged := false
+	for step in 900:
+		await t.frames(1)
+		if horns.is_dashing():
+			charged = true
+			break
+	t.check(charged, "left to itself, it charges a player across its chamber")
+	raid.queue_free()
+	await t.frames(2)
+
+
+## Turns the Elder at `foe` and starts a charge from a sprint. True once its
+## dash has started.
+static func _charge_at(t: Node, elder: Actor, foe: Actor) -> bool:
+	var to := foe.global_position - elder.global_position
+	to.y = 0.0
+	elder.thin(1)
+	elder.cmd.yaw = atan2(-to.x, -to.z)
+	elder.cmd.aim_dir = to.normalized()
+	elder.cmd.sprint = true
+	elder.cmd.move = Vector2.ZERO
+	await t.frames(1)
+	elder.cmd.tertiary_pressed = true
+	await t.frames(1)
+	var blade := elder.get_active_weapon() as MeleeWeapon
+	elder.cmd.tertiary_pressed = false
+	elder.cmd.sprint = false
+	return (elder.get_active_weapon() as MeleeWeapon).is_dashing()

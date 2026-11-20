@@ -2155,7 +2155,7 @@ func _build_creature(kind: String) -> void:
 					_piece(big, "Eye", ball, glow, at + Vector3(side * 0.12, 0.08, -0.1) * h / 1.6, Vector3(0.09, 0.08, 0.09) * h / 1.6)
 				_hang_at(big, "CreatureEyes", "Head", Vector3.ZERO)
 			_creature_legs(hide, Vector2(0.11, 0.13), bone)
-		"shellback":
+		"shellback", "elder":
 			var dome := Node3D.new()
 			var mid := body.y * 0.82
 			_piece(dome, "Shell", ball, hide, Vector3(0, mid + 0.1 * h, 0), Vector3(1.5, 0.95, 1.9) * h / 1.6)
@@ -2210,6 +2210,8 @@ func _build_creature(kind: String) -> void:
 				_piece(growth, "Cap", ball, cap_mat, spot + Vector3(0, tall, 0), Vector3(0.16, 0.05, 0.16) * h / 1.6)
 				_piece(growth, "CapGills", ball, soft_glow, spot + Vector3(0, tall - 0.012 * h, 0), Vector3(0.13, 0.02, 0.13) * h / 1.6)
 			_hang_at(growth, "CreatureGrowth", "Torso", Vector3.ZERO)
+			if kind == "elder":
+				_shellback_elder(at, mid, h / 1.6, ball, tube, horn, hide, dark, bone, soft_glow)
 			_creature_legs(dark, Vector2(0.24, 0.26), bone)
 		"lurker":
 			# Long and flat, made to lie in the water: a broad, low trunk, a
@@ -2341,6 +2343,68 @@ func _build_creature(kind: String) -> void:
 
 
 ## A brood mother (a keeper's body grown old and huge, `Look.SKINS`
+## What an old shellback grows into (the look "shellback_elder", creature
+## "elder"): a ram of horn over its brow, two great horns swept forward, a
+## ridge of jagged plates down the dome, a garden of fungus and hanging moss
+## on its back and pale scars on its front. Built on the shellback's own
+## pieces (`k` its scale), so its soft rear still shows.
+func _shellback_elder(at: Vector3, mid: float, k: float, ball: SphereMesh,
+		tube: CylinderMesh, horn: CylinderMesh, hide: Material, dark: Material, bone: Material, soft_glow: Material) -> void:
+	var face := Node3D.new()
+	var dome := Node3D.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 53
+	var old_bone := _solid(Color(0.66, 0.6, 0.48), 0.0)
+	old_bone.metallic = 0.0
+	old_bone.roughness = 0.9
+	# The ram: a thick shield of horn over the brow, scarred pale.
+	_piece(face, "Ram", ball, old_bone, at + Vector3(0, 0.2, -0.12) * k, Vector3(0.82, 0.34, 0.5) * k)
+	for i in 5:
+		var scar := _piece(face, "Scar", ball, bone, at + Vector3(rng.randf_range(-0.3, 0.3), 0.3, -0.34) * k,
+				Vector3(0.05, 0.03, 0.18) * k)
+		scar.rotation = Vector3(0.3, rng.randf_range(-0.6, 0.6), rng.randf_range(-0.4, 0.4))
+	# Two great horns, out from the ram and swept forward, in segments.
+	for side: float in [-1.0, 1.0]:
+		var points: Array[Vector3] = []
+		for seg in 6:
+			var t := seg / 5.0
+			points.append(at + Vector3(side * (0.32 + 0.38 * t), 0.24 + 0.32 * sin(t * 2.4), -0.1 - 0.62 * t) * k)
+		for seg in 5:
+			_strand(face, "Horn", horn if seg == 4 else tube, old_bone, points[seg], points[seg + 1],
+					(0.11 - seg * 0.018) * k)
+	# A ridge of jagged plates down the dome's spine.
+	for i in 6:
+		var pz := -0.65 + i * 0.26
+		var up := 0.475 * sqrt(maxf(0.0, 1.0 - pow(pz / 0.95, 2.0)))
+		var spike := _piece(dome, "Ridge", horn, dark, Vector3(0, mid + 0.1 * 1.6 * k + (up + 0.08) * k, pz * k),
+				Vector3(0.16, 0.3 - absf(pz) * 0.12, 0.12) * k)
+		spike.rotation.x = 0.35
+	# A garden on its back: fungus stalks with lit gills, and moss hanging
+	# in beards from the skirt.
+	var moss := _creature_hide(Color(0.22, 0.27, 0.13), 0.0, 0.2)
+	var cap_mat := _creature_hide(Color(0.5, 0.36, 0.3), 0.25, 0.5)
+	for i in 7:
+		var px := rng.randf_range(-0.55, 0.55)
+		var pz := rng.randf_range(-0.3, 0.6)
+		var up := 0.475 * sqrt(maxf(0.0, 1.0 - pow(px / 0.75, 2.0) - pow(pz / 0.95, 2.0)))
+		var spot := Vector3(px, 0.1 * 1.6 + up, pz) * k + Vector3(0, mid, 0)
+		var tall := rng.randf_range(0.25, 0.5) * k
+		_strand(dome, "GardenStem", tube, bone, spot, spot + Vector3(rng.randf_range(-0.05, 0.05) * k, tall, 0), 0.04 * k)
+		var wide := rng.randf_range(0.2, 0.34) * k
+		_piece(dome, "GardenCap", ball, cap_mat, spot + Vector3(0, tall, 0), Vector3(wide, wide * 0.3, wide))
+		_piece(dome, "GardenGills", ball, soft_glow, spot + Vector3(0, tall - 0.02 * k, 0), Vector3(wide, wide * 0.12, wide) * 0.85)
+	for i in 14:
+		var a := rng.randf() * TAU
+		if absf(sin(a)) < 0.25 and cos(a) > 0.0:
+			continue
+		var rim := Vector3(sin(a) * 0.78, -0.02, cos(a) * 0.98) * k + Vector3(0, mid - 0.05 * 1.6 * k, 0)
+		var hang := rng.randf_range(0.15, 0.35) * k
+		_strand(dome, "Beard", tube, moss, rim, rim + Vector3(0, -hang, 0), 0.05 * k)
+	_piece(dome, "Hide", ball, hide, Vector3(0, mid - 0.1 * k, 0), Vector3(1.3, 0.3, 1.7) * k)
+	_hang_at(face, "ElderRam", "Head", Vector3.ZERO)
+	_hang_at(dome, "ElderBack", "Torso", Vector3.ZERO)
+
+
 ## "brood_mother"): a swollen abdomen dragging behind, studded with lit eggs
 ## and veined with glow, woody roots grown out of her back and arching down
 ## to the ground behind her, and a crown of root horns swept back from the
@@ -2429,7 +2493,7 @@ func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
 
 ## How many of a beast's hide cells carry a lit freckle, by kind.
 const CREATURE_FRECKLES := {
-	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
+	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "elder": 0.03, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
 	"brood_mother": 0.12,
 }
 

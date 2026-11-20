@@ -1370,8 +1370,8 @@ built in this order, cheapest and most connected first:
    of the five kinds of wildlife, fouling, spore clouds and its loot. Part
    two is built too: the lurkers, the brood keepers and their hives, and
    the forests' close air. Part three (atmosphere and scale) is built, and
-   the first of three Rootways, under the Westwood (below, "The Spore
-   Marsh (the Rootways)"); the other two come next.
+   two of the three Rootways, under the Westwood and the Gillwood (below,
+   "The Spore Marsh (the Rootways)"); the third comes next.
 3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
    map several times Ashfront's width, salvage crates too big for a pack
    that ride in a vehicle's cargo space, sandstorms that bury and uncover
@@ -1479,7 +1479,7 @@ and a fight is short. The planet's mist lies low over everything (its
   "banks", Forward+ only, like all volumetric fog). Bots see no further
   than the mist lets a player (`WorldDef.sight_at`: 38 m deep in a
   forest), so it is fair both ways.
-- **Still to come.** The Rootways and their keepers (the first is built,
+- **Still to come.** The third Rootway and its keeper (two are built,
   below), and the rain storms the planet already has a look for.
 
 ### The Spore Marsh (part three, built: atmosphere and scale)
@@ -1521,11 +1521,13 @@ olive moss, black water, ochre as the warm accent). All of it is view only
 
 Caleb's call: three short Rootways, one under each of three forests, each
 with its own keeper, built one at a time. They are the marsh's dungeons,
-part of the one running world like the Engine, never an instance. The
-first is built: the Westwood Rootway, entered from the western shore, the
-gentlest zone, so it is the first a new player finds. The next two go
-under forests further in (the Gillwood or the Deepwood in the drowned
-middle, then the Rotwood near the core), each keeper harder than the last.
+part of the one running world like the Engine, never an instance. Two are
+built: the Westwood Rootway, entered from the western shore, the gentlest
+zone, so it is the first a new player finds; and the Gillwood Rootway,
+entered from a dry hummock in the drowned middle south of the Gillwood
+(Caleb's pick). The third goes under a forest nearer the core, each
+keeper harder than the last. Each is laid out alike; each keeper fights in
+its own way.
 
 - **Down, not along.** A Rootway is cut into the ground: its mouth is an
   open cut on dry ground, a ramp 12 m wide falling 36 m between root walls
@@ -1562,6 +1564,25 @@ middle, then the Rotwood near the core), each keeper harder than the last.
   stood in her chamber: the marsh's goods, upgrade data, often one of its
   blueprints, now and then an artifact (15%) or the Spore paint. She comes
   back after 10 minutes, her vault closed.
+- **The Shellback Elder** (Caleb's pick). The Gillwood Rootway's keeper:
+  the oldest grazer, a shellback grown to 3.2 m, 1,600 health and 120
+  armor, its dome a battering ram, its soft rear its weak spot (2.5 times
+  the damage from behind). Its fight is positioning, not adds: it calls
+  nothing out of the walls. It charges: from a sprint it lowers its ram and
+  runs 16 m on a 1.1 s windup at whoever it hunts, and runs its whole
+  length whether they are still there or not, so a player who steps aside
+  lets it run on past (one who stands is caught, 48 damage). Four snags,
+  knots of old roots from floor to roof, stand in its chamber: one it
+  rams holds it stuck for 4.5 seconds, its face in the roots and its soft
+  rear turned to the room, and everyone in the chamber is told to get
+  behind it. So the fight is to stand in front of a snag, wait for the
+  charge and step aside. Below half health it charges more often (every
+  3.5 s, not 6) and the floor's spore vents open as in the Rootmother's
+  chamber. It has a body of its own (Look's "shellback_elder"): a ram of
+  pale horn over its brow, two great horns swept forward, a ridge of
+  plates down its dome, a garden of fungus on its back and moss hanging
+  from its skirt. Its vault, a heap of shed plates, pays as hers does, and
+  it comes back after 10 minutes.
 
 ## 3. The watch
 

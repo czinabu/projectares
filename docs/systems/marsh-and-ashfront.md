@@ -66,8 +66,18 @@ date in the same PR.
   in "purge" marker order) and lights the chamber from the "keepers" meta
   (`Rootway.animate`), view only. The passage and chamber sit `BEND` across
   from the line of the mouth; `Rootway.inside` and `way_at` know it, so
-  anything placed past the gallery adds it. Every gap in it is 9 m or more. Check
-  by eye with `visual_check.tscn -- <dir> --rootway-only`.
+  anything placed past the gallery adds it. Every gap in it is 9 m or more.
+  Each entry in `ROOTWAYS` names its keeper's kind, the faction it is made
+  from, what it calls out of its sockets ("" for no sockets) and whether
+  its chamber stands snags (`SNAGS`, "boss_snag" markers, solid trunks in
+  the floors' body so bots path round them) instead of the low knots. A
+  way's vents are `VENTS.size()` "purge" indexes from `index *
+  VENTS.size()`. The Shellback Elder's charge is a dash-strike with
+  `MeleeWeapon.dash_through`, started by its brain as any dash-strike is
+  ("dash" 1.0, "dash_every" by phase through `WorldDef.on_keeper_phase`),
+  and its snags stagger it through `Raid._check_snags` on the authority,
+  so the stun reaches clients with the actor's state. Check by eye with
+  `visual_check.tscn -- <dir> --rootway-only [--way N]`.
 - The scenery army (DESIGN.md "The scenery army", Caleb's call): Ashfront's
   far fights are view only (`worlds/ashfront/battle.gd`, added by the map's
   `make_battle` only where `Look` is on): no collision, no `Combat.deal`,

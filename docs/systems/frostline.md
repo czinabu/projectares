@@ -91,7 +91,10 @@ date in the same PR.
   run by the authority's `Raid._tick_keeper` from `WorldDef.keeper_*`:
   above `keeper_split` it calls its faction out of the map's "boss_socket"
   markers (outside the armies, `_is_extra`), below it vents the "purge"
-  lanes, each warning before it hurts through `Combat.deal`. It carries
+  lanes, each warning before it hurts through `Combat.deal`
+  (`WorldDef.on_keeper_phase` lets a world change how it fights at each
+  turn). A keeper caught in a dash-strike against one of its "boss_snag"
+  markers is staggered (`_check_snags`, `keeper_snag_news`). It carries
   nothing; when it falls (`_keeper_fell`) everyone who hurt it or stood in
   its arena gets a share from its "vault" (`WorldDef.roll_vault`), a
   `LootContainer` only its owner may loot (`reserved`), cleared when it

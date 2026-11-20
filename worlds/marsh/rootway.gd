@@ -19,10 +19,17 @@ extends RefCounted
 const Flora := preload("res://worlds/marsh/flora.gd")
 
 ## The Rootways: where each mouth opens (on whole even metres, so the cut
-## lies on the ground's samples), which way it runs in, and its keeper.
+## lies on the ground's samples), which way it runs in, and its keeper: its
+## kind, the faction it is made from, what it calls out of its wall sockets
+## ("" for none, and no sockets) and whether its chamber stands snags it
+## can ram (`SNAGS`).
 const ROOTWAYS := [
 	{"name": "the Westwood Rootway", "mouth": Vector2(-96.0, 164.0), "inward": Vector2(0.0, -1.0),
-			"keeper": "rootmother", "boss_name": "The Rootmother"},
+			"keeper": "rootmother", "boss_name": "The Rootmother", "faction": "keeper", "adds": "broodling",
+			"snags": false},
+	{"name": "the Gillwood Rootway", "mouth": Vector2(84.0, 130.0), "inward": Vector2(0.0, -1.0),
+			"keeper": "elder", "boss_name": "The Shellback Elder", "faction": "shellback", "adds": "",
+			"snags": true},
 ]
 
 ## The cut: a ramp this long, open to the sky, from the ground down to the
@@ -72,6 +79,14 @@ const VENTS := [
 ]
 const VENT_WIDTH := 4.0
 const VENT_DAMAGE := 22.0
+## A charging keeper's snags: trunks of root from floor to roof in its
+## chamber ([x, z] on the floor, `BEND` added), clear of the vents, the door
+## and the vault. One it rams holds it `SNAG_STUN` seconds.
+const SNAGS := [Vector2(-12.5, 96.0), Vector2(12.5, 96.0), Vector2(-4.5, 110.0), Vector2(4.5, 110.0)]
+const SNAG_RADIUS := 1.3
+const SNAG_STUN := 4.5
+## The snags' old wood, paler than the walls' roots.
+const SNAG_WOOD := Color(0.62, 0.53, 0.4)
 
 
 ## A Rootway's frame: x across, y up, z inward from its mouth.
@@ -173,7 +188,7 @@ static func build(map: Node3D, floor_material: Material, wall_material: Material
 			return float(map.call("ground_height", at.x, at.z))
 		_build_cut(parts, top, ground)
 		_build_tunnels(parts)
-		_build_chamber(parts)
+		_build_chamber(parts, bool(way["snags"]))
 		parts.flush()
 		_place_markers(map, way, f)
 		parts.floors.set_meta("top", top)
@@ -258,7 +273,7 @@ static func _build_tunnels(parts: Parts) -> void:
 
 ## The keeper's round chamber: a round floor, a ring of root walls with the
 ## door toward the passage, a roof, and a few knots of root for cover.
-static func _build_chamber(parts: Parts) -> void:
+static func _build_chamber(parts: Parts, snags: bool) -> void:
 	var roof_top := ROOF + ROOF_THICK
 	var reach := CHAMBER_RADIUS + WALL
 	parts.disc(Vector3(BEND, CHAMBER_FLOOR - 0.5, CHAMBER_Z), CHAMBER_RADIUS + 0.3, 1.0)
@@ -276,6 +291,11 @@ static func _build_chamber(parts: Parts) -> void:
 			continue
 		var mid := Vector3(BEND, 0, CHAMBER_Z) + out * (CHAMBER_RADIUS + WALL * 0.5)
 		parts.box(mid, Vector2(width, WALL), CHAMBER_FLOOR - 1.0, roof_top, a)
+	# A charging keeper's snags: trunks floor to roof, walked round.
+	if snags:
+		for at: Vector2 in SNAGS:
+			parts.box(Vector3(BEND + at.x, 0, at.y), Vector2.ONE * SNAG_RADIUS * 1.6, CHAMBER_FLOOR - 0.2, ROOF, PI * 0.25, true)
+		return
 	# Knots of root to duck behind, clear of the vents.
 	for knot: Array in [[Vector2(BEND - 12.5, CHAMBER_Z), 0.4], [Vector2(BEND + 12.5, CHAMBER_Z), -0.4]]:
 		var at: Vector2 = knot[0]
@@ -294,19 +314,24 @@ static func _place_markers(map: Node3D, way: Dictionary, f: Transform3D) -> void
 	for spot: Vector3 in [Vector3(-14.5, FLOOR + 0.1, 46.5), Vector3(14.5, FLOOR + 0.1, 69.5)]:
 		(map.call("_add_marker", "spawn_cache", f * spot) as Marker3D).set_meta("loot_source", "rootway")
 	var boss: Marker3D = map.call("_add_marker", "spawn_boss", f * Vector3(BEND, CHAMBER_FLOOR + 0.1, CHAMBER_Z + 2.0))
-	boss.set_meta("faction", "keeper")
+	boss.set_meta("faction", way["faction"])
 	boss.set_meta("boss", kind)
 	boss.set_meta("keeper", true)
 	boss.set_meta("radius", CHAMBER_RADIUS - 4.0)
 	boss.set_meta("arena", ARENA)
 	boss.set_meta("respawn", RESPAWN)
 	boss.set_meta("name", way["name"])
-	for angle: float in SOCKETS:
+	for angle: float in SOCKETS if str(way["adds"]) != "" else []:
 		var a := deg_to_rad(angle)
 		var at := Vector3(-sin(a), 0.0, -cos(a)) * (CHAMBER_RADIUS - 1.5) + Vector3(BEND, CHAMBER_FLOOR + 0.1, CHAMBER_Z)
 		var socket: Marker3D = map.call("_add_marker", "boss_socket", f * at)
 		socket.set_meta("keeper", kind)
-		socket.set_meta("faction", "broodling")
+		socket.set_meta("faction", way["adds"])
+	for at: Vector2 in SNAGS if bool(way["snags"]) else []:
+		var snag: Marker3D = map.call("_add_marker", "boss_snag", f * Vector3(BEND + at.x, CHAMBER_FLOOR + 0.1, at.y))
+		snag.set_meta("keeper", kind)
+		snag.set_meta("radius", SNAG_RADIUS)
+		snag.set_meta("stun", SNAG_STUN)
 	for lane: Array in VENTS:
 		var from: Vector2 = lane[0]
 		var to: Vector2 = lane[1]
@@ -441,6 +466,7 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 	weave.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var caps: Array[Transform3D] = []
 	var eggs: Array[Transform3D] = []
+	var plates: Array[Transform3D] = []
 	for way: Dictionary in ROOTWAYS:
 		var f := frame(way)
 		var top := float(ground.call(f.origin.x, f.origin.z))
@@ -454,7 +480,27 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 		var chamber := _light(f * Vector3(BEND, ROOF - 1.5, CHAMBER_Z), CHAMBER_GLOW[1], 3.0, 28.0)
 		art.add_child(chamber)
 		lights.append({"light": chamber, "keeper": way["keeper"]})
-		# The sockets' egg sacs and the vault's cocoon.
+		# The sockets' egg sacs and the vault's cocoon, or for a keeper that
+		# charges, its snags twisted round with roots and its vault a heap
+		# of shed plates.
+		if bool(way["snags"]):
+			for at: Vector2 in SNAGS:
+				_dress_snag(roots, f, Vector3(BEND + at.x, CHAMBER_FLOOR, at.y), rng)
+				# A ring of glowcaps round its foot, so it shows in the dark.
+				for k in 9:
+					var a := TAU * k / 9.0 + rng.randf_range(-0.2, 0.2)
+					var spot := Vector3(BEND + at.x + sin(a) * (SNAG_RADIUS + 0.7), CHAMBER_FLOOR - 0.02, at.y + cos(a) * (SNAG_RADIUS + 0.7))
+					caps.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(1.0, 2.2)), f * spot))
+			var heap := f * Vector3(BEND, CHAMBER_FLOOR, CHAMBER_Z + CHAMBER_RADIUS - 1.6)
+			for k in 12:
+				var s := rng.randf_range(0.5, 1.0)
+				var tilt := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.5, 0.5))
+				plates.append(Transform3D(tilt.scaled(Vector3(s * 1.6, s * 0.35, s * 1.3)),
+						heap + f.basis * Vector3(rng.randf_range(-2.4, 2.4), rng.randf_range(0.2, 1.6), rng.randf_range(-0.6, 0.6))))
+			art.add_child(_light(heap + Vector3(0, 2.4, 0) - f.basis.z * 1.5, Color(1.0, 0.8, 0.5), 1.4, 8.0))
+			for lane: Array in VENTS:
+				vents.append(_vent(art, f, lane))
+			continue
 		for angle: float in SOCKETS:
 			var a := deg_to_rad(angle)
 			var at := Vector3(-sin(a), 0.0, -cos(a)) * (CHAMBER_RADIUS - 0.4) + Vector3(BEND, CHAMBER_FLOOR, CHAMBER_Z)
@@ -501,7 +547,40 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 	egg_mat.roughness = 0.3
 	egg.material = egg_mat
 	art.add_child(_scatter("RootwayEggs", egg, eggs))
+	if not plates.is_empty():
+		var plate := SphereMesh.new()
+		plate.radius = 0.5
+		plate.height = 1.0
+		plate.radial_segments = 10
+		plate.rings = 5
+		var plate_mat := StandardMaterial3D.new()
+		plate_mat.albedo_color = Color(0.34, 0.3, 0.24)
+		plate_mat.roughness = 0.85
+		plate.material = plate_mat
+		art.add_child(_scatter("RootwayPlates", plate, plates))
 	return {"vents": vents, "lights": lights}
+
+
+## A snag dressed: pale old roots, unlike the walls, twisted up round its
+## trunk from flared feet on the floor to a spread under the roof, so it
+## reads as a knot of old wood a charging beast could drive into.
+static func _dress_snag(st: SurfaceTool, f: Transform3D, at: Vector3, rng: RandomNumberGenerator) -> void:
+	for i in 6:
+		var a := i * TAU / 6.0 + rng.randf_range(-0.2, 0.2)
+		var twist := rng.randf_range(0.6, 1.1) * (1.0 if i % 2 == 0 else -1.0)
+		var points := PackedVector3Array()
+		var radii := PackedFloat32Array()
+		var colours: Array[Color] = []
+		var steps := 8
+		for s in steps + 1:
+			var t := float(s) / steps
+			var flare := 1.0 + 1.3 * pow(1.0 - t, 3.0) + 1.0 * pow(t, 4.0)
+			var turn := a + twist * t * PI
+			var r := SNAG_RADIUS * 0.85 * flare
+			points.append(f * (at + Vector3(sin(turn) * r, -0.15 + t * (ROOF - CHAMBER_FLOOR + 0.2), cos(turn) * r)))
+			radii.append(rng.randf_range(0.32, 0.46) * (1.3 - 0.4 * t))
+			colours.append(SNAG_WOOD.lerp(SNAG_WOOD.darkened(0.4), rng.randf() * 0.5))
+		Flora._tube(st, points, radii, colours, 7)
 
 
 ## The walls grown over: thick roots woven along every straight wall and

@@ -303,6 +303,8 @@ var keepers := {}
 var purges: Array[Node3D] = []
 var _sockets: Array[Node3D] = []
 var _vaults: Array[Node3D] = []
+## The map's "boss_snag" markers: what a charging keeper can ram.
+var _snags: Array[Node3D] = []
 ## How long a purge lane vents after its warning.
 const PURGE_VENT := 0.8
 ## Bosses' toughness is counted this often (`_scale_boss`).
@@ -2254,6 +2256,7 @@ func _find_keepers() -> void:
 	purges = _map_nodes("purge")
 	_sockets = _map_nodes("boss_socket")
 	_vaults = _map_nodes("vault")
+	_snags = _map_nodes("boss_snag")
 	map.set_meta("keepers", keepers.duplicate())
 	if Look.enabled and map.has_method("show_purge"):
 		var show := Callable(map, "show_purge")
@@ -2323,9 +2326,11 @@ func _tick_keeper(boss: Dictionary, delta: float) -> void:
 		return
 	var keeper := bot as Actor
 	var near := _arena_players(marker)
+	_check_snags(keeper, kind, near)
 	var phase := 2 if keeper.health.health < keeper.health.max_health * world.keeper_split else 1
 	if phase != int(keepers.get(kind, 1)):
 		_set_keeper_phase(kind, phase)
+		world.on_keeper_phase(keeper, phase)
 		var news := world.keeper_news(keeper, phase)
 		for actor in near:
 			if news != "":
@@ -2344,6 +2349,33 @@ func _tick_keeper(boss: Dictionary, delta: float) -> void:
 		if boss.purge_in <= 0.0:
 			boss.purge_in = world.keeper_purge_every
 			_start_purges(boss, kind)
+
+
+## A keeper in a dash-strike (`MeleeWeapon.is_dashing`) that has run into
+## one of its snags, facing it, is stuck there: staggered for the snag's
+## "stun" (the stagger cancels the strike and reaches clients with its
+## state), and everyone in its arena is told.
+func _check_snags(keeper: Actor, kind: String, near: Array[Actor]) -> void:
+	var blade := keeper.get_active_weapon() as MeleeWeapon
+	if blade == null or not blade.is_dashing() or keeper.stagger_left > 0.0:
+		return
+	var facing := keeper.get_aim_dir()
+	facing.y = 0.0
+	facing = facing.normalized()
+	for snag in _snags:
+		if str(snag.get_meta("keeper", "")) != kind:
+			continue
+		var to := snag.global_position - keeper.global_position
+		to.y = 0.0
+		var reach := float(snag.get_meta("radius", 1.0)) + Actor.BODY_RADIUS + 0.6
+		if to.length() > reach or facing.dot(to.normalized()) < 0.5:
+			continue
+		keeper.stagger(float(snag.get_meta("stun", 3.0)))
+		var news := world.keeper_snag_news(keeper)
+		if news != "":
+			for actor in near:
+				actor.notice.emit(news)
+		return
 
 
 ## A keeper calls one of its faction out of its next wall socket, posted to

@@ -65,6 +65,24 @@ const ROOTMOTHER_HEIGHT := 3.4
 const ROOTMOTHER_HEALTH := 1200.0
 const ROOTMOTHER_ARMOR := 45.0
 const ROOTMOTHER_REAR := 2.0
+## The Shellback Elder (Caleb's pick), keeper of the Gillwood Rootway: the
+## oldest grazer, its dome grown into a battering ram. It charges: a
+## dash-strike that runs its whole length (`MeleeWeapon.dash_through`) on a
+## long windup, so a player who steps aside lets it run on, and one that
+## rams a snag in its chamber is stuck there `Rootway.SNAG_STUN` seconds,
+## its soft rear open. Below half health it charges more often and the
+## floor's spore vents open. It calls nothing out of the walls.
+const ELDER := "elder"
+const ELDER_HEIGHT := 3.2
+const ELDER_HEALTH := 1600.0
+const ELDER_ARMOR := 120.0
+const ELDER_REAR := 2.5
+## Its charge: how far it runs, the windup it runs through, what it does to
+## whoever it catches, and the least time between charges, by phase.
+const ELDER_CHARGE := 16.0
+const ELDER_CHARGE_WINDUP := 1.1
+const ELDER_CHARGE_DAMAGE := 48.0
+const ELDER_CHARGE_EVERY := [6.0, 3.5]
 ## A Rootway keeper's vault (Caleb's call on the Engine's: a share for
 ## everyone who fought it): the marsh's goods, upgrade data, often one of
 ## its blueprints and now and then an artifact or the Spore paint.
@@ -541,6 +559,9 @@ func make_warlord(bot: Actor) -> void:
 	if bot.get_meta("boss", "") == ROOTMOTHER:
 		_make_rootmother(bot)
 		return
+	if bot.get_meta("boss", "") == ELDER:
+		_make_elder(bot)
+		return
 	if bot.get_meta("boss", "") != "matriarch":
 		super(bot)
 		return
@@ -585,6 +606,38 @@ func _make_rootmother(bot: Actor) -> void:
 		hooks.reach = 3.8
 
 
+## The Shellback Elder: a shellback grown huge (see `ELDER`), made from a
+## shellback (its marker's faction) so the grazers are its kin. Free of
+## randomness, like every boss.
+func _make_elder(bot: Actor) -> void:
+	bot.display_name = "The Shellback Elder"
+	bot.set_meta("look", "shellback_elder")
+	bot.set_meta("feint_chance", 0.0)
+	bot.set_meta("aim_turn", 75.0)
+	bot.set_meta("dash", 1.0)
+	bot.set_meta("dash_every", ELDER_CHARGE_EVERY[0])
+	bot.body_color = Color(0.36, 0.33, 0.27)
+	bot.set_stand_height(ELDER_HEIGHT, 0.6)
+	bot.walk_speed = 2.6
+	bot.sprint_speed = 4.4
+	bot.health.max_health = ELDER_HEALTH
+	bot.health.health = ELDER_HEALTH
+	bot.health.set_armor(ELDER_ARMOR)
+	bot.rear_damage_mult = ELDER_REAR
+	var horns := bot.get_active_weapon() as MeleeWeapon
+	if horns:
+		horns.display_name = "Elder's Dome"
+		horns.light_damage = 30.0
+		horns.light_windup = 0.7
+		horns.reach = 3.4
+		horns.heavy_damage = ELDER_CHARGE_DAMAGE
+		horns.heavy_windup = ELDER_CHARGE_WINDUP
+		horns.heavy_stamina = 0.0
+		horns.dash_range = ELDER_CHARGE
+		horns.dash_stamina = 0.0
+		horns.dash_through = true
+
+
 ## A share of a Rootway keeper's vault.
 func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
 	var out: Array[String] = []
@@ -602,11 +655,31 @@ func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
 	return out
 
 
-func keeper_news(_bot: Actor, phase: int) -> String:
+func keeper_news(bot: Actor, phase: int) -> String:
+	var elder: bool = bot != null and is_instance_valid(bot) and bot.get_meta("boss", "") == ELDER
+	if elder and phase == 2:
+		return "The Shellback Elder bellows and the floor cracks: it charges harder, and the spore vents are venting"
+	if elder and phase == 0:
+		return "The Shellback Elder has fallen: its vault under the Gillwood is open to all who fought it"
 	if phase == 2:
 		return "The Rootmother tears the floor open: the spore vents are venting, watch your feet"
 	if phase == 0:
 		return "The Rootmother has fallen: her vault under the Westwood is open to all who fought her"
+	return ""
+
+
+## Hurt below half, the Elder charges more often.
+func on_keeper_phase(bot: Actor, phase: int) -> void:
+	if bot.get_meta("boss", "") != ELDER:
+		return
+	var brain := bot.get_node_or_null("Brain") as BotBrain
+	if brain != null:
+		brain.dash_every = ELDER_CHARGE_EVERY[1] if phase == 2 else ELDER_CHARGE_EVERY[0]
+
+
+func keeper_snag_news(bot: Actor) -> String:
+	if bot != null and bot.get_meta("boss", "") == ELDER:
+		return "The Shellback Elder has rammed the roots and is stuck: get behind it"
 	return ""
 
 
@@ -615,6 +688,8 @@ func boss_back_news(bot: Actor, _where: String) -> String:
 		return "The Grey Matriarch is back in her den"
 	if bot != null and bot.get_meta("boss", "") == ROOTMOTHER:
 		return "The Rootmother stirs again under the Westwood"
+	if bot != null and bot.get_meta("boss", "") == ELDER:
+		return "The Shellback Elder stirs again under the Gillwood"
 	return super(bot, _where)
 
 
