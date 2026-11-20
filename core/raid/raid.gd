@@ -34,6 +34,8 @@ signal actor_spawned(actor: Actor)
 signal actor_removed(actor: Actor)
 signal container_spawned(container: LootContainer)
 signal vehicle_spawned(vehicle: Node3D)
+## A salvage crate was placed in the world (`spawn_crate`).
+signal crate_spawned(crate: SalvageCrate)
 signal vehicle_removed(vehicle: Node3D)
 ## A player threw a toy vehicle off their watch. It flies from `from`.
 signal toy_thrown(actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3)
@@ -160,6 +162,12 @@ var piles: Array[LootContainer] = []
 ## What a scrip pile's bonus item is usually picked from (`pile_bonus`).
 const PILE_SMALL_TAGS := ["consumable", "material", "augment", "attachment", "upgrade_data"]
 var vehicles: Array[Node3D] = []
+## Salvage crates in the world (`SalvageCrate`), wherever they are.
+var crates: Array[SalvageCrate] = []
+## Authority: the map's "spawn_crate" markers, each {marker, crate, empty_for},
+## and how long each crate set down away from a marker has lain there.
+var _crate_spots: Array = []
+var _crate_idle := {}
 # Toy vehicles. A vehicle a player owns rides on their watch as a toy
 # (`PlayerState.stowed`); thrown, it flies in an arc and unpacks where it lands.
 ## How hard a toy is thrown, in m/s, and how much the throw is tipped upwards.
@@ -443,6 +451,7 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Di
 	_spawn_bosses()
 	_spawn_guards()
 	_spawn_map_vehicles()
+	_spawn_crates()
 
 
 ## Starts the raid as the authority for an online game. Players are added with
@@ -457,6 +466,7 @@ func start_server(p_world: WorldDef, p_seed: int = -1) -> void:
 	_spawn_bosses()
 	_spawn_guards()
 	_spawn_map_vehicles()
+	_spawn_crates()
 
 
 ## Starts the raid as a view of a server's raid: the map only. Actors are added
@@ -606,6 +616,8 @@ func _physics_process(delta: float) -> void:
 	_tick_raiders(delta)
 	_tick_detail(delta)
 	_tick_vehicles(delta)
+	if not _crate_spots.is_empty() or not crates.is_empty():
+		_tick_crates(delta)
 
 
 ## DEV MODE: changes the cheats mid-run. Turning god mode off takes effect
@@ -4012,6 +4024,8 @@ func pack_vehicle(actor: Actor) -> String:
 		why = "Someone is riding it"
 	elif state.stowed.size() >= watch_capacity:
 		why = "Your watch is full"
+	elif _has_cargo(vehicle):
+		why = "Unload its cargo first"
 	if why != "":
 		actor.notice.emit(why)
 		return why
@@ -4095,11 +4109,207 @@ func swap_worn(actor: Actor, item_id: String) -> String:
 func remove_vehicle(vehicle: Node3D) -> void:
 	if not is_instance_valid(vehicle):
 		return
+	spill_cargo(vehicle)
 	vehicle.call("dismount_all")
 	vehicles.erase(vehicle)
 	_idle.erase(vehicle)
 	vehicle_removed.emit(vehicle)
 	vehicle.queue_free()
+
+
+# --- Salvage crates (DESIGN.md "The Dune Sea") ------------------------------
+
+## Places a salvage crate holding `items` standing at `at`. Everywhere: a
+## client builds the ones the server tells it of (`NetSession`).
+func spawn_crate(items: Array, at: Vector3) -> SalvageCrate:
+	var crate := SalvageCrate.new()
+	crate.items.assign(items)
+	add_child(crate)
+	crate.global_position = at
+	crates.append(crate)
+	crate.tree_exiting.connect(func() -> void:
+		crates.erase(crate)
+		_crate_idle.erase(crate))
+	crate_spawned.emit(crate)
+	return crate
+
+
+## Authority: a crate on every "spawn_crate" marker, filled from the
+## world's "crate" loot (`WorldDef.roll_loot`, or the marker's
+## "loot_source").
+func _spawn_crates() -> void:
+	for marker in _map_nodes("spawn_crate"):
+		_crate_spots.append({"marker": marker, "crate": _crate_at(marker), "empty_for": 0.0})
+
+
+func _crate_at(marker: Node3D) -> SalvageCrate:
+	var items := world.roll_loot(str(marker.get_meta("loot_source", "crate")), rng)
+	return spawn_crate(items, marker.global_position + Vector3(0, SalvageCrate.SIZE.y * 0.5, 0))
+
+
+## Authority: a marker whose crate has gone (banked, or carried off) gets a
+## new one after `WorldDef.crate_respawn_time`; a crate left lying away from
+## any marker, nobody holding it, is cleared after `WorldDef.crate_lifetime`,
+## as a bag is, so a world that never ends does not fill up with them.
+func _tick_crates(delta: float) -> void:
+	if mode == Mode.CLIENT:
+		return
+	for spot: Dictionary in _crate_spots:
+		var crate: Variant = spot.crate
+		var marker: Node3D = spot.marker
+		if crate != null and is_instance_valid(crate) and (crate as SalvageCrate).holder == null \
+				and (crate as SalvageCrate).global_position.distance_to(marker.global_position) < 3.0:
+			spot.empty_for = 0.0
+			continue
+		spot.empty_for = float(spot.empty_for) + delta
+		if spot.empty_for >= world.crate_respawn_time:
+			spot.empty_for = 0.0
+			spot.crate = _crate_at(marker)
+	for crate in crates.duplicate():
+		if crate.holder != null or _is_crate_home(crate):
+			_crate_idle.erase(crate)
+			continue
+		_crate_idle[crate] = float(_crate_idle.get(crate, 0.0)) + delta
+		if _crate_idle[crate] >= world.crate_lifetime:
+			crate.queue_free()
+
+
+func _is_crate_home(crate: SalvageCrate) -> bool:
+	for spot: Dictionary in _crate_spots:
+		if spot.crate == crate:
+			return true
+	return false
+
+
+## Authority: `actor` lifts `crate` into both hands, off the ground or out
+## of a vehicle's cargo. Returns "" if they did, or why not (a notice too).
+func lift_crate(actor: Actor, crate: SalvageCrate) -> String:
+	var why := ""
+	if mode == Mode.CLIENT or actor == null or actor.is_dead or not is_instance_valid(crate):
+		why = "not now"
+	elif actor.vehicle != null:
+		why = "Get off to lift it"
+	elif actor.crate != null:
+		why = "Your hands are full"
+	elif crate.holder is Actor:
+		why = "Someone is carrying it"
+	if why != "":
+		if why != "not now":
+			actor.notice.emit(why)
+		return why
+	_take_from_cargo(crate)
+	actor.crate = crate
+	crate.place(actor)
+	actor.notice.emit("Lifted a salvage crate: load it into a vehicle, or bring it to a depot")
+	return ""
+
+
+## Authority: `actor` puts down the crate in their hands: into the cargo of
+## the vehicle `target` belongs to when it has room, else on the ground in
+## front of them. Returns "" if it went into a vehicle, or where it went.
+func set_down_crate(actor: Actor, target: Interactable = null) -> String:
+	if mode == Mode.CLIENT or actor == null or actor.crate == null:
+		return "not now"
+	var crate := actor.crate
+	var vehicle: Node3D = target.get("vehicle") if target != null and target.get("vehicle") is Node3D else null
+	if vehicle != null and vehicle in vehicles:
+		var free := (vehicle.get("cargo") as Array).find(null)
+		if free >= 0:
+			actor.crate = null
+			(vehicle.get("cargo") as Array)[free] = crate
+			crate.place(vehicle, free)
+			actor.notice.emit("Loaded a salvage crate (%d of %d)" % [_cargo_count(vehicle),
+					(vehicle.get("cargo") as Array).size()])
+			return ""
+		actor.notice.emit("No room in its cargo" if not (vehicle.get("cargo") as Array).is_empty()
+				else "It has no room for cargo")
+		return "full"
+	var ahead := Basis(Vector3.UP, actor.cmd.yaw) * Vector3(0, 0, -1.0)
+	drop_crate(crate, actor.global_position + ahead)
+	return "down"
+
+
+## Authority: puts `crate` down on the ground at `at` (its holder lets go).
+func drop_crate(crate: SalvageCrate, at: Vector3) -> void:
+	if not is_instance_valid(crate):
+		return
+	if crate.holder is Actor and (crate.holder as Actor).crate == crate:
+		(crate.holder as Actor).crate = null
+	_take_from_cargo(crate)
+	crate.global_transform = Transform3D(Basis.IDENTITY, _ground_below(at) + Vector3(0, SalvageCrate.SIZE.y * 0.5, 0))
+	crate.place(null)
+
+
+## Authority: every crate in `vehicle`'s cargo falls off round it.
+func spill_cargo(vehicle: Node3D) -> void:
+	if mode == Mode.CLIENT or not is_instance_valid(vehicle):
+		return
+	var cargo: Array = vehicle.get("cargo") if vehicle.get("cargo") is Array else []
+	var i := 0
+	for crate: Variant in cargo.duplicate():
+		if crate != null and is_instance_valid(crate):
+			var side := Basis(Vector3.UP, vehicle.rotation.y) * Vector3(1.8 if i % 2 == 0 else -1.8, 0, float(i / 2) * 1.2 - 0.6)
+			drop_crate(crate, vehicle.global_position + side)
+			i += 1
+
+
+func _has_cargo(vehicle: Node3D) -> bool:
+	return _cargo_count(vehicle) > 0
+
+
+func _cargo_count(vehicle: Node3D) -> int:
+	var count := 0
+	for crate: Variant in vehicle.get("cargo") if vehicle.get("cargo") is Array else []:
+		if crate != null and is_instance_valid(crate):
+			count += 1
+	return count
+
+
+func _take_from_cargo(crate: SalvageCrate) -> void:
+	var vehicle := crate.holder
+	if vehicle != null and is_instance_valid(vehicle) and not vehicle is Actor:
+		var cargo: Array = vehicle.get("cargo")
+		var at := cargo.find(crate)
+		if at >= 0:
+			cargo[at] = null
+
+
+## The ground's height under `at` (a ray down from a little above it), or
+## `at` itself with nothing under it.
+func _ground_below(at: Vector3) -> Vector3:
+	if not is_inside_tree():
+		return at
+	var query := PhysicsRayQueryParameters3D.create(at + Vector3(0, 2.0, 0), at + Vector3(0, -6.0, 0), Actor.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return at if hit.is_empty() else hit["position"]
+
+
+## Authority: what `actor` hauls goes in with a bank: the crate in their
+## hands and their vehicle's cargo. Returns the items, the crates gone.
+func _bank_crates(actor: Actor) -> Array[String]:
+	var out: Array[String] = []
+	for crate: SalvageCrate in SalvageCrate.hauled_by(actor):
+		out.append_array(crate.items)
+		if actor.crate == crate:
+			actor.crate = null
+		_take_from_cargo(crate)
+		crates.erase(crate)
+		crate.queue_free()
+	return out
+
+
+## Authority: the crate in `actor`'s hands falls where they are, and the
+## cargo of the vehicle they drive with it (a death, or a sign-out: a crate
+## is only ever banked at a depot).
+func _drop_hauled(actor: Actor) -> void:
+	if mode == Mode.CLIENT or actor == null:
+		return
+	if actor.crate != null and is_instance_valid(actor.crate):
+		drop_crate(actor.crate, actor.global_position)
+	actor.crate = null
+	var vehicle := actor.vehicle
+	if vehicle != null and is_instance_valid(vehicle) and vehicle.get("rider") == actor:
+		spill_cargo(vehicle)
 
 
 func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3,
@@ -4118,6 +4328,8 @@ func spawn_container(items: Array, is_bag: bool, label: String, at: Vector3,
 
 func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 	world.on_death(actor, info)
+	# A crate is never in a bag: what they hauled falls where they died.
+	_drop_hauled(actor)
 	_tell_team(actor)
 	if grudges.has(actor):
 		# A grudge lasts one life.
@@ -4320,6 +4532,7 @@ func _publish_standing() -> void:
 func _remove_actor(actor: Actor) -> void:
 	if not is_instance_valid(actor):
 		return
+	_drop_hauled(actor)
 	var state := state_for(actor)
 	if state != null:
 		players.erase(state)
@@ -4342,7 +4555,8 @@ func _on_actor_banked(actor: Actor) -> void:
 	if state == null or state.finished or actor.is_dead:
 		return
 	var items := Depot.bankable(actor)
-	if items.is_empty() and state.scrip <= 0:
+	var hauled := _bank_crates(actor)
+	if items.is_empty() and state.scrip <= 0 and hauled.is_empty():
 		return
 	if state.scrip > 0:
 		# Banked scrip is safe: it is paid out when this life ends, however it ends.
@@ -4351,7 +4565,7 @@ func _on_actor_banked(actor: Actor) -> void:
 		state.scrip = 0
 		actor.scrip = 0
 		actor.banked_scrip = state.scrip_banked
-	if items.is_empty():
+	if items.is_empty() and hauled.is_empty():
 		banked_changed.emit(actor)
 		return
 	var heavy := ""
@@ -4365,6 +4579,8 @@ func _on_actor_banked(actor: Actor) -> void:
 			heavy = ""
 		else:
 			actor.inventory.remove_item(id)
+	# A crate's contents go in with the pack's.
+	items.append_array(hauled)
 	state.banked.append_array(items)
 	_count(state, "banks")
 	actor.banked_count = state.banked.size()
@@ -4424,6 +4640,8 @@ func _leave(state: PlayerState) -> void:
 	if state.finished or actor.is_dead:
 		return
 	world.on_leave(actor)
+	# A crate goes home only through a depot: what they haul stays behind.
+	_drop_hauled(actor)
 	var ridden := actor.vehicle
 	if ridden != null:
 		state.rode_home = ridden.get("item_id")

@@ -396,6 +396,8 @@ var _vehicles := {}      # vehicle id -> vehicle node
 ## Vehicle id -> whether it was parked, nobody aboard, when last sent.
 var _vehicle_parked := {}
 var _vehicle_ids := {}   # vehicle node -> id
+var _crates := {}        # crate id -> SalvageCrate
+var _crate_ids := {}     # SalvageCrate -> id
 var _vehicle_targets := {} # vehicle id -> newest state entry (client)
 var _ride_history := {}  # input number -> [position, heading, speed] of the ride after it (client)
 var _ride_fix := Vector3.ZERO # position error of your ride still to blend away (client)
@@ -650,6 +652,7 @@ func _start_server_raid() -> void:
 	raid.container_spawned.connect(_on_server_container_spawned)
 	raid.vehicle_spawned.connect(_on_server_vehicle_spawned)
 	raid.vehicle_removed.connect(_on_server_vehicle_removed)
+	raid.crate_spawned.connect(_on_server_crate_spawned)
 	raid.watch_changed.connect(_send_watch)
 	raid.tally_changed.connect(_send_tally)
 	raid.banked_changed.connect(_send_banked)
@@ -766,6 +769,8 @@ func _clear_tables() -> void:
 	_vehicles.clear()
 	_vehicle_ids.clear()
 	_vehicle_targets.clear()
+	_crates.clear()
+	_crate_ids.clear()
 	_ride_history.clear()
 	_ride_fix = Vector3.ZERO
 	_ride_turn = 0.0
@@ -1176,6 +1181,97 @@ func _on_server_vehicle_removed(vehicle: Node3D) -> void:
 	_vehicle_parked.erase(id)
 	for peer in _joined_peers:
 		_vehicle_gone.rpc_id(peer, id)
+
+
+## Server: a salvage crate (`SalvageCrate`) is told to everyone, and where
+## it is each time it moves: on the ground, in someone's hands or in a
+## vehicle's cargo. Its contents stay on the server until it is banked.
+func _on_server_crate_spawned(crate: SalvageCrate) -> void:
+	var id := _next_id
+	_next_id += 1
+	_crates[id] = crate
+	_crate_ids[crate] = id
+	crate.moved.connect(func() -> void:
+		var where := _crate_where(crate)
+		for peer in _joined_peers:
+			_crate_moved.rpc_id(peer, id, where))
+	crate.tree_exited.connect(func() -> void:
+		if not _crates.has(id):
+			return
+		_crates.erase(id)
+		_crate_ids.erase(crate)
+		for peer in _joined_peers:
+			_crate_gone.rpc_id(peer, id))
+	for peer in _joined_peers:
+		_send_crate(peer, id)
+
+
+func _send_crate(peer: int, id: int) -> void:
+	_crate.rpc_id(peer, id, _crate_where(_crates[id]))
+
+
+## Where a crate is, as sent: [position, holder kind (0 the ground, 1 an
+## actor, 2 a vehicle), the holder's id, cargo slot].
+func _crate_where(crate: SalvageCrate) -> Array:
+	var holder := crate.holder
+	if holder is Actor and _ids.has(holder):
+		return [crate.global_position, 1, int(_ids[holder]), -1]
+	if holder != null and _vehicle_ids.has(holder):
+		return [crate.global_position, 2, int(_vehicle_ids[holder]), crate.slot]
+	return [crate.global_position, 0, -1, -1]
+
+
+@rpc("authority", "call_remote", "reliable")
+func _crate(id: int, where: Array) -> void:
+	if raid == null or _crates.has(id):
+		return
+	var crate := raid.spawn_crate([], where[0] if where.size() > 0 and where[0] is Vector3 else Vector3.ZERO)
+	_crates[id] = crate
+	_crate_ids[crate] = id
+	_crate_moved(id, where)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _crate_moved(id: int, where: Array) -> void:
+	var crate: SalvageCrate = _crates.get(id)
+	if crate == null or not is_instance_valid(crate) or where.size() < 4 or not where[0] is Vector3:
+		return
+	# Let go of wherever it was.
+	if crate.holder is Actor and is_instance_valid(crate.holder) and (crate.holder as Actor).crate == crate:
+		(crate.holder as Actor).crate = null
+	elif crate.holder != null and is_instance_valid(crate.holder) and crate.holder.get("cargo") is Array:
+		var cargo: Array = crate.holder.get("cargo")
+		var was := cargo.find(crate)
+		if was >= 0:
+			cargo[was] = null
+	var kind := int(where[1])
+	var holder_id := int(where[2])
+	if kind == 1 and _actors.has(holder_id) and is_instance_valid(_actors[holder_id]):
+		var actor: Actor = _actors[holder_id]
+		actor.crate = crate
+		crate.place(actor)
+	elif kind == 2 and _vehicles.has(holder_id) and is_instance_valid(_vehicles[holder_id]):
+		var vehicle: Node3D = _vehicles[holder_id]
+		var slot := int(where[3])
+		var cargo: Array = vehicle.get("cargo")
+		if slot >= 0 and slot < cargo.size():
+			cargo[slot] = crate
+		crate.place(vehicle, slot)
+	else:
+		crate.global_position = where[0]
+		crate.place(null)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _crate_gone(id: int) -> void:
+	var crate: SalvageCrate = _crates.get(id)
+	_crates.erase(id)
+	if crate == null or not is_instance_valid(crate):
+		return
+	_crate_ids.erase(crate)
+	if crate.holder is Actor and is_instance_valid(crate.holder) and (crate.holder as Actor).crate == crate:
+		(crate.holder as Actor).crate = null
+	crate.queue_free()
 
 
 func _send_vehicle(peer: int, id: int) -> void:
@@ -1741,6 +1837,8 @@ func _send_world(peer: int) -> void:
 		_send_container(peer, id)
 	for id: int in _vehicles:
 		_send_vehicle(peer, id)
+	for id: int in _crates:
+		_send_crate(peer, id)
 	for id: int in _sent_kills:
 		_kills.rpc_id(peer, id, _sent_kills[id])
 	for id: int in _sent_standing:

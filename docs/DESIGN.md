@@ -1382,7 +1382,10 @@ built in this order, cheapest and most connected first:
    wreck fields, armed AI convoys as a world event, and mounted guns.
    You keep what you wear on death; the pack and every crate in your
    vehicle drop (Caleb's call). It pays vehicle blueprints and parts,
-   mounted weapons and the most scrip a trip.
+   mounted weapons and the most scrip a trip. Built in three parts
+   (Caleb's call: the haul first, then sandstorms over the wreck fields,
+   then armed convoys and mounted guns); part one is built (below, "The
+   Dune Sea (part one, built: the haul)").
 4. **Basalt Rift, the sky fight.** Last, and only once there are players
    enough for three PvP worlds: a small vertical world over lava where
    flight rigs decide every fight, with updrafts, the Sky Leviathan and
@@ -1614,6 +1617,47 @@ Each is laid out alike; each keeper fights in its own way.
   glowcaps grown on it like barnacles and old roots stuck through its
   back; it sinks out of sight under the floor when it dives. Its vault
   pays as the others do, and it comes back after 10 minutes.
+
+### The Dune Sea (part one, built: the haul)
+
+`worlds/dunes/`, on the dunes planet type. About 1.8 km of wind-built
+dunes, three times Ashfront's width, walled round by the planet's rim.
+Players land at the south edge inside the Dune Sea Gate, with two depots
+and a row of parked vehicles, rovers mostly. Across the sand lie eight
+wreck fields, buried haulers half sunk in the dunes, richer and more
+crowded further north; four salvage yards (strongpoints, each with a
+depot) are where a haul is banked out in the field; the Wreck Baron holds
+the deep sea in the north. Its raiders (Sand Raiders, Dune Marksmen and
+Scrap Brutes) pick over the wrecks and hold the yards.
+
+- **Salvage crates** (Caleb's call: carried by hand, hauled by vehicle).
+  A crate stands at each of the wreck fields' spots, too big for a pack:
+  you lift it in both hands (interact), which puts your weapon away and
+  slows you to a walk (60%, no sprint) and no flight rig takes the
+  weight. Interact again to set it down, or, looking at a vehicle, to
+  load it into its cargo: a rover holds four (two on the tail deck, one
+  on each flank rack), a bike one, the mech and the jet none. A crate can
+  be lifted back out of the cargo. A vehicle with cargo cannot be packed
+  onto the watch.
+- **Banking.** A crate goes home only through a depot: stand in one
+  carrying it, or drive in with it in your cargo, and hold, and its
+  contents are banked with your pack. A crate holds four to six items
+  from the Dune Sea's salvage table, worth several caches together:
+  Salvaged Gearboxes and Drive Coils (vehicle parts), alloy, cells and
+  boards, and now and then a reactor core or a vehicle blueprint (the
+  Bulwark Mech's or the Kestrel Jet's). What is inside is only seen once
+  it is banked.
+- **Death.** You keep what you wear; the pack drops in a bag, and every
+  crate you haul falls to the sand where you die, the one in your hands
+  and all the cargo of the vehicle you drive, for whoever gets there
+  first. Signing out leaves them behind the same way, and so does a
+  vehicle cleared away for standing idle.
+- **The endless world.** A wreck field's emptied spot gets a new crate
+  after 4 minutes (`WorldDef.crate_respawn_time`), and a crate left lying
+  anywhere else is cleared after 10 (`crate_lifetime`).
+- **Still to come.** Sandstorms that bury and uncover the wreck fields
+  (part two), then armed AI convoys as a world event and mounted guns
+  (part three).
 
 ## 3. The watch
 

@@ -50,7 +50,9 @@ date in the same PR.
   passenger is seated by the same riding pose from their seat's anchors,
   `Vehicle.ride_anchor`, each makes it heavier, the `laden_*` shares, and
   only the server decides who sits where, sent in the ride state; check anything that asks whether a vehicle is free with
-  `is_occupied`, never `rider` alone), and the "aircraft" tag flies
+  `is_occupied`, never `rider` alone), `cargo_points` gives it cargo
+  space for salvage crates, one a point (`Vehicle.cargo`; the rover four,
+  the bikes one; see `docs/systems/dunes.md`), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
   higher than `ceiling` over the world's ground). Jump is the handbrake
