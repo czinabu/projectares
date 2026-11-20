@@ -194,6 +194,13 @@ const SKINS := {
 		"scenes": ["Leela.glb"], "height": 3.2, "hide": ["Leela"], "creature": "elder", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# A drowned lurker: a lurker grown huge in the deep, crowned with lures,
+	# weed-bearded, roots stuck through its back. It lies right under
+	# ("lurks" its whole height) until it rises.
+	"drowned_lurker": {
+		"scenes": ["Leela.glb"], "height": 2.6, "hide": ["Leela"], "creature": "drowned", "bare": true, "lurks": 3.0,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 	"broodling": {
 		"scenes": ["Leela.glb"], "height": 0.9, "hide": ["Leela"], "creature": "broodling", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},

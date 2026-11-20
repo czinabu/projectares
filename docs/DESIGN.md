@@ -1370,8 +1370,8 @@ built in this order, cheapest and most connected first:
    of the five kinds of wildlife, fouling, spore clouds and its loot. Part
    two is built too: the lurkers, the brood keepers and their hives, and
    the forests' close air. Part three (atmosphere and scale) is built, and
-   two of the three Rootways, under the Westwood and the Gillwood (below,
-   "The Spore Marsh (the Rootways)"); the third comes next.
+   all three Rootways, under the Westwood, the Gillwood and the Rotwood
+   (below, "The Spore Marsh (the Rootways)").
 3. **Dune Sea, the haul.** A PvPvE world built round vehicles and cargo: a
    map several times Ashfront's width, salvage crates too big for a pack
    that ride in a vehicle's cargo space, sandstorms that bury and uncover
@@ -1479,8 +1479,8 @@ and a fight is short. The planet's mist lies low over everything (its
   "banks", Forward+ only, like all volumetric fog). Bots see no further
   than the mist lets a player (`WorldDef.sight_at`: 38 m deep in a
   forest), so it is fair both ways.
-- **Still to come.** The third Rootway and its keeper (two are built,
-  below), and the rain storms the planet already has a look for.
+- **Still to come.** The rain storms the planet already has a look for
+  (the three Rootways are built, below).
 
 ### The Spore Marsh (part three, built: atmosphere and scale)
 
@@ -1521,13 +1521,14 @@ olive moss, black water, ochre as the warm accent). All of it is view only
 
 Caleb's call: three short Rootways, one under each of three forests, each
 with its own keeper, built one at a time. They are the marsh's dungeons,
-part of the one running world like the Engine, never an instance. Two are
-built: the Westwood Rootway, entered from the western shore, the gentlest
-zone, so it is the first a new player finds; and the Gillwood Rootway,
-entered from a dry hummock in the drowned middle south of the Gillwood
-(Caleb's pick). The third goes under a forest nearer the core, each
-keeper harder than the last. Each is laid out alike; each keeper fights in
-its own way.
+part of the one running world like the Engine, never an instance. All
+three are built: the Westwood Rootway, entered from the western shore, the
+gentlest zone, so it is the first a new player finds; the Gillwood
+Rootway, entered from a dry hummock in the drowned middle south of the
+Gillwood; and the Rotwood Rootway, entered from a hummock west of the
+Rotwood on the edge of the core, its chamber under the forest. Each
+keeper is harder than the last (Caleb's picks for the second and third).
+Each is laid out alike; each keeper fights in its own way.
 
 - **Down, not along.** A Rootway is cut into the ground: its mouth is an
   open cut on dry ground, a ramp 12 m wide falling 36 m between root walls
@@ -1583,6 +1584,24 @@ its own way.
   plates down its dome, a garden of fungus on its back and moss hanging
   from its skirt. Its vault, a heap of shed plates, pays as hers does, and
   it comes back after 10 minutes.
+- **The Drowned Lurker** (Caleb's pick). The Rotwood Rootway's keeper: a
+  lurker grown huge in the deep, 1,800 health and 70 armor, in a chamber
+  flooded with black water over five pools (one in the middle, four round
+  it). Its fight is reading where it comes up: it is up and fighting for
+  6 seconds, then dives, and while it is under nothing hurts it. After 2.5
+  seconds it rises out of the pool nearest one of the players in its
+  chamber, never the one it went down in. That pool's ring stirs and glows
+  as it comes up (1.4 seconds, still unhurtable), and it goes straight
+  for whoever it rose by, with a lunge on a long windup. It has no weak
+  side; the window is the time it is up. Below half health it stays up
+  only 4 seconds and the floor's spore vents open, the water boiling. It
+  sees the whole chamber and follows anyone in it, unlike the marsh's
+  lurkers, which wait at their posts. It has a body of its own (Look's
+  "drowned_lurker"): a lurker's long flat body and jaw, a crown of three
+  more lures over its skull, a ridge of bony plates, weed in beards,
+  glowcaps grown on it like barnacles and old roots stuck through its
+  back; it sinks out of sight under the floor when it dives. Its vault
+  pays as the others do, and it comes back after 10 minutes.
 
 ## 3. The watch
 

@@ -76,7 +76,13 @@ date in the same PR.
   `MeleeWeapon.dash_through`, started by its brain as any dash-strike is
   ("dash" 1.0, "dash_every" by phase through `WorldDef.on_keeper_phase`),
   and its snags stagger it through `Raid._check_snags` on the authority,
-  so the stun reaches clients with the actor's state. Check by eye with
+  so the stun reaches clients with the actor's state. A way with "pools"
+  floods its chamber (`FLOOD`, view only) and places "boss_pool" markers
+  (`POOLS`); its keeper dives on the Raid's keeper machinery, and the map
+  stirs a pool's ring while that keeper's body is down at it
+  (`Rootway.animate` with the bodies the map finds by their "boss" meta,
+  at most once a second while one is missing): its crouch, which every
+  machine has from its commands, is what says it is down. Check by eye with
   `visual_check.tscn -- <dir> --rootway-only [--way N]`.
 - The scenery army (DESIGN.md "The scenery army", Caleb's call): Ashfront's
   far fights are view only (`worlds/ashfront/battle.gd`, added by the map's

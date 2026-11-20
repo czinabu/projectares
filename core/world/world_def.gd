@@ -90,8 +90,9 @@ extends RefCounted
 ##     out along the marker's x when it falls; "boss_snag" markers (meta
 ##     "radius", "stun"), solid things a keeper that charges can ram: one
 ##     that drives into a snag in a dash-strike is staggered "stun" seconds
-##     (`keeper_snag_news`); and a "beacon" or "warmth" with the meta stays
-##     dark while it stands.
+##     (`keeper_snag_news`); "boss_pool" markers, where a keeper that dives
+##     comes up (see `keeper_dive_up`); and a "beacon" or "warmth" with the
+##     meta stays dark while it stands.
 ##   - Marker3D nodes in group "spawn_guard": a dungeon's garrison. A bot of
 ##     the marker's "faction" stands guard over "radius" metres (10 by
 ##     default) round it, outside the armies, and another comes back
@@ -374,6 +375,17 @@ var keeper_purge_every := 5.5
 var keeper_purges_at_once := 2
 var keeper_purge_warn := 1.6
 var keeper_purge_first := 2.0
+## A keeper with "boss_pool" markers dives: up and fighting for
+## `keeper_dive_up` seconds (`keeper_dive_up_hurt` once below
+## `keeper_split`), then under, where nothing hurts it (`Actor.submerged`),
+## for `keeper_dive_under`, then it rises at the pool nearest one of the
+## players in its arena, unhurtable for `keeper_dive_rise` more while it
+## comes up (its brain holds it down and lets it up, so clients see it
+## through its crouch).
+var keeper_dive_up := 6.0
+var keeper_dive_up_hurt := 4.0
+var keeper_dive_under := 2.5
+var keeper_dive_rise := 1.4
 ## Linked factions (DESIGN.md "Frostline", the defence grid): faction to
 ## range in metres. A bot of one that is hurt and lives calls every other
 ## bot of its faction within range to where the hit came from, the way a

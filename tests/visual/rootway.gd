@@ -89,6 +89,16 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 			cam.look_at_from_position(back, keeper.global_position + Vector3(0, 0.5 * reach, 0))
 			await v._settle(8)
 			await v._shot(out_dir.path_join("rootway_%ssnagged.png" % tag))
+		# A keeper that dives, half risen out of a stirring pool.
+		if bool(way["pools"]):
+			var pool_at: Vector2 = Rootway.POOLS[1]
+			keeper.global_position = f * Vector3(Rootway.BEND + pool_at.x, Rootway.CHAMBER_FLOOR, pool_at.y)
+			keeper.crouch = 0.45
+			var look := keeper.global_position + f.basis.z * 7.0 + f.basis.x * 4.0 + Vector3(0, 2.6, 0)
+			cam.look_at_from_position(look, keeper.global_position + Vector3(0, 0.6, 0))
+			await v._settle(30)
+			await v._shot(out_dir.path_join("rootway_%srising.png" % tag))
+			keeper.crouch = 0.0
 	# A vent warns, then vents.
 	for state in [1, 2]:
 		raid.map.call("show_purge", index * Rootway.VENTS.size(), state)

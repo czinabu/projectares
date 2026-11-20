@@ -21,15 +21,19 @@ const Flora := preload("res://worlds/marsh/flora.gd")
 ## The Rootways: where each mouth opens (on whole even metres, so the cut
 ## lies on the ground's samples), which way it runs in, and its keeper: its
 ## kind, the faction it is made from, what it calls out of its wall sockets
-## ("" for none, and no sockets) and whether its chamber stands snags it
-## can ram (`SNAGS`).
+## ("" for none, and no sockets), whether its chamber stands snags it
+## can ram (`SNAGS`) and whether its floor is flooded, with pools it dives
+## into and comes up out of (`POOLS`).
 const ROOTWAYS := [
 	{"name": "the Westwood Rootway", "mouth": Vector2(-96.0, 164.0), "inward": Vector2(0.0, -1.0),
 			"keeper": "rootmother", "boss_name": "The Rootmother", "faction": "keeper", "adds": "broodling",
-			"snags": false},
+			"snags": false, "pools": false},
 	{"name": "the Gillwood Rootway", "mouth": Vector2(84.0, 130.0), "inward": Vector2(0.0, -1.0),
 			"keeper": "elder", "boss_name": "The Shellback Elder", "faction": "shellback", "adds": "",
-			"snags": true},
+			"snags": true, "pools": false},
+	{"name": "the Rotwood Rootway", "mouth": Vector2(34.0, -64.0), "inward": Vector2(1.0, 0.0),
+			"keeper": "drowned", "boss_name": "The Drowned Lurker", "faction": "lurker", "adds": "",
+			"snags": false, "pools": true},
 ]
 
 ## The cut: a ramp this long, open to the sky, from the ground down to the
@@ -85,6 +89,13 @@ const VENT_DAMAGE := 22.0
 const SNAGS := [Vector2(-12.5, 96.0), Vector2(12.5, 96.0), Vector2(-4.5, 110.0), Vector2(4.5, 110.0)]
 const SNAG_RADIUS := 1.3
 const SNAG_STUN := 4.5
+## A diving keeper's pools ([x, z] on the floor, `BEND` added): one in the
+## middle and four round it. Its chamber's floor lies under `FLOOD` of
+## black water, view only.
+const POOLS := [Vector2(0.0, 96.0), Vector2(-7.0, 89.0), Vector2(7.0, 89.0), Vector2(-7.0, 103.0), Vector2(7.0, 103.0)]
+const POOL_RADIUS := 2.6
+const FLOOD := 0.35
+const POOL_STIR := Color(0.55, 0.95, 0.9)
 ## The snags' old wood, paler than the walls' roots.
 const SNAG_WOOD := Color(0.62, 0.53, 0.4)
 
@@ -332,6 +343,9 @@ static func _place_markers(map: Node3D, way: Dictionary, f: Transform3D) -> void
 		snag.set_meta("keeper", kind)
 		snag.set_meta("radius", SNAG_RADIUS)
 		snag.set_meta("stun", SNAG_STUN)
+	for at: Vector2 in POOLS if bool(way["pools"]) else []:
+		var pool: Marker3D = map.call("_add_marker", "boss_pool", f * Vector3(BEND + at.x, CHAMBER_FLOOR + 0.1, at.y))
+		pool.set_meta("keeper", kind)
 	for lane: Array in VENTS:
 		var from: Vector2 = lane[0]
 		var to: Vector2 = lane[1]
@@ -467,6 +481,7 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 	var caps: Array[Transform3D] = []
 	var eggs: Array[Transform3D] = []
 	var plates: Array[Transform3D] = []
+	var pools: Array[Dictionary] = []
 	for way: Dictionary in ROOTWAYS:
 		var f := frame(way)
 		var top := float(ground.call(f.origin.x, f.origin.z))
@@ -498,6 +513,8 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 				plates.append(Transform3D(tilt.scaled(Vector3(s * 1.6, s * 0.35, s * 1.3)),
 						heap + f.basis * Vector3(rng.randf_range(-2.4, 2.4), rng.randf_range(0.2, 1.6), rng.randf_range(-0.6, 0.6))))
 			art.add_child(_light(heap + Vector3(0, 2.4, 0) - f.basis.z * 1.5, Color(1.0, 0.8, 0.5), 1.4, 8.0))
+		if bool(way["pools"]):
+			pools.append_array(_dress_flood(art, f, str(way["keeper"])))
 			for lane: Array in VENTS:
 				vents.append(_vent(art, f, lane))
 			continue
@@ -558,7 +575,67 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 		plate_mat.roughness = 0.85
 		plate.material = plate_mat
 		art.add_child(_scatter("RootwayPlates", plate, plates))
-	return {"vents": vents, "lights": lights}
+	return {"vents": vents, "lights": lights, "pools": pools}
+
+
+## A diving keeper's chamber flooded: a sheet of black water over the floor
+## (view only; the floor is walked on under it), and over each of its pools
+## a darker disc ringed with a glow that stirs while it lies under or rises
+## there (`animate`). Returns the pools' views ({ ring, at, keeper }).
+static func _dress_flood(art: Node3D, f: Transform3D, keeper: String) -> Array[Dictionary]:
+	var water_mat := StandardMaterial3D.new()
+	water_mat.albedo_color = Color(0.01, 0.02, 0.02, 0.9)
+	water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	water_mat.roughness = 0.15
+	water_mat.metallic_specular = 0.4
+	var sheet := CylinderMesh.new()
+	sheet.top_radius = CHAMBER_RADIUS + 0.2
+	sheet.bottom_radius = CHAMBER_RADIUS + 0.2
+	sheet.height = 0.02
+	sheet.radial_segments = 40
+	sheet.material = water_mat
+	var flood := MeshInstance3D.new()
+	flood.name = "Flood"
+	flood.mesh = sheet
+	flood.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	flood.position = f * Vector3(BEND, CHAMBER_FLOOR + FLOOD, CHAMBER_Z)
+	art.add_child(flood)
+	var views: Array[Dictionary] = []
+	var deep_mat := StandardMaterial3D.new()
+	deep_mat.albedo_color = Color(0.0, 0.004, 0.006)
+	deep_mat.roughness = 0.05
+	for at: Vector2 in POOLS:
+		var spot := f * Vector3(BEND + at.x, CHAMBER_FLOOR + FLOOD + 0.01, at.y)
+		var deep := CylinderMesh.new()
+		deep.top_radius = POOL_RADIUS
+		deep.bottom_radius = POOL_RADIUS
+		deep.height = 0.01
+		deep.radial_segments = 24
+		deep.material = deep_mat
+		var disc := MeshInstance3D.new()
+		disc.mesh = deep
+		disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		disc.position = spot
+		art.add_child(disc)
+		var ring_mat := StandardMaterial3D.new()
+		ring_mat.albedo_color = Color(0.05, 0.12, 0.11)
+		ring_mat.emission_enabled = true
+		ring_mat.emission = POOL_STIR
+		ring_mat.emission_energy_multiplier = 0.3
+		var torus := TorusMesh.new()
+		torus.inner_radius = POOL_RADIUS - 0.12
+		torus.outer_radius = POOL_RADIUS + 0.12
+		torus.rings = 24
+		torus.ring_segments = 6
+		torus.material = ring_mat
+		var ring := MeshInstance3D.new()
+		ring.mesh = torus
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ring.position = spot
+		ring.scale = Vector3(1.0, 0.3, 1.0)
+		art.add_child(ring)
+		views.append({"ring": ring_mat, "at": spot, "keeper": keeper})
+	return views
 
 
 ## A snag dressed: pale old roots, unlike the walls, twisted up round its
@@ -897,7 +974,17 @@ static func _vent(art: Node3D, f: Transform3D, lane: Array) -> Dictionary:
 
 ## Plays the vents and the chamber's light (view only): `vents` from
 ## `dress`, `phases` the map's "keepers" meta, `now` in seconds.
-static func animate(views: Dictionary, phases: Dictionary, now: float) -> void:
+static func animate(views: Dictionary, phases: Dictionary, now: float, bodies := {}) -> void:
+	# A pool stirs while a diving keeper lies under it or rises out of it
+	# (`bodies`: its body by kind, from the map; its crouch says it is down).
+	for pool: Dictionary in views.get("pools", []):
+		var ring := pool.ring as StandardMaterial3D
+		var body: Variant = bodies.get(pool.keeper)
+		var down := body != null and is_instance_valid(body) and not (body as Actor).is_dead \
+				and (body as Actor).crouch > 0.05 \
+				and Vector2((body as Actor).global_position.x - (pool.at as Vector3).x,
+						(body as Actor).global_position.z - (pool.at as Vector3).z).length() < POOL_RADIUS
+		ring.emission_energy_multiplier = 2.5 + 1.5 * sin(now * 9.0) if down else 0.3
 	for view: Dictionary in views.get("vents", []):
 		var crack := view.crack as StandardMaterial3D
 		var column := view.column as MeshInstance3D

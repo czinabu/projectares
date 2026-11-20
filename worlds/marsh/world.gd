@@ -83,6 +83,19 @@ const ELDER_CHARGE := 16.0
 const ELDER_CHARGE_WINDUP := 1.1
 const ELDER_CHARGE_DAMAGE := 48.0
 const ELDER_CHARGE_EVERY := [6.0, 3.5]
+## The Drowned Lurker (Caleb's pick), keeper of the Rotwood Rootway: a
+## lurker grown huge in the deep, in a flooded chamber. It dives (the
+## Raid's keeper machinery with "boss_pool" markers, `WorldDef.keeper_dive_*`):
+## up and fighting a while, then under the black water where nothing hurts
+## it, then up again out of the pool nearest one of the players, its pool
+## stirring as it rises, and straight into a lunge. Below half health it
+## stays up for less and the floor's spore vents open. It sees the whole
+## chamber and follows anyone in it.
+const DROWNED := "drowned"
+const DROWNED_HEIGHT := 2.6
+const DROWNED_HEALTH := 1800.0
+const DROWNED_ARMOR := 70.0
+const DROWNED_SIGHT := 30.0
 ## A Rootway keeper's vault (Caleb's call on the Engine's: a share for
 ## everyone who fought it): the marsh's goods, upgrade data, often one of
 ## its blueprints and now and then an artifact or the Spore paint.
@@ -562,6 +575,9 @@ func make_warlord(bot: Actor) -> void:
 	if bot.get_meta("boss", "") == ELDER:
 		_make_elder(bot)
 		return
+	if bot.get_meta("boss", "") == DROWNED:
+		_make_drowned(bot)
+		return
 	if bot.get_meta("boss", "") != "matriarch":
 		super(bot)
 		return
@@ -638,6 +654,39 @@ func _make_elder(bot: Actor) -> void:
 		horns.dash_through = true
 
 
+## The Drowned Lurker: a lurker grown huge (see `DROWNED`), made from a
+## lurker (its marker's faction) so the lurkers are its kin, but no
+## ambusher at a post: the Raid holds it under and lets it up. Free of
+## randomness, like every boss.
+func _make_drowned(bot: Actor) -> void:
+	bot.display_name = "The Drowned Lurker"
+	bot.set_meta("look", "drowned_lurker")
+	bot.set_meta("lies_low", false)
+	bot.set_meta("sight", DROWNED_SIGHT)
+	bot.set_meta("leash", 40.0)
+	bot.set_meta("dash", 1.0)
+	bot.set_meta("feint_chance", 0.15)
+	bot.set_meta("aim_turn", 110.0)
+	bot.body_color = Color(0.13, 0.17, 0.17)
+	bot.set_stand_height(DROWNED_HEIGHT, 0.5)
+	bot.walk_speed = 3.4
+	bot.sprint_speed = 6.5
+	bot.health.max_health = DROWNED_HEALTH
+	bot.health.health = DROWNED_HEALTH
+	bot.health.set_armor(DROWNED_ARMOR)
+	bot.rear_damage_mult = 1.0
+	var jaws := bot.get_active_weapon() as MeleeWeapon
+	if jaws:
+		jaws.display_name = "Drowned Jaws"
+		jaws.light_damage = 34.0
+		jaws.light_windup = 0.6
+		jaws.reach = 3.4
+		jaws.heavy_damage = 52.0
+		jaws.heavy_windup = 0.8
+		jaws.heavy_stamina = 0.0
+		jaws.dash_stamina = 0.0
+
+
 ## A share of a Rootway keeper's vault.
 func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
 	var out: Array[String] = []
@@ -657,6 +706,11 @@ func roll_vault(_kind: String, rng: RandomNumberGenerator) -> Array[String]:
 
 func keeper_news(bot: Actor, phase: int) -> String:
 	var elder: bool = bot != null and is_instance_valid(bot) and bot.get_meta("boss", "") == ELDER
+	var drowned: bool = bot != null and is_instance_valid(bot) and bot.get_meta("boss", "") == DROWNED
+	if drowned and phase == 2:
+		return "The Drowned Lurker thrashes and the water boils: it surfaces faster now, and the spore vents are venting"
+	if drowned and phase == 0:
+		return "The Drowned Lurker has fallen: its vault under the Rotwood is open to all who fought it"
 	if elder and phase == 2:
 		return "The Shellback Elder bellows and the floor cracks: it charges harder, and the spore vents are venting"
 	if elder and phase == 0:
@@ -690,6 +744,8 @@ func boss_back_news(bot: Actor, _where: String) -> String:
 		return "The Rootmother stirs again under the Westwood"
 	if bot != null and bot.get_meta("boss", "") == ELDER:
 		return "The Shellback Elder stirs again under the Gillwood"
+	if bot != null and bot.get_meta("boss", "") == DROWNED:
+		return "Something huge moves in the water under the Rotwood again"
 	return super(bot, _where)
 
 
