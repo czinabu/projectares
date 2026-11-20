@@ -2934,6 +2934,9 @@ const FRAME_STYLES := {
 ## Which look each frame wears; a frame not listed wears its weight's.
 const FRAME_LOOKS := {"plate_light": "scrap", "frame_runner": "runner", "frame_trooper": "trooper",
 		"frame_thermal": "thermal", "frame_bulwark": "bulwark"}
+## How far out armor of each weight holds the arms (`Locomotion.arm_clear`,
+## metres at the elbow).
+const ARM_CLEAR := {"light": 0.025, "medium": 0.035, "heavy": 0.05}
 const WEIGHT_LOOKS := {"light": "runner", "medium": "trooper", "heavy": "bulwark"}
 
 
@@ -2994,6 +2997,10 @@ func _update_frame() -> void:
 		return
 	_frame_id = key
 	_wear_undersuit(frame_style(id, paint) if id != "" else {})
+	# Armor holds the arms out from the body, so a hanging hand clears the
+	# belt and thigh plates (`tools/armor_fit/clip_check.tscn -- --arms`).
+	if locomotion and "arm_clear" in locomotion:
+		locomotion.set("arm_clear", ARM_CLEAR.get(frame_weight(id), 0.0) if id != "" else 0.0)
 	for part in _frame_parts:
 		if is_instance_valid(part):
 			part.queue_free()

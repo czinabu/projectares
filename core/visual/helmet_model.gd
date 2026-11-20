@@ -4,26 +4,29 @@ extends RefCounted
 ## it out with the head, `ActorSkin.hide_head`; never a copy of its own).
 ## Used through `ActorSkin.build_helmet`.
 ##
-## Grounded military sci-fi (Caleb's tactical pass, concept in the shared
-## folder's ares/tactical-gear): every helmet is a shell with a real outline
-## (a superellipsoid, so it reads as a helmet on a head, never a ball), a
-## brow line and a rim, glass in a frame, and the fittings that say what
-## the visor does:
-## - Scrap visor (""): a dented pot with bolted patches, cracked goggles on
-##   a strap and a cloth wrap.
-## - Spotter ("zoom", recon): high-cut over the ears for a headset, side
-##   rails, a respirator, a smoked half visor and a flip-down rangefinder.
-## - Seeker ("scan", intel): full-cut, a wraparound visor under a heavy
-##   brow, a vented jaw guard and the scan emitter on the crown.
-## - Warden ("threat", assault): a low dome over a faceplate that juts to a
-##   prow, a narrow lit slit, cheek plates, neck lames and sensor eyes all
-##   round; seen from behind, panel seams, bolted ear armour under side
-##   rails with a light on one, a loop patch and an IFF strobe on the crown.
-## Worn with an armor frame, every helmet but the scrap visor takes the
-## frame's plate, trim and fabric colours.
-## - Ember ("thermal"): broad ceramic shell, a thermal lens in the middle of
-##   the face and glowing heat sinks over the ears.
+## Sci-fi soldier and cyberpunk, each an original design, tall rather than
+## flat or wide (Caleb's call): a shell with a real outline (a
+## superellipsoid, never a ball), glass in a frame, and the fittings that
+## say what the visor does:
+## - Junker (scrap, ""): a riveted bucket with a weld seam and a patch, a
+##   gas mask with filter cans, one cracked round goggle ("Crack") and a
+##   neck wrap.
+## - Spotter ("zoom", recon): a sleek visor with a light and a glint, vents,
+##   a rangefinder on the side ("Lens0".."Lens2"), ear pods, two antennas
+##   and a spine.
+## - Seeker ("scan", intel): a faceted face with three slits of lit glass
+##   over a grille, ribbed ear plates, a sensor bar and the scan emitter
+##   ("Fin") on the crown.
+## - Warden ("threat", assault): a faceted shell under a "Brow", a prow
+##   face with a chevron visor, cheek plates, sensor eyes, swept blades,
+##   neck lames and a crest; seen from behind, panel seams, bolted ear
+##   armour, a loop patch and an IFF strobe.
+## - Ember ("thermal"): a tall ceramic shell and faceplate with one thermal
+##   eye ("Lens"), a snout with hoses, crown fins, heat sinks and exhaust.
 ## - "slit": an army exo's closed helm, the Warden's shape in its colours.
+## Worn with an armor frame, every helmet but the scrap visor takes the
+## frame's plate, trim and fabric colours. Sized to the head per axis
+## (`ActorSkin.helmet_size`).
 ## The head is hidden under a helmet, so each has a dark hood: an open face
 ## reads as a balaclava, never as a hole. A Mk2 wears a lit seam over the
 ## crown. Built from `GearShapes` and merged into a mesh per material.
