@@ -29,6 +29,7 @@ func _ready() -> void:
 	# project's switch says; servers this starts inherit it.
 	Raid.enemies = true
 	OS.set_environment("ARES_ENEMIES", "1")
+	OS.set_environment("ARES_ENEMY_CAP", "0")
 	# DEV MODE: tests never run on the dev save, whatever the machine has.
 	DevMode.persist = false
 	DevMode.enabled = false

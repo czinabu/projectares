@@ -18,6 +18,8 @@ boot_splash/image="res://assets/branding/splash.png"
 [ares]
 
 stability/enemies=false
+stability/enemy_cap=16
+stability/enemies_full_detail=12
 
 [autoload]
 

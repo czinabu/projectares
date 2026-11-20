@@ -11,6 +11,7 @@ static func run(t: Node) -> void:
 	for id: String in ["ashfront", "marsh", "rift"]:
 		await _world_without(t, id)
 	await _back_on(t)
+	await _budget(t)
 
 
 static func _wanted(t: Node) -> void:
@@ -61,3 +62,43 @@ static func _back_on(t: Node) -> void:
 			"switched on, the same world has its army back (%d bots)" % raid.bots.size())
 	raid.queue_free()
 	await t.frames(2)
+
+
+static func _budget(t: Node) -> void:
+	print("Enemy budget")
+	var was := OS.get_environment("ARES_ENEMY_CAP")
+	OS.set_environment("ARES_ENEMY_CAP", "")
+	t.check(Raid.enemy_cap_wanted(PackedStringArray()) == 16, "the project's cap is 16 enemies a world")
+	t.check(Raid.enemy_cap_wanted(PackedStringArray(["--enemy-cap", "40"])) == 40, "--enemy-cap sets another")
+	OS.set_environment("ARES_ENEMY_CAP", was)
+	Raid.enemies = true
+	Raid.enemy_cap = 16
+	Raid.near_full_cap = 4
+	for id: String in ["ashfront", "marsh"]:
+		var raid := Raid.new()
+		t.add_child(raid)
+		raid.start(Worlds.get_world(id), 77)
+		await t.frames(3)
+		t.check(raid.bots.size() <= 16 and raid.bots.size() >= 8,
+				"%s starts within the cap (%d of %d its own)" % [id, raid.bots.size(), Worlds.get_world(id).bot_count])
+		raid.war.intensity = 1.0
+		raid._reinforce_in = 0.0
+		raid._raider_in = 0.0
+		for i in 200:
+			raid._tick_bots(1.0)
+			raid._tick_raiders(1.0)
+			raid._tick_guards(1.0)
+			raid._tick_bosses(1.0)
+		raid.start_event("warlord")
+		t.check(raid.bots.size() <= 16, "%s stays within it in a hot war (%d)" % [id, raid.bots.size()])
+		# Everyone near the player: only the nearest 4 think every tick.
+		for k in raid.bots.size():
+			raid.bots[k].global_position = raid.player.global_position + Vector3(3.0 + k, 0.0, 0.0)
+		raid._detail_in = 0.0
+		raid._tick_detail(0.1)
+		var full := raid.bots.filter(func(b: Actor) -> bool: return b.tick_every == 1).size()
+		t.check(full == mini(4, raid.bots.size()), "%s: %d of the %d bots beside the player run every tick" % [id, full, raid.bots.size()])
+		raid.queue_free()
+		await t.frames(2)
+	Raid.enemy_cap = 0
+	Raid.near_full_cap = 0

@@ -326,6 +326,16 @@ static var zone_rules := true
 ## `--bots N`) or the environment (`ARES_ENEMIES`); see `enemies_wanted`. Code that
 ## builds its own `Raid` (the tests, the benches) keeps them on.
 static var enemies := true
+## The enemy budget (Caleb: enemies must never overwhelm the frame rate or
+## the player). `enemy_cap` is the most enemies one world holds at once,
+## everything counted (army, bosses, guards, raiders, an event's); 0 is no
+## cap. `near_full_cap` is how many of the bots near a player think and
+## move every tick (`_tick_detail`); the rest near them step every second
+## tick; 0 is no cap. `Main` sets both from `ares/stability/enemy_cap` and
+## `ares/stability/enemies_full_detail` (or `--enemy-cap`, `ARES_ENEMY_CAP`);
+## code that builds its own `Raid` keeps them off.
+static var enemy_cap := 0
+static var near_full_cap := 0
 var _bosses: Array[Dictionary] = []
 ## Guards at the map's "spawn_guard" markers (a dungeon's garrison), each
 ## { marker, bot, back_in, brood (what it has spilled), brood_in }, outside
@@ -943,10 +953,11 @@ func _tick_events(delta: float) -> void:
 		return
 	_event_in -= delta * (1.0 + war.intensity)
 	if _event_in <= 0.0:
-		var kinds := ["warlord", "supply_pod"] if enemies else ["supply_pod"]
-		if enemies and _convoy_routes().size() > 0:
+		var bring := enemy_room() >= 1 + maxi(world.warlord_escort, 2)
+		var kinds := ["warlord", "supply_pod"] if bring else ["supply_pod"]
+		if bring and _convoy_routes().size() > 0:
 			kinds.append("convoy")
-		if enemies and _airship_routes().size() > 0:
+		if bring and _airship_routes().size() > 0:
 			kinds.append("airship")
 		start_event(kinds[rng.randi() % kinds.size()])
 
@@ -957,7 +968,7 @@ func start_event(kind: String) -> bool:
 	var spawns := _map_nodes("spawn_bot")
 	if not event.is_empty() or spawns.is_empty():
 		return false
-	if not enemies and kind in ["warlord", "convoy", "airship"]:
+	if kind in ["warlord", "convoy", "airship"] and enemy_room() < 1 + maxi(world.warlord_escort, 2):
 		return false
 	if kind == "convoy" and _convoy_routes().is_empty():
 		return false
@@ -1354,7 +1365,7 @@ func _tick_bots(delta: float) -> void:
 			continue
 		_bot_respawns.remove_at(i)
 		var spawns := _reinforcement_spawns()
-		if not spawns.is_empty():
+		if not spawns.is_empty() and enemy_room() > 0:
 			# Out of the players' sight, or anywhere if nobody is here to see.
 			_add_bot(spawns[_farthest_from_players(spawns) if not active_players().is_empty()
 					else rng.randi() % spawns.size()])
@@ -1374,12 +1385,40 @@ func bot_target() -> int:
 	# nobody to send, however hot the war gets.
 	if army_size() <= 0:
 		return 0
-	return army_size() + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
+	var want := army_size() + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
+	return want if enemy_cap <= 0 else mini(want, army_size())
 
 
 ## The world's own army: `WorldDef.bot_count`, or none with enemies off.
+## Under an `enemy_cap` the army leaves room for the map's bosses and
+## guards, but always keeps at least half the cap.
 func army_size() -> int:
-	return world.bot_count if enemies else 0
+	if not enemies:
+		return 0
+	if enemy_cap <= 0:
+		return world.bot_count
+	var fixed := _map_nodes("spawn_boss").size() + _map_nodes("spawn_guard").size()
+	return mini(world.bot_count, maxi(enemy_cap - fixed, ceili(enemy_cap * 0.5)))
+
+
+## How many more enemies the budget (`enemy_cap`) lets in now.
+func enemy_room() -> int:
+	if not enemies:
+		return 0
+	return 1 << 30 if enemy_cap <= 0 else enemy_cap - bots.size()
+
+
+## The enemy cap a program runs with: `--enemy-cap <n>`, then the
+## environment's `ARES_ENEMY_CAP`, then the project setting
+## `ares/stability/enemy_cap` (0 is no cap).
+static func enemy_cap_wanted(args: PackedStringArray) -> int:
+	var at := args.find("--enemy-cap")
+	if at >= 0 and at + 1 < args.size():
+		return maxi(args[at + 1].to_int(), 0)
+	var env := OS.get_environment("ARES_ENEMY_CAP")
+	if env != "":
+		return maxi(env.to_int(), 0)
+	return maxi(int(ProjectSettings.get_setting("ares/stability/enemy_cap", 0)), 0)
 
 
 ## Whether enemies are wanted, from (first match wins) the command line's
@@ -1413,12 +1452,27 @@ func _tick_detail(delta: float) -> void:
 	for state in players:
 		if is_instance_valid(state.actor) and not state.actor.is_dead:
 			watchers.append(state.actor.global_position)
+	# Under `near_full_cap`, only the nearest that many of the bots in full
+	# range run every tick; the rest step every second tick.
+	var full_ok := {}
+	if near_full_cap > 0:
+		var near: Array = []
+		for bot in bots:
+			var d := INF
+			for at in watchers:
+				d = minf(d, at.distance_squared_to(bot.global_position))
+			if d <= full_detail_range * full_detail_range:
+				near.append([d, bot])
+		if near.size() > near_full_cap:
+			near.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		for k in mini(near.size(), near_full_cap):
+			full_ok[near[k][1]] = true
 	for i in bots.size():
 		var bot := bots[i]
 		var nearest := INF
 		for at in watchers:
 			nearest = minf(nearest, at.distance_squared_to(bot.global_position))
-		if nearest <= full_detail_range * full_detail_range:
+		if nearest <= full_detail_range * full_detail_range and (near_full_cap <= 0 or full_ok.has(bot)):
 			bot.thin(1)
 		elif nearest <= half_detail_range * half_detail_range:
 			bot.thin(2, i)
@@ -2354,6 +2408,8 @@ func _spawn_bosses() -> void:
 	if army_size() <= 0:
 		return
 	for marker in _map_nodes("spawn_boss"):
+		if enemy_room() <= 0:
+			break
 		var boss := {"marker": marker, "bot": null, "back_in": 0.0, "helpers": {}, "adds": [], "shares": [],
 				"socket_in": 0.0, "socket_next": 0, "purge_in": 0.0, "purge_next": 0, "venting": []}
 		boss.bot = _add_boss(marker, boss)
@@ -2378,6 +2434,8 @@ func _spawn_guards() -> void:
 	if army_size() <= 0:
 		return
 	for marker in _map_nodes("spawn_guard"):
+		if enemy_room() <= 0:
+			break
 		_guards.append({"marker": marker, "bot": _add_guard(marker), "back_in": 0.0, "brood": [],
 				"brood_in": float(marker.get_meta("brood_every", 0.0)) * 0.5})
 	_seal_hives()
@@ -2403,8 +2461,8 @@ func _tick_guards(delta: float) -> void:
 			guard.bot = null
 			changed = true
 			continue
-		# With enemies off (`enemies`), its clock waits.
-		if not enemies:
+		# With enemies off (`enemies`) or the budget full, its clock waits.
+		if enemy_room() <= 0:
 			continue
 		guard.back_in -= delta
 		if guard.back_in <= 0.0:
@@ -2435,7 +2493,7 @@ func _tick_brood(guard: Dictionary, delta: float) -> void:
 		guard.brood_in = float(marker.get_meta("brood_every", 8.0)) * 0.5
 		return
 	guard.brood_in -= delta
-	if guard.brood_in > 0.0 or brood.size() >= int(marker.get_meta("brood_max", 4)):
+	if guard.brood_in > 0.0 or brood.size() >= int(marker.get_meta("brood_max", 4)) or enemy_room() <= 0:
 		return
 	guard.brood_in = float(marker.get_meta("brood_every", 8.0))
 	var bot := _add_bot(marker, false, kind)
@@ -2603,7 +2661,7 @@ func _tick_bosses(delta: float) -> void:
 				_keeper_fell(boss)
 			boss.bot = null
 			continue
-		if not enemies:
+		if enemy_room() <= 0:
 			continue
 		boss.back_in -= delta
 		if boss.back_in <= 0.0:
@@ -2846,7 +2904,7 @@ func _call_from_socket(boss: Dictionary, kind: String, near: Array[Actor]) -> vo
 		var add: Variant = adds[k]
 		if add == null or not is_instance_valid(add) or (add as Actor).is_dead:
 			adds.remove_at(k)
-	if adds.size() >= world.keeper_socket_max + near.size() - 1:
+	if adds.size() >= world.keeper_socket_max + near.size() - 1 or enemy_room() <= 0:
 		return
 	var sockets := _sockets.filter(func(socket: Node3D) -> bool: return str(socket.get_meta("keeper", "")) == kind)
 	if sockets.is_empty():
@@ -3077,7 +3135,7 @@ func _tick_raiders(delta: float) -> void:
 	_raider_in -= delta
 	if _raider_in <= 0.0:
 		_raider_in = world.raider_gap
-		if raiders.size() < world.raider_count:
+		if raiders.size() < world.raider_count and enemy_room() > 0:
 			spawn_raider()
 	for entry in raiders.duplicate():
 		var bot: Actor = entry.bot

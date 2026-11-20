@@ -50,6 +50,8 @@ func _ready() -> void:
 	# here and in any server this starts.
 	Raid.enemies = "--no-enemies" not in args
 	OS.set_environment("ARES_ENEMIES", "1" if Raid.enemies else "0")
+	# No enemy budget unless `--enemy-cap <n>` asks for one, to measure it.
+	OS.set_environment("ARES_ENEMY_CAP", _arg(args, "--enemy-cap", "0"))
 	if not await _start_server(bots):
 		print("Server bench: the server did not start")
 		_finish(1)

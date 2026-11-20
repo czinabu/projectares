@@ -60,11 +60,13 @@ func _ready() -> void:
 	var warmup := float(_arg(args, "--warmup", "20"))
 	var third := _arg(args, "--view", "first") == "third"
 	Profile.persist = false
-	if "--look" in args:
 	# Measured with the worlds' enemies unless `--no-enemies` (`Raid.enemies`),
 	# here and in any server this starts.
 	Raid.enemies = "--no-enemies" not in args
 	OS.set_environment("ARES_ENEMIES", "1" if Raid.enemies else "0")
+	# No enemy budget unless `--enemy-cap <n>` asks for one, to measure it.
+	OS.set_environment("ARES_ENEMY_CAP", _arg(args, "--enemy-cap", "0"))
+	if "--look" in args:
 		Look.enabled = true
 	var fixed_seed := int(_arg(args, "--seed", "-1"))
 	if fixed_seed >= 0:
