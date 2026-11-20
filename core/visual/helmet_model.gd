@@ -100,7 +100,7 @@ const PALETTE := {
 static func build(mode: String, glass: Color, size: Vector3, shell_color: Color, tier := 1, colors := {}) -> Node3D:
 	var root := Node3D.new()
 	root.name = "HelmetModel"
-	root.scale = Vector3.ONE * FIT * size.x / HEAD.x
+	root.scale = FIT * size / HEAD
 	var m := Kit.new(mode, glass, shell_color, colors)
 	_hood(root, m)
 	N = {"": 2.2, "zoom": 2.6, "scan": 2.7, "threat": 3.0, "thermal": 2.6, "slit": 3.0}.get(mode, 2.4)

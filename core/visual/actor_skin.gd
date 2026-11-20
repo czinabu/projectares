@@ -222,7 +222,7 @@ var vitals_offset := Vector3(0.0, 0.05, 0.172)
 ## wide, tall and deep. The one model is worn in every view: first person
 ## leaves it out with the head (`hide_head`), never a copy of its own.
 var helmet_offset := Vector3(0.0, 0.1, 0.0)
-var helmet_size := Vector3(0.27, 0.31, 0.31)
+var helmet_size := Vector3(0.215, 0.258, 0.258)
 var helmet_shell_color := Color(0.22, 0.23, 0.25)
 ## A helmet taken off (`Actor.helmet_stow`) is clipped to the belt at the
 ## back of the left hip, behind a sheathed blade (`hip_offset`), its face
