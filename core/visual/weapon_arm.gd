@@ -79,6 +79,13 @@ var _steady_dt := 0.0
 ## eyes, and the hand stays straight on from the forearm.
 ## The most the wrist bends to line the grip up with the blade, in radians.
 var wrist_limit := 1.3
+## The most the forearm rolls the fist round toward the blade before the
+## wrist bends, in radians (a forearm turns about a half turn end to end).
+var forearm_roll_limit := 2.8
+## How near a half turn the roll the fist needs may be before it keeps the
+## way it last rolled (radians), so it does not flip side to side.
+var roll_keep := 0.7
+var _last_roll := 0.0
 ## The most the wrist bends from the aim clip's hold to lie along a gun's
 ## own pistol grip, in radians.
 var grip_bend_limit := 0.6
@@ -851,6 +858,29 @@ func _place_weapon() -> void:
 		# A reverse grip: the blade leaves the fist on the little-finger side.
 		if _pose().ready_reversed(melee):
 			blade = -blade
+		# First the forearm rolls the fist round toward the blade (it turns
+		# far more freely than the wrist bends), then the wrist bends the
+		# rest of the way, so a backhand still holds the blade out the way
+		# the swing has it rather than wherever the wrist ran out.
+		if _forearm >= 0:
+			var elbow := skeleton.get_bone_global_pose(_forearm).origin
+			var along := pose.origin - elbow
+			if along.length() > 0.01:
+				along = along.normalized()
+				var now_flat := now - along * now.dot(along)
+				var want_flat := blade - along * blade.dot(along)
+				if now_flat.length() > 0.05 and want_flat.length() > 0.05:
+					var wanted := now_flat.normalized().signed_angle_to(want_flat.normalized(), along)
+					# Near a half turn either way is as far: keep rolling the
+					# way it rolled last frame, or it flips each step.
+					if absf(wanted) > PI - roll_keep and signf(wanted) != signf(_last_roll) and _last_roll != 0.0:
+						wanted -= signf(wanted) * TAU
+					_last_roll = wanted
+					var roll := clampf(wanted, -forearm_roll_limit, forearm_roll_limit) * _grip_weight
+					if absf(roll) > 0.001:
+						pose.basis = Basis(along, roll) * pose.basis
+						skeleton.set_bone_global_pose(_wrist, pose)
+						now = (pose.basis.orthonormalized() * _grip_axis).normalized()
 		var bend := Quaternion(now, blade)
 		var angle := minf(bend.get_angle(), wrist_limit) * _grip_weight
 		if angle > 0.001:
@@ -1135,6 +1165,31 @@ func _blade_turn(aimed: Basis) -> Basis:
 	return turn
 
 
+## Through a swing or guard, rolls the weapon about its own length so its
+## striking face (`ActionPose.cut_edge`) turns as near the way the
+## technique has it as it can. The fist settle above puts the blade where
+## the wrist could turn it, which alone can leave an axe's bit or a
+## hammer's face pointing off to the side when the wrist runs out of bend;
+## a handle turning in the fist is free, so the face still leads.
+func _face_strike(melee: MeleeWeapon, aimed: Basis) -> void:
+	var cut: Variant = pose.technique_blade(melee)
+	var weight := clampf(pose.reach_weight, 0.0, 1.0)
+	if cut == null or weight <= 0.0:
+		return
+	var own := melee.visual.transform.basis.orthonormalized()
+	var held := actor.hand.global_basis.orthonormalized() * own
+	var along := held.y.normalized()
+	var face := held * pose.cut_edge
+	var wanted := aimed * (cut as Basis) * pose.cut_edge
+	face -= along * face.dot(along)
+	wanted -= along * wanted.dot(along)
+	if face.length() < 0.05 or wanted.length() < 0.05:
+		return
+	var angle := face.normalized().signed_angle_to(wanted.normalized(), along) * weight
+	if absf(angle) > 0.001:
+		actor.hand.global_basis = Basis(along, angle) * actor.hand.global_basis.orthonormalized()
+
+
 ## Between poses of a body posed every few frames (`ActorSkin.detail_step`):
 ## the hand node back where `hold_weapon` last showed it, in the actor's
 ## frame, since the skeleton's bones only hold what the arm reached inside
@@ -1177,6 +1232,7 @@ func hold_weapon() -> void:
 		var blade := (actor.hand.global_basis.orthonormalized() * melee.visual.transform.basis.orthonormalized() * Vector3.UP).normalized()
 		var settle := Quaternion(blade, fist)
 		actor.hand.global_basis = Basis(Quaternion.IDENTITY.slerp(settle, _grip_weight)) * actor.hand.global_basis.orthonormalized()
+		_face_strike(melee, aimed)
 		if shared and pose.bind_turn > 0.0:
 			# In a bind the blade turns in the fist to point at the meeting
 			# spot, so both blades cross there (`ActionPose.bind`).
