@@ -44,7 +44,13 @@ date in the same PR.
   level over a gap for `hang_time` and hugs the ground off a ramp, never
   flying), `passenger_seat` adds passenger seats
   (`Vehicle.seats`, by default one pillion behind the rider from the
-  `pillion_*` vars; the rover lists three, so it seats four, Caleb's call;
+  `pillion_*` vars; the rover lists three, so it seats four, Caleb's call:
+  the driver, the roof gunner and two behind; a seat with a "gun", an
+  item tagged "mounted" such as `mount_roof_gun`, is a gunner's seat, and
+  whoever sits there has that gun drawn as a weapon of their own, marked
+  "mounted", put on in `Vehicle._arm_seat` and taken away with their old
+  hand back in `_disarm_seat`, on every machine since both run from
+  `mount` and `get_off`; it is never in `gear_items`, so it never drops;
   `Vehicle.passengers`, `mount(actor, true)`, which takes the free seat
   nearest them; the seat's interact puts the next player there; a
   passenger is seated by the same riding pose from their seat's anchors,

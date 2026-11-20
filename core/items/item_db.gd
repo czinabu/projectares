@@ -113,6 +113,13 @@ func _ready() -> void:
 			"recoil_kick_deg": 0.15, "max_range": 110.0, "damage_kind": "plasma",
 			"tracer_color": Color(1.0, 0.3, 0.85), "shot_sound": "pulse"},
 			"Rotary pulse cannon. Slow to spin up, slows you right down, shreds anything in front of it. 180 shots.")
+	# Mounted guns (a vehicle seat's "gun"): drawn by whoever sits there,
+	# never carried, looted or sold.
+	register("mount_roof_gun", "Roof Gun", Rarity.RARE, 0, ["mounted"],
+			{"damage": 17.0, "headshot_mult": 1.0, "fire_interval": 0.085, "mag_size": 120, "ammo_in_mag": 120,
+			"reserve_ammo": 9999, "reload_time": 3.0, "spread_deg": 1.4, "bloom_per_shot": 0.03, "max_bloom": 1.2,
+			"recoil_kick_deg": 0.25, "max_range": 140.0, "tracer_color": Color(1.0, 0.8, 0.4)},
+			"A rover's roof gun: heavy rounds, a long belt, and the gunner's head and shoulders out in the open.")
 
 	# Attachments for primaries. Each fits one slot on the gun (its second tag:
 	# optic, muzzle, grip or magazine) and fits every primary. `Gun.fit` reads
@@ -353,9 +360,9 @@ func _ready() -> void:
 			"grip_points": [Vector3(-0.58, 1.27, -0.25), Vector3(-0.22, 1.27, -0.25)] as Array[Vector3],
 			"peg_points": [Vector3(-0.52, 0.86, -0.5), Vector3(-0.28, 0.86, -0.5)] as Array[Vector3],
 			"exit_offset": Vector3(-1.9, 0.1, 0.0), "body_color": Color(0.42, 0.48, 0.32),
-			# Four up (Caleb's call): the driver, a front passenger holding the
-			# dash rail and two behind, a little higher, holding the roll hoop's
-			# bar. Each passenger makes it only a little slower.
+			# Four up (Caleb's call): the driver, the roof gunner standing up
+			# through the roof, and two behind, a little higher, holding the
+			# roll hoop's bar. Each passenger makes it only a little slower.
 			"passenger_seat": true, "seats": _rover_seats(),
 			"laden_speed": 0.97, "laden_accel": 0.94, "laden_turn": 0.97, "laden_hang": 1.0,
 			# Four salvage crates: two on the tail deck, one on each flank rack.
@@ -530,10 +537,13 @@ func _attachment(id: String, display_name: String, rarity: Rarity, value: int, s
 ## The Warden Rover's three passenger seats (`Vehicle.seats`): the front
 ## passenger beside the driver, and two behind on raised seats.
 func _rover_seats() -> Array:
-	var out: Array = [{"offset": Vector3(0.4, 0.13, 0.25), "point": Vector3(0.4, 0.95, 0.25),
-			"grips": [Vector3(0.24, 1.32, -0.32), Vector3(0.56, 1.32, -0.32)] as Array[Vector3],
-			"pegs": [Vector3(0.28, 0.86, -0.5), Vector3(0.52, 0.86, -0.5)] as Array[Vector3],
-			"lean": 0.15, "exit": Vector3(1.9, 0.1, 0.0)}]
+	# The roof gun (DESIGN.md "Vehicles": a roof turret, Caleb's call for the
+	# Dune Sea): the gunner stands up through the roof behind the front
+	# seats, head and shoulders out, on the gun's grips.
+	var out: Array = [{"offset": Vector3(0.0, 0.7, 0.6), "point": Vector3(0.0, 1.55, 0.6),
+			"grips": [Vector3(-0.2, 1.95, 0.05), Vector3(0.2, 1.95, 0.05)] as Array[Vector3],
+			"pegs": [Vector3(-0.15, 0.95, 0.6), Vector3(0.15, 0.95, 0.6)] as Array[Vector3],
+			"lean": 0.0, "exit": Vector3(1.9, 0.1, 0.6), "gun": "mount_roof_gun"}]
 	for side: float in [-1.0, 1.0]:
 		var x := side * 0.4
 		out.append({"offset": Vector3(x, 0.23, 1.4), "point": Vector3(x, 1.05, 1.4),

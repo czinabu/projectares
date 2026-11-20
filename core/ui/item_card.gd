@@ -211,7 +211,7 @@ func _label(text: String, font_size: int, color: Color) -> Label:
 
 ## What kinds of thing the tags name, first match wins.
 const KINDS := [
-	["power", "heavy weapon"], ["railgun", "rail gun"], ["marksman", "marksman rifle"],
+	["power", "heavy weapon"], ["mounted", "mounted gun"], ["railgun", "rail gun"], ["marksman", "marksman rifle"],
 	["shotgun", "shotgun"], ["smg", "submachine gun"], ["machine_pistol", "machine pistol"],
 	["hand_cannon", "revolver"], ["pistol", "pistol"], ["rifle", "assault rifle"],
 	["knife", "knife"], ["axe", "axe"], ["hammer", "two-handed hammer"], ["spear", "spear"],
@@ -268,7 +268,7 @@ static func about_text(id: String) -> String:
 static func facts(id: String) -> Array[String]:
 	var out: Array[String] = []
 	var stats := ItemDB.item_stats(id)
-	if ItemDB.has_tag(id, "firearm"):
+	if ItemDB.has_tag(id, "firearm") or ItemDB.has_tag(id, "mounted"):
 		out.append_array(_gun_facts(id, stats))
 	elif ItemDB.has_tag(id, "melee"):
 		out.append_array(_melee_facts(id, stats))

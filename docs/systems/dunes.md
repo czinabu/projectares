@@ -60,3 +60,22 @@ anything it covers, and keep it up to date in the same PR.
   bots walk round. `fields_buried_at_start` begin buried, by the raid's
   seed. Check it with `tests/dunes_storm_tests.gd` and by eye with
   `--sandstorm-only`.
+- Convoys (DESIGN.md "The Dune Sea (part three, built: convoys and roof
+  guns)"): the world event "convoy" (`Raid.start_event`, chosen at random
+  with the warlord and the supply pod where a world has
+  `WorldDef.convoy_vehicles` and its map `convoy_routes`). Generic in
+  `Raid` (`_start_convoy`, `_drive_convoy`, `_end_convoy`, `convoy`):
+  the hauler first with its cargo full of crates, each vehicle driven by a
+  bot of `convoy_faction` whose brain is off while the road drives it
+  (`_drive_convoy` sets its `cmd.move` toward the next route point, at
+  `convoy_throttle`, slowing into turns and for the one ahead), and
+  `convoy_riders` bots more aboard (the rover's first seat is its roof
+  gun). Its driver gone, the hauler spills its cargo (`spill_cargo`;
+  `_drop_hauled` does it too as the driver dies), every convoy bot gets
+  off with its brain back, the event ends and they and the vehicles stay
+  as ordinary ones. Through or timed out, it is cleared away with its
+  crates, save a vehicle with a player aboard. Online it needs nothing of
+  its own: the vehicles, riders, seats and crates go by the usual ways.
+  The Dune Sea's roads (`CONVOY_ROUTES` in its map) run yard to yard and
+  pass the wreck fields 60 m off. Check it with
+  `tests/dunes_convoy_tests.gd` and by eye with `--convoy-only`.

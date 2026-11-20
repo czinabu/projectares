@@ -10,6 +10,8 @@ var sight_range := 38.0
 var close_sense_range := 9.0
 var fov_deg := 140.0
 var attack_range := 28.0
+## How far a bot on a vehicle's mounted gun opens fire (`_gun_reach`).
+const MOUNTED_REACH := 45.0
 var preferred_range := 14.0
 var reaction_time := 0.7
 ## Melee only: how far off the chest a swing is aimed, per metre.
@@ -624,7 +626,20 @@ func _tend_kit(cmd: ActorCommand) -> void:
 		cmd.switch_weapon = any if any >= 0 else _blade_index()
 
 
+## How far it opens fire: its own kind's range, or a mounted gun's (a
+## gunner's seat turns even a blade fighter into a gunner).
+func _gun_reach() -> float:
+	var held := actor.get_active_weapon()
+	if held != null and held.has_meta("mounted"):
+		return maxf(attack_range, MOUNTED_REACH)
+	return attack_range
+
+
 func _primary_index() -> int:
+	# On a vehicle's gun (a gunner's seat), that is the gun to fight with.
+	for i in actor.weapons.size():
+		if actor.weapons[i].has_meta("mounted"):
+			return i
 	for i in actor.weapons.size():
 		var gun := actor.weapons[i] as Gun
 		if gun != null and not gun.is_sidearm and not gun.is_power():
@@ -726,7 +741,7 @@ func _attack(cmd: ActorCommand, delta: float) -> void:
 	if _flinch_left > 0.0:
 		_flinch_left -= delta
 		return
-	if _seen_time < _reaction or dist > attack_range or not _on_target:
+	if _seen_time < _reaction or dist > _gun_reach() or not _on_target:
 		_lock = 0.0 if not _on_target else _lock
 		return
 	if lock_time > 0.0:
@@ -1455,7 +1470,9 @@ func _find_target() -> Actor:
 		# A Phase Cloak hides all but someone right beside the bot.
 		if other.is_cloaked() and dist > other.artifact.cloak_sense_range:
 			continue
-		var in_view := forward.angle_to((chest - eye).normalized()) < deg_to_rad(fov_deg) * 0.5
+		# Riding (a convoy's gunner or passenger), it keeps watch all round.
+		var in_view := actor.vehicle != null \
+				or forward.angle_to((chest - eye).normalized()) < deg_to_rad(fov_deg) * 0.5
 		# Someone crouched creeps up quieter: sensed only closer in.
 		var sense := close_sense_range * (other.crouch_sense_mult if other.crouched else 1.0)
 		if not in_view and dist > sense and other != target:
@@ -1668,6 +1685,11 @@ func _may_attack(dist: float) -> bool:
 	if uses_kit or not ration_attacks or not is_person(target):
 		return true
 	if dist < point_blank:
+		return true
+	# A vehicle's mounted gun is no rifle in a crowd: its gunner never waits
+	# a turn.
+	var held := actor.get_active_weapon()
+	if held != null and held.has_meta("mounted"):
 		return true
 	if not holds_turn and _hit_by == target and _since_hit() < return_fire_time:
 		return true
