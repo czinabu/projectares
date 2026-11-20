@@ -131,7 +131,7 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 		if other == null or other == shooter or other.is_dead or not Raid.together(shooter, other):
 			continue
 		var at: Vector3 = seen.get(other, other.global_position)
-		var entry := capsule_entry(from, to, at, other.body_height())
+		var entry := capsule_entry(from, to, at, other.body_height(), other.body_radius)
 		if entry.is_empty():
 			continue
 		var dist := from.distance_to(entry[0])
@@ -142,15 +142,16 @@ static func trace(shooter: Actor, from: Vector3, to: Vector3) -> Dictionary:
 
 
 ## Where the segment `from`-`to` enters an actor body standing at `feet`,
-## `height` tall (`Actor.body_height`: lower while crouched), as [point], or
-## [] if it misses.
-static func capsule_entry(from: Vector3, to: Vector3, feet: Vector3, height := Actor.BODY_HEIGHT) -> Array:
-	var half := height * 0.5 - Actor.BODY_RADIUS
+## `height` tall (`Actor.body_height`: lower while crouched) and `radius`
+## wide (`Actor.body_radius`), as [point], or [] if it misses.
+static func capsule_entry(from: Vector3, to: Vector3, feet: Vector3, height := Actor.BODY_HEIGHT,
+		radius := Actor.BODY_RADIUS) -> Array:
+	var half := maxf(height * 0.5 - radius, 0.0)
 	var center := feet + Vector3(0.0, height * 0.5, 0.0)
 	var closest := Geometry3D.get_closest_points_between_segments(from, to,
 			center - Vector3(0.0, half, 0.0), center + Vector3(0.0, half, 0.0))
-	if closest[0].distance_to(closest[1]) > Actor.BODY_RADIUS:
+	if closest[0].distance_to(closest[1]) > radius:
 		return []
 	# The ball around the nearest point of the body's spine gives the entry.
-	var enter := Geometry3D.segment_intersects_sphere(from, to, closest[1], Actor.BODY_RADIUS)
+	var enter := Geometry3D.segment_intersects_sphere(from, to, closest[1], radius)
 	return [enter[0] if not enter.is_empty() else from]

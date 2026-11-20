@@ -86,8 +86,11 @@ date in the same PR.
   colours keep the hue). A type's `smoke` lays low battle smoke over the
   ground (`Planet.GroundSmoke`, a volumetric fog box that follows the
   camera, thicker with the war and in a storm), off with
-  `GameSettings.ground_smoke`. Check by eye with `planet_check.tscn --
-  <dir> [type ids]`.
+  `GameSettings.ground_smoke`. A map's far ring (`Planet.horizon`) is
+  built from the same `PlanetTerrain` as the map's own ground (its `field`
+  and all), or it stands over the map's edge; `smooth` blurs it for a
+  ground of short, sharp features (dunes, terraces). Check by eye with
+  `planet_check.tscn -- <dir> [type ids]`.
 - Open ground is a `Terrain` (`core/world/terrain.gd`): a heightfield with
   collision and a mesh that knows nothing about any world. A map on one
   offers `ground_height(x, z)` and the `Raid` stands spawning actors on it
@@ -182,7 +185,12 @@ date in the same PR.
   `WorldDef.make_warlord` (clients build the same one from `Raid.warlords`,
   so keep that hook free of randomness). A convoy (a world with
   `WorldDef.convoy_vehicles` and a map with `convoy_routes`, see
-  `dunes.md`) is the third kind. Event bots are extra and are never
+  `dunes.md`) is the third kind, and an airship (a world with
+  `WorldDef.airship_vehicle` and a map with `airship_routes`, see
+  `rift.md`) the fourth: `Raid.airship`, `_start_airship`,
+  `_drive_airship`, its weak spots bots made with `_add_bot(..., p_boss)`
+  so `WorldDef.equip_bot` builds them by their `boss` meta, its hold put
+  down by `drop_spot_at`. Event bots are extra and are never
   respawned. Loot that should follow the war comes from
   `WorldDef.roll_war_loot(source, rng, intensity)`, not `roll_loot`.
 - The life log (DESIGN.md "Challenge and balance data"): the authority's

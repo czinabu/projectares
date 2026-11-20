@@ -5,7 +5,9 @@ extends CharacterBody3D
 ## turn on the spot, `jump_speed` gives it jump-jets, the "hover" tag floats
 ## it on a cushion of thrust (see "Hover" below), `passenger_seat` gives it
 ## seats for passengers (a pillion behind the rider, or a rover's three,
-## `seats`), and the "aircraft" tag flies it (`_fly`).
+## `seats`), the "aircraft" tag flies it (`_fly`), and the "airship" tag
+## makes it a world's airship (`_float`): nobody rides it, its `course`
+## steers it, and its seats hold its weak spots.
 ##
 ## Like the Actor, a vehicle is driven only by its rider's ActorCommand, so it
 ## runs the same on a headless server. It reads the rider's command before the
@@ -30,10 +32,24 @@ const LAYER_VEHICLES := Actor.LAYER_VEHICLES
 
 var item_id := ""
 var display_name := "Vehicle"
-## Which greybox body to build: "bike", "hoverbike", "rover", "mech" or "jet".
+## Which greybox body to build: "bike", "hoverbike", "rover", "mech", "jet"
+## or "airship".
 var model := "bike"
 ## True for an item tagged "aircraft": it takes off past `takeoff_speed`.
 var flies := false
+## True for an item tagged "airship" (DESIGN.md "Basalt Rift", the Sky
+## Leviathan): a world event's ship, never ridden or packed (it has no
+## seat to interact with). Afloat it steers for `course` (`_float`) and
+## passes through everything; with no course it falls, and then the world
+## stops it. Each of its `seats` with a "part" is a weak spot: the `Raid`
+## puts a bot there, and the model's piece for it ("Part<n>") shows broken
+## once that seat has been manned and is empty.
+var floats := false
+## Where an airship steers for: it turns towards it at `turn_rate` and
+## climbs or sinks to its height at up to `climb_rate`. INF: it falls.
+var course := Vector3.INF
+## Which of an airship's seats have been manned, so an empty one is broken.
+var _manned: Array[bool] = []
 ## True for an item tagged "hover": it rides a cushion of thrust instead of
 ## wheels (see "Hover" below).
 var hovers := false
@@ -54,6 +70,13 @@ var gravity := 20.0
 var max_fall_speed := 50.0
 ## The steepest ground it can drive up, in degrees. Steeper is a wall.
 var max_slope := 40.0
+## Wheels (and a hover's cushion) keep to the ground over a crest (a dune's
+## top, a rise in the road) while they leave it climbing slower than this, in
+## m/s: only a real ramp, taken fast, throws them in the air. Walkers stride
+## their own way.
+var crest_hold := 6.0
+## How far down a crest's far side the wheels look for the ground, in metres.
+var crest_snap := 1.2
 ## Where the rider's feet are carried, relative to the vehicle. Low and over
 ## the seat, so a seated rider's head (and eyes, and headshot zone) is about
 ## where it shows.
@@ -268,6 +291,7 @@ func setup(p_item_id: String) -> void:
 	item_id = p_item_id
 	display_name = ItemDB.item_name(p_item_id)
 	flies = ItemDB.has_tag(p_item_id, "aircraft")
+	floats = ItemDB.has_tag(p_item_id, "airship")
 	hovers = ItemDB.has_tag(p_item_id, "hover")
 	var stats := ItemDB.item_stats(p_item_id)
 	for key: String in stats:
@@ -304,6 +328,10 @@ func _ready() -> void:
 	process_physics_priority = -5
 	collision_layer = LAYER_VEHICLES
 	collision_mask = Actor.LAYER_WORLD | Actor.LAYER_ACTORS
+	if floats:
+		# Afloat it passes through everything (its route is clear); going
+		# down, it comes to rest on the world (`_float`).
+		collision_mask = 0
 	floor_snap_length = 0.4
 	floor_max_angle = deg_to_rad(max_slope)
 	heading = rotation.y
@@ -358,12 +386,15 @@ func _build_body() -> void:
 		seat_col.position.y = body_size.y * 0.5
 	add_child(col)
 
-	_seat = Seat.new()
-	_seat.name = "Seat"
-	_seat.vehicle = self
-	seat_col.shape = seat_shape
-	_seat.add_child(seat_col)
-	add_child(_seat)
+	if not floats:
+		_seat = Seat.new()
+		_seat.name = "Seat"
+		_seat.vehicle = self
+		seat_col.shape = seat_shape
+		_seat.add_child(seat_col)
+		add_child(_seat)
+	else:
+		seat_col.free()
 
 	_model = build_visual()
 	add_child(_model)
@@ -440,7 +471,33 @@ func _process(delta: float) -> void:
 		_animate_legs(delta)
 	if hovers and _model != null:
 		_animate_hover(delta)
+	if floats and _model != null:
+		_show_parts()
 	_puff_slide(delta)
+
+
+## An airship's weak spots: a seat's piece ("Part<n>") shows broken
+## ("Broken<n>") once its seat has been manned and is empty again. View
+## only, from who sits where, which every machine keeps.
+func _show_parts() -> void:
+	if _manned.size() != seats.size():
+		_manned.resize(seats.size())
+	for i in seats.size():
+		if passengers[i] != null:
+			_manned[i] = true
+		var whole := passengers[i] != null or not _manned[i]
+		var piece := _model.get_node_or_null("Part%d" % i) as Node3D
+		if piece == null or piece.visible == whole:
+			continue
+		piece.visible = whole
+		var wreck := _model.get_node_or_null("Broken%d" % i) as Node3D
+		if wreck != null:
+			wreck.visible = not whole
+		if not whole and is_inside_tree():
+			var at := piece.global_position
+			Fx.burst(get_parent(), at, 3.5, Color(1.0, 0.55, 0.2))
+			Fx.puff(get_parent(), at, 3.0, Color(0.2, 0.18, 0.17, 0.8))
+			Sfx.play("shell_blast", at, 2.0, 250.0, 30.0)
 
 
 ## Tyre smoke off the back wheels while they slide, or spray off a hover's
@@ -736,7 +793,9 @@ func _physics_process(delta: float) -> void:
 	# or rolling fast enough to lift off and asked to climb. Nobody aboard, it
 	# drops like anything else.
 	var flying := flies and rider != null and (not on_floor or (lift > 0.0 and speed >= takeoff_speed))
-	if flying:
+	if floats:
+		_float(delta)
+	elif flying:
 		_fly(throttle, steer, boosting, lift, delta)
 	else:
 		if on_floor:
@@ -763,6 +822,8 @@ func _physics_process(delta: float) -> void:
 			aboard_layers[aboard] = aboard.collision_layer
 			aboard.collision_layer = 0
 	move_and_slide()
+	if on_floor and not is_on_floor() and not flying and not floats:
+		_hold_crest()
 	if carried:
 		rider.collision_layer = rider_layer
 	for aboard: Actor in aboard_layers:
@@ -833,6 +894,45 @@ func _fly(throttle: float, steer: float, boosting: bool, lift: float, delta: flo
 		# Too slow to fly: it sinks, harder the slower it goes.
 		var short := 1.0 - clampf(speed / maxf(stall_speed, 0.1), 0.0, 1.0)
 		vy = maxf(minf(vy, velocity.y) - gravity * short * delta, -max_fall_speed)
+	velocity = forward * speed + Vector3(0.0, vy, 0.0)
+
+
+## Wheels (and a hover) just run over a crest: pulled back onto the ground below
+## (`crest_snap`) unless they left it climbing at `crest_hold` or faster, and
+## then follow the far side. Without it every dune top throws a rover in the
+## air, where it can neither steer nor brake.
+func _hold_crest() -> void:
+	# A walker strides (and hops) its own way; a hover's cushion still holds
+	# it level off a real edge, past `crest_snap`.
+	if (pivot_turn > 0.0 and not hovers) or velocity.y >= crest_hold:
+		return
+	var keep := floor_snap_length
+	floor_snap_length = crest_snap
+	apply_floor_snap()
+	floor_snap_length = keep
+	if is_on_floor():
+		var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+		velocity = horizontal.slide(get_floor_normal()).normalized() * horizontal.length()
+
+
+## An airship: afloat, it turns towards its `course` at `turn_rate` (slowing
+## into a sharp turn) and climbs or sinks to the course's height; with no
+## course it falls, drifting on, and comes down on the world.
+func _float(delta: float) -> void:
+	var forward := Basis(Vector3.UP, heading) * Vector3.FORWARD
+	if course == Vector3.INF:
+		collision_mask = Actor.LAYER_WORLD
+		speed = move_toward(speed, max_speed * 0.5, coast_decel * delta)
+		velocity = forward * speed + Vector3(0.0, maxf(velocity.y - gravity * delta, -max_fall_speed), 0.0)
+		return
+	collision_mask = 0
+	var to := course - global_position
+	var off := wrapf(atan2(-to.x, -to.z) - heading, -PI, PI)
+	if Vector2(to.x, to.z).length() > 0.5:
+		heading += clampf(off, -turn_rate * delta, turn_rate * delta)
+	_turning = clampf(-off, -1.0, 1.0)
+	speed = move_toward(speed, max_speed * clampf(1.2 - absf(off), 0.4, 1.0), accel * delta)
+	var vy := move_toward(velocity.y, clampf(to.y * 0.4, -climb_rate, climb_rate), climb_accel * delta)
 	velocity = forward * speed + Vector3(0.0, vy, 0.0)
 
 
@@ -1005,6 +1105,10 @@ func _update_visual(steer: float, delta: float) -> void:
 		pitch = clampf(velocity.y / maxf(climb_rate, 0.1), -1.0, 1.0) * flight_pitch
 	elif not is_on_floor() and jump_speed <= 0.0:
 		pitch = clampf(velocity.y * 0.03, -0.4, 0.4)
+	if floats:
+		# An airship rolls a little into its turns and noses down falling.
+		lean = lerpf(lean, steer * lean_amount, 1.0 - exp(-2.0 * delta))
+		pitch = clampf(velocity.y * 0.03, -0.35, 0.1) if course == Vector3.INF else 0.0
 	var tilt := Vector3(pitch, 0.0, -lean)
 	if flies and not is_on_floor():
 		# Near the ground a flier levels out, so a banked wingtip or a

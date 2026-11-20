@@ -6,7 +6,7 @@ extends Node
 ## every other library clip kept under its own name.
 ##
 ##   godot --headless --path . res://tools/human_rig/build_rig.tscn -- \
-##       --body <Superhero_Male_FullBody.gltf> --ual <UAL1.glb from the Source tier>,<UAL2_Standard.glb> \
+##       --body <Superhero_Male_FullBody.gltf> --ual <UAL1.glb from the Source tier>,<UAL2.glb from the Source tier> \
 ##       --hair <Hair_Buzzed.gltf>,... --old res://assets/characters/humans/rig_m.glb \
 ##       --out res://assets/characters/humans/body_m.glb
 ##
@@ -153,6 +153,7 @@ func build(args: Dictionary) -> int:
 				_add_surface(parts["head"], arrays, PackedInt32Array(arrays[Mesh.ARRAY_INDEX]), material, source.surface_get_format(s), _hand_binds(mesh.skin, skeleton))
 				continue
 			bind_skin = mesh.skin
+			_fill_cleft(arrays)
 			var by_slot := _split(arrays, mesh.skin, skeleton)
 			for slot: String in by_slot:
 				_add_surface(parts[slot], arrays, by_slot[slot], material, source.surface_get_format(s), _hand_binds(mesh.skin, skeleton))
@@ -263,6 +264,13 @@ func build(args: Dictionary) -> int:
 		if library.has_animation(clip):
 			library.remove_animation(clip)
 		library.add_animation(clip, jog)
+	# The pack's slide reaches out the right leg; the game's lead leg is the
+	# left (`Look.HUMAN_LEAD_LEG`), so the slide it plays is that mirrored.
+	var slide: Animation = ual.get("Slide", ual.get("Slide_Loop"))
+	if slide:
+		library.add_animation("Slide_L", _mirror(slide, out_skeleton))
+	else:
+		print("  missing: Slide_L <- Slide")
 	var stand := _stand(ual.get(STAND_BASE), ual.get(CURL_CLIP, ual.get(CURL_CLIP + "_Loop")), out_skeleton)
 	if stand:
 		library.add_animation("Idle_Stand", stand)
@@ -312,6 +320,68 @@ static func _restore_dots(glb: PackedByteArray) -> PackedByteArray:
 
 ## Triangle indices of `arrays` by part, each triangle going to the part of
 ## the bone that carries most of its weight.
+## The cleft between the glutes, filled most of the way out (Caleb's call:
+## no crack on the behind). In the rest pose, facing +z: on the back of the
+## hips (`CLEFT_BAND`, shares of the body's height), each vertex within
+## `CLEFT_HALF_WIDTH` m of the middle comes back toward the height of the
+## cheeks beside it, by `CLEFT_FILL` in the middle and fading to nothing at
+## the edge, and its normal turns to face back with it. Never pushed in.
+const CLEFT_BAND := Vector2(0.44, 0.6)
+const CLEFT_HALF_WIDTH := 0.05
+const CLEFT_FILL := 0.9
+
+
+static func _fill_cleft(arrays: Array) -> void:
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	if verts.is_empty():
+		return
+	var low := INF
+	var high := -INF
+	for p in verts:
+		low = minf(low, p.y)
+		high = maxf(high, p.y)
+	var height := high - low
+	var bottom := low + CLEFT_BAND.x * height
+	var top := low + CLEFT_BAND.y * height
+	var fade := 0.03 * height
+	# The cheeks' height beside the cleft, in 1 cm rows: the shallower of
+	# the two sides, so the fill never stands proud of either.
+	var rows := {}
+	for p in verts:
+		var side := absf(p.x)
+		if p.y < bottom - fade or p.y > top + fade or p.z > -0.02 or side < CLEFT_HALF_WIDTH * 0.6 or side > CLEFT_HALF_WIDTH * 1.2:
+			continue
+		var row := int(round(p.y * 100.0))
+		var both: Vector2 = rows.get(row, Vector2(-INF, -INF))
+		if p.x < 0.0:
+			both.x = maxf(both.x, -p.z)
+		else:
+			both.y = maxf(both.y, -p.z)
+		rows[row] = both
+	var moved := 0
+	for i in verts.size():
+		var p := verts[i]
+		if p.y < bottom - fade or p.y > top + fade or p.z > -0.02 or absf(p.x) >= CLEFT_HALF_WIDTH:
+			continue
+		var both: Vector2 = rows.get(int(round(p.y * 100.0)), Vector2(-INF, -INF))
+		var cheek := minf(both.x, both.y)
+		if cheek == -INF or -p.z >= cheek:
+			continue
+		var w := CLEFT_FILL * (1.0 - smoothstep(0.0, CLEFT_HALF_WIDTH, absf(p.x))) \
+				* smoothstep(bottom - fade, bottom, p.y) * (1.0 - smoothstep(top, top + fade, p.y))
+		if w <= 0.0:
+			continue
+		verts[i] = Vector3(p.x, p.y, -lerpf(-p.z, cheek, w))
+		if not normals.is_empty():
+			normals[i] = normals[i].lerp(Vector3(0, 0, -1), w).normalized()
+		moved += 1
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	if not normals.is_empty():
+		arrays[Mesh.ARRAY_NORMAL] = normals
+	print("cleft: filled ", moved, " vertices")
+
+
 func _split(arrays: Array, skin: Skin, skeleton: Skeleton3D) -> Dictionary:
 	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 	var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
@@ -710,6 +780,12 @@ const JOG_SWAY := 0.4
 ## would only spin the legs; slowed, it measures under the speed at which
 ## `Locomotion` starts to lengthen the stride.
 const JOG_STRETCH := 1.12
+## Caleb found the jog too wide: each foot lands `JOG_NARROW` m nearer the
+## middle (about 15 cm apart instead of 23), and the arms swing
+## `JOG_ARMS_IN` radians closer to the sides, the library's elbows-out
+## carriage pulled in.
+const JOG_NARROW := 0.04
+const JOG_ARMS_IN := 0.45
 const TRUNK := ["Hips", "Abdomen", "Torso", "Chest", "Neck", "Head"]
 
 
@@ -868,6 +944,21 @@ static func _calm(anim: Animation, skeleton: Skeleton3D, keep: float, sway: floa
 		hip_pose.origin += lift_local
 		local[hips] = hip_pose
 		g = _globals(local, skeleton)
+		for side: String in [".L", ".R"]:
+			var inward := across if side == ".L" else -across
+			var upper := skeleton.find_bone("UpperArm" + side)
+			var arm := (g[skeleton.find_bone("LowerArm" + side)].origin - g[upper].origin).normalized()
+			var axis := arm.cross(inward)
+			if axis.length() > 0.0001:
+				var upper_g := g[upper]
+				upper_g.basis = Basis(Quaternion(axis.normalized(), JOG_ARMS_IN)) * upper_g.basis
+				var upper_local := local[upper] as Transform3D
+				upper_local.basis = g[skeleton.get_bone_parent(upper)].basis.inverse() * upper_g.basis
+				local[upper] = upper_local
+				g = _globals(local, skeleton)
+			var foot_g: Transform3D = feet[side]
+			foot_g.origin += inward * JOG_NARROW
+			feet[side] = foot_g
 		for side: String in [".L", ".R"]:
 			var thigh := skeleton.find_bone("UpperLeg" + side)
 			var shin := skeleton.find_bone("LowerLeg" + side)

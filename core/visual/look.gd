@@ -67,7 +67,7 @@ const HUMAN_ANIMS := {"idle": "Idle_Stand", "idle_gun": "Idle_Gun", "aim_gun": "
 	"stand_legs": "Idle_Neutral", "walk": "Walk", "run": "Run", "death": "Death",
 	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot",
 	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right", "roll": "Roll",
-	"kick": "Kick_Right"}
+	"kick": "Kick_Right", "slide": "Slide_L"}
 const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
 const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
 const HUMAN_FEET := ["Foot.L", "Foot.R"]
@@ -211,6 +211,13 @@ const SKINS := {
 	# pustules and trailing tendrils.
 	"bloater": {
 		"scenes": ["Leela.glb"], "height": 2.1, "hide": ["Leela"], "creature": "bloater", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# A machine's weak spot riding on it (an airship's engine pod, say): the
+	# machine's own model is its body, so nothing of the bot shows, nor
+	# its weapon.
+	"ship_part": {
+		"scenes": ["Leela.glb"], "height": 1.8, "hide": ["Leela"], "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
 }

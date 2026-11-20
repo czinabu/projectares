@@ -13,7 +13,12 @@ date in the same PR.
   their average spot, legs solved to reach them) rather than only spinning
   faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.slide_low`)
   is simulated from `ActorCommand.slide` like a dash, so it predicts and
-  replicates; the skin bends the model into a slide pose from `slide_low`.
+  replicates; the skin lays the pack's feet-first slide, mirrored to lead with the left leg ("Slide_L",
+  `HUMAN_ANIMS["slide"]`) over the hips, legs and spine up to the chest
+  by `slide_low` (`Locomotion._slide_clip`, before the legs turn to
+  travel, so it slides the way the body moves); the shoulders, arms and
+  head stay the stand's, so a weapon keeps its hold. A body without a
+  slide clip is bent into a slide pose instead (`_slide_pose`).
   The crouch key (C) slides from a sprint and otherwise toggles the crouch
   (`PlayerController.crouch_key`), sent as the held `ActorCommand.crouch` so
   it predicts and every view sees it. `Actor.crouched` follows it but stays
@@ -90,8 +95,11 @@ date in the same PR.
   that stay on the body as it moves), and the clips. Never edit the
   `.glb` by hand: change the tool and build again. The clips come from the
   Universal Animation Library packs where they fit (`build_rig.gd`
-  `CLIPS`; UAL1 is the bought Source tier, with the 8-way jog, crouch
-  and crawl sets). The empty-handed stand stands straight up (Caleb's call:
+  `CLIPS`; both libraries are the bought Source tiers: UAL1 with the
+  8-way jog, crouch and crawl sets, UAL2 with the 8-way walk, the sword
+  light and heavy combos, aerial sword, unarmed combos, vaults, wall runs,
+  double jumps and the thrown-in-the-air set; every clip is in the bodies
+  under its own name, ready for later passes). The empty-handed stand stands straight up (Caleb's call:
   every pack idle is a fighting stance with the feet staggered), so the tool
   builds it, "Idle_Stand" (`_stand`): the pack's A-pose, straight legs and
   feet under the hips, with the arms let down to the sides, the hands
@@ -103,12 +111,22 @@ date in the same PR.
   of its roll about the cycle's average (the hips' shift side to side
   too: the view swayed with it), and the cycle is slowed by
   `JOG_STRETCH` so a sprint lengthens the stride (the jog covers twice
-  the ground a step of the old trot did). The strafe right is the strafe
+  the ground a step of the old trot did). It is narrowed too (Caleb found
+  it too wide): each foot lands `JOG_NARROW` nearer the middle (15 cm
+  apart, not 23) and the arms swing `JOG_ARMS_IN` closer to the sides.
+  The strafe right is the strafe
   left mirrored (`_mirror`): the pack's own steps shorter and measured at
   a third of the speed. The clips the game's gun poses are tuned on (the
   relaxed stand under a gun, the gun holds and the run with the gun up,
   the sword) are the old bodies' own, carried across from `rig_m.glb` and
-  `rig_f.glb` (`_retarget`); the pack has no rifle clips. A
+  `rig_f.glb` (`_retarget`); the pack has no rifle clips. Those old
+  stands spread the new bodies' feet wide and bow the knees, so a gun held
+  low and a blade out stand on the relaxed stand's legs
+  (`ActorSkin.LEGS_FROM_STAND`); the blade's ready stance is the fighting
+  pose's stagger on top (`Locomotion.fight_*`). A gun raised to shoot
+  keeps its clip's stance: the sights' relief is tuned on it. The cleft between the
+  glutes is filled most of the way out in the mesh (`_fill_cleft`, Caleb's
+  call), so the armor is fitted to the filled body. A
   body is sized in its relaxed stand (`stand_legs`), never in an idle that
   bends the knees or spreads the feet, or the whole body grows. A glide lays the
   body out over the relaxed stand too: the pack's idles turn the chest,

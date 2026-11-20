@@ -20,6 +20,12 @@ const GAITS: Array[String] = ["walk", "run", "run_back", "run_left", "run_right"
 ## Standing clips. Cuts into and out of them blend for longer, so stopping
 ## settles into the stand instead of snapping.
 const STANDS: Array[String] = ["idle", "idle_gun", "aim_gun", "idle_melee"]
+## Stands whose own legs are swapped for the relaxed stand's
+## (`Locomotion.stand_legs`): the old gun and sword clips stand wide and
+## bow-legged on the new bodies (Caleb: hunched and splay-legged). The
+## blade's ready stance is then the fighting pose's own stagger. A gun
+## raised to shoot keeps its clip's stance, which the sights are tuned on.
+const LEGS_FROM_STAND: Array[String] = ["idle_gun", "idle_melee"]
 
 ## Drawn cloaked now (see `_update_cloak`), and the shared shimmer material.
 ## How long a soldier's gun must have been down before raising it barks.
@@ -106,13 +112,14 @@ var backstroke_look := -0.7
 ## direction per leg in the actor's frame (x right, y up, z back), the lead
 ## leg first. Leaping: lead knee up, the other leg trailing. Falling: both
 ## knees a little up and apart, ready to land. Hanging (jets lit or
-## thrusting): legs loose under the body, trailing a little.
+## thrusting): legs nearly straight under the body, toes pointed, the
+## second leg trailing a little behind the first.
 var air_grace := 0.12
 var air_blend := 6.0
-var air_toes := 0.45
+var air_toes := 0.9
 var leap_legs := [Vector3(0.05, -1.0, -0.75), Vector3(0.0, -1.0, 0.7), Vector3(0.05, -1.0, 0.3), Vector3(0.0, -1.0, 0.55)]
 var fall_legs := [Vector3(0.22, -1.0, -0.45), Vector3(0.0, -1.0, 0.5), Vector3(0.2, -1.0, -0.15), Vector3(0.0, -1.0, 0.6)]
-var hang_legs := [Vector3(0.07, -1.0, -0.18), Vector3(0.0, -1.0, 0.4), Vector3(0.07, -1.0, 0.08), Vector3(0.0, -1.0, 0.5)]
+var hang_legs := [Vector3(0.05, -1.0, -0.04), Vector3(0.0, -1.0, 0.16), Vector3(0.05, -1.0, 0.14), Vector3(0.0, -1.0, 0.34)]
 ## Taking off, the legs first push straight down off the ground, toes
 ## pointed, for `takeoff_time` seconds before they tuck into the leap. A
 ## running takeoff also leans into the jump, by up to `leap_lean` radians at
@@ -858,6 +865,7 @@ func _update(delta: float) -> void:
 	locomotion.stride_target = 1.0
 	locomotion.overlay = false
 	locomotion.stand_legs = false
+	locomotion.stand_legs_hips = true
 	ActionPose.of(actor).carry_wanted = false
 	if actor.is_dead:
 		_play("death")
@@ -904,7 +912,7 @@ func _update(delta: float) -> void:
 		# No ground under the feet: never a run cycle. A stand plays under
 		# the air pose, so the arms keep their hold on the weapon.
 		_play("idle_melee" if melee and _anims.has("idle_melee") else stand_key(weapon))
-		locomotion.stand_legs = _current == "idle_gun"
+		locomotion.stand_legs = _current in LEGS_FROM_STAND
 	elif actor.is_sliding():
 		# The slide pose bends whatever plays under it; the arms keep their
 		# hold: a gun carried, or raised to shoot out of the slide.
@@ -919,9 +927,11 @@ func _update(delta: float) -> void:
 			locomotion.overlay_phase = _player.current_animation_position / _player.current_animation_length
 	elif melee and _anims.has("idle_melee"):
 		_play("idle_melee")
+		locomotion.stand_legs = true
+		locomotion.stand_legs_hips = false
 	else:
 		_play(stand_key(weapon))
-		locomotion.stand_legs = _current == "idle_gun"
+		locomotion.stand_legs = _current in LEGS_FROM_STAND
 	_update_carry(weapon, gait, airborne)
 
 

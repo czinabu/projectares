@@ -37,7 +37,11 @@ date in the same PR.
   leaves alone, a lamp a surface glow it hangs a beam on) round the
   item's own anchors, so a restyle never moves a seat or a hitbox; check
   them side by side with `visual_check.tscn -- <dir> --vehicles-only`,
-  `body_size` its collision box, `pivot_turn` lets a walker turn on the
+  `body_size` its collision box, wheels (and a hover) keep to the ground
+  over a crest (`Vehicle._hold_crest`: pulled back within `crest_snap`
+  unless they left it climbing at `crest_hold` or faster, so a dune top
+  never throws a rover in the air where it cannot steer, while a ramp
+  taken fast still launches it), `pivot_turn` lets a walker turn on the
   spot, `jump_speed` gives it a jump-jet hop, the "hover" tag floats it on
   a cushion ("hoverbike", the Raider: it drifts through turns by `slip`,
   which travels in the ride state and is corrected like `speed`, holds
@@ -61,7 +65,17 @@ date in the same PR.
   the bikes one; see `docs/systems/dunes.md`), and the "aircraft" tag flies
   it (`Vehicle._fly`: takes off past `takeoff_speed` with jump, never
   hovers, drops below `stall_speed` or with nobody at the stick, climbs no
-  higher than `ceiling` over the world's ground). Jump is the handbrake
+  higher than `ceiling` over the world's ground), and the "airship" tag
+  makes a world event's ship (`Vehicle.floats`, model "airship"): nobody
+  rides it and it has no seat to interact with, so it is never ridden,
+  packed or thrown; the `Raid` steers it by setting `Vehicle.course`
+  (`_float`: it turns at `turn_rate` and climbs to the course's height,
+  passing through everything; with no course it falls onto the world).
+  Each of its `seats` with a "part" (a boss kind) holds a weak spot, a bot
+  the `Raid` seats there, and a "piece" ("pod", "plate" or "turret") the
+  model builds there as "Part<n>" with a wrecked "Broken<n>" beside it;
+  `Vehicle._show_parts` swaps them once that seat has been manned and is
+  empty, on every machine, from who sits where. Jump is the handbrake
   (`handbrake`, off for the mech and the jet, whose jump key is theirs):
   at speed it is a drift (`Vehicle.drifting`, the same `slip` a hover
   keeps, `drift_*` stats) whose clean exit on the throttle is a short
