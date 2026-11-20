@@ -1350,6 +1350,17 @@ const WEATHER_KITS := {
 		# Spindrift off the edges a map offers (`WeatherView`).
 		"drift": true,
 	},
+	# Rain: long thin streaks falling steeply, a grey-green wall of it.
+	"rain": {
+		"wall_tint": Color(0.2, 0.25, 0.25), "wall_lit": Color(0.5, 0.58, 0.58),
+		"streak": Color(0.75, 0.85, 0.85, 0.35), "streak_size": Vector2(0.012, 0.9),
+		"billow": Color(0.45, 0.52, 0.52, 0.16), "fall": -2.2, "wall_height": 80.0,
+		# What the storm sounds like round you (`Sfx`; "wind" by default).
+		"sound": "rain",
+		# Rain falls out of the air round the camera fast: more streaks,
+		# each shorter lived.
+		"streaks": 6000, "streak_life": 1.6,
+	},
 }
 
 

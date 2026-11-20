@@ -193,18 +193,21 @@ var shot_carry := 1.0
 ## leaves guns alone.
 var gun_fouling := 0.0
 ## Weather (DESIGN.md "Weather: ash storms"): with a `weather_kind` ("ash",
-## "snow"; "" for none) storms cross the map one at a time (`Weather`,
+## "snow", "rain"; "" for none) storms cross the map one at a time (`Weather`,
 ## `Raid.weather`), named `weather_name` on the watch and the plaza's signs.
 ## Each is a cell `weather_radius` across its middle, moving at
 ## `weather_speed` along `weather_path`, building and dying away over
 ## `weather_ramp` seconds, with a quiet spell of `weather_gap` seconds
 ## between (the first after `weather_first`). In the thick of it sight
 ## and scan reach drop to `weather_sight` of usual, shots carry
-## `weather_carry` as far, flight rigs are pushed by gusts up to
+## `weather_carry` as far (and so do footsteps, to a bot listening),
+## flight rigs are pushed by gusts up to
 ## `weather_gust` m/s² (times the rig's `gust_mult`), body heat drains
 ## `weather_cold` times as fast, and with `weather_wipes_tracks` the
-## storm wipes the tracks it passes over. With `weather_pushes` the armies
-## go for a strongpoint a storm covers. Off by default.
+## storm wipes the tracks it passes over. Guns foul `weather_fouling`
+## times as fast in its thick (`gun_fouling`: a rain that washes what
+## fouls them out of the air). With `weather_pushes` the armies go for a
+## strongpoint a storm covers. Off by default.
 var weather_kind := ""
 var weather_name := "Storm"
 var weather_radius := 150.0
@@ -216,6 +219,7 @@ var weather_sight := 0.5
 var weather_carry := 0.6
 var weather_gust := 6.0
 var weather_cold := 1.0
+var weather_fouling := 1.0
 var weather_wipes_tracks := false
 var weather_pushes := false
 ## How far from the map's middle storms cross (metres), for the default

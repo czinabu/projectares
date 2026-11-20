@@ -37,13 +37,15 @@ date in the same PR.
   that follow the war (reinforcements, events, loot) read `Raid.war`.
 - Weather (DESIGN.md "Weather: ash storms"): a world with
   `WorldDef.weather_kind` ("ash" Ashfront, "snow" for Frostline's
-  whiteouts) has storms crossing its map one at a time, a `Weather` cell
+  whiteouts, "rain" for the Spore Marsh's rain storms) has storms crossing its map one at a time, a `Weather` cell
   (`Raid.weather`) on `weather_path`, tuned by `WorldDef.weather_*`. Only
   the authority ticks it; a client is sent the cell
   (`NetSession._weather`) and only carries it on (`Weather.advance`).
   Anything a storm changes asks the cell where it happens, never a flag:
   bot sight (`BotBrain._find_target`, `sight_between`), scan reach
-  (`Visor`), how far shots carry (`Gun.shot_carry`), gusts on a flying rig
+  (`Visor`), how far shots and footsteps carry (`Gun.shot_carry`,
+  `BotBrain._find_target`), how fast guns foul (`Gun.foul_rate`,
+  `fouling_at`, `weather_fouling`), gusts on a flying rig
   (`Actor._take_gusts`, the rig's `gust_mult`, a function of position only
   so it predicts), the cold (`cold_at`), tracks (`weather_wipes_tracks`)
   and army pushes (`Raid._army_target`, `weather_pushes`). Frostline's

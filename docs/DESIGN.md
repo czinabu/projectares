@@ -1483,8 +1483,16 @@ and a fight is short. The planet's mist lies low over everything (its
   "banks", Forward+ only, like all volumetric fog). Bots see no further
   than the mist lets a player (`WorldDef.sight_at`: 38 m deep in a
   forest), so it is fair both ways.
-- **Still to come.** The rain storms the planet already has a look for
-  (the three Rootways are built, below).
+- **Rain storms** (Caleb's call: cover and quiet). Now and then a rain
+  storm crosses the marsh, on the same weather as Ashfront's ash storms
+  (`weather_kind` "rain"). In its thick sight drops to 60%, the rain
+  drowns shots and footsteps to 40% of their reach (wildlife hears a
+  gunshot at about 29 m instead of 72 m), and it washes the spores out
+  of the air, so guns foul at 40% of the usual rate. Gusts are light.
+  It is a time to move and fight: sneak past a pack, or open up without
+  waking the whole marsh. Down a Rootway is out of it. It looks like long
+  grey streaks falling past and a grey-green wall coming over the water,
+  and sounds like a steady hiss (all view only).
 
 ### The Spore Marsh (part three, built: atmosphere and scale)
 

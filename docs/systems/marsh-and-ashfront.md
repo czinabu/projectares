@@ -32,7 +32,12 @@ date in the same PR.
   a planet's `close` mood the map blends in by its "close_here" meta
   (`Look.close_cover` brings the depth fog's floor down like a storm's),
   view only; what a bot sees there is `WorldDef.sight_at`, never the
-  view. Its scale and floor are view only (`worlds/marsh/flora.gd`,
+  view. Rain storms are the shared weather with `weather_kind` "rain"
+  (`RAIN_*` in `worlds/marsh/world.gd`): sight, shot and footstep reach
+  and fouling all come from the cell where it happens, and down a
+  Rootway is out of it (`sheltered_at`). Their look and sound are the
+  "rain" weather kit (`Look.WEATHER_KITS`, its "sound" a synthesized
+  `Sfx` loop), view only. Its scale and floor are view only (`worlds/marsh/flora.gd`,
   built by the map where `Look` is on): far giants drawn in the haze
   (`giant_haze.gdshader`, standing at `Flora.giant_spots`, veiled under
   the caps and in a storm by `Flora.set_veil`) and the forest floor's
