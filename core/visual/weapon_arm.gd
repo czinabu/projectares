@@ -178,6 +178,8 @@ var _guard := 0.0
 var _hilt := 0.0
 var _off_weight := 0.0
 var _gun_weight := 0.0
+## How closed the gun hand is round the grip: shut whenever a gun is in hand.
+var _gun_fist := 0.0
 var _watch := 0.0
 ## How far the off hand is on the helmet, taking it off or putting it on.
 var _helm := 0.0
@@ -485,6 +487,8 @@ func step(delta: float) -> void:
 		_gun_carry = shared.carry if _weight <= 0.001 else 0.0
 		raised = lerpf(raised, shared.carry_support(gun), _gun_carry)
 	_support = maxf(_ads, raised)
+	var in_hand := gun != null and gun.visual != null and gun.visual.visible and not _let_go()
+	_gun_fist = move_toward(_gun_fist, 1.0 if in_hand else 0.0, delta * 8.0)
 	# Held up at the hip the body blades part way into the aiming stance, so
 	# the off shoulder comes forward and the off hand reaches the fore end.
 	var hip_up := 0.0
@@ -1226,7 +1230,7 @@ func _bend_to_grip() -> void:
 
 ## Last of all, close the fingers round the handle.
 func _close_grip() -> void:
-	_curl(_fist, maxf(_grip_weight, ride_grip.y))
+	_curl(_fist, maxf(maxf(_grip_weight, _gun_fist), ride_grip.y))
 	_curl(_off_fist, maxf(maxf(_off_weight, _support * (1.0 - _watch)), ride_grip.x))
 
 
