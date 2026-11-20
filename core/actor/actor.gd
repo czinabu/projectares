@@ -125,6 +125,10 @@ var eye_height := 1.6
 ## big body taller (Ashfront's walkers) when it equips the bot; the capsule,
 ## `Combat.trace` and headshots all follow `body_height()`.
 var stand_height := BODY_HEIGHT
+## How wide the body is: `BODY_RADIUS` for a person. A world may make a
+## big target fatter (a Sky Leviathan's engine pod) when it equips the bot;
+## the capsule and `Combat.trace` follow it (`set_body_radius`).
+var body_radius := BODY_RADIUS
 ## A weak spot: hits from behind (and from steeply above) are multiplied by
 ## this, in `modify_incoming`. 1 for no weak spot. Set by the world when it
 ## equips a bot, so it is the same on every machine.
@@ -376,6 +380,11 @@ var _boost_yaw := NAN
 var _slide_dir := Vector3.ZERO
 var _slide_from := 0.0
 var _was_on_floor := true
+## Where the feet last stood, and whether the worn rig counts its ceiling
+## from there (`_ceiling_from_floor`, asked again when the rig changes).
+var _floor_y := NAN
+var _floor_rule_rig := "\n"
+var _floor_rule := false
 var _stamina_wait := 0.0
 var _flash_left := 0.0
 var _healing_with := ""
@@ -933,15 +942,31 @@ func _simulate_skim(delta: float) -> void:
 ## Tells the flight rig how high it is over the world's ground, for its
 ## ceiling (`FlightRig.ceiling`). Only rigs with a ceiling ask, and only in
 ## the air.
+## A world may have a rig count from the floor its wearer last stood on
+## instead (`WorldDef.rig_ceiling_from_floor`).
 func _measure_altitude(on_floor: bool) -> void:
 	flight.altitude_known = false
+	if on_floor:
+		_floor_y = global_position.y
 	if not flight.enabled or flight.ceiling <= 0.0 or on_floor:
 		return
 	var ground := ground_level()
 	if is_nan(ground):
 		return
+	if not is_nan(_floor_y) and _floor_y > ground and _ceiling_from_floor():
+		ground = _floor_y
 	flight.altitude_known = true
 	flight.altitude = global_position.y - ground
+
+
+## Whether the world has this rig count its ceiling from the last floor,
+## asked once per rig worn.
+func _ceiling_from_floor() -> bool:
+	if _floor_rule_rig != flight.item_id:
+		var raid := Raid.of(self)
+		_floor_rule_rig = flight.item_id
+		_floor_rule = raid != null and raid.world != null and raid.world.rig_ceiling_from_floor(flight.item_id)
+	return _floor_rule
 
 
 ## The height of the world's ground under the actor, ignoring roofs and
@@ -1253,6 +1278,16 @@ func set_stand_height(height: float, eye_drop := 0.2) -> void:
 	_fit_body()
 
 
+## Makes the body `radius` wide (and at least twice that tall).
+func set_body_radius(radius: float) -> void:
+	body_radius = radius
+	if stand_height < radius * 2.0:
+		set_stand_height(radius * 2.0)
+	if _body_shape != null:
+		_body_shape.radius = radius
+	_fit_body()
+
+
 ## Whether the full standing body fits where the actor is: nothing of the
 ## world in the way overhead.
 func room_to_stand() -> bool:
@@ -1283,6 +1318,7 @@ func _fit_body() -> void:
 	if _body_shape == null:
 		return
 	var height := body_height()
+	height = maxf(height, body_radius * 2.0)
 	if is_equal_approx(_body_shape.height, height):
 		return
 	_body_shape.height = height

@@ -182,7 +182,12 @@ date in the same PR.
   `WorldDef.make_warlord` (clients build the same one from `Raid.warlords`,
   so keep that hook free of randomness). A convoy (a world with
   `WorldDef.convoy_vehicles` and a map with `convoy_routes`, see
-  `dunes.md`) is the third kind. Event bots are extra and are never
+  `dunes.md`) is the third kind, and an airship (a world with
+  `WorldDef.airship_vehicle` and a map with `airship_routes`, see
+  `rift.md`) the fourth: `Raid.airship`, `_start_airship`,
+  `_drive_airship`, its weak spots bots made with `_add_bot(..., p_boss)`
+  so `WorldDef.equip_bot` builds them by their `boss` meta, its hold put
+  down by `drop_spot_at`. Event bots are extra and are never
   respawned. Loot that should follow the war comes from
   `WorldDef.roll_war_loot(source, rng, intensity)`, not `roll_loot`.
 - The life log (DESIGN.md "Challenge and balance data"): the authority's

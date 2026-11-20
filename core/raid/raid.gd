@@ -264,7 +264,8 @@ var weather := Weather.new()
 var _assault_in := 0.0
 ## War intensity from which a player may choose to land beside the fighting.
 var hot_drop_from := 0.2
-## The world event going on, or {}: { kind ("supply_pod" or "warlord"),
+## The world event going on, or {}: { kind ("supply_pod", "warlord",
+## "convoy" or "airship"),
 ## title, at, ends (on `clock`) }. One at a time.
 var event := {}
 ## Players who stand together: owner key -> [side key, side name]. See `set_team`.
@@ -296,6 +297,15 @@ var convoy := {}
 ## heading for the next, and how near it lets the one ahead get.
 const CONVOY_REACH := 10.0
 const CONVOY_GAP := 16.0
+## The airship aloft (`WorldDef.airship_vehicle`), authority only:
+## {"ship", "route": points, "next": the point it heads for, "way": +1 or
+## -1 along the route, "passes": crossings left, "down": all its weak spots
+## broken and falling, "falling": seconds since, "over": crashed or gone}.
+var airship := {}
+## How close (flat metres) the airship comes to a route point before
+## heading for the next, and the longest it falls before it counts as down.
+const AIRSHIP_REACH := 14.0
+const AIRSHIP_FALL_MAX := 30.0
 ## Risk zones (DESIGN.md section 2): the map's gate outposts (Marker3D, metas
 ## "name" and "radius") and its core bosses, { marker, bot, back_in }.
 var outposts: Array[Node3D] = []
@@ -917,6 +927,8 @@ func _tick_events(delta: float) -> void:
 	if not event.is_empty():
 		if event.kind == "convoy":
 			_drive_convoy()
+		elif event.kind == "airship":
+			_drive_airship(delta)
 		if clock >= float(event.ends) or _event_over():
 			end_event(clock >= float(event.ends))
 		return
@@ -925,6 +937,8 @@ func _tick_events(delta: float) -> void:
 		var kinds := ["warlord", "supply_pod"]
 		if _convoy_routes().size() > 0:
 			kinds.append("convoy")
+		if _airship_routes().size() > 0:
+			kinds.append("airship")
 		start_event(kinds[rng.randi() % kinds.size()])
 
 
@@ -936,12 +950,18 @@ func start_event(kind: String) -> bool:
 		return false
 	if kind == "convoy" and _convoy_routes().is_empty():
 		return false
+	if kind == "airship" and _airship_routes().is_empty():
+		return false
 	_event_in = world.event_interval
 	var at: Vector3
 	if kind == "convoy":
 		at = _start_convoy()
 		event = {"kind": kind, "title": "Convoy"}
 		war_feed.emit("A convoy has set out %s" % _whereabouts(at))
+	elif kind == "airship":
+		at = _start_airship()
+		event = {"kind": kind, "title": ItemDB.item_name(world.airship_vehicle)}
+		war_feed.emit("%s is coming in %s" % [event.title, _whereabouts(at)])
 	elif kind == "warlord":
 		var marker := spawns[_farthest_from_players(spawns)]
 		at = marker.global_position
@@ -981,6 +1001,8 @@ func end_event(timed_out := false) -> void:
 		return
 	if event.kind == "convoy":
 		_end_convoy(timed_out)
+	elif event.kind == "airship":
+		_end_airship()
 	elif timed_out:
 		war_feed.emit("The warlord has moved on" if event.kind == "warlord" else "The supply pod is gone")
 	for bot in _event_bots:
@@ -998,6 +1020,8 @@ func end_event(timed_out := false) -> void:
 func _event_over() -> bool:
 	if event.kind == "convoy":
 		return convoy.is_empty() or bool(convoy.stopped) or _convoy_through()
+	if event.kind == "airship":
+		return airship.is_empty() or bool(airship.over)
 	if event.kind == "warlord":
 		# The event's own warlord, not a core boss standing guard elsewhere.
 		return not _event_bots.any(func(bot: Actor) -> bool:
@@ -1156,6 +1180,122 @@ func _has_player_aboard(vehicle: Node3D) -> bool:
 	aboard.append(vehicle.get("rider"))
 	return aboard.any(func(actor: Variant) -> bool:
 		return actor != null and is_instance_valid(actor) and state_for(actor) != null)
+
+
+# --- Airships (DESIGN.md "Basalt Rift", the Sky Leviathan) ------------------
+
+func _airship_routes() -> Array:
+	if world.airship_vehicle == "" or map == null or not map.has_method("airship_routes"):
+		return []
+	return map.call("airship_routes")
+
+
+## Authority: the airship comes in at one end of one of the map's routes
+## (either way along it), a bot of the world's on each of its weak spots.
+## Returns where it starts.
+func _start_airship() -> Vector3:
+	var routes := _airship_routes()
+	var route: Array = (routes[rng.randi() % routes.size()] as Array).duplicate()
+	if rng.randf() < 0.5:
+		route.reverse()
+	var start: Vector3 = route[0]
+	var ahead: Vector3 = route[1] - start
+	var ship := spawn_vehicle(world.airship_vehicle, start, atan2(-ahead.x, -ahead.z))
+	ship.set("course", route[1])
+	var seats: Array = ship.get("seats")
+	for i in seats.size():
+		var part := str((seats[i] as Dictionary).get("part", ""))
+		if part == "":
+			continue
+		var bot := _add_bot(ship, false, world.airship_faction, part)
+		_event_bots.append(bot)
+		# Only a gunner fights; the rest is the ship's own iron.
+		if not (seats[i] as Dictionary).has("gun"):
+			bot.get_node("Brain").process_mode = Node.PROCESS_MODE_DISABLED
+		ship.call("mount", bot, true, i)
+		bot.died.connect(_on_airship_part_died)
+	airship = {"ship": ship, "route": route, "next": 1, "way": 1, "passes": maxi(world.airship_passes, 1),
+			"down": false, "falling": 0.0, "over": false}
+	return start
+
+
+## Authority: steers the airship along its route, back and forth until its
+## passes are spent, then off the end. With every weak spot broken it goes
+## down (`Vehicle._float` with no course) and crashes on whatever is under
+## it, or on the lava.
+func _drive_airship(delta: float) -> void:
+	if airship.is_empty() or bool(airship.over):
+		return
+	var ship: Variant = airship.ship
+	if not is_instance_valid(ship):
+		airship.over = true
+		return
+	if not bool(airship.down):
+		if not _event_bots.any(func(bot: Variant) -> bool:
+				return is_instance_valid(bot) and not (bot as Actor).is_dead):
+			airship.down = true
+			ship.set("course", Vector3.INF)
+			war_feed.emit("%s is going down %s" % [ship.get("display_name"), _whereabouts(ship.global_position)])
+			return
+		var route: Array = airship.route
+		var next := int(airship.next)
+		var to: Vector3 = route[next]
+		if Vector2(ship.global_position.x, ship.global_position.z).distance_to(Vector2(to.x, to.z)) < AIRSHIP_REACH:
+			next += int(airship.way)
+			if next < 0 or next >= route.size():
+				airship.passes = int(airship.passes) - 1
+				if int(airship.passes) <= 0:
+					# Off the end of its last pass: it has drifted off.
+					airship.over = true
+					return
+				airship.way = -int(airship.way)
+				next = clampi(next + 2 * int(airship.way), 0, route.size() - 1)
+			airship.next = next
+			ship.set("course", route[next])
+		return
+	airship.falling = float(airship.falling) + delta
+	var at: Vector3 = ship.global_position
+	if ship.is_on_floor() or at.y <= world.molten_level or float(airship.falling) >= AIRSHIP_FALL_MAX:
+		_crash_airship(ship)
+
+
+## A weak spot broken: its salvage falls under the ship.
+func _on_airship_part_died(actor: Actor, _info: DamageInfo) -> void:
+	var items := world.roll_loot("airship_part", rng)
+	if not items.is_empty():
+		spawn_container(items, false, "%s salvage" % actor.display_name, drop_spot(actor))
+
+
+## The airship comes down: its hold lands where it crashed (on top of the
+## lava, never in it), the best haul of any event.
+func _crash_airship(ship: Node3D) -> void:
+	var at := drop_spot_at(ship.global_position + Vector3(0, 2.0, 0))
+	var items := world.roll_loot("airship_hold", rng)
+	items.append_array(world.roll_war_loot("cache", rng, maxf(war.intensity, 0.5)))
+	items.append_array(world.roll_war_loot("cache", rng, 1.0))
+	var relic := world.roll_artifact(rng, world.pod_artifact_chance)
+	if relic != "":
+		items.append(relic)
+	items.append_array(world.roll_crafting_loot(rng, world.pod_blueprint_chance, world.pod_upgrade_data))
+	var hold := spawn_container(items, false, "%s's hold" % ship.get("display_name"), at)
+	get_tree().create_timer(world.bag_lifetime, false, true).timeout.connect(hold.queue_free)
+	war_feed.emit("%s has crashed %s" % [ship.get("display_name"), _whereabouts(at)])
+	note_moment("event", "%s came down %s" % [ship.get("display_name"), _whereabouts(at)])
+	airship.over = true
+	airship.crashed = true
+	remove_vehicle(ship)
+
+
+## Authority: the airship event is over. Still aloft, it drifts off with
+## whoever is left on it.
+func _end_airship() -> void:
+	if airship.is_empty():
+		return
+	var ship: Variant = airship.ship
+	if is_instance_valid(ship) and ship in vehicles:
+		war_feed.emit("%s has drifted off" % ship.get("display_name"))
+		remove_vehicle(ship)
+	airship = {}
 
 
 ## Words for where something is: by a strongpoint, or a compass direction.
@@ -3235,11 +3375,15 @@ func _tick_molten(delta: float) -> void:
 ## under them (the ground, or below them if they died in the air), and on top of the lava, never in
 ## it, in a world with a lava sea, so a flyer can still reach it.
 func drop_spot(actor: Actor) -> Vector3:
-	var at := actor.global_position
-	if actor.is_inside_tree():
+	return drop_spot_at(actor.global_position)
+
+
+## The same for something falling from `at`.
+func drop_spot_at(at: Vector3) -> Vector3:
+	if is_inside_tree():
 		var query := PhysicsRayQueryParameters3D.create(at + Vector3(0, 0.2, 0), at - Vector3(0, 400.0, 0),
 				Actor.LAYER_WORLD)
-		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
 		if not hit.is_empty():
 			at = hit["position"]
 	if at.y < world.molten_level:
@@ -3533,10 +3677,11 @@ func zone_label(actor: Actor) -> String:
 
 
 ## A new bot with a brain, at a spawn marker.
-func _add_bot(marker: Node3D, warlord := false, p_faction := "") -> Actor:
+## `p_boss` makes it that boss kind (an airship's weak spot) wherever it is.
+func _add_bot(marker: Node3D, warlord := false, p_faction := "", p_boss := "") -> Actor:
 	var at := marker.global_position + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
 	var first_seed := rng.randi()
-	var boss: String = marker.get_meta("boss", "") if warlord else ""
+	var boss: String = p_boss if p_boss != "" else (marker.get_meta("boss", "") if warlord else "")
 	var faction: String = p_faction if p_faction != "" else str(marker.get_meta("faction", ""))
 	var bot := spawn_bot("Bot%d" % _bot_count, _stand(at), first_seed, warlord, faction, -2, [], boss)
 	# The world may turn a rare kind away (`WorldDef.bot_allowed`): roll again,
