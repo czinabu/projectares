@@ -194,7 +194,12 @@ date in the same PR.
 - Risk zones (DESIGN.md section 2): a world tiers its map with
   `WorldDef.zone_at` (0 outer, 1 middle, 2 core) and burns with
   `hazard_at`, which `Raid._tick_hazards` deals through `Combat.deal` once a
-  second. The `Raid` marks each bot with the zone it spawned in (meta
+  second. A sea of lava is `WorldDef.molten_level` instead: anyone whose
+  feet are under it, player or bot, burns four times a second whatever the
+  zone rules (`Raid._tick_molten`). What anyone drops dying comes to rest
+  where `Raid.drop_spot` says: on whatever is under them (they may have
+  died in the air), and on top of any lava. Updrafts are
+  `WorldDef.updraft_at` (docs/systems/rift.md). The `Raid` marks each bot with the zone it spawned in (meta
   "zone", sent to clients so they build the same bot) before `equip_bot`.
   Bosses stand at "spawn_boss" markers (warlords, `Raid._bosses`, outside
   the armies like event bots, `Raid._is_extra`). Gate outposts are

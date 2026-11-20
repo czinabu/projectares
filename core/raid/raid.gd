@@ -342,6 +342,9 @@ var _boss_party_left := 0.0
 const LINK_EVERY := 1.5
 var _link_next := {}
 var _hazard_in := 0.0
+## The lava's clock (`WorldDef.molten_level`): it burns this often.
+const MOLTEN_EVERY := 0.25
+var _molten_in := 0.0
 ## Death bursts' clouds (`WorldDef.death_burst`), authority only: each
 ## { at, radius, damage, left, kind, faction }, hurting once a second.
 var clouds: Array[Dictionary] = []
@@ -616,6 +619,8 @@ func _physics_process(delta: float) -> void:
 	_tick_outposts()
 	_tick_piles()
 	_tick_hazards(delta)
+	if world.molten_level > -INF:
+		_tick_molten(delta)
 	if not clouds.is_empty():
 		_tick_clouds(delta)
 	if world.shelling > 0.0 and zone_rules:
@@ -3199,6 +3204,49 @@ func _tick_hazards(delta: float) -> void:
 		Combat.deal(actor, info)
 
 
+## A world's lava sea (`WorldDef.molten_level`): whoever's feet are under
+## it burns, player or bot, four times a second through `Combat.deal`,
+## whatever the zone rules. A scan of the players and bots at that pace,
+## not every tick.
+func _tick_molten(delta: float) -> void:
+	_molten_in -= delta
+	if _molten_in > 0.0:
+		return
+	_molten_in = MOLTEN_EVERY
+	var burning: Array[Actor] = []
+	for state in players:
+		if not state.finished and is_instance_valid(state.actor):
+			burning.append(state.actor)
+	for bot: Variant in bots:
+		if is_instance_valid(bot):
+			burning.append(bot)
+	for actor in burning:
+		if actor.is_dead or actor.global_position.y >= world.molten_level:
+			continue
+		var info := DamageInfo.new()
+		info.amount = world.molten_damage
+		info.kind = "lava"
+		info.position = actor.global_position
+		info.armor_pierce = 1.0
+		Combat.deal(actor, info)
+
+
+## Where what someone drops when they die comes to rest: on whatever is
+## under them (the ground, or below them if they died in the air), and on top of the lava, never in
+## it, in a world with a lava sea, so a flyer can still reach it.
+func drop_spot(actor: Actor) -> Vector3:
+	var at := actor.global_position
+	if actor.is_inside_tree():
+		var query := PhysicsRayQueryParameters3D.create(at + Vector3(0, 0.2, 0), at - Vector3(0, 400.0, 0),
+				Actor.LAYER_WORLD)
+		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			at = hit["position"]
+	if at.y < world.molten_level:
+		at.y = world.molten_level
+	return at
+
+
 ## The cold (`WorldDef.cold`): out in the open a player's body heat drains
 ## by `cold_at` a second, and warmth (a heater or vent, `warmth_at`) fills
 ## it again. Once it is gone the cold hurts, once a second, through
@@ -3473,6 +3521,8 @@ func zone_label(actor: Actor) -> String:
 	var label := world.zone_name(tier)
 	if label != "" and world.hazard_at(actor.global_position) > 0.0:
 		label += " · burning"
+	elif label != "" and world.updraft_at(actor.global_position) > 0.0:
+		label += " · updraft"
 	elif label != "" and _beacons_only() and beacon_at(actor.global_position) != null:
 		label = "%s · beacon" % beacon_at(actor.global_position).get_meta("name", "Beacon")
 	elif label != "" and world.cold > 0.0 and actor.warming:
@@ -4554,7 +4604,7 @@ func _on_actor_died(actor: Actor, info: DamageInfo) -> void:
 		armory.on_death(actor, drops)
 	if not world.death_drops_scrip and (not drops.is_empty() or carried > 0):
 		var bag := spawn_container(drops, true, "%s's bag" % actor.display_name if carried <= 0
-				else "%s's bag, %d scrip" % [actor.display_name, carried], actor.global_position)
+				else "%s's bag, %d scrip" % [actor.display_name, carried], drop_spot(actor))
 		if carried > 0:
 			# What they carried lies with the bag for whoever gets there first.
 			bag.scrip = carried
@@ -4888,7 +4938,7 @@ func _drop_pile(actor: Actor, info: DamageInfo, drops: Array[String]) -> int:
 	var total := worth + carried + bounty
 	if total <= 0 and items.is_empty():
 		return 0
-	var pile := spawn_container(items, true, "%s's scrip" % actor.display_name, actor.global_position,
+	var pile := spawn_container(items, true, "%s's scrip" % actor.display_name, drop_spot(actor),
 			total, bounty)
 	pile.scrip_taken.connect(_on_scrip_taken)
 	if bounty > 0:

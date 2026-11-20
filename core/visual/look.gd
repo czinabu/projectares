@@ -24,6 +24,7 @@ const EDGE_INK_SHADER := preload("res://assets/shaders/edge_ink.gdshader")
 const SKYLINE_SHADER := preload("res://assets/shaders/skyline.gdshader")
 const HORIZON_GLOW_SHADER := preload("res://assets/shaders/horizon_glow.gdshader")
 const HAZE_BEAM_SHADER := preload("res://assets/shaders/haze_beam.gdshader")
+const LAVA_SHADER := preload("res://assets/shaders/lava.gdshader")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
@@ -1510,7 +1511,7 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## one kit instead of loose props: "teal" running lights, "band" (a teal
 ## strip turned down low enough to keep its colour on a lit wall), "orange" furnace
 ## light, "beacon" (a red light that cuts through the haze, never fogged),
-## "slag" (molten metal), "crack" (a dimmer glow for cracks in the ground),
+## "slag" (molten metal), "lava" (a sea of it, crust and drifting seams), "crack" (a dimmer glow for cracks in the ground),
 ## "scorch" (charred ground), "track" (a packed gravel road), "rut" (a dark wheel rut), "hazard" (orange and black stripes),
 ## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
 ## "beam" (a searchlight), "lance" (an orbital strike's column), "distant" (skyline silhouettes) and
@@ -1534,6 +1535,13 @@ func trim(kind: String) -> Material:
 			shaft.set_shader_parameter("near_fade", 40.0)
 		_materials[key] = shaft
 		return shaft
+	if kind == "lava":
+		# A sea of lava (`lava.gdshader`): crust broken by drifting seams.
+		var lava := ShaderMaterial.new()
+		lava.shader = LAVA_SHADER
+		lava.set_shader_parameter("noise_tex", _noise_texture())
+		_materials[key] = lava
+		return lava
 	if kind == "distant" or kind == "horizon_glow":
 		# Shaded by hand, so they hold their own against the haze:
 		# `apply_mood` sets the silhouettes' haze from the mood.

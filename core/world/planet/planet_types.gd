@@ -222,7 +222,7 @@ static func basalt() -> PlanetType:
 		"fog_depth_begin": 60.0, "fog_depth_end": 1100.0, "fog_depth_curve": 1.2,
 		"fog_height": 1.5, "fog_height_density": 0.06, "haze_height": 0.12,
 		"sun_color": Color(0.6, 0.66, 0.85), "sun_energy": 0.9, "sun_angles": Vector3(-30, 170, 0),
-		"ambient_color": Color(0.62, 0.36, 0.3), "ambient_energy": 1.5,
+		"ambient_color": Color(0.62, 0.36, 0.3), "ambient_energy": 1.1,
 		"exposure": 1.8, "saturation": 1.0, "contrast": 1.15, "glow": 1.2,
 	}
 	t.storm = {
@@ -243,7 +243,7 @@ static func basalt() -> PlanetType:
 		"base_a": Color(0.16, 0.15, 0.16), "base_b": Color(0.09, 0.085, 0.09), "base_rough": 0.75,
 		"rock_a": Color(0.12, 0.11, 0.115), "rock_b": Color(0.06, 0.055, 0.06), "rock_rough": 0.6,
 		"slope_range": Vector2(0.85, 0.7), "strata_every": 0.9, "strata": 0.5,
-		"cap_color": Color(0.32, 0.3, 0.3), "cap_range": Vector2(22.0, 34.0), "cap_on_slopes": 0.3,
+		"cap_color": Color(0.17, 0.16, 0.16), "cap_range": Vector2(22.0, 34.0), "cap_on_slopes": 0.3,
 		"patch_a": Color(0.25, 0.06, 0.02), "patch_b": Color(0.6, 0.18, 0.04), "patch_amount": 0.75,
 		"patch_edge": 0.03, "patch_low": 1.0, "patch_low_at": -4.2, "patch_rough": 0.4,
 		"cracks": 1.0, "crack_glow": Color(1.0, 0.33, 0.06), "crack_energy": 5.0,

@@ -255,6 +255,9 @@ var indoors := false
 var _charge_wait := 0.0
 ## An artifact's Overclock Core is running: flying makes no heat.
 var heat_free := false
+## Riding an updraft (`WorldDef.updraft_at`; the `Actor` sets it every
+## tick): the rising air holds wings up, so gliding spends no stamina.
+var in_updraft := false
 ## Seconds left with the rig shut off by an artifact's Static Bloom. While
 ## jammed it does nothing at all: no thrust, no glide, no skim, no dash.
 var jam_left := 0.0
@@ -292,7 +295,7 @@ func tick(wants_thrust: bool, delta: float, heat_mult := 1.0) -> float:
 			is_boosting = false
 		return thrust_accel
 	_since_thrust += delta
-	if is_gliding and (glide_cool > 0.0 or glide_heat > 0.0):
+	if is_gliding and not in_updraft and (glide_cool > 0.0 or glide_heat > 0.0):
 		heat = maxf(0.0, heat + (_heat(glide_heat) - glide_cool) * delta)
 		if heat >= max_heat:
 			heat = max_heat

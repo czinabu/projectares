@@ -1391,6 +1391,9 @@ built in this order, cheapest and most connected first:
    enough for three PvP worlds: a small vertical world over lava where
    flight rigs decide every fight, with updrafts, the Sky Leviathan and
    Ashfront's death rule. It pays rig upgrade data and rig cosmetics.
+   Built in three parts (Caleb's call: the world and its updrafts first,
+   then the Sky Leviathan, then the rig rewards); part one is built
+   (below, "The Basalt Rift (part one, built: the world and updrafts)").
 
 The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
 Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
@@ -1703,6 +1706,47 @@ Caleb's call: a hauler convoy, and roof guns on the rovers.
   its turn in a group fight.
 - **Still to come.** Shooting out a rover's wheels (vehicles take no
   damage yet), and the gun swung on a mount rather than held.
+
+### The Basalt Rift (part one, built: the world and updrafts)
+
+`worlds/rift/`, on the Basalt Rift planet type. Caleb's call: built in
+parts, the world and its updrafts first, then the Sky Leviathan, then the
+rig rewards. A small, tall PvP world, about 300 m across between cliffs,
+where nothing stands on the floor: a sea of lava covers it, and everything
+you fight on is basalt rising out of it. Ashfront's death rule: the fallen
+drop scrip, not gear. The starter kit carries the Mk1 jetpack, since a rig
+is the point here.
+
+- **The places.** Players land on the Gate Shelf, a ledge on the south
+  cliff 24 m over the lava with the gate outpost and two depots. Three
+  mesas hold the strongpoints: the West and East Stacks (18 m) and the
+  Anvil in the middle (30 m), each a broad six-sided column with lower
+  columns round its sides and blocks of cover on top. Iron bridges join
+  the Shelf and the three mesas, the only ways about for the rift's
+  soldiers and for anyone without a rig. Two dozen perches, single columns
+  from 6 m to over 50 m, stand about the rift, higher to the north; some
+  hold a cache and some a soldier, and only a flyer gets there. The
+  Crown, the warlord's mesa in the north, stands 62 m high with the best
+  caches on it, and no bridge reaches it. Walls stand at the cliffs' foot,
+  so nobody leaves the rift or lands on the cliff tops.
+- **The lava.** Whoever's feet go into it burns, player or soldier, fast
+  enough to kill anyone in about half a second, armor or not. What someone
+  drops dying over it comes down on top of the lava, never in it, so a
+  jetpack hovering just over the crust can still grab a scrip pile that
+  fell from a fight in the air.
+- **Updrafts.** Six vents in the lava send up columns of hot air you can
+  see from across the rift (a glow on the lava, heat haze and embers
+  rising). Anyone in the air over one is carried up at up to 9 m/s on top
+  of whatever they are doing, easing off just under the column's top
+  (55 to 92 m): a jetpack hovering in one rises with it, wings climb in it
+  instead of sinking and spend no glide stamina there, and a fall through
+  one is only slowed. The air pays no heed to a rig's ceiling, which
+  still counts from the lava's floor, so every rig tops out well under the
+  Crown and the high perches: the updrafts are how you get up there. Two
+  of them rise beside the Crown, one beside the Shelf for a first ride,
+  and the watch says "updraft" while you are in one.
+- **Still to come.** The Sky Leviathan (part two), and the rig rewards,
+  upgrade data and rig cosmetics (part three).
 
 ## 3. The watch
 

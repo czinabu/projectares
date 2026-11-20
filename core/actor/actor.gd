@@ -799,6 +799,10 @@ func _simulate_movement(delta: float) -> void:
 	_take_gusts(on_floor, delta)
 	velocity.y = maxf(velocity.y, -max_fall_speed)
 
+	# The air rising under an updraft carries the body along on top of its
+	# own climb or fall: added for the move and taken off again after it.
+	var rise := _ride_updraft(on_floor)
+	velocity.y += rise
 	var fall_speed := -velocity.y
 	var gliding := flight.is_gliding
 	if tick_every > 1:
@@ -808,6 +812,9 @@ func _simulate_movement(delta: float) -> void:
 		velocity /= tick_every
 	else:
 		move_and_slide()
+	if rise != 0.0:
+		# Landed or bumped a roof: the slide already took the speed off.
+		velocity.y = minf(velocity.y, 0.0) if is_on_floor() or is_on_ceiling() else velocity.y - rise
 
 	var now_on_floor := is_on_floor()
 	airborne_time = 0.0 if now_on_floor else airborne_time + delta
@@ -828,6 +835,22 @@ func _take_gusts(on_floor: bool, delta: float) -> void:
 	if raid == null or raid.weather.kind == "":
 		return
 	velocity += raid.weather.gust_at(global_position) * flight.gust_mult * delta
+
+
+## How fast the air carries the actor up where it is (`WorldDef.updraft_at`):
+## only in the air and out of a vehicle. Wings riding it spend no glide
+## stamina (`FlightRig.in_updraft`). A matter of where the actor is only,
+## so a client predicts it.
+func _ride_updraft(on_floor: bool) -> float:
+	flight.in_updraft = false
+	if on_floor or vehicle != null:
+		return 0.0
+	var raid := Raid.of(self)
+	if raid == null or raid.world == null:
+		return 0.0
+	var rise := raid.world.updraft_at(global_position)
+	flight.in_updraft = rise > 0.0
+	return rise
 
 
 ## A jetpack hovers in the air only while aim (`ActorCommand.secondary`,
