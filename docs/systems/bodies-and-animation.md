@@ -121,9 +121,10 @@ date in the same PR.
   the sword) are the old bodies' own, carried across from `rig_m.glb` and
   `rig_f.glb` (`_retarget`); the pack has no rifle clips. Those old
   stands spread the new bodies' feet wide and bow the knees, so a gun held
-  low or raised and a blade out stand on the relaxed stand's legs
+  low and a blade out stand on the relaxed stand's legs
   (`ActorSkin.LEGS_FROM_STAND`); the blade's ready stance is the fighting
-  pose's stagger on top (`Locomotion.fight_*`). The cleft between the
+  pose's stagger on top (`Locomotion.fight_*`). A gun raised to shoot
+  keeps its clip's stance: the sights' relief is tuned on it. The cleft between the
   glutes is filled most of the way out in the mesh (`_fill_cleft`, Caleb's
   call), so the armor is fitted to the filled body. A
   body is sized in its relaxed stand (`stand_legs`), never in an idle that

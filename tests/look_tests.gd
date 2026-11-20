@@ -956,7 +956,7 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 		if skin._anims.has("aim_gun"):
 			player.cmd.primary = true
 			skin._process(0.1)
-			t.check(skin._current == "aim_gun" and loco.stand_legs, tag + "firing from a stand raises the gun, on the relaxed stand's legs")
+			t.check(skin._current == "aim_gun" and not loco.stand_legs, tag + "firing from a stand raises the gun")
 			player.cmd.primary = false
 			skin._process(0.1)
 			t.check(skin._current == "aim_gun", tag + "the gun stays up for a moment after the last shot")

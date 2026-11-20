@@ -23,8 +23,9 @@ const STANDS: Array[String] = ["idle", "idle_gun", "aim_gun", "idle_melee"]
 ## Stands whose own legs are swapped for the relaxed stand's
 ## (`Locomotion.stand_legs`): the old gun and sword clips stand wide and
 ## bow-legged on the new bodies (Caleb: hunched and splay-legged). The
-## blade's ready stance is then the fighting pose's own stagger.
-const LEGS_FROM_STAND: Array[String] = ["idle_gun", "aim_gun", "idle_melee"]
+## blade's ready stance is then the fighting pose's own stagger. A gun
+## raised to shoot keeps its clip's stance, which the sights are tuned on.
+const LEGS_FROM_STAND: Array[String] = ["idle_gun", "idle_melee"]
 
 ## Drawn cloaked now (see `_update_cloak`), and the shared shimmer material.
 ## How long a soldier's gun must have been down before raising it barks.
