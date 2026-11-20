@@ -18,6 +18,7 @@ static func run(t: Node) -> void:
 	for i in Rootway.ROOTWAYS.size():
 		await _keeper(t, i)
 	await _charge(t)
+	await _dive(t)
 
 
 ## The layout's numbers (Caleb's ask: no way narrower than 9 m) and the
@@ -219,10 +220,10 @@ static func _keeper(t: Node, i: int) -> void:
 		return
 	var boss: Dictionary = found[0]
 	var keeper := boss.bot as Actor
-	t.check(keeper != null and keeper.display_name == who and keeper.rear_damage_mult > 1.5
-			and keeper.body_height() > 3.0 and keeper.health.max_health >= 1000.0 and keeper.health.armor > 0.0
+	t.check(keeper != null and keeper.display_name == who and (keeper.rear_damage_mult > 1.5 or bool(way["pools"]))
+			and keeper.body_height() > 2.5 and keeper.health.max_health >= 1000.0 and keeper.health.armor > 0.0
 			and Rootway.way_at(keeper.global_position + Vector3(0, 1.0, 0)) == i,
-			"%s waits in the chamber: huge, armored, the back its weak spot" % who)
+			"%s waits in the chamber: huge and armored" % who)
 	t.check(keeper.inventory.items.is_empty(), "it carries nothing: its vault pays")
 	var hooks := keeper.get_active_weapon() as MeleeWeapon
 	t.check(hooks != null and hooks.light_windup >= 0.5 and (not hooks.dash_through or hooks.heavy_windup >= 0.8),
@@ -240,7 +241,7 @@ static func _keeper(t: Node, i: int) -> void:
 	raid._tick_keeper(boss, marsh.keeper_socket_first + 0.1)
 	var adds: Array = boss.adds
 	if str(way["adds"]) == "":
-		t.check(adds.is_empty(), "%s calls nothing out of the walls: its fight is its charge" % who)
+		t.check(adds.is_empty(), "%s calls nothing out of the walls: its fight is its own" % who)
 	else:
 		t.check(adds.size() == 1, "with someone in its chamber, a %s comes out of a root socket" % way["adds"])
 	if adds.size() == 1:
@@ -414,3 +415,87 @@ static func _charge_at(t: Node, elder: Actor, foe: Actor) -> bool:
 	elder.cmd.tertiary_pressed = false
 	elder.cmd.sprint = false
 	return (elder.get_active_weapon() as MeleeWeapon).is_dashing()
+
+
+## The Drowned Lurker's dive: up a while, then under the black water where
+## nothing hurts it, then up out of the pool nearest a player, still
+## unhurtable while it rises, then open to blades again; hurt, it stays up
+## for less; with nobody in its chamber it stays up.
+static func _dive(t: Node) -> void:
+	print("Rootways: the Drowned Lurker's dive")
+	var ways := Rootway.ROOTWAYS.filter(func(way: Dictionary) -> bool: return bool(way["pools"]))
+	t.check(not ways.is_empty(), "a Rootway's chamber is flooded, with pools for its keeper to dive into")
+	if ways.is_empty():
+		return
+	var way: Dictionary = ways[0]
+	var index := Rootway.ROOTWAYS.find(way)
+	var marsh := Worlds.get_world("marsh")
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.start_server(marsh, 37)
+	await t.frames(2)
+	var f := Rootway.frame(way)
+	var boss: Dictionary = raid._bosses.filter(func(entry: Dictionary) -> bool:
+		return (entry.marker as Node3D).get_meta("boss", "") == way["keeper"])[0]
+	var lurker := boss.bot as Actor
+	var brain := lurker.get_node("Brain") as BotBrain
+	var pools := raid._pools.filter(func(pool: Node3D) -> bool: return pool.get_meta("keeper", "") == way["keeper"])
+	t.check(pools.size() == Rootway.POOLS.size() and pools.all(func(pool: Node3D) -> bool:
+		return Rootway.way_at(pool.global_position + Vector3(0, 1.0, 0)) == index),
+			"its chamber has %d pools" % pools.size())
+	t.check(not brain.lies_low and brain.leash >= Rootway.ARENA, "it is no ambusher at a post: it follows anyone in its chamber")
+	# With nobody in its chamber it stays up.
+	raid._tick_keeper(boss, marsh.keeper_dive_up + 0.1)
+	t.check(not lurker.submerged, "with nobody in its chamber, it stays up")
+	var me := raid.add_player([], {}, "Delver", "delver")
+	await t.frames(2)
+	me.protected_left = 0.0
+	me.set_physics_process(false)
+	var floor_y := Rootway.CHAMBER_FLOOR + 0.1
+	var far: Vector2 = Rootway.POOLS[4]
+	me.global_position = f * Vector3(Rootway.BEND + far.x, floor_y, far.y - 1.0)
+	raid._tick_keeper(boss, 0.05)
+	raid._tick_keeper(boss, marsh.keeper_dive_up + 0.1)
+	t.check(lurker.submerged and brain.held_under, "after a while up, it dives")
+	lurker.thin(1)
+	for step in 40:
+		await t.frames(1)
+	t.check(lurker.crouch > 0.5, "down under the water, as every machine sees it (crouch %.2f)" % lurker.crouch)
+	var info := DamageInfo.new()
+	info.amount = 60.0
+	info.source = me
+	info.kind = "melee"
+	var before := lurker.health.health
+	Combat.deal(lurker, info)
+	t.check(lurker.health.health == before, "nothing hurts it while it is under")
+	var went_down := lurker.global_position
+	raid._tick_keeper(boss, marsh.keeper_dive_under + 0.1)
+	var nearest: Node3D = pools[0]
+	for pool: Node3D in pools:
+		if pool.global_position.distance_to(me.global_position) < nearest.global_position.distance_to(me.global_position):
+			nearest = pool
+	t.check(lurker.global_position.distance_to(nearest.global_position) < 0.5 and lurker.global_position.distance_to(went_down) > 2.0,
+			"it rises out of the pool nearest a player, not where it went down")
+	t.check(lurker.submerged and brain.held_still and not brain.held_under, "still unhurtable as it rises, and still")
+	raid._tick_keeper(boss, marsh.keeper_dive_rise + 0.1)
+	before = lurker.health.health
+	Combat.deal(lurker, info)
+	t.check(not lurker.submerged and not brain.held_still and lurker.health.health < before, "up, it is open to blades again")
+	t.check(float((boss.dive as Dictionary).left) == marsh.keeper_dive_up, "and stays up %.0f s" % marsh.keeper_dive_up)
+	# Up, it goes for whoever it rose for.
+	var mine := me.health.health
+	for step in 300:
+		await t.frames(1)
+		if me.health.health < mine:
+			break
+	t.check(me.health.health < mine, "and goes straight for the one it rose by (%.0f damage)" % (mine - me.health.health))
+	# Hurt below half, it stays up for less.
+	lurker.health.health = lurker.health.max_health * 0.4
+	raid._tick_keeper(boss, 0.05)
+	raid._tick_keeper(boss, marsh.keeper_dive_up + 0.1)
+	raid._tick_keeper(boss, marsh.keeper_dive_under + 0.1)
+	raid._tick_keeper(boss, marsh.keeper_dive_rise + 0.1)
+	t.check(float((boss.dive as Dictionary).left) == marsh.keeper_dive_up_hurt and not lurker.submerged,
+			"hurt below half, it stays up only %.0f s" % marsh.keeper_dive_up_hurt)
+	raid.queue_free()
+	await t.frames(2)

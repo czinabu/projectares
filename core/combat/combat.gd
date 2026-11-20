@@ -36,7 +36,7 @@ static func deal(target: Object, info: DamageInfo) -> bool:
 	if actor.protected_left > 0.0:
 		return false
 	# DEV MODE: god mode (`Raid.dev_cheats`).
-	if actor.dev_invulnerable:
+	if actor.dev_invulnerable or actor.submerged:
 		return false
 	actor.modify_incoming(info)
 	if info.amount > 0.0:

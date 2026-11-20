@@ -305,6 +305,8 @@ var _sockets: Array[Node3D] = []
 var _vaults: Array[Node3D] = []
 ## The map's "boss_snag" markers: what a charging keeper can ram.
 var _snags: Array[Node3D] = []
+## The map's "boss_pool" markers: where a keeper that dives comes up.
+var _pools: Array[Node3D] = []
 ## How long a purge lane vents after its warning.
 const PURGE_VENT := 0.8
 ## Bosses' toughness is counted this often (`_scale_boss`).
@@ -2257,6 +2259,7 @@ func _find_keepers() -> void:
 	_sockets = _map_nodes("boss_socket")
 	_vaults = _map_nodes("vault")
 	_snags = _map_nodes("boss_snag")
+	_pools = _map_nodes("boss_pool")
 	map.set_meta("keepers", keepers.duplicate())
 	if Look.enabled and map.has_method("show_purge"):
 		var show := Callable(map, "show_purge")
@@ -2335,6 +2338,7 @@ func _tick_keeper(boss: Dictionary, delta: float) -> void:
 		for actor in near:
 			if news != "":
 				actor.notice.emit(news)
+	_tick_dive(boss, keeper, kind, near, phase, delta)
 	if near.is_empty():
 		boss.socket_in = world.keeper_socket_first
 		boss.purge_in = world.keeper_purge_first
@@ -2376,6 +2380,68 @@ func _check_snags(keeper: Actor, kind: String, near: Array[Actor]) -> void:
 			for actor in near:
 				actor.notice.emit(news)
 		return
+
+
+## A keeper with pools of its own dives (see `WorldDef.keeper_dive_up`):
+## "up" fighting, "under" (submerged, held down by its brain) and "rising"
+## at the pool nearest one of the players in its arena, still unhurtable
+## until it is up. With nobody in its arena it stays up. Its state lives in
+## the boss's "dive" and starts over with each new body.
+func _tick_dive(boss: Dictionary, keeper: Actor, kind: String, near: Array[Actor], phase: int, delta: float) -> void:
+	var pools := _pools.filter(func(pool: Node3D) -> bool: return str(pool.get_meta("keeper", "")) == kind)
+	if pools.is_empty():
+		return
+	var brain := keeper.get_node_or_null("Brain") as BotBrain
+	var dive: Dictionary = boss.get("dive", {})
+	if dive.get("body", 0) != keeper.get_instance_id():
+		dive = {"body": keeper.get_instance_id(), "state": "up", "left": world.keeper_dive_up}
+		boss.dive = dive
+	if near.is_empty():
+		dive.state = "up"
+		dive.left = world.keeper_dive_up
+		keeper.submerged = false
+		if brain != null:
+			brain.held_under = false
+			brain.held_still = false
+		return
+	dive.left = float(dive.left) - delta
+	if float(dive.left) > 0.0:
+		return
+	match str(dive.state):
+		"up":
+			dive.state = "under"
+			dive.left = world.keeper_dive_under
+			keeper.submerged = true
+			if brain != null:
+				brain.held_under = true
+		"under":
+			# Up at the pool nearest one of them, never where it went down.
+			var prey := near[rng.randi() % near.size()]
+			var best: Node3D = null
+			for pool: Node3D in pools:
+				if pool.global_position.distance_to(keeper.global_position) < 2.0:
+					continue
+				if best == null or pool.global_position.distance_to(prey.global_position) \
+						< best.global_position.distance_to(prey.global_position):
+					best = pool
+			if best != null:
+				keeper.global_position = best.global_position
+				keeper.velocity = Vector3.ZERO
+			dive.state = "rising"
+			dive.left = world.keeper_dive_rise
+			dive.prey = prey
+			if brain != null:
+				brain.held_under = false
+				brain.held_still = true
+		"rising":
+			dive.state = "up"
+			dive.left = world.keeper_dive_up_hurt if phase == 2 else world.keeper_dive_up
+			keeper.submerged = false
+			if brain != null:
+				brain.held_still = false
+			var prey: Variant = dive.get("prey")
+			if prey != null and is_instance_valid(prey):
+				keeper.heard.emit((prey as Actor).global_position, prey)
 
 
 ## A keeper calls one of its faction out of its next wall socket, posted to

@@ -97,6 +97,10 @@ var _weather: Node3D
 var _rootways: Array[NavigationRegion3D] = []
 ## The Rootways' vents and chamber lights (`Rootway.dress`), view only.
 var _rootway_views := {}
+## The diving keepers' bodies by kind, for their pools' stir (view only),
+## looked for again at most once a second while one is missing.
+var _keeper_bodies := {}
+var _keeper_look_in := 0.0
 ## The planet the map stands on (`WorldDef.planet_type`), set before it
 ## enters the tree; a map made on its own (as the checks do) takes the marsh.
 var planet: PlanetType
@@ -198,7 +202,7 @@ func in_water(pos: Vector3) -> bool:
 	return pos.y < WATER_Y and ground_height(pos.x, pos.z) < WATER_Y - 0.1
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	# The spores drift round whoever is looking, not over the whole basin.
 	var camera := get_viewport().get_camera_3d()
 	if camera != null and is_instance_valid(_weather):
@@ -215,7 +219,27 @@ func _process(_delta: float) -> void:
 		if _giants != null:
 			Flora.set_veil(_giants, maxf(close, float(get_meta("weather_here", 0.0))))
 	if not _rootway_views.is_empty():
-		Rootway.animate(_rootway_views, get_meta("keepers", {}), Time.get_ticks_msec() * 0.001)
+		_find_keeper_bodies(delta)
+		Rootway.animate(_rootway_views, get_meta("keepers", {}), Time.get_ticks_msec() * 0.001, _keeper_bodies)
+
+
+## The bodies of the keepers whose pools are drawn, by their "boss" meta.
+func _find_keeper_bodies(delta: float) -> void:
+	var pools: Array = _rootway_views.get("pools", [])
+	if pools.is_empty():
+		return
+	var missing := false
+	for pool: Dictionary in pools:
+		var body: Variant = _keeper_bodies.get(pool.keeper)
+		if body == null or not is_instance_valid(body) or (body as Actor).is_dead:
+			missing = true
+	_keeper_look_in -= delta
+	if not missing or _keeper_look_in > 0.0:
+		return
+	_keeper_look_in = 1.0
+	for node: Variant in get_tree().get_nodes_in_group("actors"):
+		if is_instance_valid(node) and node is Actor and not (node as Actor).is_dead and (node as Actor).has_meta("boss"):
+			_keeper_bodies[str((node as Actor).get_meta("boss"))] = node
 
 
 ## One of the Rootways' spore vents warns (1), vents (2) or goes quiet (0)

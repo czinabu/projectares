@@ -94,7 +94,12 @@ date in the same PR.
   lanes, each warning before it hurts through `Combat.deal`
   (`WorldDef.on_keeper_phase` lets a world change how it fights at each
   turn). A keeper caught in a dash-strike against one of its "boss_snag"
-  markers is staggered (`_check_snags`, `keeper_snag_news`). It carries
+  markers is staggered (`_check_snags`, `keeper_snag_news`). A keeper with
+  "boss_pool" markers dives (`_tick_dive`, `WorldDef.keeper_dive_*`): its
+  brain holds it under (`BotBrain.held_under`, a crouch every machine
+  sees), `Actor.submerged` turns every hit away in `Combat.deal`, and it is
+  set down at the pool nearest one of the players in its arena to rise
+  (`held_still`) before it fights again. It carries
   nothing; when it falls (`_keeper_fell`) everyone who hurt it or stood in
   its arena gets a share from its "vault" (`WorldDef.roll_vault`), a
   `LootContainer` only its owner may loot (`reserved`), cleared when it

@@ -297,6 +297,9 @@ var protected_left := 0.0
 ## DEV MODE: god mode, set by a solo `Raid` running `dev_cheats`. Checked in
 ## `Combat.deal`, like `protected_left`, so no hit gets through.
 var dev_invulnerable := false
+## A keeper under the water (the `Raid`'s keeper machinery, "boss_pool"):
+## nothing hurts it while it is down. Set on the authority only.
+var submerged := false
 ## Public reputation. Written by the `Raid` that decides it (online, copied
 ## from the server); read by nameplates and the HUD. See `RenownLedger`.
 var renown := 0

@@ -21,15 +21,19 @@ const Flora := preload("res://worlds/marsh/flora.gd")
 ## The Rootways: where each mouth opens (on whole even metres, so the cut
 ## lies on the ground's samples), which way it runs in, and its keeper: its
 ## kind, the faction it is made from, what it calls out of its wall sockets
-## ("" for none, and no sockets) and whether its chamber stands snags it
-## can ram (`SNAGS`).
+## ("" for none, and no sockets), whether its chamber stands snags it
+## can ram (`SNAGS`) and whether its floor is flooded, with pools it dives
+## into and comes up out of (`POOLS`).
 const ROOTWAYS := [
 	{"name": "the Westwood Rootway", "mouth": Vector2(-96.0, 164.0), "inward": Vector2(0.0, -1.0),
 			"keeper": "rootmother", "boss_name": "The Rootmother", "faction": "keeper", "adds": "broodling",
-			"snags": false},
+			"snags": false, "pools": false},
 	{"name": "the Gillwood Rootway", "mouth": Vector2(84.0, 130.0), "inward": Vector2(0.0, -1.0),
 			"keeper": "elder", "boss_name": "The Shellback Elder", "faction": "shellback", "adds": "",
-			"snags": true},
+			"snags": true, "pools": false},
+	{"name": "the Rotwood Rootway", "mouth": Vector2(34.0, -64.0), "inward": Vector2(1.0, 0.0),
+			"keeper": "drowned", "boss_name": "The Drowned Lurker", "faction": "lurker", "adds": "",
+			"snags": false, "pools": true},
 ]
 
 ## The cut: a ramp this long, open to the sky, from the ground down to the
@@ -85,6 +89,13 @@ const VENT_DAMAGE := 22.0
 const SNAGS := [Vector2(-12.5, 96.0), Vector2(12.5, 96.0), Vector2(-4.5, 110.0), Vector2(4.5, 110.0)]
 const SNAG_RADIUS := 1.3
 const SNAG_STUN := 4.5
+## A diving keeper's pools ([x, z] on the floor, `BEND` added): one in the
+## middle and four round it. Its chamber's floor lies under `FLOOD` of
+## black water, view only.
+const POOLS := [Vector2(0.0, 96.0), Vector2(-7.0, 89.0), Vector2(7.0, 89.0), Vector2(-7.0, 103.0), Vector2(7.0, 103.0)]
+const POOL_RADIUS := 2.6
+const FLOOD := 0.35
+const POOL_STIR := Color(0.55, 0.95, 0.9)
 ## The snags' old wood, paler than the walls' roots.
 const SNAG_WOOD := Color(0.62, 0.53, 0.4)
 
@@ -332,6 +343,9 @@ static func _place_markers(map: Node3D, way: Dictionary, f: Transform3D) -> void
 		snag.set_meta("keeper", kind)
 		snag.set_meta("radius", SNAG_RADIUS)
 		snag.set_meta("stun", SNAG_STUN)
+	for at: Vector2 in POOLS if bool(way["pools"]) else []:
+		var pool: Marker3D = map.call("_add_marker", "boss_pool", f * Vector3(BEND + at.x, CHAMBER_FLOOR + 0.1, at.y))
+		pool.set_meta("keeper", kind)
 	for lane: Array in VENTS:
 		var from: Vector2 = lane[0]
 		var to: Vector2 = lane[1]
@@ -467,6 +481,7 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 	var caps: Array[Transform3D] = []
 	var eggs: Array[Transform3D] = []
 	var plates: Array[Transform3D] = []
+	var pools: Array[Dictionary] = []
 	for way: Dictionary in ROOTWAYS:
 		var f := frame(way)
 		var top := float(ground.call(f.origin.x, f.origin.z))
@@ -498,6 +513,8 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 				plates.append(Transform3D(tilt.scaled(Vector3(s * 1.6, s * 0.35, s * 1.3)),
 						heap + f.basis * Vector3(rng.randf_range(-2.4, 2.4), rng.randf_range(0.2, 1.6), rng.randf_range(-0.6, 0.6))))
 			art.add_child(_light(heap + Vector3(0, 2.4, 0) - f.basis.z * 1.5, Color(1.0, 0.8, 0.5), 1.4, 8.0))
+		if bool(way["pools"]):
+			pools.append_array(_dress_flood(art, f, str(way["keeper"])))
 			for lane: Array in VENTS:
 				vents.append(_vent(art, f, lane))
 			continue
@@ -558,7 +575,67 @@ static func dress(art: Node3D, seed: int, ground: Callable) -> Dictionary:
 		plate_mat.roughness = 0.85
 		plate.material = plate_mat
 		art.add_child(_scatter("RootwayPlates", plate, plates))
-	return {"vents": vents, "lights": lights}
+	return {"vents": vents, "lights": lights, "pools": pools}
+
+
+## A diving keeper's chamber flooded: a sheet of black water over the floor
+## (view only; the floor is walked on under it), and over each of its pools
+## a darker disc ringed with a glow that stirs while it lies under or rises
+## there (`animate`). Returns the pools' views ({ ring, at, keeper }).
+static func _dress_flood(art: Node3D, f: Transform3D, keeper: String) -> Array[Dictionary]:
+	var water_mat := StandardMaterial3D.new()
+	water_mat.albedo_color = Color(0.01, 0.02, 0.02, 0.9)
+	water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	water_mat.roughness = 0.15
+	water_mat.metallic_specular = 0.4
+	var sheet := CylinderMesh.new()
+	sheet.top_radius = CHAMBER_RADIUS + 0.2
+	sheet.bottom_radius = CHAMBER_RADIUS + 0.2
+	sheet.height = 0.02
+	sheet.radial_segments = 40
+	sheet.material = water_mat
+	var flood := MeshInstance3D.new()
+	flood.name = "Flood"
+	flood.mesh = sheet
+	flood.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	flood.position = f * Vector3(BEND, CHAMBER_FLOOR + FLOOD, CHAMBER_Z)
+	art.add_child(flood)
+	var views: Array[Dictionary] = []
+	var deep_mat := StandardMaterial3D.new()
+	deep_mat.albedo_color = Color(0.0, 0.004, 0.006)
+	deep_mat.roughness = 0.05
+	for at: Vector2 in POOLS:
+		var spot := f * Vector3(BEND + at.x, CHAMBER_FLOOR + FLOOD + 0.01, at.y)
+		var deep := CylinderMesh.new()
+		deep.top_radius = POOL_RADIUS
+		deep.bottom_radius = POOL_RADIUS
+		deep.height = 0.01
+		deep.radial_segments = 24
+		deep.material = deep_mat
+		var disc := MeshInstance3D.new()
+		disc.mesh = deep
+		disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		disc.position = spot
+		art.add_child(disc)
+		var ring_mat := StandardMaterial3D.new()
+		ring_mat.albedo_color = Color(0.05, 0.12, 0.11)
+		ring_mat.emission_enabled = true
+		ring_mat.emission = POOL_STIR
+		ring_mat.emission_energy_multiplier = 0.3
+		var torus := TorusMesh.new()
+		torus.inner_radius = POOL_RADIUS - 0.12
+		torus.outer_radius = POOL_RADIUS + 0.12
+		torus.rings = 24
+		torus.ring_segments = 6
+		torus.material = ring_mat
+		var ring := MeshInstance3D.new()
+		ring.mesh = torus
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ring.position = spot
+		ring.scale = Vector3(1.0, 0.3, 1.0)
+		art.add_child(ring)
+		views.append({"ring": ring_mat, "at": spot, "keeper": keeper})
+	return views
 
 
 ## A snag dressed: pale old roots, unlike the walls, twisted up round its
@@ -590,7 +667,10 @@ static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 	var g: Array = GALLERY
 	var p: Array = PILLAR
 	var gx := float(g[1])
-	var in_by := 0.25
+	# Sunk a little into the wall, so no root stands out from it further
+	# than a body brushes past (collision_tests' `SKIN`): a root on the
+	# floor you walk through, or one standing out from a wall, is a ghost.
+	var in_by := -0.1
 	# Straight walls, each from a to b along its inner face, and its floor.
 	var walls: Array = [
 		[Vector2(-HALF + in_by, CUT), Vector2(-HALF + in_by, float(g[2])), FLOOR],
@@ -612,7 +692,7 @@ static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 		var low: float = wall[2]
 		for band in 5:
 			var y := lerpf(low + 0.3, ROOF - 0.4, band / 4.0) + rng.randf_range(-0.35, 0.35)
-			_root_along(st, f, a, b, y, rng.randf_range(0.28, 0.5), rng)
+			_root_along(st, f, a, b, y, rng.randf_range(0.28, 0.4), rng)
 	# The cut's walls, banded down the ramp and under the ground's edge.
 	for side: float in [-1.0, 1.0]:
 		for band in 4:
@@ -622,7 +702,7 @@ static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 				var y := floor_at((z0 + z1) * 0.5, top) + 0.4 + band * 1.6 + rng.randf_range(-0.3, 0.3)
 				if y < top - 0.3:
 					_root_along(st, f, Vector2(side * (HALF - in_by), z0), Vector2(side * (HALF - in_by), z1), y,
-							rng.randf_range(0.25, 0.45), rng)
+							rng.randf_range(0.25, 0.4), rng)
 				z0 = z1
 	# Ribs over the throat and the passage, wall foot over to wall foot.
 	var z := CUT + 1.5
@@ -640,25 +720,26 @@ static func _dress_weave(st: SurfaceTool, f: Transform3D, rng: RandomNumberGener
 			_arc(st, f, from, to, 0.3, rng)
 			zz += 3.5
 	# The chamber: buttresses up its wall into the roof, and bands round it.
-	var ring := CHAMBER_RADIUS - 0.2
+	# Each stands in the wall (a face of the round sits a little inside
+	# `CHAMBER_RADIUS`) to above head height before it leans out.
+	var ring := CHAMBER_RADIUS
 	for k in 28:
 		var a := TAU * k / 28.0 + rng.randf_range(-0.05, 0.05)
 		if absf(ring * sin(a)) < CUT_HALF and cos(a) > 0.0:
 			continue
 		var out := Vector3(-sin(a), 0, -cos(a))
-		var foot := Vector3(BEND, CHAMBER_FLOOR - 0.1, CHAMBER_Z) + out * (ring - 1.2)
-		var head := Vector3(BEND, ROOF - 0.2, CHAMBER_Z) + out * (ring - 3.5)
+		var foot := Vector3(BEND, CHAMBER_FLOOR - 0.1, CHAMBER_Z) + out * ring
+		var head := Vector3(BEND, ROOF - 0.2, CHAMBER_Z) + out * (ring - 3.7)
 		var points := PackedVector3Array()
 		var radii := PackedFloat32Array()
 		var colours: Array[Color] = []
-		var thick := rng.randf_range(0.35, 0.65)
+		var thick := rng.randf_range(0.35, 0.5)
 		for i in 7:
 			var t := i / 6.0
-			var at := Vector3(BEND, 0, CHAMBER_Z) + out * lerpf(ring - 1.2, ring - 0.2, sin(t * PI * 0.5))
-			at = at.lerp(Vector3(head.x, 0, head.z), t * t)
+			var at := foot.lerp(head, smoothstep(0.35, 1.0, t))
 			at.y = lerpf(foot.y, head.y, t)
 			points.append(f * at)
-			radii.append(thick * lerpf(1.3, 0.7, t))
+			radii.append(thick * lerpf(1.0, 0.7, t))
 			colours.append(Color.WHITE)
 		Flora._tube(st, points, radii, colours, 7)
 	var white: Array[Color] = [Color.WHITE, Color.WHITE]
@@ -696,8 +777,8 @@ static func _root_along(st: SurfaceTool, f: Transform3D, a: Vector2, b: Vector2,
 
 ## A rib arching over a tunnel at `z`, from one wall's foot to the other's.
 static func _rib(st: SurfaceTool, f: Transform3D, centre: float, z: float, floor_y: float, rng: RandomNumberGenerator) -> void:
-	var h := HALF - 0.3
-	var thick := rng.randf_range(0.3, 0.5)
+	var h := HALF + 0.1
+	var thick := rng.randf_range(0.3, 0.4)
 	var shape: Array[Vector2] = [Vector2(-h, floor_y - 0.2), Vector2(-h, ROOF - 1.6), Vector2(-h + 0.6, ROOF - 0.7),
 			Vector2(-h + 2.0, ROOF - 0.25), Vector2(h - 2.0, ROOF - 0.25), Vector2(h - 0.6, ROOF - 0.7),
 			Vector2(h, ROOF - 1.6), Vector2(h, floor_y - 0.2)]
@@ -706,7 +787,7 @@ static func _rib(st: SurfaceTool, f: Transform3D, centre: float, z: float, floor
 	var colours: Array[Color] = []
 	for corner in shape:
 		points.append(f * Vector3(centre + corner.x, minf(corner.y, ROOF - 0.25), z + rng.randf_range(-0.2, 0.2)))
-		radii.append(thick * rng.randf_range(0.8, 1.15))
+		radii.append(thick * rng.randf_range(0.8, 1.1))
 		colours.append(Color.WHITE)
 	Flora._tube(st, points, radii, colours, 7)
 
@@ -897,7 +978,17 @@ static func _vent(art: Node3D, f: Transform3D, lane: Array) -> Dictionary:
 
 ## Plays the vents and the chamber's light (view only): `vents` from
 ## `dress`, `phases` the map's "keepers" meta, `now` in seconds.
-static func animate(views: Dictionary, phases: Dictionary, now: float) -> void:
+static func animate(views: Dictionary, phases: Dictionary, now: float, bodies := {}) -> void:
+	# A pool stirs while a diving keeper lies under it or rises out of it
+	# (`bodies`: its body by kind, from the map; its crouch says it is down).
+	for pool: Dictionary in views.get("pools", []):
+		var ring := pool.ring as StandardMaterial3D
+		var body: Variant = bodies.get(pool.keeper)
+		var down := body != null and is_instance_valid(body) and not (body as Actor).is_dead \
+				and (body as Actor).crouch > 0.05 \
+				and Vector2((body as Actor).global_position.x - (pool.at as Vector3).x,
+						(body as Actor).global_position.z - (pool.at as Vector3).z).length() < POOL_RADIUS
+		ring.emission_energy_multiplier = 2.5 + 1.5 * sin(now * 9.0) if down else 0.3
 	for view: Dictionary in views.get("vents", []):
 		var crack := view.crack as StandardMaterial3D
 		var column := view.column as MeshInstance3D

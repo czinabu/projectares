@@ -2213,7 +2213,7 @@ func _build_creature(kind: String) -> void:
 			if kind == "elder":
 				_shellback_elder(at, mid, h / 1.6, ball, tube, horn, hide, dark, bone, soft_glow)
 			_creature_legs(dark, Vector2(0.24, 0.26), bone)
-		"lurker":
+		"lurker", "drowned":
 			# Long and flat, made to lie in the water: a broad, low trunk, a
 			# wide flat skull with a jaw half its length, a lit lure hung
 			# over the snout on a stalk and a heavy tail.
@@ -2254,6 +2254,8 @@ func _build_creature(kind: String) -> void:
 				var root_at := at + Vector3((b - 1.5) * 0.12, -0.12, -0.3 + absf(b - 1.5) * 0.08) * k
 				_strand(skull, "Barbel", tube, dark, root_at, root_at + Vector3((b - 1.5) * 0.05, -0.13, -0.08) * k, 0.016 * k)
 			_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
+			if kind == "drowned":
+				_drowned_lurker(at, low, k, ball, tube, horn, hide, dark, bone, glow, soft_glow)
 			_creature_legs(dark, Vector2(0.15, 0.17), bone)
 		"keeper", "brood_mother":
 			# The brood's keeper: a hunched giant of the stalkers' kind,
@@ -2343,6 +2345,54 @@ func _build_creature(kind: String) -> void:
 
 
 ## A brood mother (a keeper's body grown old and huge, `Look.SKINS`
+## A lurker grown old in the deep (the look "drowned_lurker", creature
+## "drowned"): a crown of three more lures on stalks over its skull, a
+## ridge of jagged bony plates down its back, weed hanging in beards from
+## its jaw and flanks, glowcaps grown on it like barnacles, and old roots it
+## dragged down with it still stuck through its back. Built on the lurker's
+## own pieces (`k` its scale).
+func _drowned_lurker(at: Vector3, low: float, k: float, ball: SphereMesh, tube: CylinderMesh,
+		horn: CylinderMesh, _hide: Material, dark: Material, bone: Material, glow: Material, soft_glow: Material) -> void:
+	var head := Node3D.new()
+	var back := Node3D.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 67
+	var weed := _creature_hide(Color(0.1, 0.16, 0.1), 0.0, 0.2)
+	var wood := _creature_hide(Color(0.24, 0.18, 0.15), 0.02, 0.25)
+	# A crown of lures: three stalks fanned over the skull.
+	for i in 3:
+		var side := float(i - 1)
+		var root_at := at + Vector3(side * 0.18, 0.1, 0.12) * k
+		var tip := root_at + Vector3(side * 0.28, 0.42 - absf(side) * 0.1, -0.3) * k
+		_strand(head, "Crown", tube, dark, root_at, tip, 0.03 * k)
+		_piece(head, "CrownLure", ball, glow, tip, Vector3.ONE * 0.08 * k)
+	# Weed in beards from the jaw.
+	for i in 6:
+		var from := at + Vector3(rng.randf_range(-0.28, 0.28), -0.14, rng.randf_range(-0.35, 0.1)) * k
+		_strand(head, "Weed", tube, weed, from, from + Vector3(rng.randf_range(-0.05, 0.05), -rng.randf_range(0.2, 0.4), 0.05) * k, 0.025 * k)
+	# Bony plates down the back, glowcap barnacles and weed on the flanks.
+	for i in 8:
+		var z := (-0.6 + i * 0.22) * k
+		var plate := _piece(back, "BackPlate", horn, bone, Vector3(0, low + 0.2 * k, z), Vector3(0.1, 0.22 - absf(i - 3.5) * 0.02, 0.1) * k)
+		plate.rotation.x = 0.4
+	for i in 10:
+		var spot := Vector3(rng.randf_range(-0.32, 0.32), low + 0.14 * k, rng.randf_range(-0.6, 0.9) * k)
+		spot.x *= k
+		_piece(back, "Barnacle", ball, soft_glow, spot, Vector3(0.09, 0.05, 0.09) * k)
+	for side: float in [-1.0, 1.0]:
+		for i in 4:
+			var from := Vector3(side * 0.4 * k, low - 0.02 * k, (-0.5 + i * 0.4) * k)
+			_strand(back, "FlankWeed", tube, weed, from, from + Vector3(side * 0.05, -0.25, 0.08) * k, 0.03 * k)
+	# Old roots dragged down with it, stuck through its back.
+	for i in 3:
+		var from := Vector3(rng.randf_range(-0.2, 0.2) * k, low, rng.randf_range(-0.3, 0.7) * k)
+		var to := from + Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.5, 0.8), rng.randf_range(0.1, 0.4)) * k
+		_strand(back, "StuckRoot", tube, wood, from, to, 0.06 * k)
+		_piece(back, "RootEnd", ball, wood, to, Vector3.ONE * 0.08 * k)
+	_hang_at(head, "DrownedCrown", "Head", Vector3.ZERO)
+	_hang_at(back, "DrownedBack", "Torso", Vector3.ZERO)
+
+
 ## What an old shellback grows into (the look "shellback_elder", creature
 ## "elder"): a ram of horn over its brow, two great horns swept forward, a
 ## ridge of jagged plates down the dome, a garden of fungus and hanging moss
@@ -2493,7 +2543,7 @@ func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
 
 ## How many of a beast's hide cells carry a lit freckle, by kind.
 const CREATURE_FRECKLES := {
-	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "elder": 0.03, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
+	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "elder": 0.03, "drowned": 0.16, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
 	"brood_mother": 0.12,
 }
 
