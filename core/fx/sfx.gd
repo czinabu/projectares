@@ -71,6 +71,8 @@ func _ready() -> void:
 	_streams["thrust"] = _thrust_loop(0.6)
 	# A storm's wind around you (`WeatherView`): a low, slow howl.
 	_streams["wind"] = _wind_loop(3.0)
+	# A rain storm round you: a steady bright hiss with drops pattering in it.
+	_streams["rain"] = _rain_loop(3.0)
 	# Power weapons: sci-fi placeholders, picked by each gun's `shot_sound`.
 	_streams["rail"] = _tones([140.0, 2300.0, 3450.0], 0.6, 6.0, 0.55)
 	_streams["plasma_shot"] = _tones([220.0, 330.0, 95.0], 0.35, 8.0, 0.5)
@@ -478,6 +480,31 @@ func _wind_loop(duration: float) -> AudioStreamWAV:
 		# Gusts: the howl swells and eases twice a loop.
 		var swell := 0.55 + 0.45 * sin(TAU * t / duration * 2.0)
 		samples.append((low * 1.6 + band * 0.25 * swell) * (0.5 + 0.5 * swell) * 0.6)
+	var fade := int(0.2 * RATE)
+	for i in fade:
+		var k := float(i) / fade
+		samples[i] = samples[i] * k + samples[count - fade + i] * (1.0 - k)
+	samples.resize(count - fade)
+	return _to_stream(samples, true)
+
+
+func _rain_loop(duration: float) -> AudioStreamWAV:
+	var samples := PackedFloat32Array()
+	var count := int(duration * RATE)
+	var smooth := 0.0
+	var drop := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		var white := _rng.randf_range(-1.0, 1.0)
+		# The hiss: white noise with its lowest part taken out.
+		smooth = lerpf(smooth, white, 0.15)
+		var hiss := white - smooth
+		# Drops: short bright ticks scattered through it.
+		if _rng.randf() < 0.0025:
+			drop = _rng.randf_range(0.4, 1.0)
+		drop *= 0.985
+		var swell := 0.8 + 0.2 * sin(TAU * t / duration * 2.0)
+		samples.append((hiss * 0.35 * swell + _rng.randf_range(-1.0, 1.0) * drop * 0.3) * 0.7)
 	var fade := int(0.2 * RATE)
 	for i in fade:
 		var k := float(i) / fade

@@ -17,6 +17,15 @@ const SHOT_CARRY := 1.6
 ## Guns foul in the damp (`WorldDef.gun_fouling`, `Gun.fouling`): spread
 ## grows under sustained fire and a long burst can jam until a reload.
 const FOULING := 1.0
+## Rain storms (DESIGN.md "The Spore Marsh", Caleb's call: cover and
+## quiet): in the thick of one sight drops to `RAIN_SIGHT`, the rain drowns
+## shots and footsteps to `RAIN_CARRY` of their reach, and it washes the
+## spores out of the air, so guns foul at `RAIN_FOULING` of the usual
+## rate. Light gusts. Down a Rootway is out of it (`sheltered_at`).
+const RAIN_SIGHT := 0.6
+const RAIN_CARRY := 0.4
+const RAIN_FOULING := 0.4
+const RAIN_GUST := 2.0
 
 ## Stalkers (DESIGN.md "Spore Marsh"): fast, fragile pack hunters that
 ## circle and feint before they strike (`feint_chance`, over a bot's ring).
@@ -264,6 +273,17 @@ func _init() -> void:
 	depot_hold_time = 6.0
 	shot_carry = SHOT_CARRY
 	gun_fouling = FOULING
+	weather_kind = "rain"
+	weather_name = "Rain storm"
+	weather_radius = 130.0
+	weather_speed = 2.5
+	weather_gap = Vector2(300.0, 600.0)
+	weather_first = Vector2(120.0, 300.0)
+	weather_sight = RAIN_SIGHT
+	weather_carry = RAIN_CARRY
+	weather_fouling = RAIN_FOULING
+	weather_gust = RAIN_GUST
+	weather_field = 230.0
 	contract_tag = "marsh"
 
 

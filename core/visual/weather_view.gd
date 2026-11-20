@@ -95,7 +95,7 @@ func _ready() -> void:
 			var plume := _build_drift()
 			_drifts.append(plume)
 			add_child(plume)
-	var stream := Sfx.get_stream("wind")
+	var stream := Sfx.get_stream(str(_kit.get("sound", "wind")))
 	if stream != null:
 		_wind = AudioStreamPlayer.new()
 		_wind.stream = stream
@@ -420,8 +420,10 @@ func _build_heads(height: float) -> MultiMeshInstance3D:
 func _build_streaks() -> GPUParticles3D:
 	var particles := GPUParticles3D.new()
 	particles.name = "Streaks"
-	particles.amount = STREAKS
-	particles.lifetime = 3.0
+	# A kit may ask for more, shorter-lived streaks (rain falls out of the
+	# box round the camera faster than snow is blown through it).
+	particles.amount = int(_kit.get("streaks", STREAKS))
+	particles.lifetime = float(_kit.get("streak_life", 3.0))
 	particles.local_coords = false
 	particles.emitting = false
 	particles.visibility_aabb = AABB(Vector3(-40, -20, -40), Vector3(80, 40, 80))

@@ -575,13 +575,20 @@ func start_reload() -> void:
 		_reload_sound("reload_out")
 
 
-## The world's fouling rate where this gun is (`WorldDef.gun_fouling`): 0 in
-## most worlds, and always 0 for a heavy weapon.
+## The world's fouling rate where this gun is (`WorldDef.gun_fouling`,
+## eased or worsened in a storm by `Weather.fouling_at`): 0 in most worlds,
+## and always 0 for a heavy weapon.
 func foul_rate() -> float:
 	if actor == null or is_power():
 		return 0.0
 	var world := Worlds.of(actor)
-	return world.gun_fouling if world != null else 0.0
+	var rate := world.gun_fouling if world != null else 0.0
+	if rate <= 0.0:
+		return 0.0
+	var raid := Raid.of(actor)
+	if raid != null and raid.weather != null and raid.weather.kind != "":
+		rate *= raid.weather.fouling_at(actor.global_position)
+	return rate
 
 
 ## The reload's clacks and the dry click: flat for the player's own gun, from
