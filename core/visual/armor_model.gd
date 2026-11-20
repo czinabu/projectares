@@ -386,22 +386,41 @@ static func belt(weight: String, style: Dictionary, build := "m") -> Node3D:
 	var root := _root("BeltModel")
 	var m := Kit.new(style)
 	var b := Trunk.new(build, "Hips")
-	var f0 := 0.08
-	var f1 := 0.16
+	# A padded battle belt under a webbing belt, wide enough to read on
+	# every frame.
+	var f0 := 0.06
+	var f1 := 0.19
 	for half: float in [0.0, PI]:
-		plate(root, "Belt", b.wrap(f0, f1, half - PI * 0.5, half + PI * 0.5, 0.004), 0.012, m.strap, 16, 2)
+		plate(root, "BeltPad", b.wrap(f0, f1, half - PI * 0.5, half + PI * 0.5, 0.006), 0.014, m.fabric, 16, 3)
+		plate(root, "Belt", b.wrap(f0 + 0.025, f1 - 0.025, half - PI * 0.5, half + PI * 0.5, 0.02), 0.01, m.strap, 16, 2)
 	var mid := (f0 + f1) * 0.5
-	on(root, "BeltBuckle", Vector3(0.05, 0.036, 0.01), m.metal, b.at(mid, 0.0, 0.016), Vector3.FORWARD, 0.003)
-	var pouches := [[-1.35, Vector3(0.055, 0.075, 0.04)], [1.35, Vector3(0.055, 0.075, 0.04)], [2.3, Vector3(0.075, 0.065, 0.04)]]
+	on(root, "BeltBuckle", Vector3(0.075, 0.05, 0.014), m.metal, b.at(mid, 0.0, 0.03), Vector3.FORWARD, 0.004)
+	on(root, "BeltBuckle", Vector3(0.03, 0.022, 0.006), m.strap, b.at(mid, 0.0, 0.04), Vector3.FORWARD, 0.002)
+	# Loops of webbing round the belt, and a ring each side to hang kit from.
+	for a: float in [-2.6, -2.0, -0.9, 0.9, 2.0, 2.6]:
+		on(root, "BeltLoop", Vector3(0.018, 0.072, 0.008), m.strap, b.at(mid, a, 0.034), b.out(a), 0.002)
+	for a: float in [-1.15, 1.15]:
+		on(root, "BeltRing", Vector3(0.022, 0.026, 0.006), m.metal, b.at(f0 - 0.005, a, 0.03), b.out(a), 0.004)
+	var pouches := [[-1.4, Vector3(0.06, 0.08, 0.045)], [1.4, Vector3(0.06, 0.08, 0.045)], [2.35, Vector3(0.085, 0.07, 0.045)],
+			[-2.35, Vector3(0.07, 0.07, 0.045)]]
 	if weight == "light":
-		pouches = [[-1.45, Vector3(0.05, 0.065, 0.032)]]
+		pouches = [[-1.45, Vector3(0.055, 0.07, 0.038)], [2.35, Vector3(0.075, 0.065, 0.04)]]
 	for p: Array in pouches:
 		var a: float = p[0]
-		pouch(root, m, p[1], b.at(mid - 0.04, a, 0.016), b.out(a))
+		pouch(root, m, p[1], b.at(mid - 0.03, a, 0.03), b.out(a))
+	# The seat of the trousers: a layer of cloth, near the suit's colour,
+	# over the backside that spans the cleft instead of hugging it, cut
+	# higher at the hips like the seat of a pair of trousers.
+	var cloth := G.mat((style["fabric"] as Color).lerp(Color(0.06, 0.06, 0.065), 0.7), 0.97)
+	var seat := func(u: float, v: float) -> Vector3:
+		var w := absf(u * 2.0 - 1.0)
+		var bottom := lerpf(-0.17, -0.04, w * w)
+		return b.at(lerpf(bottom, f0 + 0.01, v), PI + (u * 2.0 - 1.0) * 1.5, 0.007 + 0.003 * sin(PI * u) * sin(PI * v))
+	plate(root, "Seat", seat, 0.008, cloth, 16, 6)
 	if weight == "heavy":
 		# Faulds: plates hung from the belt over the front of the hips.
 		for side: float in [-1.0, 1.0]:
-			plate(root, "Fauld", b.wrap(-0.06, f0 + 0.01, minf(side * 0.18, side * 1.15), maxf(side * 0.18, side * 1.15), 0.02, 0.0, 0.006,
+			plate(root, "Fauld", b.wrap(-0.06, f0 + 0.01, minf(side * 0.18, side * 1.15), maxf(side * 0.18, side * 1.15), 0.03, 0.0, 0.006,
 					-0.15), 0.016, m.plate, 10, 4)
 	return G.merge(root)
 
@@ -470,22 +489,6 @@ static func thigh(weight: String, style: Dictionary, out: float, build := "m") -
 	var m := Kit.new(style)
 	var leg := Limb.new(build, "UpperLeg", out)
 	var centre := 0.45 * out
-	# A plate over this side's seat, laid over the trunk's shape round the
-	# hip joint so it moves with the leg: one on light, two lames from
-	# medium. The leg's frame stands like the body's at rest.
-	var seat := Trunk.new(build, "UpperLeg", out)
-	var lames: int = {"light": 1, "medium": 2, "heavy": 2}[weight]
-	# A gap down the middle, so the two read as plates, not a panel.
-	var inner := PI - out * 0.2
-	var outer := PI - out * 0.95
-	for k in lames:
-		var top := 0.02 - k * 0.13
-		var low := top - 0.17
-		# Hung straight down from the fullest point, never cupping the seat.
-		plate(root, "Rear" if k == 0 else "Rear%d" % k, seat.wrap(low, top, minf(inner, outer), maxf(inner, outer), 0.012 + k * 0.006, 0.0,
-				0.004, 0.0, 0.3), 0.01 if weight == "light" else 0.012, m.fabric if weight == "light" else m.plate2, 10, 5)
-		plate(root, "LameEdge", seat.wrap(low - 0.004, low + 0.012, minf(inner, outer) + 0.04, maxf(inner, outer) - 0.04, 0.024 + k * 0.006,
-				0.0, 0.0, 0.0, 0.3), 0.004, m.rubber if weight == "light" else m.metal, 10, 1)
 	match weight:
 		"heavy":
 			# A full cuisse: three lames down the front and outside, and a
