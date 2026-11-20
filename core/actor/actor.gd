@@ -266,6 +266,11 @@ var stowed_rounds := {}
 ## and copied to clients by `NetSession`; nothing in the simulation reads
 ## it. Every view draws the toy in the one hand (`ActorSkin._update_toy`).
 var toy_in_hand := ""
+## The salvage crate held in both hands (`SalvageCrate`, the `Raid`'s
+## `lift_crate`), or null. While one is held no weapon comes out, the walk
+## slows to `crate_speed` with no sprint, and no rig lifts off.
+var crate: SalvageCrate = null
+var crate_speed := 0.6
 ## How many toy throws this actor has started. A view that sees it go up
 ## plays the throw (`ActionPose.toy_throw_t`); a count, not a flag, so a
 ## repeated or late copy plays it once.
@@ -497,7 +502,11 @@ func _physics_process(delta: float) -> void:
 	# On a client of an online raid, using things is the server's decision.
 	if cmd.interact_pressed and Combat.authoritative:
 		var target := find_interactable()
-		if target:
+		var raid := Raid.of(self) if crate != null else null
+		if raid != null:
+			# Hands full: the crate goes into what you look at, or down.
+			raid.set_down_crate(self, target)
+		elif target:
 			target.interact(self)
 	if global_position.y < WorldDef.VOID_Y_MAX and _below_world():
 		kill("void")
@@ -636,6 +645,12 @@ func _simulate_movement(delta: float) -> void:
 		wish = wish.normalized()
 
 	var speed := sprint_speed if (cmd.sprint and cmd.move.y > 0.0) else walk_speed
+	if crate != null:
+		# A crate in both hands: a slow walk, and no rig takes the weight.
+		speed = walk_speed * crate_speed
+		cmd.jump = false
+		if not on_floor:
+			cmd.jump_pressed = false
 	# Looking through binoculars: no running, and a slow walk.
 	if visor.is_zoomed():
 		speed = walk_speed * visor.move_mult()
@@ -1265,7 +1280,7 @@ func _simulate_weapons(delta: float) -> void:
 	# Weapons come out only where they are free (Caleb's call): while locked
 	# (a safe zone, a gate outpost, the base off the range) a weapon in hand
 	# is put away and nothing can be drawn.
-	if weapons_locked:
+	if weapons_locked or crate != null:
 		if active_weapon_index >= 0 and _storing == null:
 			_draw_weapon(-1)
 		switch_to = -2

@@ -1,0 +1,42 @@
+# Dune Sea
+
+Rules for `worlds/dunes/` and its haul. These are part of the rules in
+`CLAUDE.md` that must not be broken: read this file before changing
+anything it covers, and keep it up to date in the same PR.
+
+- The Dune Sea (DESIGN.md "The Dune Sea (part one, built: the haul)"):
+  its map is the dunes planet's ground (`PlanetTerrain`, the type's recipe
+  with `field` set to `FIELD`) laid flat round the landing, the yards
+  (`SITES`) and the wreck fields (`WRECKS`), each flat at the dunes' own
+  height there, about 1.8 km across. Its navigation is baked coarser than
+  a small map's (`cell_size` 1 m), which keeps the bake to a few seconds
+  at that size; bots walk open sand. Anything that stands on the playable
+  sand is a solid (the hulks are `_box`es); the planet's props stand only
+  past the field. Its enemies are the roster (`ROSTER` in
+  `worlds/dunes/world.gd`), built by `equip_bot`. You keep what you wear
+  on death (`keep_gear_on_death`). Check it with `tests/dunes_tests.gd`
+  and by eye with `visual_check.tscn -- <dir> --dunes-only`.
+- Salvage crates are generic (`core/interact/salvage_crate.gd`): any map
+  may put "spawn_crate" markers down, filled from `roll_loot("crate")`.
+  Only the authority moves one (`Raid.lift_crate`, `set_down_crate`,
+  `drop_crate`, `spill_cargo`); a crate's `place` emits `moved` and
+  `NetSession` sends clients where it is (`_crate`, `_crate_moved`: on the
+  ground, which actor carries it, which vehicle and slot), never what is
+  in it. A client sets `Actor.crate` from that, so the carrier's slow walk
+  is predicted. Where a crate is shown follows its holder every physics
+  frame (`SalvageCrate.follow`), the same everywhere.
+- Carrying (`Actor.crate`): no weapon comes out (as `weapons_locked`),
+  the walk is `crate_speed` of `walk_speed` with no sprint, and the jump
+  is held off in the air so no rig lifts off. Interact with a crate in
+  hand goes to `Raid.set_down_crate`, never to what is looked at.
+- Banking: a depot banks `SalvageCrate.hauled_by(actor)` (the crate in
+  hand and the cargo of the vehicle they drive) with the pack
+  (`Raid._bank_crates` in `_on_actor_banked`). Nothing else takes a
+  crate home: death, a sign-out, a body removed and a vehicle cleared or
+  packed all drop or refuse it first (`_drop_hauled`, `spill_cargo`, the
+  "Unload its cargo first" refusal in `pack_vehicle`).
+- Crates in a world that never ends: `Raid._tick_crates` refills an
+  emptied marker after `WorldDef.crate_respawn_time` and clears a crate
+  left lying away from the markers after `crate_lifetime`. It scans the
+  crates only (a few dozen), never the actors.
+- Checks: `tests/dunes_haul_tests.gd`.

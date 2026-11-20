@@ -19,6 +19,10 @@ extends RefCounted
 ##     emptied spot gets a new vehicle, default `vehicle_respawn_time`). The
 ##     Raid parks the first vehicle-tagged item from `roll_loot` there,
 ##     facing the marker's yaw.
+##   - optionally Marker3D nodes in group "spawn_crate": a salvage crate
+##     stands on each (`SalvageCrate`), filled from `roll_loot("crate")`
+##     (or the marker's "loot_source"), and a new one after
+##     `crate_respawn_time` once it has gone.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 ##   - optionally a `ground_height(x, z)` method, on a map with open ground
 ##     that is not level (see `core/world/terrain.gd`). The Raid stands
@@ -144,6 +148,11 @@ var cache_refill_time := 240.0
 ## Seconds before a vehicle that left its parking spot is replaced there, and
 ## before a vehicle nobody rides is cleared away.
 var vehicle_respawn_time := 300.0
+## Salvage crates (`SalvageCrate`, the "spawn_crate" markers): seconds before
+## a marker whose crate has gone gets a new one, and before a crate left
+## lying anywhere else, nobody holding it, is cleared away.
+var crate_respawn_time := 240.0
+var crate_lifetime := 600.0
 ## Whether players may throw the toy vehicles on their watch here (see
 ## `Raid.throw_toy`). Off, a brought vehicle stays on the watch.
 var vehicle_toys := true
