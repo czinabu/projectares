@@ -1272,6 +1272,7 @@ func _setup_phone() -> void:
 	dev_tools = DevToolsScript.new()  # DEV MODE
 	dev_tools.name = "DevTools"  # DEV MODE
 	dev_tools.context_source = report_context  # DEV MODE
+	dev_tools.body_source = func() -> Variant: return controller.actor if controller != null and is_instance_valid(controller) else null  # DEV MODE
 	dev_tools.notice.connect(_dev_notice)  # DEV MODE
 	add_child(dev_tools)  # DEV MODE
 	phone.console_command.connect(_run_console)  # DEV MODE
