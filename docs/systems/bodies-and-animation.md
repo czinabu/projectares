@@ -100,7 +100,8 @@ date in the same PR.
   first-person view (`_calm`): the hips keep `JOG_BOUNCE` of their rise
   and fall (from 24 cm to 8 cm, about the gun run's) with the legs bent
   again to reach where the clip put the feet, the trunk keeps `JOG_SWAY`
-  of its roll about the cycle's average, and the cycle is slowed by
+  of its roll about the cycle's average (the hips' shift side to side
+  too: the view swayed with it), and the cycle is slowed by
   `JOG_STRETCH` so a sprint lengthens the stride (the jog covers twice
   the ground a step of the old trot did). The strafe right is the strafe
   left mirrored (`_mirror`): the pack's own steps shorter and measured at

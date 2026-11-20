@@ -817,7 +817,8 @@ static func _mirror(anim: Animation, skeleton: Skeleton3D) -> Animation:
 	return _unsample(frames, skeleton, anim.length, anim.loop_mode)
 
 
-## `anim` played `stretch` times slower, with the trunk's sway cut to `sway` of it, the hips' rise and
+## `anim` played `stretch` times slower, with the trunk's sway (its roll,
+## and the hips' shift side to side) cut to `sway` of it, the hips' rise and
 ## fall cut to `keep` of it, measured down
 ## from the top of the stride, and each leg bent to reach where the clip
 ## put its foot (two bones, the knee kept in its own plane).
@@ -839,8 +840,12 @@ static func _calm(anim: Animation, skeleton: Skeleton3D, keep: float, sway: floa
 			sum = Quaternion(sum.x + q.x, sum.y + q.y, sum.z + q.z, sum.w + q.w)
 		mean[bone] = sum.normalized()
 	var top := -INF
+	var across := _lateral(skeleton)
+	var middle := 0.0
 	for f in frames.size():
-		top = maxf(top, _globals(frames[f], skeleton)[hips].origin.dot(up))
+		var at := _globals(frames[f], skeleton)[hips].origin
+		top = maxf(top, at.dot(up))
+		middle += at.dot(across) / frames.size()
 	for f in frames.size():
 		var g := _globals(frames[f], skeleton)
 		var feet := {}
@@ -854,9 +859,12 @@ static func _calm(anim: Animation, skeleton: Skeleton3D, keep: float, sway: floa
 			local[bone] = pose
 		var hip_pose: Transform3D = local[hips]
 		var lift := (top - height) * (1.0 - keep)
-		# The lift in the hips' parent's frame.
+		# The hips' sway side to side is cut like the trunk's.
+		var shift := (middle - g[hips].origin.dot(across)) * (1.0 - sway)
+		# The move in the hips' parent's frame.
 		var parent := skeleton.get_bone_parent(hips)
-		var lift_local := (g[parent].basis.inverse() * up) * lift if parent >= 0 else up * lift
+		var move := up * lift + across * shift
+		var lift_local := g[parent].basis.inverse() * move if parent >= 0 else move
 		hip_pose.origin += lift_local
 		local[hips] = hip_pose
 		g = _globals(local, skeleton)
