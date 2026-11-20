@@ -62,7 +62,13 @@ date in the same PR.
   `user://dev` with its summary first, the machine and the graphics
   settings, so Caleb can send back numbers from his own card; F10 saves a
   bug snapshot zip there (the screenshot, `Main.report_context`, the
-  settings and the recent logs). They are not input actions, so the
+  settings and the recent logs). The snapshot also keeps the last
+  `SHOOTERS_KEPT` hits on the player's body by someone ("shooters") and
+  everyone within `NEAR_REACH` of the camera ("near"), each with its
+  `DevTools.draw_state` at that moment: framed by the camera, a clear line
+  to it, and how many of its meshes are shown, shown to this camera and
+  inside the view as the renderer culls them, so an enemy firing with no
+  body on screen can be caught on Caleb's card. They are not input actions, so the
   Controls app and the key checks leave them out; a new dev key stays off
   the game's keys (no B, N, M, Y, U, K or middle mouse).
 - The dev console (DEV MODE, Caleb's call: a phone app, never a flat
