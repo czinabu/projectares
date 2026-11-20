@@ -527,7 +527,7 @@ func _retarget(old: Node3D, clip: String, target: Skeleton3D, track_root: String
 	# point the way the old rest does.
 	var pairs := []  # [target bone, source bone]
 	for b in target.get_bone_count():
-		var s := source.find_bone(target.get_bone_name(b))
+		var s := source.find_bone(_old_bone(target.get_bone_name(b)))
 		if s >= 0:
 			pairs.append([b, s])
 	var src_rest := {}
@@ -548,7 +548,7 @@ func _retarget(old: Node3D, clip: String, target: Skeleton3D, track_root: String
 			# the old short one points, would shrug the shoulder a hand high.
 			next = ""
 		var tn := target.find_bone(next)
-		var sn := source.find_bone(next)
+		var sn := source.find_bone(_old_bone(next))
 		if next == "" or tn < 0 or sn < 0:
 			bend[p[0]] = Quaternion.IDENTITY
 			continue
@@ -582,7 +582,7 @@ func _retarget(old: Node3D, clip: String, target: Skeleton3D, track_root: String
 			continue
 		var next := _next(bone_name)
 		var tn := target.find_bone(next)
-		var sn := source.find_bone(next)
+		var sn := source.find_bone(_old_bone(next))
 		if tn < 0 or sn < 0:
 			continue
 		var src_len: float = (source.get_bone_global_rest(sn).origin - src_rest[p[1]].origin).length() * scale
@@ -596,6 +596,19 @@ func _retarget(old: Node3D, clip: String, target: Skeleton3D, track_root: String
 		var t := anim.add_track(Animation.TYPE_ROTATION_3D)
 		anim.track_set_path(t, NodePath("%s:%s" % [track_root, target.get_bone_name(p[0])]))
 		rot_tracks[p[0]] = t
+	# Finger ends the old rig has no bone for (the new tips) are held at
+	# rest, never left to whatever played before.
+	var paired := {}
+	for p in pairs:
+		paired[p[0]] = true
+	for b in target.get_bone_count():
+		var tip := target.get_bone_name(b)
+		if paired.has(b) or not (tip.begins_with("Index") or tip.begins_with("Middle") or tip.begins_with("Ring")
+				or tip.begins_with("Pinky") or tip.begins_with("Thumb")):
+			continue
+		var t := anim.add_track(Animation.TYPE_ROTATION_3D)
+		anim.track_set_path(t, NodePath("%s:%s" % [track_root, tip]))
+		anim.rotation_track_insert_key(t, 0.0, target.get_bone_rest(b).basis.get_rotation_quaternion())
 	var pos_track := anim.add_track(Animation.TYPE_POSITION_3D)
 	anim.track_set_path(pos_track, NodePath("%s:Hips" % track_root))
 	player.play(found)
@@ -1026,6 +1039,20 @@ static func _curl_axes(clip: Animation, skeleton: Skeleton3D) -> Dictionary:
 		if turn.get_angle() > 0.05:
 			out[bone] = turn.get_axis().normalized()
 	return out
+
+
+## The old rig's bone for a bone of the new one. The old fingers start
+## with a short bone in the palm ("Index1", the metacarpal), so its knuckle
+## is "Index2"; the new ones start at the knuckle ("Index1"). Retargeted
+## name for name, an old clip's knuckle curl landed one joint out: straight
+## fingers with curled tips, flat along a grip. The thumbs match.
+static func _old_bone(bone: String) -> String:
+	for finger in ["Index", "Middle", "Ring", "Pinky"]:
+		if bone.begins_with(finger) and bone.length() > finger.length():
+			var n := bone.substr(finger.length(), 1).to_int()
+			if n > 0:
+				return "%s%d%s" % [finger, n + 1, bone.substr(finger.length() + 1)]
+	return bone
 
 
 ## The bone a bone points at, by the game's names.

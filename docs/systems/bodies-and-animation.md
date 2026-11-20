@@ -119,7 +119,10 @@ date in the same PR.
   a third of the speed. The clips the game's gun poses are tuned on (the
   relaxed stand under a gun, the gun holds and the run with the gun up,
   the sword) are the old bodies' own, carried across from `rig_m.glb` and
-  `rig_f.glb` (`_retarget`); the pack has no rifle clips. Those old
+  `rig_f.glb` (`_retarget`); the pack has no rifle clips. The old hands
+  have a metacarpal bone the new ones lack, so the old `Index2` (the
+  knuckle) drives the new `Index1` and so on out (`_old_bone`), and a
+  finger tip with no old bone holds its rest. Those old
   stands spread the new bodies' feet wide and bow the knees, so a gun held
   low and a blade out stand on the relaxed stand's legs
   (`ActorSkin.LEGS_FROM_STAND`); the blade's ready stance is the fighting
