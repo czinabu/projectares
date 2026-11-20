@@ -26,7 +26,7 @@ date in the same PR.
   `enemy_room()`. `Raid.near_full_cap` lets only that many of the bots in
   full-detail range of a player run every tick (`_tick_detail`); the rest
   there take every second tick. `Main` reads `ares/stability/enemy_cap`
-  (16) and `ares/stability/enemies_full_detail` (12), or `--enemy-cap <n>`
+  (8, from the frame bench on an RTX 5070: Ashfront holds about 58 fps at 8 bots and 30 at 60) and `ares/stability/enemies_full_detail` (12), or `--enemy-cap <n>`
   / `ARES_ENEMY_CAP`; 0 is no cap, and with no enemy cap there is no near
   cap either. The tests and benches run without a budget unless a bench is
   given `--enemy-cap`. Raise the cap only with a frame bench showing the

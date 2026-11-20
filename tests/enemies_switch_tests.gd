@@ -68,7 +68,7 @@ static func _budget(t: Node) -> void:
 	print("Enemy budget")
 	var was := OS.get_environment("ARES_ENEMY_CAP")
 	OS.set_environment("ARES_ENEMY_CAP", "")
-	t.check(Raid.enemy_cap_wanted(PackedStringArray()) == 16, "the project's cap is 16 enemies a world")
+	t.check(Raid.enemy_cap_wanted(PackedStringArray()) == 8, "the project's cap is 8 enemies a world")
 	t.check(Raid.enemy_cap_wanted(PackedStringArray(["--enemy-cap", "40"])) == 40, "--enemy-cap sets another")
 	OS.set_environment("ARES_ENEMY_CAP", was)
 	Raid.enemies = true
