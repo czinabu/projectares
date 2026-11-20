@@ -36,6 +36,8 @@ signal container_spawned(container: LootContainer)
 signal vehicle_spawned(vehicle: Node3D)
 ## A salvage crate was placed in the world (`spawn_crate`).
 signal crate_spawned(crate: SalvageCrate)
+## A salvage field was buried or uncovered (`set_field_buried`).
+signal field_changed(index: int, buried: bool)
 signal vehicle_removed(vehicle: Node3D)
 ## A player threw a toy vehicle off their watch. It flies from `from`.
 signal toy_thrown(actor: Actor, item_id: String, from: Vector3, toy_velocity: Vector3)
@@ -168,6 +170,10 @@ var crates: Array[SalvageCrate] = []
 ## and how long each crate set down away from a marker has lain there.
 var _crate_spots: Array = []
 var _crate_idle := {}
+## Salvage fields a storm buries and uncovers (the map's "salvage_field"
+## markers, `WorldDef.weather_buries`), the same list in the same order on
+## every machine. Whether one is buried is its "buried" meta.
+var fields: Array[Node3D] = []
 # Toy vehicles. A vehicle a player owns rides on their watch as a toy
 # (`PlayerState.stowed`); thrown, it flies in an arc and unpacks where it lands.
 ## How hard a toy is thrown, in m/s, and how much the throw is tipped upwards.
@@ -448,6 +454,7 @@ func start(p_world: WorldDef, p_seed: int = -1, p_kit: Array = [], p_mastery: Di
 	_spawn_bosses()
 	_spawn_guards()
 	_spawn_map_vehicles()
+	_bury_at_start()
 	_spawn_crates()
 
 
@@ -463,6 +470,7 @@ func start_server(p_world: WorldDef, p_seed: int = -1) -> void:
 	_spawn_bosses()
 	_spawn_guards()
 	_spawn_map_vehicles()
+	_bury_at_start()
 	_spawn_crates()
 
 
@@ -492,6 +500,10 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	if mode != Mode.CLIENT and map.has_method("bake_navigation"):
 		map.call("bake_navigation")
 
+	fields = _map_nodes("salvage_field")
+	for field in fields:
+		field.set_meta("buried", false)
+		field.set_meta("ground_y", field.position.y)
 	for node in _map_nodes("depot"):
 		var depot := node as Depot
 		if depot:
@@ -613,6 +625,8 @@ func _physics_process(delta: float) -> void:
 	_tick_raiders(delta)
 	_tick_detail(delta)
 	_tick_vehicles(delta)
+	if world.weather_buries and not fields.is_empty():
+		_tick_fields()
 	if not _crate_spots.is_empty() or not crates.is_empty():
 		_tick_crates(delta)
 
@@ -4073,7 +4087,9 @@ func spawn_crate(items: Array, at: Vector3) -> SalvageCrate:
 ## "loot_source").
 func _spawn_crates() -> void:
 	for marker in _map_nodes("spawn_crate"):
-		_crate_spots.append({"marker": marker, "crate": _crate_at(marker), "empty_for": 0.0})
+		var field := _field_index_at(marker.global_position)
+		var crate: SalvageCrate = null if field >= 0 and is_field_buried(field) else _crate_at(marker)
+		_crate_spots.append({"marker": marker, "crate": crate, "empty_for": 0.0, "field": field})
 
 
 func _crate_at(marker: Node3D) -> SalvageCrate:
@@ -4091,6 +4107,9 @@ func _tick_crates(delta: float) -> void:
 	for spot: Dictionary in _crate_spots:
 		var crate: Variant = spot.crate
 		var marker: Node3D = spot.marker
+		if int(spot.field) >= 0 and is_field_buried(int(spot.field)):
+			spot.empty_for = 0.0
+			continue
 		if crate != null and is_instance_valid(crate) and (crate as SalvageCrate).holder == null \
 				and (crate as SalvageCrate).global_position.distance_to(marker.global_position) < 3.0:
 			spot.empty_for = 0.0
@@ -4873,6 +4892,117 @@ static func apply_result(result: Dictionary) -> void:
 		Profile.add_to_stash(salvage)
 	Profile.claim_insurance(str(result.get("recalled", "")))
 	Profile.record_raid(result)
+
+
+# --- Salvage fields (DESIGN.md "The Dune Sea (part two)") -------------------
+
+func is_field_buried(index: int) -> bool:
+	return index >= 0 and index < fields.size() and bool(fields[index].get_meta("buried", false))
+
+
+## The salvage field whose ground covers `at` (flat distance), or -1.
+func _field_index_at(at: Vector3) -> int:
+	for i in fields.size():
+		if _flat_distance(fields[i].global_position, at) <= float(fields[i].get_meta("radius", 30.0)):
+			return i
+	return -1
+
+
+func _flat_distance(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x, a.z).distance_to(Vector2(b.x, b.z))
+
+
+## Buries field `index` or uncovers it, everywhere: its scenery sinks or
+## rises with it. On the authority a buried field loses the crates lying in
+## it (never one someone holds or a vehicle carries), and an uncovered one
+## gets a crate on every spot at once.
+func set_field_buried(index: int, buried: bool) -> void:
+	if index < 0 or index >= fields.size() or is_field_buried(index) == buried:
+		return
+	var field := fields[index]
+	field.set_meta("buried", buried)
+	field.position.y = float(field.get_meta("ground_y", field.position.y)) \
+			- (float(field.get_meta("sink", 4.0)) if buried else 0.0)
+	if mode != Mode.CLIENT:
+		if buried:
+			var reach := float(field.get_meta("radius", 30.0))
+			for crate in crates.duplicate():
+				if crate.holder == null and _flat_distance(crate.global_position, field.global_position) <= reach:
+					crate.queue_free()
+			for spot: Dictionary in _crate_spots:
+				if int(spot.field) == index:
+					spot.crate = null
+					spot.empty_for = 0.0
+		else:
+			for spot: Dictionary in _crate_spots:
+				if int(spot.field) == index:
+					var old: Variant = spot.crate
+					if old == null or not is_instance_valid(old):
+						spot.crate = _crate_at(spot.marker)
+					spot.empty_for = 0.0
+	field_changed.emit(index, buried)
+
+
+## Authority: `WorldDef.fields_buried_at_start` fields begin buried, picked
+## by the raid's seed.
+func _bury_at_start() -> void:
+	if not world.weather_buries or fields.size() < 2:
+		return
+	var order: Array = range(fields.size())
+	for i in range(order.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var swap: Variant = order[i]
+		order[i] = order[j]
+		order[j] = swap
+	for i in mini(world.fields_buried_at_start, fields.size() - 1):
+		set_field_buried(int(order[i]), true)
+
+
+## Authority: a storm at full strength buries every open field its heart
+## covers, and for each uncovers a buried one out of its reach (one it has
+## already passed if there is one), told on the war feed.
+func _tick_fields() -> void:
+	if mode == Mode.CLIENT or not weather.active() or weather.strength < 0.8:
+		return
+	var heart := weather.radius * weather.core_share
+	for i in fields.size():
+		if is_field_buried(i) or _flat_distance(fields[i].global_position, weather.centre) > heart:
+			continue
+		set_field_buried(i, true)
+		var title := str(fields[i].get_meta("title", "a salvage field"))
+		war_feed.emit("The %s buried %s %s" % [world.weather_name.to_lower(), title,
+				_whereabouts(fields[i].global_position)])
+		var uncover := _field_to_uncover(i)
+		if uncover >= 0:
+			set_field_buried(uncover, false)
+			war_feed.emit("The %s uncovered %s %s" % [world.weather_name.to_lower(),
+					str(fields[uncover].get_meta("title", "a salvage field")), _whereabouts(fields[uncover].global_position)])
+
+
+func _field_to_uncover(just_buried: int) -> int:
+	var behind: Array[int] = []
+	var clear: Array[int] = []
+	for i in fields.size():
+		if i == just_buried or not is_field_buried(i):
+			continue
+		var off := fields[i].global_position - weather.centre
+		off.y = 0.0
+		if off.length() <= weather.radius:
+			continue
+		clear.append(i)
+		if off.dot(weather.velocity) < 0.0:
+			behind.append(i)
+	var pool := behind if not behind.is_empty() else clear
+	return -1 if pool.is_empty() else pool[rng.randi_range(0, pool.size() - 1)]
+
+
+## Which salvage fields are buried, one flag each in `fields` order (sent to
+## a client).
+func pack_fields() -> Array:
+	var out := []
+	for i in fields.size():
+		out.append(is_field_buried(i))
+	return out
 
 
 func _map_nodes(group: String) -> Array[Node3D]:

@@ -23,6 +23,13 @@ extends RefCounted
 ##     stands on each (`SalvageCrate`), filled from `roll_loot("crate")`
 ##     (or the marker's "loot_source"), and a new one after
 ##     `crate_respawn_time` once it has gone.
+##   - optionally Marker3D nodes in group "salvage_field": a field of
+##     salvage a storm can bury (`weather_buries`), meta "radius" (the
+##     ground it covers, flat distance), "sink" (how far down its scenery
+##     goes when buried, default 4 m) and "title" ("a wreck field"). Its
+##     scenery (hulks) are its children, so they sink with it; the
+##     "spawn_crate" markers inside its radius stand empty while it is
+##     buried.
 ##   - optionally a `bake_navigation()` method for bot pathfinding
 ##   - optionally a `ground_height(x, z)` method, on a map with open ground
 ##     that is not level (see `core/world/terrain.gd`). The Raid stands
@@ -153,6 +160,14 @@ var vehicle_respawn_time := 300.0
 ## lying anywhere else, nobody holding it, is cleared away.
 var crate_respawn_time := 240.0
 var crate_lifetime := 600.0
+## Salvage fields (the map's "salvage_field" markers; DESIGN.md "The Dune
+## Sea (part two)"): with `weather_buries` a storm buries every field its
+## heart crosses (its crates lying there are gone, its markers stand empty)
+## and for each one uncovers a buried field away from the storm, every
+## crate spot in it filled at once. `fields_buried_at_start` of them begin
+## buried.
+var weather_buries := false
+var fields_buried_at_start := 0
 ## Whether players may throw the toy vehicles on their watch here (see
 ## `Raid.throw_toy`). Off, a brought vehicle stays on the watch.
 var vehicle_toys := true

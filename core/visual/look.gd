@@ -1363,6 +1363,12 @@ const WEATHER_KITS := {
 		# each shorter lived.
 		"streaks": 6000, "streak_life": 1.6,
 	},
+	# Sand: a tall ochre wall, the grit driven flat and low along the wind.
+	"sand": {
+		"wall_tint": Color(0.36, 0.24, 0.13), "wall_lit": Color(0.82, 0.6, 0.36),
+		"streak": Color(0.86, 0.66, 0.42, 0.5), "streak_size": Vector2(0.02, 0.45),
+		"billow": Color(0.74, 0.54, 0.33, 0.26), "fall": -0.02, "wall_height": 120.0,
+	},
 }
 
 

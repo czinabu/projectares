@@ -37,7 +37,8 @@ date in the same PR.
   that follow the war (reinforcements, events, loot) read `Raid.war`.
 - Weather (DESIGN.md "Weather: ash storms"): a world with
   `WorldDef.weather_kind` ("ash" Ashfront, "snow" for Frostline's
-  whiteouts, "rain" for the Spore Marsh's rain storms) has storms crossing its map one at a time, a `Weather` cell
+  whiteouts, "rain" for the Spore Marsh's rain storms, "sand" for the Dune Sea's
+  sandstorms, which also bury salvage fields, see `dunes.md`) has storms crossing its map one at a time, a `Weather` cell
   (`Raid.weather`) on `weather_path`, tuned by `WorldDef.weather_*`. Only
   the authority ticks it; a client is sent the cell
   (`NetSession._weather`) and only carries it on (`Weather.advance`).

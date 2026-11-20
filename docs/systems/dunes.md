@@ -40,3 +40,23 @@ anything it covers, and keep it up to date in the same PR.
   left lying away from the markers after `crate_lifetime`. It scans the
   crates only (a few dozen), never the actors.
 - Checks: `tests/dunes_haul_tests.gd`.
+- Sandstorms (DESIGN.md "The Dune Sea (part two, built: sandstorms)"):
+  the shared weather with `weather_kind` "sand" (`Look.WEATHER_KITS`
+  "sand": an ochre wall, grit driven flat), each storm aimed through a
+  wreck field (`weather_path` in `worlds/dunes/world.gd`). Burying is
+  generic (`WorldDef.weather_buries`): the map's "salvage_field" markers
+  (one per wreck field, its hulks its children, meta "radius", "sink",
+  "title") are `Raid.fields`, the same list on every machine. Only the
+  authority decides (`Raid._tick_fields`: a storm at strength 0.8 or more
+  buries every open field within its heart, `radius * core_share`, and
+  uncovers one buried field out of its reach for each, one it has passed
+  if it can, told on the war feed); `Raid.set_field_buried` sinks or
+  raises the field's scenery everywhere, and on the authority clears the
+  crates lying in a buried field (never one held or in cargo) and fills
+  every spot of an uncovered one at once. A buried field's spots never
+  refill (`_tick_crates`). `NetSession._fields` sends the buried flags
+  (`Raid.pack_fields`) on joining and on every change. The navigation is
+  baked with every field open; a buried field's hulks only leave holes
+  bots walk round. `fields_buried_at_start` begin buried, by the raid's
+  seed. Check it with `tests/dunes_storm_tests.gd` and by eye with
+  `--sandstorm-only`.
