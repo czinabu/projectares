@@ -184,7 +184,8 @@ static func _test_time_trial(t: Node) -> void:
 	t.check(not me.inventory.items.any(is_vehicle) and not me.gear_items.any(is_vehicle),
 			"a racer brings no vehicle of their own")
 	t.check(race.stowed_for(me).is_empty(), "nor one on the watch")
-	t.check(Portal.choices_for(race, me) == ([Portal.HOME] as Array[String]), "the portal home is on offer")
+	t.check(not Portal.choices_for(race, me).is_empty() and Portal.choices_for(race, me)[0] == Portal.HOME,
+			"the portal home is on offer, first")
 	var bays: Array = race.vehicles.filter(func(v: Node3D) -> bool:
 		return v.get("rider") == null and race.track_near(v.global_position) == race.track)
 	var scrappers := bays.filter(func(v: Node3D) -> bool: return v.get("item_id") == "bike_scrapper")

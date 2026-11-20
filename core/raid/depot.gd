@@ -36,6 +36,7 @@ func _ready() -> void:
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = box
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mesh.set_meta("walk_through", "the zone you stand in to bank")
 	add_child(mesh)
 
 	# A tall beacon so depots can be found from across the map.
@@ -46,6 +47,7 @@ func _ready() -> void:
 	beam_node.mesh = beam
 	beam_node.position.y = 30.0
 	beam_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	beam_node.set_meta("walk_through", "a beam of light")
 	add_child(beam_node)
 
 
