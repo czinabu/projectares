@@ -58,10 +58,11 @@ const SURFACES := {
 ## build. `saturation`, `brightness`, `metal` and
 ## `rough` are optional and tune the character shader: people keep their
 ## colors, machines are pulled toward worn metal.
-## `idle` is a relaxed stand with the hands empty, `idle_gun` holds a gun low
+## `idle` is a relaxed stand with the hands empty (the pack's own idle on
+## people), `idle_gun` holds a gun low
 ## and `aim_gun` raises it to shoot from a stand (see `actor_skin.gd`).
 ## `stand_legs` is where the legs stand while a gun is held low.
-const HUMAN_ANIMS := {"idle": "Idle_Neutral", "idle_gun": "Idle_Gun", "aim_gun": "Idle_Gun_Pointing",
+const HUMAN_ANIMS := {"idle": "Idle", "idle_gun": "Idle_Gun", "aim_gun": "Idle_Gun_Pointing",
 	"stand_legs": "Idle_Neutral", "walk": "Walk", "run": "Run", "death": "Death",
 	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot",
 	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right", "roll": "Roll",

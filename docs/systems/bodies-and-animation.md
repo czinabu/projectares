@@ -90,9 +90,14 @@ date in the same PR.
   that stay on the body as it moves), and the clips. Never edit the
   `.glb` by hand: change the tool and build again. The clips come from the
   Universal Animation Library packs where they fit (`build_rig.gd`
-  `CLIPS`); the ones the game's poses are tuned on (the idles, the run,
-  the gun holds, the strafes, the sword) are the old bodies' own, carried
-  across from `rig_m.glb` and `rig_f.glb` (`_retarget`). Carrying a clip
+  `CLIPS`; the empty-handed stand is the pack's "Idle"); the ones the
+  game's poses are tuned on (the relaxed stand under a gun, the run, the
+  gun holds, the strafes, the sword) are the old bodies' own, carried
+  across from `rig_m.glb` and `rig_f.glb` (`_retarget`). They are one set:
+  the pack's jog runs lower and bouncier than the old strafes and gun run,
+  and mixed with them it bobbed the first-person view at every switch. A
+  body is sized in its relaxed stand (`stand_legs`), never in an idle that
+  bends the knees or spreads the feet, or the whole body grows. Carrying a clip
   across keeps each bone's turn; limbs are bent to point the old way, the
   trunk and collarbones are not (bent, the chest tips and the long
   collarbone shrugs the shoulder up), and a collarbone's turn is scaled by

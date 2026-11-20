@@ -508,9 +508,16 @@ func _ready() -> void:
 				_anims[key] = found
 				if key not in ["death", "attack", "roll", "kick"]:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
+		# Sized in the relaxed stand: an idle that bends the knees or
+		# spreads the feet (a person's) would otherwise size the body up.
+		var sized_in := "stand_legs" if _anims.has("stand_legs") else "idle"
+		if _anims.has(sized_in):
+			_player.play(_anims[sized_in])
+			_player.advance(0.0)
 		_play("idle")
-		_player.advance(0.0)
 	look.stand_model(self, model, def["height"])
+	if _player:
+		_player.advance(0.0)
 	_def = def
 	_lurk_model = model
 	_lurk_base = model.position.y

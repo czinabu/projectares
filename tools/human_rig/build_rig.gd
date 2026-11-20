@@ -31,8 +31,11 @@ const SIDE_BONES := {
 const FINGERS := {"index": "Index", "middle": "Middle", "ring": "Ring", "pinky": "Pinky", "thumb": "Thumb"}
 
 ## The game's clip name -> library clip, or ["old", <old clip>] to retarget.
-## The stand, run and sword clips stay the old ones for now: the legs'
-## stride, the relaxed stand and the melee holds are tuned to them.
+## The empty-handed stand is the library's ("Idle", picked in
+## `Look.HUMAN_ANIMS`). The run, the strafes, the gun holds and the sword
+## stay the old ones: they are one set (the free library has no strafes),
+## and the library's jog, run lower and bouncier, bobbed the first-person
+## view at every switch between them.
 ## Godot's import drops a clip's "_Loop" ending ("Walk_Loop" is "Walk",
 ## "Sprint_Loop" "Sprint", "Idle_Loop" "Idle"), so those need no entry.
 const CLIPS := {
@@ -237,6 +240,9 @@ func build(args: Dictionary) -> int:
 		var source: Variant = CLIPS[clip]
 		var anim: Animation = null
 		if source is String:
+			# The library names looping clips "..._Loop" (Godot's import drops it).
+			if not ual.has(source) and ual.has(source + "_Loop"):
+				source = source + "_Loop"
 			if ual.has(source):
 				anim = (ual[source] as Animation).duplicate(true)
 		elif old:
