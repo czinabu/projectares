@@ -1393,9 +1393,10 @@ built in this order, cheapest and most connected first:
    flight rigs decide every fight, with updrafts, the Sky Leviathan and
    Ashfront's death rule. It pays rig upgrade data and rig cosmetics.
    Built in three parts (Caleb's call: the world and its updrafts first,
-   then the Sky Leviathan, then the rig rewards); parts one and two are
-   built (below, "The Basalt Rift (part one, built: the world and
-   updrafts)" and "(part two, built: the Sky Leviathan)").
+   then the Sky Leviathan, then the rig rewards); all three are built
+   (below, "The Basalt Rift (part one, built: the world and updrafts)",
+   "(part two, built: the Sky Leviathan)" and "(part three, built: the rig
+   rewards)").
 
 The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
 Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
@@ -1747,8 +1748,8 @@ is the point here.
   Crown and the high perches: the updrafts are how you get up there. Two
   of them rise beside the Crown, one beside the Shelf for a first ride,
   and the watch says "updraft" while you are in one.
-- **Still to come.** The rig rewards, upgrade data and rig cosmetics (part
-  three).
+- **Since built.** The rig rewards, upgrade data and rig cosmetics (part
+  three, below).
 
 ### The Basalt Rift (part two, built: the Sky Leviathan)
 
@@ -1793,6 +1794,26 @@ crashes with a big haul.
   weak spots are bots the server seats on it, built the same on every
   machine from their kind, and a client shows a piece wrecked once the
   server empties its seat.
+
+### The Basalt Rift (part three, built: the rig rewards)
+
+The rift is where a rig is stepped up and shown off. It pays upgrade data
+and rig blueprints, the two things a Mk2 or Mk3 rig is crafted from
+(section 10), and the earned thruster trails (below, "Thruster trails").
+
+- **Only rig blueprints.** Every blueprint the rift hands out is a flight
+  rig's (jetpack, thruster boots, glide wings); the war's gun and vehicle
+  blueprints stay in Ashfront.
+- **The Crown's caches.** The three caches on the Crown, the mesa only an
+  updraft reaches, are the rift's best: upgrade data more often than not,
+  now and then a rig blueprint, reactor cores and targeting chips. The
+  rift's other caches hold no upgrade data.
+- **The Lord of the Crown** carries two upgrade data, a rig blueprint half
+  the time, and now and then the earned Magma trail.
+- **The Sky Leviathan.** A broken weak spot sometimes drops upgrade data
+  with its salvage. The downed ship's hold always holds two, a rig
+  blueprint about half the time, and now and then the earned Leviathan
+  trail.
 
 ## 3. The watch
 
@@ -2202,6 +2223,28 @@ strength alone (`core/visual/armor_paint.gd`, `ArmorPaint`).
   both views and on the base's stands.
 - **Always readable.** Every colour is held in a safe range: plates never
   near black or white, an accent always a clear lit colour, never neon.
+
+### Thruster trails
+
+The flame every flight rig's nozzles burn in can be coloured. A trail is a
+colour, never a stat: it changes no thrust, speed, heat or how long or wide
+the flame is (`core/visual/rig_trail.gd`, `RigTrail`). It is the "thruster
+trail colours" the hub sells for scrip (section 10, "Currency: scrip").
+
+- **Bought or earned, owned for good.** Like a paint, a trail is a
+  cosmetic stash item that never goes on a raid. The Tailor sells Ember,
+  Toxic, Violet and Redline. Two are earned only, in the Basalt Rift: Magma
+  from the Lord of the Crown and Leviathan from the Sky Leviathan's hold.
+- **One for every rig.** The choice is one trail, worn on whatever rig you
+  fly. With none, rigs burn the factory blue.
+- **Picked at the rig stands.** Each rig stand in the gear hall has a trail
+  swatch beside it, and the stand's nozzles glow in the trail worn: using
+  the swatch turns through the trails owned and back to the factory flame.
+- **Part of the look.** The choice rides in the appearance, checked like
+  clothing, so everyone sees your flames.
+- **Always readable.** The glow is always a clear colour and the hot core a
+  pale one, and a chosen trail burns a little less bright than the factory
+  flame so its colour reads instead of blooming white.
 
 ### Weight
 

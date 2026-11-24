@@ -1,6 +1,6 @@
 # Gear: flight, artifacts, helmets, armor and backpacks
 
-Rules for flight rigs, artifacts, visors and helmets, armor frames and paints, and backpacks. These are part of the rules in `CLAUDE.md` that must not be
+Rules for flight rigs and their thruster trails, artifacts, visors and helmets, armor frames and paints, and backpacks. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -289,6 +289,19 @@ date in the same PR.
   stands (`HomeBase.PaintSwatch`, `paint_requested`, `show_paints`).
   Check by eye with
   `visual_check.tscn -- <dir> --armor-only`.
+- Thruster trails (DESIGN.md "Thruster trails"): `RigTrail`
+  (`core/visual/rig_trail.gd`) colours the flames of every rig worn, a
+  glow and a core held in a safe range (`RigTrail.SAFE`), and never a stat
+  or the flame's size. `Vfx.nozzle_flame` takes the trail and
+  `ActorSkin._wear_rig` passes the body's (`rig_trail`); "" is the factory
+  blue, and a chosen trail burns `TRAIL_DIM` as bright so its colour
+  reads. A trail is a cosmetic item tagged "trail" (the Tailor sells the
+  plain ones; the earned ones are Relic loot, never sold or traded),
+  unlocked as "trail:<id>" by `Economy.unlocked_outfits`; the choice (one
+  id) rides in the appearance's "trail", checked by `Human.player_look`.
+  It is picked at the base's rig stands (`HomeBase.TrailSwatch`,
+  `trail_requested`, `show_trail`), whose nozzles glow in it. Check with
+  `tests/rig_trail_tests.gd` and by eye with `--trails-only`.
 - Backpacks (DESIGN.md "Backpacks") are data: items tagged "backpack" in the
   optional `pack` loadout slot, with `capacity`, `sprint_mult` and
   `pack_size` stats. `Loadout.wear_pack` sets `Actor.pack_id`, the

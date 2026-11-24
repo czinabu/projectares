@@ -4148,15 +4148,22 @@ func _wear_rig(id: String) -> void:
 		var bone: String = feet[i] if feet.size() == 2 else ""
 		_wear_part(boot, bone, boot_offset, Vector3(side * 0.12, 0.1, 0.0))
 	var lit := false
+	var trail := rig_trail()
 	for holder in _rig_holders:
 		for nozzle in RigModel.nozzles(holder):
 			var size: Vector2 = nozzle.get_meta("flame", Vector2(0.05, 0.5))
-			var flame := Vfx.nozzle_flame(size.x, size.y, not lit)
+			var flame := Vfx.nozzle_flame(size.x, size.y, not lit, trail)
 			lit = true
 			flame.visible = false
 			nozzle.add_child(flame)
 			_flames.append(flame)
 	_mark_storm()
+
+
+## The thruster trail this body's rig burns in (`RigTrail`): the one its
+## appearance names, "" for the factory flame.
+func rig_trail() -> String:
+	return RigTrail.clean(_appearance.get("trail"))
 
 
 ## Hangs a rig part on a bone so it moves with the body (see `_hang`).

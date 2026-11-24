@@ -305,6 +305,7 @@ func _ready() -> void:
 		_wear_look()
 		if base != null and not base.read_only:
 			base.show_paints(_my_look().get("paints", {}))
+			base.show_trail(_my_look().get("trail", ""))
 		if net != null:
 			net.send_look(Profile.appearance))
 	# The game opens in the world: your home base.
@@ -408,6 +409,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.read_only = owner_name != ""
 	if not base.read_only:
 		base.paints = _my_look().get("paints", {})
+		base.trail = RigTrail.clean(_my_look().get("trail", ""))
 	base.show_gear(stash, loadout, upgrades, plan)
 	if not base.read_only:
 		base.set_scrip(hub.scrip())
@@ -416,6 +418,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	base.upgrade_requested.connect(_on_base_upgrade)
 	base.room_placed.connect(_on_base_room_placed)
 	base.paint_requested.connect(_on_base_paint)
+	base.trail_requested.connect(_on_base_trail)
 	base.leave_requested.connect(_on_base_door)
 	base.station_requested.connect(open_station)
 	base.bench_used.connect(open_bench)
@@ -757,10 +760,31 @@ func _on_base_paint(frame_look: String, paint: String) -> void:
 	_refresh_base()
 
 
+## A thruster trail picked at a rig stand's swatch: it goes in the look,
+## like an armor paint (`_on_base_paint`).
+func _on_base_trail(trail: String) -> void:
+	if base == null or base.read_only:
+		return
+	var next := Profile.appearance.duplicate(true)
+	if trail == "":
+		next.erase("trail")
+	else:
+		next["trail"] = trail
+	var owned := Economy.unlocked_outfits(hub.stash_items())
+	Profile.set_appearance(next, owned)
+	hub.character.owned = owned
+	hub.character.set_appearance(Profile.appearance)
+	_wear_look()
+	if net != null:
+		net.send_look(Profile.appearance)
+	_refresh_base()
+
+
 ## Shows the base whatever the hub would show now.
 func _refresh_base() -> void:
 	if base and not base.read_only:
 		base.show_paints(_my_look().get("paints", {}))
+		base.show_trail(_my_look().get("trail", ""))
 		base.set_scrip(hub.scrip())
 		base.show_gear(hub.stash_items(), hub.current_loadout(), hub.base_upgrades(), hub.base_plan())
 		_tour_check()

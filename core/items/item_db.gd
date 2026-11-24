@@ -524,6 +524,19 @@ func _ready() -> void:
 	_paint_item("paint_spore", "Spore Paint", 1500, "spore",
 			"Moss green and glowing gills, taken off the Grey Matriarch in the Spore Marsh.", Rarity.RELIC)
 
+	# Thruster trails (`RigTrail`): cosmetic, the colour every rig's nozzles
+	# burn in, picked at the base's rig stands. The Tailor sells the plain
+	# ones; the earned ones are Relic loot from the hardest fights in the sky.
+	_trail_item("trail_ember", "Ember Trail", 300, "ember", "Rig flames in a hot orange.")
+	_trail_item("trail_toxic", "Toxic Trail", 300, "toxic", "Rig flames in a chemical green.")
+	_trail_item("trail_violet", "Violet Trail", 450, "violet", "Rig flames in a deep violet.", Rarity.UNCOMMON)
+	_trail_item("trail_redline", "Redline Trail", 450, "redline", "Rig flames in a hard red.", Rarity.UNCOMMON)
+	_trail_item("trail_magma", "Magma Trail", 1500, "magma",
+			"Red flames with a molten gold heart, taken off the warlord who holds the highest mesa over the lava.",
+			Rarity.RELIC)
+	_trail_item("trail_leviathan", "Leviathan Trail", 1500, "leviathan",
+			"Gold flames with a white-hot heart, from the hold of a downed sky warship.", Rarity.RELIC)
+
 
 ## Registers a weapon attachment for `slot` (also its tag: see `Loadout.SLOTS`).
 func _attachment(id: String, display_name: String, rarity: Rarity, value: int, slot: String, vendor: bool,
@@ -574,6 +587,17 @@ func _paint_item(id: String, display_name: String, value: int, paint: String, de
 	if rarity <= Rarity.UNCOMMON:
 		tags.append("vendor")
 	register(id, display_name, rarity, value, tags, {"paint": paint}, description)
+
+
+## Registers a thruster trail item that unlocks the trail `trail` (a
+## `RigTrail.TRAILS` id). Shop trails carry "vendor"; earned ones (Relic) do
+## not, so only their content hands them out.
+func _trail_item(id: String, display_name: String, value: int, trail: String, description: String,
+		rarity: Rarity = Rarity.COMMON) -> void:
+	var tags := ["cosmetic", "trail"]
+	if rarity <= Rarity.UNCOMMON:
+		tags.append("vendor")
+	register(id, display_name, rarity, value, tags, {"trail": trail}, description)
 
 
 ## Registers a home base piece. Small pieces are also tagged "decor".
