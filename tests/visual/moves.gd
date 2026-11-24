@@ -120,10 +120,12 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 					p.cmd.sprint = false
 			for view: String in views:
 				var at := p.global_position + Vector3(0, 0.9, 0)
+				# The camera stays at ground height, so a jump shows how high.
+				at.y = start.origin.y + 0.9 + (0.6 if move in ["jump", "run_jump"] else 0.0)
 				var off := p.global_basis.x if view == "side" else -p.global_basis.z
 				if view == "quarter":
 					off = (p.global_basis.x - p.global_basis.z).normalized()
-				cam.look_at_from_position(at + off * 5.0, at)
+				cam.look_at_from_position(at + off * (8.0 if move in ["jump", "run_jump"] else 5.0), at)
 				await RenderingServer.frame_post_draw
 				var frame := v.get_viewport().get_texture().get_image()
 				var h := frame.get_height()
