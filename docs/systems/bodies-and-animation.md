@@ -92,7 +92,7 @@ date in the same PR.
   Keeping guns out of the body: the long guns' grip sits about half a
   metre ahead of the butt, more than the body's whole arm, so the hold
   moves the body to the gun. In the sights a long gun takes a cheek weld:
-  the eyes come down and over onto the stock (`ActionPose.cheek_eye`,
+  the eyes come down and over onto the stock (`ActionPose.cheek_eye`, the body bladed further, `ads_stance_long`, so the off hand still reaches a scoped gun,
   added in `ActorSkin.eye_point`, so the sights and the first-person
   camera stay on them) and the head tips with them at the neck
   (`cheek_long`, `WeaponArm.cheek`), so the butt meets the shoulder

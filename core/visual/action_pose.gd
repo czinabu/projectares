@@ -473,7 +473,7 @@ var ads_cup := Vector3(-0.03, -0.035, -0.01)
 ## (like `turn`: x toward the actor's left, y backward): a long gun blades
 ## the body so the off shoulder comes forward to the fore end, a sidearm
 ## squares up and leans in so the arms reach out.
-var ads_stance_long := Vector2(-0.35, -0.06)
+var ads_stance_long := Vector2(-0.44, -0.06)
 var ads_stance_sidearm := Vector2(0.3, -0.06)
 ## A long gun's cheek weld in the sights: the eyes come down onto the stock
 ## and over to the gun side (metres right, up and ahead, in the body's
