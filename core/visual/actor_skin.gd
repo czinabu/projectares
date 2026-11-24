@@ -1245,11 +1245,14 @@ func _on_landed(impact_speed: float) -> void:
 func _update_air(delta: float, airborne: bool) -> void:
 	_air = move_toward(_air, 1.0 if airborne else 0.0, air_blend * delta)
 	if airborne and not _was_airborne:
-		# Going up is a takeoff; walking off a ledge is not.
+		# Going up is a takeoff; walking off a ledge is not. It shows at
+		# full on this pose and fades from the next, so a long frame (or a
+		# body posed only every few frames) never swallows it.
 		_air_push = 1.0 if actor.velocity.y > 1.0 else 0.0
 		_land_left = 0.0
+	else:
+		_air_push = move_toward(_air_push, 0.0, delta / takeoff_time)
 	_was_airborne = airborne
-	_air_push = move_toward(_air_push, 0.0, delta / takeoff_time)
 	_land_left = move_toward(_land_left, 0.0, delta / land_time)
 	if locomotion:
 		# Down fast, up slow: sin over the squat's life, peaking early.
@@ -3752,6 +3755,9 @@ func _update_materialize() -> void:
 	if _materializing != null and (model != _materializing or not is_instance_valid(_materializing)):
 		if is_instance_valid(_materializing):
 			_set_materialize(_materializing, 1.0)
+			# Measured as it came together, its bounds go with its parts
+			# still flying in: measured again as it now stands.
+			_materializing.remove_meta("model_box")
 		_materializing = null
 	if model == null:
 		return
