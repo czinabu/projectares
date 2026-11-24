@@ -49,6 +49,11 @@ const HULK := Vector3(5.0, 3.4, 14.0)
 ## How far a buried wreck field's hulks go down under the sand: past their
 ## tops, tilt and all.
 const BURY_DEPTH := 4.0
+## The share of each dune its steep lee face takes (`PlanetTerrain`
+## "dune_slip"): wide enough that a rover climbs it, still a dune's shape.
+const DUNE_SLIP := 0.36
+## How much the far ring round the map smooths the dunes (`Planet.horizon`).
+const HORIZON_SMOOTH := 1.0
 ## The Wreck Baron's ground in the deep sea.
 const BOSS_AT := Vector2(0.0, -760.0)
 
@@ -91,6 +96,10 @@ func _seed_layout() -> void:
 	_rng.seed = LAYOUT_SEED
 	var recipe := PlanetTypes.get_type("dunes").terrain.duplicate()
 	recipe["field"] = FIELD
+	# Sand you can drive: no terrace steps on the playable sand (they stay
+	# on the rim's buttes past it) and slip faces a wheel can climb.
+	recipe["terrace_field"] = 0.0
+	recipe["dune_slip"] = DUNE_SLIP
 	_land = PlanetTerrain.new(recipe, LAYOUT_SEED)
 
 
@@ -316,14 +325,24 @@ func _dress() -> void:
 	var art := Node3D.new()
 	art.name = "Dressing"
 	add_child(art)
-	var land := PlanetTerrain.new(planet.terrain, LAYOUT_SEED)
+	var land := far_land()
 	var half := terrain.extent() * 0.5
-	art.add_child(Planet.horizon(planet, land, half))
+	art.add_child(Planet.horizon(planet, land, half, HORIZON_SMOOTH))
 	var height_of := func(x: float, z: float) -> float:
 		return terrain.height_at(x, z) if maxf(absf(x), absf(z)) < half else land.height_at(x, z)
 	var clear := func(x: float, z: float) -> bool:
 		return maxf(absf(x), absf(z)) > FIELD + 20.0
 	PlanetProps.scatter(art, planet, height_of, half, LAYOUT_SEED + 3, clear)
+
+
+## The ground of the far ring round the map (`Planet.horizon`) and the props
+## out there: the same ground as the playable sand (`_land`, its field and
+## all), so the ring meets the map's edge at the map's height instead of
+## standing tens of metres over it. It is drawn smoothed (`HORIZON_SMOOTH`),
+## so the dunes' slip faces and the rim's terraces read as dunes out there,
+## not as sheets folded into the sky.
+func far_land() -> PlanetTerrain:
+	return _land
 
 
 # --- Helpers -----------------------------------------------------------------

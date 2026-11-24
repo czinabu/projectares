@@ -10,7 +10,10 @@ extends Node
 ##     F9 again stops it early.
 ##   - F10, bug snapshot: a screenshot, where the player is and what they
 ##     are doing (`Main.report_context`), the graphics settings and the
-##     game's recent logs, in one zip.
+##     game's recent logs, in one zip. It also says who last shot the
+##     player and whether each of them was drawn at that moment, and the
+##     same for everyone near (`draw_state`), to catch a shooter the
+##     player cannot see ("invisible enemies") on Caleb's own card.
 ## Both land under `SAVE_DIR` (shown with its full path in a notice) so the
 ## file can be sent back as it is. The keys are raw keys, not input
 ## actions: they are not controls of the game, so the phone's Controls app
@@ -37,6 +40,9 @@ signal saved(kind: String, path: String)
 
 ## Where the player is and what they are doing (Main's `report_context`).
 var context_source: Callable
+## The player's body now, or null (Main's controller). Its hits are kept
+## for the snapshot (`shooters`).
+var body_source: Callable
 ## Where files go (tests point it elsewhere).
 var save_dir := SAVE_DIR
 ## Tests run the tools without the key gate.
@@ -47,6 +53,13 @@ var _capture_left := 0.0
 var _frames: Array[Dictionary] = []
 var _capture_context := {}
 var _snapping := false
+## The last hits on the player by someone, oldest first, each with that
+## someone's draw state when it landed (`draw_state`).
+var shooters: Array[Dictionary] = []
+const SHOOTERS_KEPT := 12
+## Everyone within this of the camera goes in a snapshot's "near".
+const NEAR_REACH := 80.0
+var _watched: Actor
 
 
 func enabled() -> bool:
@@ -107,6 +120,8 @@ func stop_capture() -> String:
 
 
 func _process(delta: float) -> void:
+	if enabled():
+		watch_body()
 	if not _capturing:
 		return
 	_frames.append(sample(delta, get_viewport().get_viewport_rid()))
@@ -209,7 +224,7 @@ func snapshot() -> String:
 		# The frame as drawn, HUD and all.
 		await RenderingServer.frame_post_draw
 		image = get_viewport().get_texture().get_image()
-	var path := write_snapshot(image, _context(), save_dir)
+	var path := write_snapshot(image, _context(), save_dir, {"shooters": shooters.duplicate(), "near": near_states()})
 	_snapping = false
 	if path == "":
 		notice.emit("Snapshot could not be written to %s." % ProjectSettings.globalize_path(save_dir))
@@ -219,7 +234,7 @@ func snapshot() -> String:
 	return path
 
 
-static func write_snapshot(image: Image, where: Dictionary, dir: String) -> String:
+static func write_snapshot(image: Image, where: Dictionary, dir: String, seen := {}) -> String:
 	DirAccess.make_dir_recursive_absolute(dir)
 	var path := dir.path_join("snapshot-%s.zip" % _stamp())
 	var zip := ZIPPacker.new()
@@ -227,6 +242,7 @@ static func write_snapshot(image: Image, where: Dictionary, dir: String) -> Stri
 		return ""
 	var info := {"time": Time.get_datetime_string_from_system(true) + " UTC", "context": where,
 			"machine": machine(), "settings": GameSettings.to_dict()}
+	info.merge(seen)
 	_zip_file(zip, "snapshot.json", JSON.stringify(info, "\t").to_utf8_buffer())
 	if image != null and not image.is_empty():
 		_zip_file(zip, "screenshot.png", image.save_png_to_buffer())
@@ -244,6 +260,126 @@ static func _zip_file(zip: ZIPPacker, name: String, bytes: PackedByteArray) -> v
 	zip.start_file(name)
 	zip.write_file(bytes)
 	zip.close_file()
+
+
+# --- Who shot the player, and could they be seen --------------------------
+
+## Keeps an eye on the player's body: every life is a new one.
+func watch_body() -> void:
+	var body: Variant = body_source.call() if body_source.is_valid() else null
+	if not (body is Actor) or not is_instance_valid(body) or body == _watched:
+		return
+	_watched = body
+	_watched.health.damaged.connect(note_hit.bind(_watched))
+
+
+## Notes a hit on `body` by someone: who, and how they were drawn then.
+func note_hit(info: DamageInfo, body: Actor) -> void:
+	var source := info.source as Actor if info != null else null
+	if source == null or not is_instance_valid(source) or source == body:
+		return
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var state := draw_state(source, camera)
+	state["hit"] = info.kind
+	state["time"] = Time.get_ticks_msec() / 1000.0
+	shooters.append(state)
+	if shooters.size() > SHOOTERS_KEPT:
+		shooters.pop_front()
+
+
+## The draw state of everyone near the camera, nearest first.
+func near_states() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if camera == null:
+		return out
+	for node: Variant in get_tree().get_nodes_in_group("actors"):
+		var actor := node as Actor if is_instance_valid(node) else null
+		if actor == null or actor == _watched or actor.is_dead:
+			continue
+		if actor.global_position.distance_to(camera.global_position) <= NEAR_REACH:
+			out.append(draw_state(actor, camera))
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.distance) < float(b.distance))
+	return out
+
+
+## How `actor` is drawn for `camera` right now: where it is, whether the
+## camera frames it and has a clear line to it, and of its meshes how many
+## are shown at all, shown to this camera (layer, fade, draw distance) and
+## inside the view as the renderer culls it (`instances_cull_convex`, by
+## each mesh's own bounds). A shooter the player cannot see shows up here
+## as framed with a clear line but no mesh shown in the view.
+static func draw_state(actor: Actor, camera: Camera3D) -> Dictionary:
+	var state := {"name": String(actor.name), "shown_name": actor.display_name,
+			"look": str(actor.get_meta("look", "")), "kind": str(actor.get_meta("kind", "")),
+			"faction": actor.faction, "dead": actor.is_dead, "visible": actor.is_visible_in_tree(),
+			"position": _vec(actor.global_position), "tick_every": actor.tick_every,
+			"riding": actor.vehicle != null, "cloaked": actor.is_cloaked()}
+	var skin := actor.get_node_or_null("Skin")
+	state["skin"] = skin != null
+	if skin != null:
+		state["skin_visible"] = (skin as Node3D).visible
+		state["posed_every"] = skin.get("_detail_every")
+	var chest := actor.global_position + Vector3.UP * actor.body_height() * 0.6
+	var in_view := {}
+	if camera != null:
+		state["distance"] = snappedf(camera.global_position.distance_to(chest), 0.1)
+		state["framed"] = camera.is_position_in_frustum(chest)
+		if actor.is_inside_tree():
+			var query := PhysicsRayQueryParameters3D.create(camera.global_position, chest)
+			query.collision_mask = Actor.LAYER_WORLD
+			query.exclude = [actor.get_rid()]
+			var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
+			state["line_clear"] = hit.is_empty()
+			if DisplayServer.get_name() != "headless":
+				# The view's planes and a box round the actor, so the renderer
+				# only lists the actor's own neighbourhood, not the whole world
+				# (a scan of every instance on every hit sank the frame rate).
+				var planes := camera.get_frustum()
+				var low := actor.global_position - Vector3(3.0, 1.0, 3.0)
+				var high := actor.global_position + Vector3(3.0, actor.body_height() + 2.0, 3.0)
+				planes.append_array([Plane(Vector3.RIGHT, high.x), Plane(Vector3.LEFT, -low.x),
+						Plane(Vector3.UP, high.y), Plane(Vector3.DOWN, -low.y),
+						Plane(Vector3.BACK, high.z), Plane(Vector3.FORWARD, -low.z)])
+				for id: int in RenderingServer.instances_cull_convex(planes, actor.get_world_3d().scenario):
+					in_view[id] = true
+	else:
+		state["distance"] = -1.0
+	var meshes := 0
+	var shown := 0
+	var to_camera := 0
+	var culled := 0
+	var hidden: Array[String] = []
+	for node in actor.find_children("*", "GeometryInstance3D", true, false):
+		var part := node as GeometryInstance3D
+		if part is MeshInstance3D and (part as MeshInstance3D).mesh == null:
+			continue
+		if part.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
+			continue
+		meshes += 1
+		if not part.is_visible_in_tree() or part.transparency >= 0.99:
+			if hidden.size() < 8:
+				hidden.append(String(part.name))
+			continue
+		shown += 1
+		if camera == null:
+			continue
+		var reach := part.visibility_range_end
+		if (part.layers & camera.cull_mask) == 0 or (reach > 0.0 and float(state.distance) > reach + part.visibility_range_end_margin):
+			continue
+		to_camera += 1
+		if in_view.has(part.get_instance_id()):
+			culled += 1
+	state["meshes"] = meshes
+	state["shown"] = shown
+	state["shown_to_camera"] = to_camera
+	state["in_view"] = culled
+	state["hidden_parts"] = hidden
+	return state
+
+
+static func _vec(v: Vector3) -> String:
+	return "%.1f, %.1f, %.1f" % [v.x, v.y, v.z]
 
 
 # --- Shared --------------------------------------------------------------

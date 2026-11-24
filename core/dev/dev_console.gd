@@ -20,6 +20,7 @@ const COMMANDS := {
 	"markers": ["markers [group]", "the map's marker groups, or one group's spots"],
 	"bots": ["bots <n> [faction]", "spawn bots 15 to 25 m around you"],
 	"clear": ["clear [metres]", "remove every bot within range (30 m)"],
+	"enemies": ["enemies on | off", "every world's enemies on or off (Raid.enemies) until the game restarts"],
 	"war": ["war <0-1>", "set the war's heat, centred on you"],
 	"storm": ["storm start | here | stop", "start a storm (on you with 'here') or end it"],
 	"event": ["event warlord | supply_pod | convoy | airship | end", "start or end a world event"],
@@ -58,6 +59,7 @@ static func run(line: String, raid: Raid, body: Actor, online: bool) -> Array[St
 		"markers": return _markers(raid, args)
 		"bots": return _bots(raid, body, args) if alive else ["No body."]
 		"clear": return _clear(raid, body, args) if alive else ["No body."]
+		"enemies": return _enemies(raid, args)
 		"war": return _war(raid, body, args)
 		"storm": return _storm(raid, body, args)
 		"event": return _event(raid, args)
@@ -172,6 +174,29 @@ static func _clear(raid: Raid, body: Actor, args: Array[String]) -> Array[String
 			raid._remove_actor(bot)
 			gone += 1
 	return ["Removed %d bot%s." % [gone, "" if gone == 1 else "s"]]
+
+
+## Turns enemies on or off (`Raid.enemies`). Off clears this world's bots;
+## on brings its army, bosses and guards in if it has none standing.
+static func _enemies(raid: Raid, args: Array[String]) -> Array[String]:
+	if args.is_empty() or args[0] not in ["on", "off"]:
+		return ["Enemies are %s. Usage: %s" % ["on" if Raid.enemies else "off", COMMANDS.enemies[0]]]
+	Raid.enemies = args[0] == "on"
+	if not Raid.enemies:
+		var gone := 0
+		for bot: Variant in raid.bots.duplicate():
+			if is_instance_valid(bot):
+				raid._remove_actor(bot)
+				gone += 1
+		return ["Enemies off. Removed %d bot%s." % [gone, "" if gone == 1 else "s"]]
+	# Bosses and guards cleared while off come back on their own timers.
+	if raid.bots.is_empty():
+		raid._spawn_bots()
+	if raid._bosses.is_empty():
+		raid._spawn_bosses()
+	if raid._guards.is_empty():
+		raid._spawn_guards()
+	return ["Enemies on: %d bots standing." % raid.bots.size()]
 
 
 static func _war(raid: Raid, body: Actor, args: Array[String]) -> Array[String]:

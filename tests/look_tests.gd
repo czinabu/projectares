@@ -850,7 +850,7 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 			skeleton.set_bone_pose_position(bone, saved_feet[bone][0])
 			skeleton.set_bone_pose_rotation(bone, saved_feet[bone][1])
 
-	# A slide bends the model: hips down, lead leg out in front.
+	# A slide lays the model down: hips down, lead leg out in front.
 	player.slide_left = 0.5
 	player.slide_low = 1.0
 	player.velocity = player.global_basis * Vector3(0, 0, -player.slide_speed)
@@ -862,7 +862,11 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 			saved_slide[bone] = [skeleton.get_bone_pose_position(bone), skeleton.get_bone_pose_rotation(bone)]
 		var to_actor := player.global_transform.affine_inverse() * skeleton.global_transform
 		var hips_before := (to_actor * skeleton.get_bone_global_pose(loco._lead[0]).origin).y
-		loco._slide_pose()
+		# The slide's own clip where the body has one, the bent pose otherwise.
+		if loco._slide_anim != null:
+			loco._slide_clip()
+		else:
+			loco._slide_pose()
 		var hips_after := (to_actor * skeleton.get_bone_global_pose(loco._lead[0]).origin).y
 		var lead_at := to_actor * skeleton.get_bone_global_pose(loco._lead[2]).origin
 		var trail_at := to_actor * skeleton.get_bone_global_pose(loco._trail[2]).origin
@@ -873,6 +877,26 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 			skeleton.set_bone_pose_rotation(bone, saved_slide[bone][1])
 	player.slide_left = 0.0
 	player.slide_low = 0.0
+
+	# Room for armor: the elbows swing out from the body by `arm_clear`.
+	if skeleton and loco._arms.size() == 2 and not loco._arms[1].is_empty():
+		var saved_arms := {}
+		for bone in skeleton.get_bone_count():
+			saved_arms[bone] = skeleton.get_bone_pose_rotation(bone)
+		var to_actor_arm := player.global_transform.affine_inverse() * skeleton.global_transform
+		var elbows_apart := func() -> float:
+			var a := to_actor_arm * skeleton.get_bone_global_pose(loco._arms[0][1]).origin
+			var b := to_actor_arm * skeleton.get_bone_global_pose(loco._arms[1][1]).origin
+			return absf(a.x - b.x)
+		var narrow: float = elbows_apart.call()
+		loco.arm_clear = 0.04
+		loco._clear_arms()
+		var wide: float = elbows_apart.call()
+		loco.arm_clear = 0.0
+		t.check(wide - narrow > 0.05 and wide - narrow < 0.1,
+				tag + "worn armor swings the elbows out to clear it (%.3f m wider)" % (wide - narrow))
+		for bone: int in saved_arms:
+			skeleton.set_bone_pose_rotation(bone, saved_arms[bone])
 
 	# A crouch sinks the model onto bent knees, feet still on the ground, the
 	# head down about as far as the eyes go (the same body in both views).

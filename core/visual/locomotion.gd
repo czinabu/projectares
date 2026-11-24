@@ -18,9 +18,10 @@ extends Node
 ## (`Actor.crouch`) sinks it onto bent knees the same way a landing squat
 ## does, over the stand or the walk, feet where the clip puts them.
 ##
-## Standing still with a gun held low, the legs and hips take their pose from
-## a relaxed stand (`stand_legs`) instead of the gun clip's own wide stance,
-## so the feet stay planted side by side while the arms keep the gun.
+## Standing still with a gun held low or raised, or a blade out, the legs and
+## hips take their pose from a relaxed stand (`stand_legs`) instead of the
+## clip's own wide stance, so the feet stay planted under the body while the
+## arms keep the weapon.
 ##
 ## Everything is read from the actor's velocity, which is the same on every
 ## machine: the server's own, a predicted local player, or a remote player
@@ -126,14 +127,14 @@ var crouch_heel := 0.45
 ## "Melee technique"): the knees bend (the hips drop `fight_drop` m and tip
 ## `fight_lean` radians forward) and, standing still, the feet stagger,
 ## the lead foot `fight_stagger` m forward and the trailing one as far
-## back, a little apart (`fight_width`), so the body stands ready to move
+## back, apart by `fight_width` more than they stand, so the body stands ready to move
 ## rather than at ease. `fight` is how far into it the body is (0..1),
 ## eased at `fight_rate` a second. View only, from the actor and the weapon
 ## in hand, so every view agrees.
-var fight_drop := 0.07
+var fight_drop := 0.05
 var fight_lean := 0.07
 var fight_stagger := 0.13
-var fight_width := 0.04
+var fight_width := 0.03
 var fight_rate := 4.0
 var fight := 0.0
 var foot_reach := 0.13
@@ -219,6 +220,15 @@ var _hands := Vector2.ZERO
 var current_anim := ""
 ## Whether the legs should take the relaxed stand now, and how far they have.
 var stand_legs := false
+## Whether the relaxed stand also sets the hips, or only the legs below
+## them: a blade keeps its clip's hips, which the swings are tuned on.
+var stand_legs_hips := true
+## Room for worn armor: each upper arm swings out from the body so the
+## elbow sits `arm_clear` m further out (a hanging hand about half again
+## as much), past the plates and pouches a frame hangs at the sides. Set
+## by whoever dresses the body in armor; 0 without it. The weapon arm's
+## reach comes after, so a hand on a gun still finds its grip.
+var arm_clear := 0.0
 var stand_legs_weight := 0.0
 ## True while the phone is up; `phone_weight` is how far, read from the
 ## actor's shared `ActionPose.phone` so every view holds it the same way.
@@ -252,6 +262,14 @@ var _hip_name := ""
 var _stand_anim: Animation
 var _stand_tracks: Array = []
 var _stand_time := 0.0
+## The slide's own clip (`anims["slide"]`), where a body has one: its tracks
+## for the hips, the legs and the spine up to the chest, [bone, track, type],
+## laid over whatever plays by `Actor.slide_low` in place of the bent pose.
+## The shoulders, arms and head stay the clip's under it, so a gun keeps
+## its hold.
+var _slide_anim: Animation
+var _slide_tracks: Array = []
+var _slide_time := 0.0
 ## Shivering in the cold (`Actor.shivering`): how far into it the body is
 ## (eased, so it comes on and goes off gently), the shoulders hunched in by
 ## `shiver_hunch` radians and the chest trembling by `shiver_shake` at
@@ -341,11 +359,25 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 			if bone >= 0 and bone != _spine[0] and not _is_under(bone, _spine[0]):
 				_stand_tracks.append([bone, track, type])
 
+	if player and anims.has("slide") and _spine.size() > 1:
+		_slide_anim = player.get_animation(anims["slide"])
+		for track in _slide_anim.get_track_count():
+			var type := _slide_anim.track_get_type(track)
+			if type not in [Animation.TYPE_POSITION_3D, Animation.TYPE_ROTATION_3D]:
+				continue
+			var bone := skeleton.find_bone(String(_slide_anim.track_get_path(track)).get_slice(":", 1))
+			if bone >= 0 and not _is_under(bone, _spine[_spine.size() - 1]):
+				_slide_tracks.append([bone, track, type])
+
 	# First, so everything after works from the planted legs.
 	var stand := WeaponArm.Hook.new()
 	stand.name = "StandLegs"
 	stand.run = _stand_legs
 	skeleton.add_child(stand)
+	var clear := WeaponArm.Hook.new()
+	clear.name = "ArmsClearArmor"
+	clear.run = _clear_arms
+	skeleton.add_child(clear)
 	# The arm's hooks are added after these, so it reaches from where the
 	# turned body has put the shoulders.
 	var upper := WeaponArm.Hook.new()
@@ -600,6 +632,8 @@ func update(delta: float) -> void:
 	fight = move_toward(fight, 1.0 if fighting else 0.0, fight_rate * delta)
 	if _stand_anim and _stand_anim.length > 0.0:
 		_stand_time = fposmod(_stand_time + delta, _stand_anim.length)
+	if _slide_anim and _slide_anim.length > 0.0:
+		_slide_time = fposmod(_slide_time + delta, _slide_anim.length) if actor.slide_low > 0.001 else 0.0
 	if ride != null and is_instance_valid(ride):
 		_ride_on = ride
 	if _ride_on != null and not is_instance_valid(_ride_on):
@@ -614,16 +648,56 @@ func update(delta: float) -> void:
 ## Puts the hips and legs in the relaxed stand, under whatever the upper body
 ## is doing.
 func _stand_legs() -> void:
+	_slide_clip()
 	if stand_legs_weight <= 0.0 or _stand_anim == null:
 		return
+	var hips := -1 if stand_legs_hips else skeleton.find_bone(_hip_name)
 	for entry: Array in _stand_tracks:
 		var bone: int = entry[0]
+		if bone == hips or (hips >= 0 and not _is_under(bone, hips)):
+			continue
 		if entry[2] == Animation.TYPE_ROTATION_3D:
 			var q := _stand_anim.rotation_track_interpolate(entry[1], _stand_time)
 			skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(q, stand_legs_weight))
 		else:
 			var at := _stand_anim.position_track_interpolate(entry[1], _stand_time)
 			skeleton.set_bone_pose_position(bone, skeleton.get_bone_pose_position(bone).lerp(at, stand_legs_weight))
+
+
+## Swings each upper arm out from the body by `arm_clear` at the elbow:
+## out along the line from the middle of the shoulders, across the arm.
+func _clear_arms() -> void:
+	if arm_clear <= 0.0 or _arms.size() < 2 or _arms[0].is_empty() or _arms[1].is_empty():
+		return
+	var meter := 1.0 / skeleton.global_basis.get_scale().y
+	var middle := (skeleton.get_bone_global_pose(_arms[0][0]).origin + skeleton.get_bone_global_pose(_arms[1][0]).origin) * 0.5
+	for arm: Array[int] in _arms:
+		var pose := skeleton.get_bone_global_pose(arm[0])
+		var along := skeleton.get_bone_global_pose(arm[1]).origin - pose.origin
+		var length := along.length()
+		var outward := pose.origin - middle
+		outward -= along.normalized() * outward.dot(along.normalized())
+		if length < 0.001 or outward.length() < 0.001:
+			continue
+		var axis := along.cross(outward).normalized()
+		pose.basis = Basis(axis, atan(arm_clear * meter / length)) * pose.basis
+		skeleton.set_bone_global_pose(arm[0], pose)
+
+
+## Lays the slide's clip over the hips, legs and spine,
+## before the legs turn to travel, so the slide goes the way the body moves.
+func _slide_clip() -> void:
+	var weight := smoothstep(0.0, 1.0, actor.slide_low) if actor != null else 0.0
+	if weight <= 0.001 or _slide_anim == null:
+		return
+	for entry: Array in _slide_tracks:
+		var bone: int = entry[0]
+		if entry[2] == Animation.TYPE_ROTATION_3D:
+			var q := _slide_anim.rotation_track_interpolate(entry[1], _slide_time)
+			skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(q, weight))
+		else:
+			var at := _slide_anim.position_track_interpolate(entry[1], _slide_time)
+			skeleton.set_bone_pose_position(bone, skeleton.get_bone_pose_position(bone).lerp(at, weight))
 
 
 ## Lengthens the stride: each leg bone swings further from its average pose
@@ -661,7 +735,7 @@ func _stretch_stride() -> void:
 ## under, and each foot is put back on the end of its shin.
 func _slide_pose() -> void:
 	var weight := actor.slide_low if actor else 0.0
-	if weight <= 0.001:
+	if weight <= 0.001 or _slide_anim != null:
 		return
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
 	var along := to_skeleton * Basis(Vector3.UP, twist)

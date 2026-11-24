@@ -4,6 +4,19 @@ Rules for the self-updater, the installer and the temporary dev mode. These are 
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
+- Playtest and dev builds, one codebase. The "Windows Client" and "Linux
+  Server" export presets carry the feature tag "playtest": `Worlds` then
+  offers only the worlds in the project setting
+  `ares/release/playtest_worlds` (`Worlds.choose_offered`); a world left
+  out is still loaded, so its items and old saves stay good, but it is
+  never listed, offered or travelled to. The "Windows Dev" preset has no
+  tag and offers every world; CI exports it as a workflow artifact only.
+  Only the playtest build updates itself (`Updater`), so the dev build is
+  never swapped for the release. `--playtest` on the command line tries
+  the playtest build from the editor. A world joins the list once it runs
+  smoothly (the frame bench, `--world <id>`) and its core loop works;
+  changing the list is Caleb's call. Never branch the code for a build:
+  gate on the tag or the list.
 - The game updates itself (`core/update/updater.gd`, the `Updater`
   autoload, second after `Boot` and, like it, free of project classes). The
   Windows client keeps its pack beside the exe (`embed_pck` off); the
@@ -62,7 +75,13 @@ date in the same PR.
   `user://dev` with its summary first, the machine and the graphics
   settings, so Caleb can send back numbers from his own card; F10 saves a
   bug snapshot zip there (the screenshot, `Main.report_context`, the
-  settings and the recent logs). They are not input actions, so the
+  settings and the recent logs). The snapshot also keeps the last
+  `SHOOTERS_KEPT` hits on the player's body by someone ("shooters") and
+  everyone within `NEAR_REACH` of the camera ("near"), each with its
+  `DevTools.draw_state` at that moment: framed by the camera, a clear line
+  to it, and how many of its meshes are shown, shown to this camera and
+  inside the view as the renderer culls them, so an enemy firing with no
+  body on screen can be caught on Caleb's card. They are not input actions, so the
   Controls app and the key checks leave them out; a new dev key stays off
   the game's keys (no B, N, M, Y, U, K or middle mouse).
 - The dev console (DEV MODE, Caleb's call: a phone app, never a flat

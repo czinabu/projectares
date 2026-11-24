@@ -125,11 +125,15 @@ date in the same PR.
   or nothing would hold you up). Off the
   ground (`ActorSkin.is_airborne`, from `Actor.airborne_time`) the legs
   never play a gait: a stand plays under an air pose (leap, fall, or
-  hanging from lit jets). Leaving the ground starts with a short push-off
+  hanging from lit jets: legs nearly straight under the body, toes
+  pointed, one a little behind the other, `hang_legs`). Leaving the ground starts with a short push-off
   and a running jump leans into it; a touchdown (`Actor.landed`) bends the
   knees by how hard it was (`Locomotion.squat`). All of it is view only. A boost keeps the arms down at the sides, never
   reaching ahead (Caleb's call). Check it by eye:
-  `visual_check.tscn -- <dir> --flight-only` (or `--takeoff-only`).
+  `visual_check.tscn -- <dir> --flight-only` (or `--takeoff-only`), or
+  quicker while tuning, `--air-only`: one sheet of the hover, a drift, a
+  boost, a glide, boots and a fall, taking `name=value` overrides of the
+  skin's tuning vars (`air_toes=0.9`) and `only=hover,glide`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"
@@ -239,14 +243,17 @@ date in the same PR.
   worn one goes in the pack; `_worn_changed` tells every client. The skin wears it on the
   head (`ActorSkin._update_helmet`, `build_helmet`), hiding the head under it; it
   hangs off the "Head" bone, so first person leaves it out with the head.
-  Each helmet looks like what it does (Caleb's call, and his tactical
-  pass: grounded military sci-fi; `helmet_model.gd`): a dark hood, a
-  shell with a real outline (a superellipsoid, never a ball) with a brow,
-  a rim and the mode's own cut (the Spotter high-cut for a headset with a
-  flip-down rangefinder, the Seeker full-cut with a jaw guard and crown
-  emitter, the Warden a faceplate with a lit slit and sensor eyes all
-  round, the Ember a broad ceramic shell over its heat sinks, the scrap
-  visor a patched pot with cracked goggles), framed glass that is dark
+  Each helmet looks like what it does and is its own original design
+  (Caleb's call: sci-fi soldier and cyberpunk, tall rather than flat or
+  wide; `helmet_model.gd`): a dark hood under a shell with a real outline
+  (a superellipsoid, never a ball), sized to the head per axis
+  (`ActorSkin.helmet_size`). The scrap visor ("Junker") is a riveted
+  bucket with a gas mask, filter cans and one cracked round goggle; the
+  Spotter a sleek visor with a side rangefinder, ear pods and antennas;
+  the Seeker a faceted face with three lit slits, ribbed ear plates and a
+  crown emitter; the Warden an angular prow with a chevron visor, sensor
+  eyes, swept blades and neck lames; the Ember a tall ceramic shell with
+  one thermal eye, a snout with hoses, fins and heat sinks. Glass is dark
   and reflective, never a glowing panel; a Mk2 (`Visor.tier`) wears a lit
   seam over the crown. Worn with an armor frame, every helmet but the
   scrap visor takes the frame's plate, trim and fabric colours in its
@@ -275,9 +282,45 @@ date in the same PR.
   (`build_shin`), each on the bone it moves with (`_hang_limb` turns a
   limb piece along its limb), the same body in both views, over the
   undersuit, and on the base's armor stands (`HomeBase._build_armor`).
-  Plates are fitted, never boxes (Caleb's call): curved shells off the
-  torso, bevelled at the edges, over a fabric carrier with straps,
-  webbing and pouches. Weight reads at a glance: the frame's weight tag
+  Plates are fitted, never boxes (Caleb's call): each piece is laid over
+  the measured body (`GearShapes.sheet` over `body_fit.gd`'s reach), so
+  it follows that build ("m" or "f") with no gap and no clipping. Each
+  `Human.BUILDS` body is measured by `tools/body_fit` into
+  `body_fit_data.gd`: the trunk in every stance a person stands in, put
+  back where the bone its piece hangs on stands at rest (the widest of
+  them, its hollows bridged), and each limb along its bone at rest. Run it
+  again whenever the bodies change. Pieces are built in the rig's own
+  metres and scaled with the body (`ActorSkin._body_scale`), and cached
+  per build. Straps and collars go over the tops of the shoulders by a
+  ray cast (`Trunk.cast`), a shoulder cap lifts off the trunk in every
+  stance its arm hangs in (`Limb.wrap` `clear`), a piece reaching past a
+  knee or elbow goes over the limb above it, and plates layer in a fixed
+  order (carrier, then straps, then plates, then what is mounted on
+  them) so none cuts through another. `tools/armor_fit/clip_check.tscn`
+  tests every piece against every other piece, against the body and
+  plate against plate within a piece, on both builds in every stance,
+  and must report 0 clashes after any change to the armor or the bodies.
+  An arm meeting the armor in a stance is the stance's to keep clear, so
+  it is counted apart (`--arms`). Everything else worn goes over the body
+  and the armor as they are (`ActorSkin._fit_worn`, `worn_fit.gd`): a
+  back rig is moved back until it sits snug over the back or the armor,
+  with its shoulder straps laid over whatever is there in place of the
+  rig model's own ("Straps"), then a backpack, then the weapons slung on
+  the back, each pushed back over what came before; a weapon clamped to
+  a rig's rail moves with the rig, and a sidearm, a hip blade and a
+  clipped helmet are pushed out to their side. Worked out once per kit
+  and build from the body at rest, so a new piece of gear or a new place
+  for one needs no numbers of its own. `tools/armor_fit/gear_check.tscn`
+  wears every frame (and none) with every kind of rig, the weapons put
+  away, a backpack and a helmet on the belt on both builds, tests every
+  piece of gear against the armor, the body and the other gear, and must
+  report 0 clashes after any change to gear, armor or where gear is worn
+  (a hand or the weapon in it is counted apart, `--arms`); see it with
+  `visual_check.tscn -- <dir> --gear-only`. The kit: a fabric carrier with straps,
+  webbing and pouches under curved, bevelled plates, a padded battle belt
+  under a webbing belt on every frame, and a cloth seat over the backside
+  that spans the cleft instead of hugging it (no plates on the backside,
+  Caleb's call). Weight reads at a glance: the frame's weight tag
   picks its coverage (`ActorSkin.FRAME_BULK`), light a slim carrier,
   caps and knee pads, medium the full kit with a cummerbund and an upper
   arm plate, heavy layered plate with abdominal lames, a gorget, faulds
@@ -324,7 +367,7 @@ date in the same PR.
   throws items out: a pack over its capacity just takes no more. The pack
   is gear (`gear_items`), so it drops with you. It is not put on from the
   watch's pack list mid-life. The worn model is `ActorSkin.build_backpack`
-  hung on the hips (`_update_pack`, `pack_offset`, lower and further out
-  under a back rig by `pack_rig_shift`), merged like other worn pieces and
+  hung on the hips (`_update_pack`, `pack_offset`, lower under a back rig
+  by `pack_rig_shift`, and back over whatever is there by `_fit_worn`), merged like other worn pieces and
   shadowless when far; the gear room hangs the same model on hooks
   (`BaseLayout` kind `pack_hooks`). Sold by the Outfitter (`ShopDB`).

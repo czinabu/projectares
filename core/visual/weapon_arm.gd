@@ -143,9 +143,18 @@ var ads_reach := 0.97
 ## How far ahead of the gun hand's wrist the off wrist comes to wrap round
 ## a sidearm's grip, for working out whether the off arm can reach it.
 var sidearm_wrap := 0.02
+## And how far ahead of it the off hand holds a long gun at the nearest
+## (the fore end, slid back toward the grip as far as it goes), likewise.
+var long_wrap := 0.12
 var _ready_forearm: Variant = null
 var _spine: Array[int] = []
 var _neck := -1
+## The head's tip onto a long gun's stock in the sights, eased with them
+## (`ActionPose.cheek_long`): x toward the gun side, y forward, in radians.
+var cheek := Vector2.ZERO
+## How far the eyes move onto the stock with it, in the body's frame
+## (`ActionPose.cheek_eye`).
+var cheek_eye := Vector3.ZERO
 ## Finger bone -> closed rotation, for each hand.
 var _fist := {}
 var _off_fist := {}
@@ -178,6 +187,8 @@ var _guard := 0.0
 var _hilt := 0.0
 var _off_weight := 0.0
 var _gun_weight := 0.0
+## How closed the gun hand is round the grip: shut whenever a gun is in hand.
+var _gun_fist := 0.0
 var _watch := 0.0
 ## How far the off hand is on the helmet, taking it off or putting it on.
 var _helm := 0.0
@@ -203,6 +214,10 @@ var _turn := Vector2.ZERO
 var _gun_carry := 0.0
 var _carry_wrist := Vector3.ZERO
 var _carry_basis := Basis.IDENTITY
+## What the wall check wants `ActionPose.blocked` to ease to, and a count of
+## pose steps so it casts every other one.
+var _wall_want := 0.0
+var _wall_steps := 0
 ## The actor's shared pose: what both views show the weapon hand doing.
 var pose: ActionPose
 
@@ -464,6 +479,7 @@ func step(delta: float) -> void:
 	if shared.toy_throw_t >= 0.0:
 		_turn = shared.toy_turn()
 	var gun := actor.get_active_weapon() as Gun
+	_check_wall(gun, shared, delta)
 	_gun_weight = maxf(shared.reload, shared.inspect_for("gun")) if gun != null and gun.visual != null \
 			and gun.visual.visible and not _let_go() else 0.0
 	# The watch takes the left hand off any two-handed hold while it is up.
@@ -480,7 +496,24 @@ func step(delta: float) -> void:
 		_gun_carry = shared.carry if _weight <= 0.001 else 0.0
 		raised = lerpf(raised, shared.carry_support(gun), _gun_carry)
 	_support = maxf(_ads, raised)
-	_ads_turn = shared.ads_stance(gun) * _ads if _ads > 0.0 else Vector2.ZERO
+	var in_hand := gun != null and gun.visual != null and gun.visual.visible and not _let_go()
+	_gun_fist = move_toward(_gun_fist, 1.0 if in_hand else 0.0, delta * 8.0)
+	# Held up at the hip the body blades part way into the aiming stance, so
+	# the off shoulder comes forward and the off hand reaches the fore end.
+	var hip_up := 0.0
+	if gun != null and gun.visual != null and gun.visual.visible and not _let_go() and override_weight <= 0.001 \
+			and _weight <= 0.001:
+		hip_up = (1.0 - shared.low) * (1.0 - shared.reload) * (1.0 - shared.inspect_for("gun")) * (1.0 - _gun_carry)
+	# Carried at a low ready in both hands it blades a little too; at port in
+	# a sprint the gun is across the chest and the shoulders stay square.
+	var carried_low := 0.0
+	if gun != null and not gun.is_sidearm:
+		carried_low = _gun_carry * (1.0 - shared.sprint) * shared.carry_stance_share
+	var stance := maxf(maxf(_ads, hip_up * shared.hip_stance_share), carried_low)
+	_ads_turn = shared.ads_stance(gun) * stance if stance > 0.0 else Vector2.ZERO
+	var weld := _ads if _ads > 0.0 and shared.cheeks(gun) else 0.0
+	cheek = shared.cheek_long * weld
+	cheek_eye = shared.cheek_eye * weld
 
 	reach_ik.influence = _weight
 	var aim := Basis(Vector3.RIGHT, actor.cmd.pitch)
@@ -649,7 +682,11 @@ func _reach_carry() -> void:
 	if gun == null:
 		return
 	var frame := _body_frame
-	_carry_wrist = _hip_wrist.lerp(frame * _pose().carry_point(gun), _gun_carry)
+	# Placed in the upright body's frame: the head stays up through a run's
+	# lean, so the gun keeps its place in the view (leaned with the chest,
+	# "under the eyes" swung back toward the hips).
+	var upright := actor.global_basis.orthonormalized()
+	_carry_wrist = _hip_wrist.lerp(_carry_anchor(upright) + upright * _pose().carry_point(gun), _gun_carry)
 	_carry_basis = (frame.basis * ActionPose.turn_basis(_pose().carry_turn(gun))).orthonormalized()
 	_target.global_position = _carry_wrist
 	reach_ik.influence = 1.0
@@ -690,16 +727,72 @@ func carry_frame() -> Transform3D:
 	return Transform3D(basis, to_world * now.origin - basis * chest_rest + steadied * carry_steady)
 
 
-## Where a gun held up at the hip has its wrist this frame (`_hip_wrist`):
-## the clip's wrist in the steadied frame the carry rides (`carry_frame`,
-## kept in `_body_frame`), averaged over the last stride, so the body's turns,
-## crouches and leans come through and a stride's swing does not. Standing,
-## carried or on a vehicle, the clip's own hold is left alone.
+## Where a gun held up at the hip has its wrist this frame (`_hip_wrist`).
+## The gun is the anchor and the hands follow it, as in true first-person
+## shooters: the wrist goes to a spot set from the eyes along the aim
+## (`ActionPose.hip_from_eyes`), so the gun is up in the lower part of the
+## view, pointed where it shoots, close enough in for the off hand to reach
+## its fore end, and the stride's swing never reaches it (the eyes are
+## steadied). The new body's arms are shorter than the clip's reach, so the
+## clip's own hold left the off hand short of the gun (Caleb's gun handling
+## pass). A gun braced at the hip (`ActionPose.shoulders_never`) is held the
+## same way, lower (`ActionPose.hip_from_eyes_braced`). A gun held on a
+## vehicle keeps the clip's hold, averaged over the last stride.
 func _hold_at_hip() -> void:
 	_body_frame = carry_frame()
 	_hip_raw = skeleton.global_transform * skeleton.get_bone_global_pose(_wrist).origin
 	var dt := _hip_dt
 	_hip_dt = 0.0
+	var gun := actor.get_active_weapon() as Gun
+	var shared := _pose()
+	if gun != null and actor.vehicle == null:
+		_hip_samples.clear()
+		_hip_seen = 0.0
+		_hip_weight = (1.0 - shared.low) if _weight <= 0.001 else 0.0
+		_hip_wrist = _hip_raw.lerp(hip_point(gun), _hip_weight) if _hip_weight > 0.0 else _hip_raw
+		return
+	_average_clip_wrist(dt)
+
+
+## Whether a wall stands in front of the muzzle of a gun held up at the hip,
+## eased into `ActionPose.blocked`. One ray from the eyes along the aim, as
+## long as the eyes' reach to the muzzle, every other pose step, and only
+## while a gun is up out of the sights; the world only, never bodies.
+func _check_wall(gun: Gun, shared: ActionPose, delta: float) -> void:
+	var up := gun != null and gun.visual != null and gun.visual.visible and not _let_go() \
+			and shared.low < 0.5 and shared.carry < 0.5 and shared.ads < 0.5 and is_inside_tree()
+	_wall_steps += 1
+	if not up:
+		_wall_want = 0.0
+	elif _wall_steps % 2 == 0:
+		var box := ActionPose.model_box(gun)
+		var reach := shared.hip_from_eyes(gun).length() + box.size.z * 0.9
+		var from := actor.get_eye_position()
+		var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, actor.cmd.pitch) * Vector3.FORWARD
+		var query := PhysicsRayQueryParameters3D.create(from, from + aim * reach, Actor.LAYER_WORLD)
+		query.exclude = [actor.get_rid()]
+		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
+		_wall_want = 0.0 if hit.is_empty() else clampf((reach - from.distance_to(hit.position)) / maxf(box.size.z * 0.6, 0.1), 0.0, 1.0)
+	shared.blocked = move_toward(shared.blocked, _wall_want, delta * shared.wall_rate)
+
+
+## Where the gun hand's wrist goes to hold `gun` up at the hip (global): from
+## the model's eyes along the aim, its pitch clamped to `ActionPose.hip_pitch`
+## so a look straight up or down does not throw the arm out of reach.
+func hip_point(gun: Gun) -> Vector3:
+	var shared := _pose()
+	var pitch := clampf(actor.cmd.pitch, shared.hip_pitch.x, shared.hip_pitch.y)
+	var aim := actor.global_basis.orthonormalized() * Basis(Vector3.RIGHT, pitch)
+	var body := actor.global_basis.orthonormalized()
+	var drawn_in := Vector3(0.0, shared.wall_raise, shared.wall_back) * shared.blocked
+	return _eyes_now(aim) + aim * (shared.hip_from_eyes(gun) + drawn_in) + body * shared.sway
+
+
+## The clip's wrist in the steadied frame the carry rides (`carry_frame`,
+## kept in `_body_frame`), averaged over the last stride, so the body's
+## turns, crouches and leans come through and a stride's swing does not.
+## Standing, carried or on a vehicle, the clip's own hold is left alone.
+func _average_clip_wrist(dt: float) -> void:
 	var flat := Vector2(actor.velocity.x, actor.velocity.z).length()
 	var holding := flat > 0.6 and actor.vehicle == null and _gun_carry < 0.5 and _weight <= 0.001
 	if not holding:
@@ -723,6 +816,27 @@ func _hold_at_hip() -> void:
 		sum += (sample[0] as Vector3) * float(sample[1])
 		time += float(sample[1])
 	_hip_wrist = _hip_raw.lerp(_body_frame * (sum / maxf(time, 0.0001)), _hip_weight)
+
+
+## The model's eyes as posed now (`ActorSkin.eye_point`, steadied on the
+## move), looking along `look`; the actor's eye spot without a head.
+func _eyes_now(look: Basis) -> Vector3:
+	var skin := get_parent()
+	var eye: Variant = skin.eye_point(look) if skin != null and skin.has_method("eye_point") else null
+	return actor.get_eye_position() if eye == null else eye as Vector3
+
+
+## Where a carry is placed from: level with the eyes, so the gun keeps its
+## height in the view, but back in line with the shoulders, which the arms
+## reach from (a run's lean and a crouch put the head well ahead of them).
+func _carry_anchor(upright: Basis) -> Vector3:
+	var eye := _eyes_now(upright)
+	if _upper < 0 or _off_upper < 0:
+		return eye
+	var shoulders := skeleton.global_transform * ((skeleton.get_bone_global_pose(_upper).origin
+			+ skeleton.get_bone_global_pose(_off_upper).origin) * 0.5)
+	var back := upright.z.normalized()
+	return eye + back * (shoulders - eye).dot(back)
 
 
 ## How long one stride of the clip playing takes, in seconds.
@@ -772,15 +886,16 @@ func _reach_sight() -> void:
 			back = clampf(back, 0.0, _relief_now)
 			_relief_now -= back
 			reach -= ahead * back
-	# A sidearm is held in both hands: the off arm has to reach round the
-	# gun hand too, so the gun comes back until it can.
-	if gun.is_sidearm and _off_upper >= 0 and _off_forearm >= 0 and _off_wrist >= 0:
+	# Both hands hold it: the off arm has to reach round the gun hand on a
+	# sidearm, or the fore end of a long gun, so the gun comes back until it
+	# can.
+	if _off_upper >= 0 and _off_forearm >= 0 and _off_wrist >= 0:
 		var shoulder := skeleton.global_transform * skeleton.get_bone_global_pose(_off_upper).origin
 		var elbow := skeleton.global_transform * skeleton.get_bone_global_pose(_off_forearm).origin
 		var off_wrist := skeleton.global_transform * skeleton.get_bone_global_pose(_off_wrist).origin
 		var length := (shoulder.distance_to(elbow) + elbow.distance_to(off_wrist)) * ads_reach
 		var ahead := -aimed.z
-		var d := reach + ahead * sidearm_wrap - shoulder
+		var d := reach + ahead * (sidearm_wrap if gun.is_sidearm else long_wrap) - shoulder
 		if d.length() > length:
 			var along := d.dot(ahead)
 			var back := along - sqrt(maxf(along * along - (d.length_squared() - length * length), 0.0))
@@ -810,15 +925,24 @@ func sight_target(gun: Gun, aimed: Basis) -> Vector3:
 ## on the target.
 func _turn_body() -> void:
 	var turn := _turn + _ads_turn
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	if _neck >= 0 and cheek != Vector2.ZERO:
+		var tip := cheek_basis()
+		_rotate_bone(_neck, to_skeleton * tip * to_skeleton.inverse())
 	if _spine.is_empty() or turn.length_squared() < 0.000001:
 		return
-	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
 	var share := 1.0 / _spine.size()
 	var step := Basis(to_skeleton * Vector3.UP, turn.x * share) * Basis(to_skeleton * Vector3.RIGHT, turn.y * share)
 	for bone in _spine:
 		_rotate_bone(bone, step)
 	if _neck >= 0:
 		_rotate_bone(_neck, Basis(to_skeleton * Vector3.UP, -turn.x * 0.7) * Basis(to_skeleton * Vector3.RIGHT, -turn.y * 0.5))
+
+
+## The cheek weld's tip of the head (`cheek`), in the actor's frame: toward
+## the gun side, then forward.
+func cheek_basis() -> Basis:
+	return Basis(Vector3.BACK, -cheek.x) * Basis(Vector3.RIGHT, -cheek.y)
 
 
 ## Rotates a bone in place, in the skeleton's space.
@@ -1128,7 +1252,7 @@ func _bend_to_grip() -> void:
 
 ## Last of all, close the fingers round the handle.
 func _close_grip() -> void:
-	_curl(_fist, maxf(_grip_weight, ride_grip.y))
+	_curl(_fist, maxf(maxf(_grip_weight, _gun_fist), ride_grip.y))
 	_curl(_off_fist, maxf(maxf(_off_weight, _support * (1.0 - _watch)), ride_grip.x))
 
 
@@ -1221,6 +1345,11 @@ func hold_weapon() -> void:
 		var turn := aimed
 		if _aim_wrist != null and pose.low > 0.0:
 			turn = aimed.slerp(_follow_turn(_wrist, _held_wrist(gun)), pose.low)
+		# A shot tips the muzzle up and it settles back (`ActionPose.tip`);
+		# in the sights the view takes the recoil instead.
+		var tipped := (pose.tip + pose.blocked * pose.wall_tip) * (1.0 - _ads) * (1.0 - pose.low)
+		if absf(tipped) > 0.0001:
+			turn = turn.orthonormalized() * Basis(Vector3.RIGHT, tipped)
 		# Carried on the move, it turns the way the carry holds it.
 		if _gun_carry > 0.0:
 			turn = turn.orthonormalized().slerp(_carry_basis, _gun_carry)

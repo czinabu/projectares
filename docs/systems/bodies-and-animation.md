@@ -13,7 +13,12 @@ date in the same PR.
   their average spot, legs solved to reach them) rather than only spinning
   faster: that is the sprint. A slide (`Actor.slide_left`, `Actor.slide_low`)
   is simulated from `ActorCommand.slide` like a dash, so it predicts and
-  replicates; the skin bends the model into a slide pose from `slide_low`.
+  replicates; the skin lays the pack's feet-first slide, mirrored to lead with the left leg ("Slide_L",
+  `HUMAN_ANIMS["slide"]`) over the hips, legs and spine up to the chest
+  by `slide_low` (`Locomotion._slide_clip`, before the legs turn to
+  travel, so it slides the way the body moves); the shoulders, arms and
+  head stay the stand's, so a weapon keeps its hold. A body without a
+  slide clip is bent into a slide pose instead (`_slide_pose`).
   The crouch key (C) slides from a sprint and otherwise toggles the crouch
   (`PlayerController.crouch_key`), sent as the held `ActorCommand.crouch` so
   it predicts and every view sees it. `Actor.crouched` follows it but stays
@@ -38,9 +43,11 @@ date in the same PR.
   goes across the chest at port in a sprint (a pistol tucked muzzle down in
   one hand while the other arm pumps), bobs with the stride and lags on a
   spring as the body speeds up, stops or turns (`ActionPose.carry`,
-  `sprint`, `carry_point`, `carry_turn`, `sway`; placed from the chest by
-  `WeaponArm._reach_carry` and `carry_frame`), and the legs run the plain
-  run. The arms take up the run's bounce (playtest feedback: the gun
+  `sprint`, `carry_point`, `carry_turn`, `sway`; placed by
+  `WeaponArm._reach_carry` from level with the eyes and in line with the
+  shoulders, `_carry_anchor`, in the upright body's frame, so the gun
+  keeps its place in the first-person view and both arms reach it on any
+  body), and the legs run the plain run. The arms take up the run's bounce (playtest feedback: the gun
   bobbed all over the first-person view): the carry moves with the eyes
   as they are steadied (`ActorSkin.eye_steadying`, `carry_steady`) and
   follows the chest's rocking with a lag, so every carry pose must keep
@@ -50,11 +57,36 @@ date in the same PR.
   it shoots; a shot, aim or reload takes it out of the carry at once
   (`carry_out_rate`). A tap of aim is not a fight: let go without a shot,
   the gun goes back to its carry after `ActorSkin.aim_release_hold`, not
-  `aim_hold` (Caleb's in-between wobble). Held up at the hip on the move,
-  the gun rides the same steadied frame as the carry at the clip's wrist
-  averaged over a stride, turned to the aim (`WeaponArm._hold_at_hip`), so
-  the clip's arm swing never reaches it; `_check_hip_after_aim_tap`
-  measures it. All of it is read from velocity and the command, so
+  `aim_hold` (Caleb's in-between wobble). Held up at the hip, standing or
+  on the move, the gun is the anchor and the hands follow it, as in true
+  first-person shooters: the wrist goes to a spot set from the steadied
+  eyes along the aim (`ActionPose.hip_from_eyes`, `WeaponArm.hip_point`),
+  the body blades part way into its aiming stance (`hip_stance_share`;
+  a long gun's low ready by `carry_stance_share`), so the off hand reaches
+  the fore end, the gun shows low in the view and the clip's arm swing
+  never reaches it (the clips' own hold put the gun out past the new
+  body's reach). A gun braced at the hip (`shoulders_never`, the Storm
+  Cannon) is held the same way, lower (`hip_from_eyes_braced`), both hands
+  on it; a heavy weapon (`heavy_tags`, the power weapons) is carried level
+  across the hips and never thrown up to port (`carry_low_heavy`,
+  `carry_port_heavy`). A gun held on a vehicle keeps the clip's wrist
+  averaged over a stride.
+  `_check_hip_after_aim_tap` measures the steadiness, and
+  `gun_hold_tests.gd` the off hand on the gun, the gun on the aim and the
+  gun in the first-person frame through every way of moving.
+  The gun has weight in the hands, all view only and the same body in both
+  views: the carry's sway spring (`ActionPose._update_sway`) also takes
+  the view's pitch (`sway_pitch`) and the body's rise and fall
+  (`sway_vertical`, a landing throws it down by `land_dip`), and moves the
+  gun held up at the hip as well as carried; a shot (`ActorSkin._on_fired`
+  calls `ActionPose.kick`) drives it back and tips the muzzle up on its own
+  spring (`tip`), scaled by `Gun.model_kick`, never in the sights, where
+  the view has its own recoil. A wall in front of the muzzle of a gun up
+  at the hip draws it in and tips it up instead of letting it through
+  (`WeaponArm._check_wall`, one ray against the world every other pose
+  step, only for a body being posed with its gun up; `ActionPose.blocked`,
+  `wall_back`, `wall_tip`). Skins exist only where `Look` runs, so none of
+  it costs a server anything. All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
@@ -70,7 +102,8 @@ date in the same PR.
   the skin rests the weapon's near side on the rail; an empty rail has
   nothing sticking out), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
-  hip. These are view-only copies; the weapon's own node stays on the hand.
+  hip, each moved to sit snug over the body, armor and other gear under it
+  (`ActorSkin._fit_worn`, see gear.md). These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
   (`ActorSkin._update_switch`, reaching through `WeaponArm.override_point`),
   but only the view waits: the actor switches at once. The holster key (Z)
@@ -106,12 +139,29 @@ date in the same PR.
   of its roll about the cycle's average (the hips' shift side to side
   too: the view swayed with it), and the cycle is slowed by
   `JOG_STRETCH` so a sprint lengthens the stride (the jog covers twice
-  the ground a step of the old trot did). The strafe right is the strafe
+  the ground a step of the old trot did). It is narrowed too (Caleb found
+  it too wide): each foot lands `JOG_NARROW` nearer the middle (15 cm
+  apart, not 23) and the arms swing `JOG_ARMS_IN` closer to the sides.
+  The strafe right is the strafe
   left mirrored (`_mirror`): the pack's own steps shorter and measured at
   a third of the speed. The clips the game's gun poses are tuned on (the
   relaxed stand under a gun, the gun holds and the run with the gun up,
   the sword) are the old bodies' own, carried across from `rig_m.glb` and
-  `rig_f.glb` (`_retarget`); the pack has no rifle clips. A
+  `rig_f.glb` (`_retarget`); the pack has no rifle clips. The old hands
+  have a metacarpal bone the new ones lack, so the old `Index2` (the
+  knuckle) drives the new `Index1` and so on out (`_old_bone`), and a
+  finger tip with no old bone holds its rest. Those old
+  stands spread the new bodies' feet wide and bow the knees, so a gun held
+  low and a blade out stand on the relaxed stand's legs
+  (`ActorSkin.LEGS_FROM_STAND`); the blade's ready stance is the fighting
+  pose's stagger on top (`Locomotion.fight_*`). A gun raised to shoot
+  keeps its clip's stance: the sights' relief is tuned on it. Worn armor
+  gets room: `Locomotion.arm_clear` (meters, 0 bare; set by whoever
+  dresses the body in a frame) swings each upper arm out so the elbow
+  clears the plates and pouches by that much, before the weapon arm
+  reaches for its grip (`_clear_arms`). The cleft between the
+  glutes is filled most of the way out in the mesh (`_fill_cleft`, Caleb's
+  call), so the armor is fitted to the filled body. A
   body is sized in its relaxed stand (`stand_legs`), never in an idle that
   bends the knees or spreads the feet, or the whole body grows. A glide lays the
   body out over the relaxed stand too: the pack's idles turn the chest,

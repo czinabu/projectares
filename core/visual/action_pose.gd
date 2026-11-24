@@ -229,8 +229,8 @@ var techniques := {
 			],
 			D_OVERHEAD: [
 				[Vector3(-0.1, 0.4, 0.06), Vector3(0.05, 0.6, 0.8)],
-				[Vector3(-0.2, 0.14, -0.36), Vector3(0.0, 0.2, -0.98)],
-				[Vector3(-0.22, -0.06, -0.26), Vector3(0.0, -0.5, -0.87)],
+				[Vector3(-0.12, 0.14, -0.36), Vector3(0.0, 0.2, -0.98)],
+				[Vector3(-0.12, -0.06, -0.26), Vector3(0.0, -0.5, -0.87)],
 			],
 		},
 		"turns": {
@@ -453,7 +453,7 @@ var toy_elbow := Vector3(0.9, 1.75, 0.3)
 ## An optic's eye point is its own relief.
 var ads_rate := 7.0
 var sidearm_relief := 0.5
-var stock_ahead := 0.17
+var stock_ahead := 0.06
 var min_relief := 0.06
 ## Guns with any of these tags are braced at the hip, never shouldered
 ## (a spinning cannon is too heavy to bring to the eye).
@@ -468,6 +468,31 @@ var ads_cup := Vector3(-0.03, -0.035, -0.01)
 ## squares up and leans in so the arms reach out.
 var ads_stance_long := Vector2(-0.35, -0.06)
 var ads_stance_sidearm := Vector2(0.3, -0.06)
+## A long gun's cheek weld in the sights: the eyes come down onto the stock
+## and over to the gun side (metres right, up and ahead, in the body's
+## frame), so the butt meets the shoulder instead of the neck, and the head
+## tips toward the gun side (x) and forward (y), in radians at the neck, to
+## go with them. The sights stay on the eyes (`ActorSkin.eye_point`).
+var cheek_eye := Vector3(0.05, -0.07, 0.03)
+var cheek_long := Vector2(0.4, 0.4)
+## Held up at the hip (in a fight, out of the sights and the carry): where
+## the gun hand's wrist goes, from the eyes along the aim (metres right, up
+## and ahead), a long gun's stock tucked under the shoulder and a sidearm
+## pushed out lower, so the gun shows in the lower part of the view and
+## both hands reach it on the new body (`WeaponArm.hip_point`). The aim's
+## pitch is clamped to `hip_pitch` for the place (the gun still turns to the
+## full aim), and the body blades `hip_stance_share` of the way into its
+## aiming stance (`ads_stance`).
+var hip_from_eyes_long := Vector3(0.08, -0.27, -0.12)
+var hip_from_eyes_sidearm := Vector3(0.0, -0.23, -0.17)
+## A gun too heavy for the shoulder (`shoulders_never`, a spinning cannon)
+## is braced low at the hip instead, the off hand on its fore grip.
+var hip_from_eyes_braced := Vector3(0.1, -0.45, -0.12)
+var hip_pitch := Vector2(-0.8, 0.7)
+var hip_stance_share := 0.8
+## The share of the aiming stance a long gun carried at a low ready blades
+## the body by, so the off hand reaches the fore end.
+var carry_stance_share := 0.6
 ## Inspecting what is in the hand (`ActorCommand.inspect`, the inspect key):
 ## the hand brings it in closer, a little up and toward the middle of the
 ## body, and turns it through `INSPECT_TURNS` so each side shows, then it
@@ -508,18 +533,30 @@ const INSPECT_TURNS := [
 ## to the chest muzzle down in one hand while the other arm pumps. Shooting,
 ## aiming or reloading takes it straight back up (`carry_out_rate` is quick,
 ## the way a sprint-to-fire is). Each pose is where the gun hand's wrist goes
-## from the chest, in the actor's frame (x right, y up, z back), and how the
-## gun turns from straight ahead (pitch up, yaw toward the off side, roll
-## toward the off side, radians). The chest carries it, so the run's own lean
-## and bounce move the gun with the body.
-var carry_low_long := Vector3(0.15, 1.2, -0.25)
-var carry_low_long_turn := Vector3(-0.3, 0.15, 0.08)
-var carry_port_long := Vector3(0.13, 1.16, -0.24)
+## (x right, y up, z back, in the upright body's frame) from level with the
+## eyes and in line with the shoulders (`WeaponArm._carry_anchor`), and how
+## the gun turns from straight ahead (pitch up, yaw toward the off side,
+## roll toward the off side, radians). Set from the eyes, not the chest, so
+## the gun keeps its place in the first-person view whatever body wears it
+## (on the new body the chest-set carries hung half a metre under the eyes
+## and out of view), and from the shoulders, so both arms reach it however
+## far a run or a crouch puts the head forward.
+var carry_low_long := Vector3(0.1, -0.33, -0.2)
+var carry_low_long_turn := Vector3(-0.15, 0.15, 0.08)
+var carry_port_long := Vector3(0.13, -0.4, -0.42)
 var carry_port_long_turn := Vector3(0.75, 1.0, 0.6)
-var carry_low_sidearm := Vector3(0.05, 1.24, -0.3)
-var carry_low_sidearm_turn := Vector3(-0.5, 0.1, 0.0)
-var carry_port_sidearm := Vector3(0.17, 1.16, -0.2)
-var carry_port_sidearm_turn := Vector3(-1.0, 0.15, 0.15)
+var carry_low_sidearm := Vector3(0.03, -0.31, -0.28)
+var carry_low_sidearm_turn := Vector3(-0.2, 0.1, 0.0)
+var carry_port_sidearm := Vector3(0.16, -0.3, -0.4)
+var carry_port_sidearm_turn := Vector3(-0.6, 0.15, 0.15)
+## A heavy weapon (`heavy_tags`) is too heavy to throw across the chest at
+## port: carried level across the hips in both hands, the muzzle a little to
+## the off side, and in a sprint only dropped a little lower and turned in.
+var heavy_tags: Array[String] = ["power"]
+var carry_low_heavy := Vector3(0.1, -0.31, -0.14)
+var carry_low_heavy_turn := Vector3(-0.08, 0.12, 0.05)
+var carry_port_heavy := Vector3(0.1, -0.35, -0.2)
+var carry_port_heavy_turn := Vector3(-0.15, 0.2, 0.1)
 ## How much the off hand holds the gun in each carry: both hands at a low
 ## ready, a long gun at port; a sprinting sidearm leaves the off arm free.
 var carry_support_low := 1.0
@@ -532,7 +569,7 @@ var carry_out_rate := 9.0
 var sprint_rate := 4.0
 ## The share of the chest's lean (a sprint's, a slide's) the carried gun
 ## follows: most, so it rides the body, but it stays steadier than the chest.
-var carry_body_follow := 0.8
+var carry_body_follow := 0.25
 ## The bob of a carried gun with each stride: the run's footfalls drop it
 ## twice a cycle and it swings side to side once, metres at a jog and at a
 ## sprint, and a little tip of the muzzle with the drop (radians).
@@ -548,6 +585,38 @@ var sway_turn := 0.012
 var sway_limit := 0.05
 var sway_stiffness := 120.0
 var sway_damping := 18.0
+## Weight in the hands (Caleb's gun handling pass, after how shooters sell
+## a gun's mass): the same spring takes the view's pitch (`sway_pitch`,
+## metres per radian a second: looking up leaves the gun low), the body's
+## rise and fall at `sway_vertical` of the side-to-side gain (a landing dips
+## the gun, a fall floats it), and each shot (`kick`): the gun is driven
+## back into the shoulder and its muzzle up (`tip`, its own spring), scaled
+## by the gun's model kick. It moves the gun held up at the hip and carried;
+## the sights stay on the eye (the view has its own recoil).
+var sway_pitch := 0.01
+var sway_vertical := 0.6
+var kick_push := 1.2
+var kick_rise := 6.0
+## A landing (the fall stopped by more than `land_from` m/s in a frame)
+## throws the gun down at `land_dip` of the speed lost.
+var land_from := 2.0
+var land_dip := 0.06
+var tip_stiffness := 260.0
+var tip_damping := 24.0
+var tip_limit := 0.35
+var tip := 0.0
+var _tip_speed := 0.0
+## A gun held up at the hip with a wall in front of its muzzle is drawn in
+## and tipped up rather than pushed through the wall (`WeaponArm` casts for
+## it): `blocked` is how far (0 clear, 1 as far as it goes, eased), and at
+## its most the wrist comes `wall_back` metres back and `wall_raise` up and
+## the muzzle tips up `wall_tip` radians. `wall_rate` is how fast it eases.
+var blocked := 0.0
+var wall_back := 0.2
+var wall_raise := 0.05
+var wall_tip := 0.9
+var wall_rate := 6.0
+var _last_pitch := 0.0
 
 var actor: Actor
 
@@ -816,27 +885,48 @@ static func blade_point(melee: MeleeWeapon, share: float) -> Variant:
 func _update_sway(delta: float) -> void:
 	var basis := actor.global_basis.orthonormalized()
 	var local := basis.inverse() * actor.velocity
-	local.y = 0.0
 	var yaw := actor.global_rotation.y
+	var pitch := actor.cmd.pitch if actor.cmd != null else 0.0
 	if not _sway_primed or delta <= 0.0:
 		_sway_primed = true
 		_last_velocity = local
 		_last_yaw = yaw
+		_last_pitch = pitch
 		return
 	var accel := (local - _last_velocity) / delta
+	accel.y *= sway_vertical
+	var stopped := local.y - _last_velocity.y
+	if stopped > land_from:
+		_sway_speed.y -= stopped * land_dip
 	var turning := wrapf(yaw - _last_yaw, -PI, PI) / delta
+	var pitching := (pitch - _last_pitch) / delta
 	_last_velocity = local
 	_last_yaw = yaw
+	_last_pitch = pitch
 	# A start pulls the gun back, a stop throws it on, a turn left leaves it
-	# out to the right.
-	var pull := (-accel * sway_gain + Vector3(turning * sway_turn, 0.0, 0.0)).limit_length(sway_limit * 2.0)
+	# out to the right, a look up leaves it low, a landing dips it.
+	var pull := (-accel * sway_gain + Vector3(turning * sway_turn, -pitching * sway_pitch, 0.0)) \
+			.limit_length(sway_limit * 2.0)
 	var step := minf(delta, 1.0 / 30.0)
 	var steps := ceili(delta / step)
 	for i in steps:
 		var force := (pull - sway) * sway_stiffness - _sway_speed * sway_damping
 		_sway_speed += force * step
 		sway += _sway_speed * step
+		_tip_speed += (-tip * tip_stiffness - _tip_speed * tip_damping) * step
+		tip += _tip_speed * step
 	sway = sway.limit_length(sway_limit)
+	tip = clampf(tip, -tip_limit, tip_limit)
+
+
+## A shot from `gun`: the gun is driven back and its muzzle up, on the
+## springs `_update_sway` steps, by the gun's own model kick.
+func kick(gun: Gun) -> void:
+	if gun == null:
+		return
+	var by := gun.model_kick() / Gun.MODEL_KICK
+	_sway_speed.z += kick_push * by.x
+	_tip_speed += kick_rise * by.y
 
 
 ## Where the gun hand's wrist goes in the carry now, from the chest, and how
@@ -844,15 +934,17 @@ func _update_sway(delta: float) -> void:
 ## ready blended toward the sprint carry, plus the stride's bob and the sway.
 func carry_point(gun: Gun) -> Vector3:
 	var side := gun != null and gun.is_sidearm
-	var low_at := carry_low_sidearm if side else carry_low_long
-	var port_at := carry_port_sidearm if side else carry_port_long
+	var heavy := is_heavy_gun(gun)
+	var low_at := carry_low_sidearm if side else (carry_low_heavy if heavy else carry_low_long)
+	var port_at := carry_port_sidearm if side else (carry_port_heavy if heavy else carry_port_long)
 	return low_at.lerp(port_at, sprint) + carry_bob() + sway
 
 
 func carry_turn(gun: Gun) -> Vector3:
 	var side := gun != null and gun.is_sidearm
-	var low_turn := carry_low_sidearm_turn if side else carry_low_long_turn
-	var port_turn := carry_port_sidearm_turn if side else carry_port_long_turn
+	var heavy := is_heavy_gun(gun)
+	var low_turn := carry_low_sidearm_turn if side else (carry_low_heavy_turn if heavy else carry_low_long_turn)
+	var port_turn := carry_port_sidearm_turn if side else (carry_port_heavy_turn if heavy else carry_port_long_turn)
 	var drop := cos(TAU * 2.0 * stride_phase) * stride_amount
 	return low_turn.lerp(port_turn, sprint) + Vector3(-bob_tip * drop, 0.0, 0.0)
 
@@ -861,6 +953,17 @@ func carry_turn(gun: Gun) -> Vector3:
 ## toward the off side), in radians, from straight ahead.
 static func turn_basis(turn: Vector3) -> Basis:
 	return Basis(Vector3.UP, turn.y) * Basis(Vector3.RIGHT, turn.x) * Basis(Vector3.BACK, turn.z)
+
+
+## True for a heavy weapon (`heavy_tags`: the power weapons), carried
+## its own way (`carry_low_heavy`).
+func is_heavy_gun(gun: Gun) -> bool:
+	if gun == null:
+		return false
+	for tag in heavy_tags:
+		if ItemDB.has_tag(gun.item_id, tag):
+			return true
+	return false
 
 
 ## How much the off hand holds the carried gun (0..1).
@@ -1006,11 +1109,25 @@ func ads_wanted(gun: Gun) -> bool:
 	return not shoulders_never(gun)
 
 
+## Where the wrist holds `gun` up at the hip, from the eyes along the aim
+## (see `hip_from_eyes_long`).
+func hip_from_eyes(gun: Gun) -> Vector3:
+	if gun != null and shoulders_never(gun):
+		return hip_from_eyes_braced
+	return hip_from_eyes_sidearm if gun != null and gun.is_sidearm else hip_from_eyes_long
+
+
 ## The aiming stance for `gun` (see `ads_stance_long`).
 func ads_stance(gun: Gun) -> Vector2:
 	if gun == null:
 		return Vector2.ZERO
 	return ads_stance_sidearm if gun.is_sidearm else ads_stance_long
+
+
+## True for a gun that takes a cheek weld in the sights (`cheek_eye`): not
+## a sidearm held out or a gun braced at the hip.
+func cheeks(gun: Gun) -> bool:
+	return gun != null and not gun.is_sidearm and not shoulders_never(gun)
 
 
 ## True for a gun that is aimed from the hip (`ads_hip_tags`).
@@ -1024,14 +1141,16 @@ func shoulders_never(gun: Gun) -> bool:
 ## How far in front of the eyes the sight of `gun` sits when sighted.
 ## An optic's "Sight" marker is already its eye point, so it needs none.
 func relief_for(gun: Gun) -> float:
-	if optic_sight(gun) != null:
-		return 0.0
 	if gun.is_sidearm or ItemDB.has_tag(gun.item_id, "sidearm"):
 		return sidearm_relief
 	var box := model_box(gun)
+	# A magnifying scope is looked into at its own eye point.
+	if gun.scope_lens and optic_sight(gun) != null:
+		return 0.0
+	var optic := optic_sight(gun) != null
 	if box.size == Vector3.ZERO:
-		return min_relief
-	return maxf(box.end.z - stock_ahead - sight_local(gun).z, min_relief)
+		return 0.0 if optic else min_relief
+	return maxf(box.end.z - stock_ahead - sight_local(gun).z, 0.0 if optic else min_relief)
 
 
 ## The bounds of the gun as drawn, in the space of its visual (worked out

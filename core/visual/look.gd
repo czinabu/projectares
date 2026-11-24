@@ -62,12 +62,15 @@ const SURFACES := {
 ## `idle` is a relaxed stand with the hands empty (on people the upright
 ## stand `build_rig.gd` makes, "Idle_Stand"), `idle_gun` holds a gun low
 ## and `aim_gun` raises it to shoot from a stand (see `actor_skin.gd`).
-## `stand_legs` is where the legs stand while a gun is held low.
+## `stand_legs` is where the legs stand while a gun is held low. `fist` is
+## the clip whose first frame closes the hands round a grip (`WeaponArm`
+## learns its fist from it): the pack's own, whose fingers curl at the
+## knuckles.
 const HUMAN_ANIMS := {"idle": "Idle_Stand", "idle_gun": "Idle_Gun", "aim_gun": "Idle_Gun_Pointing",
 	"stand_legs": "Idle_Neutral", "walk": "Walk", "run": "Run", "death": "Death",
 	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot",
 	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right", "roll": "Roll",
-	"kick": "Kick_Right"}
+	"kick": "Kick_Right", "slide": "Slide_L", "fist": "Sword_Idle"}
 const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
 const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
 const HUMAN_FEET := ["Foot.L", "Foot.R"]
@@ -363,6 +366,9 @@ var _gun_mounts := {}
 var draw_distance_per_metre := 70.0
 var draw_distance_min := 40.0
 var draw_distance_cap := 380.0
+## Map props smaller than this (metres, their longest side) cast no sun
+## shadow (`_limit_draw_distance`).
+var shadow_min_size := 0.6
 ## Iron sights (`_iron_sights`) are drawn out to this many metres: further
 ## the widest of them is about two pixels at 1080p, so on someone else's gun
 ## they are not drawn at all (your own are always within reach).
@@ -443,6 +449,13 @@ func _limit_draw_distance(map: Node3D) -> void:
 			if mesh == null or mesh.mesh == null:
 				continue
 			var size := (mesh.global_transform * mesh.get_aabb()).size
+			# A prop smaller than `shadow_min_size` casts no sun shadow: a
+			# pebble's shadow is a few pixels, but it is drawn again in every
+			# shadow split (on Ashfront the sun's shadows were nine draws in
+			# ten).
+			if maxf(size.x, maxf(size.y, size.z)) < shadow_min_size \
+					and mesh.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
+				mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			var reach := maxf(size.x, maxf(size.y, size.z)) * draw_distance_per_metre
 			base = maxf(reach, draw_distance_min) if reach < draw_distance_cap else 0.0
 		shape.set_meta(DRAW_BASE, base)
@@ -483,8 +496,10 @@ func fit_draw_distance(map: Node3D) -> void:
 ## override or overlay, default layers and nothing faded or hidden is
 ## taken; anything else, and any node under a child that is not a piece
 ## (a cannon that turns), is left as it is. Pieces that differ in shadow
-## casting or vertex format never share a mesh. View only.
-static func merge_pieces(root: Node3D) -> void:
+## casting or vertex format never share a mesh. With `keep_named`, a piece
+## given a name of its own (a vehicle's "Thruster1", found by name and
+## moved) is left out too. View only.
+static func merge_pieces(root: Node3D, keep_named := false) -> void:
 	if root == null:
 		return
 	var groups := {}
@@ -492,6 +507,8 @@ static func merge_pieces(root: Node3D) -> void:
 	for child in root.get_children():
 		var piece := child as MeshInstance3D
 		if piece == null or not _mergeable(piece):
+			continue
+		if keep_named and not str(piece.name).begins_with("@"):
 			continue
 		var mat := _piece_material(piece)
 		var layout := _layout(piece.mesh.surface_get_arrays(0))
@@ -3468,6 +3485,7 @@ func _dress_depot(zone: Depot) -> void:
 
 	var terminal := zone.get_node_or_null("Terminal") as Node3D
 	if terminal == null:
+		merge_pieces(station, true)
 		return
 	var body := terminal.get_node_or_null("Body") as MeshInstance3D
 	var size := Depot.TERMINAL_SIZE
@@ -3538,6 +3556,8 @@ func _dress_depot(zone: Depot) -> void:
 	# The mast's beacon, pulsing slowly, and a faint beam up from it.
 	var mast := terminal.get_node_or_null("Mast") as MeshInstance3D
 	if mast == null:
+		merge_pieces(station, true)
+		merge_pieces(terminal, true)
 		return
 	mast.material_override = steel
 	var top := mast.position + Vector3(0, Depot.MAST_HEIGHT * 0.5, 0)
@@ -3588,6 +3608,10 @@ func _dress_depot(zone: Depot) -> void:
 	beam.set_meta("walk_through", "a beam of light")
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	terminal.add_child(beam)
+	# Thirty-odd boxes a depot: one mesh per material (the named body and
+	# mast, the screen with its words and the lights stay apart).
+	merge_pieces(station, true)
+	merge_pieces(terminal, true)
 
 
 ## Something on show (a home base display): a node with the meta
@@ -3703,3 +3727,8 @@ func _dress_vehicle(vehicle: Node3D) -> void:
 			model.add_child(beam)
 		else:
 			mesh_node.material_override = _worn(source, wear, 0.7)
+	# A parked vehicle was a draw for every panel, strut and bolt (about fifty
+	# a bike): its still pieces are one mesh per material now. Named pieces
+	# (thrusters, engines, the canopy) and anything under a moving part (a
+	# walker's legs, an airship's weak spots) stay as they are.
+	merge_pieces(model, true)

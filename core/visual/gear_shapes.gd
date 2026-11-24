@@ -169,6 +169,68 @@ static func band(rx: float, rz: float, from: float, to: float, low: float, high:
 	return st.commit()
 
 
+## A plate laid over any surface: `point(u, v)` (u and v from 0 to 1) is
+## where its inner face lies, with u running round to the right as seen
+## from outside and v running up, so the plate stands out toward
+## dv x du. `thick` thick, thinning to a bevel `bevel` metres in from its
+## edges, `cols` by `rows` faces. Fitted armor is laid this way over the
+## body's own shape (`body_fit.gd`).
+static func sheet(point: Callable, thick: float, cols := 16, rows := 8, bevel := 0.018) -> ArrayMesh:
+	var inner := []
+	for j in rows + 1:
+		var row := []
+		for i in cols + 1:
+			row.append(point.call(float(i) / cols, float(j) / rows))
+		inner.append(row)
+	# Rough lengths across and up, for the bevel.
+	var lu := 0.0
+	var lv := 0.0
+	for i in cols:
+		lu += (inner[rows / 2][i + 1] - inner[rows / 2][i]).length()
+	for j in rows:
+		lv += (inner[j + 1][cols / 2] - inner[j][cols / 2]).length()
+	var outer := []
+	var normals := []
+	for j in rows + 1:
+		var row_o := []
+		var row_n := []
+		for i in cols + 1:
+			var du: Vector3 = inner[j][mini(i + 1, cols)] - inner[j][maxi(i - 1, 0)]
+			var dv: Vector3 = inner[mini(j + 1, rows)][i] - inner[maxi(j - 1, 0)][i]
+			var n := dv.cross(du)
+			n = n.normalized() if n.length() > 0.0000001 else Vector3.FORWARD
+			var u := float(i) / cols
+			var v := float(j) / rows
+			var edge := minf(minf(u, 1.0 - u) * lu, minf(v, 1.0 - v) * lv)
+			var t := thick * lerpf(0.35, 1.0, smoothstep(0.0, bevel, edge))
+			row_o.append(inner[j][i] + n * t)
+			row_n.append(n)
+		outer.append(row_o)
+		normals.append(row_n)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var quad := func(q: Array, n: Array, sgn: float) -> void:
+		var order: Array = [0, 1, 2, 0, 2, 3] if sgn > 0.0 else [0, 2, 1, 0, 3, 2]
+		for k: int in order:
+			st.set_normal((n[k] as Vector3) * sgn)
+			st.add_vertex(q[k])
+	for j in rows:
+		for i in cols:
+			var n := [normals[j][i], normals[j][i + 1], normals[j + 1][i + 1], normals[j + 1][i]]
+			quad.call([outer[j][i], outer[j][i + 1], outer[j + 1][i + 1], outer[j + 1][i]], n, 1.0)
+			quad.call([inner[j][i], inner[j][i + 1], inner[j + 1][i + 1], inner[j + 1][i]], n, -1.0)
+	# The rims: square to the face along each edge.
+	for i in cols:
+		for j: int in [0, rows]:
+			var d: Vector3 = (inner[j][i + 1] - inner[j][i]).cross(normals[j][i]).normalized() * (1.0 if j == 0 else -1.0)
+			quad.call([inner[j][i], inner[j][i + 1], outer[j][i + 1], outer[j][i]], [d, d, d, d], 1.0)
+	for j in rows:
+		for i: int in [0, cols]:
+			var d: Vector3 = (inner[j + 1][i] - inner[j][i]).cross(normals[j][i]).normalized() * (-1.0 if i == 0 else 1.0)
+			quad.call([inner[j][i], inner[j + 1][i], outer[j + 1][i], outer[j][i]], [d, d, d, d], 1.0)
+	return st.commit()
+
+
 ## The polar angle at height `y` (a share of the radius, 1 the top).
 static func pol(y: float) -> float:
 	return acos(clampf(y, -1.0, 1.0))
@@ -263,10 +325,17 @@ static func cyl(root: Node3D, part: String, radius: float, height: float, materi
 	return add(root, part, m, material, at, basis)
 
 
+## Leaves every part a node of its own instead of merging (a tool that
+## names the parts, `tools/armor_fit`). Never set in the game.
+static var keep_parts := false
+
+
 ## Bakes every mesh under `root` into one mesh with a surface per material,
 ## named "Gear", and lists the parts it was made of in the "parts" meta.
 ## Glass casts no shadow, so it goes in a mesh of its own ("Glass").
 static func merge(root: Node3D) -> Node3D:
+	if keep_parts:
+		return root
 	var groups := {}
 	var order: Array[Material] = []
 	var names := PackedStringArray()

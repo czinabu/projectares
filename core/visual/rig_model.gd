@@ -35,6 +35,21 @@ const DARK := Color(0.13, 0.13, 0.14)
 const STEEL := Color(0.42, 0.42, 0.44)
 const STRAP := Color(0.09, 0.085, 0.08)
 const EMBER := Color(1.0, 0.55, 0.2)
+## Where a back rig's shoulder straps run, either side of the spine, how
+## wide they are, and the top of the harness plate they come out of.
+const STRAP_X := 0.1
+const STRAP_WIDTH := 0.05
+const HARNESS_TOP := 0.15
+## A boot thruster's cuff round the ankle: its radius across outside and
+## inside, how much
+## deeper it is front to back, where its middle is behind the ankle, and
+## how far up it reaches. A body wearing it widens it to clear its leg
+## (`ActorSkin._fit_worn`).
+const CUFF_RADIUS := 0.062
+const CUFF_INNER := 0.05
+const CUFF_DEPTH := 1.15
+const CUFF_Z := 0.01
+const CUFF_TOP := 0.15
 
 ## How much of each wing's span stays out of the pack when it is retracted,
 ## as a share of the full span: the wing is hidden there anyway.
@@ -244,10 +259,16 @@ func _weapon_rail(root: Node3D, side: float, at: Vector3, radius: float, glow: C
 ## Back plate and shoulder straps, shared by every back-worn rig.
 func _harness(root: Node3D, width: float, height: float) -> void:
 	_pillow(root, Vector2(width, height), 0.03, 0.05, Vector3(0, -0.06, 0.018), _mat(DARK))
-	for x: float in [-0.1, 0.1]:
-		root.add_child(_box(Vector3(0.05, 0.026, 0.26), Vector3(x, 0.13, -0.1), _mat(STRAP)))
-		root.add_child(_box(Vector3(0.05, 0.24, 0.02), Vector3(x, 0.02, -0.225), _mat(STRAP)))
-		root.add_child(_capsule(0.014, 0.05, Vector3(x, -0.08, -0.237), _mat(STEEL), Vector3(0, 0, PI / 2.0)))
+	# Straps for a wearer of no particular shape, in "Straps": a body
+	# wearing it lays its own over its shoulders and armor
+	# (`ActorSkin._fit_straps`) and hides these.
+	var straps := Node3D.new()
+	straps.name = "Straps"
+	root.add_child(straps)
+	for x: float in [-STRAP_X, STRAP_X]:
+		straps.add_child(_box(Vector3(STRAP_WIDTH, 0.026, 0.26), Vector3(x, 0.13, -0.1), _mat(STRAP)))
+		straps.add_child(_box(Vector3(STRAP_WIDTH, 0.24, 0.02), Vector3(x, 0.02, -0.225), _mat(STRAP)))
+		straps.add_child(_capsule(0.014, 0.05, Vector3(x, -0.08, -0.237), _mat(STEEL), Vector3(0, 0, PI / 2.0)))
 	# A waist strap clip.
 	root.add_child(_box(Vector3(width * 0.9, 0.036, 0.026), Vector3(0, -0.29, 0.02), _mat(STRAP)))
 
@@ -353,37 +374,99 @@ func _boot(id: String, side: float) -> Node3D:
 	var accent: Color = ItemDB.RARITY_COLORS[ItemDB.item_rarity(id)]
 	var tier := int(ItemDB.item_stats(id).get("tier", 1))
 	var paint := Color(0.32, 0.33, 0.36)
-	# A slim rounded cuff close round the ankle, with a lit strip and a strap.
-	var cuff := _capsule(0.062, 0.16, Vector3(0, 0.09, 0.01), _mat(paint))
-	cuff.scale = Vector3(1.0, 0.75, 1.15)
+	# A slim cuff close round the ankle, open so the leg goes through it,
+	# with a strap round it, and a lit strip and the tier pips up its
+	# outside ("Side").
+	var cuff := _cuff(CUFF_RADIUS, CUFF_INNER, 0.02, CUFF_TOP - 0.005, _mat(paint))
+	cuff.name = "Cuff"
 	root.add_child(cuff)
-	root.add_child(_cylinder(0.066, 0.066, 0.016, Vector3(0, 0.055, 0.01), _mat(STRAP), Vector3.ZERO, 16))
-	root.add_child(_box(Vector3(0.006, 0.05, 0.03), Vector3(side * 0.063, 0.1, -0.015), _mat(accent, 1.3)))
-	# Tier pips up the outside of the cuff.
+	var strap := _cuff(CUFF_RADIUS + 0.004, CUFF_RADIUS - 0.004, 0.047, 0.063, _mat(STRAP))
+	strap.name = "CuffStrap"
+	root.add_child(strap)
+	var outside := Node3D.new()
+	outside.name = "Side"
+	root.add_child(outside)
+	outside.add_child(_box(Vector3(0.006, 0.05, 0.03), Vector3(side * 0.063, 0.1, -0.015), _mat(accent, 1.3)))
 	for i in tier:
-		root.add_child(_box(Vector3(0.004, 0.006, 0.012), Vector3(side * 0.064, 0.13 + i * 0.012, 0.03), _mat(accent, 2.0)))
-	# The heel thruster: a rounded pod faired into the back of the cuff,
-	# firing straight down.
+		outside.add_child(_box(Vector3(0.004, 0.006, 0.012), Vector3(side * 0.064, 0.13 + i * 0.012, 0.03), _mat(accent, 2.0)))
+	# The heel thruster ("Heel"): a rounded pod faired into the back of the
+	# cuff, firing straight down, with a small swept fin running back off it.
+	var heel := Node3D.new()
+	heel.name = "Heel"
+	root.add_child(heel)
 	var pod_z := 0.085
-	root.add_child(_capsule(0.036, 0.15, Vector3(0, 0.06, pod_z), _mat(DARK)))
-	root.add_child(_cylinder(0.039, 0.039, 0.012, Vector3(0, 0.1, pod_z), _mat(STEEL), Vector3.ZERO, 16))
-	root.add_child(_cylinder(0.026, 0.04, 0.04, Vector3(0, -0.025, pod_z), _mat(STEEL), Vector3.ZERO, 16))
-	root.add_child(_cylinder(0.029, 0.029, 0.004, Vector3(0, -0.046, pod_z), _mat(EMBER, 0.8), Vector3.ZERO, 16))
+	heel.add_child(_capsule(0.036, 0.15, Vector3(0, 0.06, pod_z), _mat(DARK)))
+	heel.add_child(_cylinder(0.039, 0.039, 0.012, Vector3(0, 0.1, pod_z), _mat(STEEL), Vector3.ZERO, 16))
+	heel.add_child(_cylinder(0.026, 0.04, 0.04, Vector3(0, -0.025, pod_z), _mat(STEEL), Vector3.ZERO, 16))
+	heel.add_child(_cylinder(0.029, 0.029, 0.004, Vector3(0, -0.046, pod_z), _mat(EMBER, 0.8), Vector3.ZERO, 16))
 	var nozzle := Marker3D.new()
 	nozzle.name = "Nozzle"
 	nozzle.position = Vector3(0, -0.048, pod_z)
 	nozzle.set_meta("flame", Vector2(0.032, 0.32))
-	root.add_child(nozzle)
-	# A small swept fin running back off the pod.
+	heel.add_child(nozzle)
 	var fin := _slab(_rounded(PackedVector2Array([Vector2(0, 0.06), Vector2(0.045, -0.01), Vector2(0.045, -0.06), Vector2(0, -0.035)]), 0.008),
 			0.008, _mat(paint))
 	fin.basis = Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0))
 	fin.position = Vector3(0, 0.06, pod_z + 0.032)
-	root.add_child(fin)
+	heel.add_child(fin)
 	return root
 
 
+## Opens a boot thruster's cuff `grow` wider (metres across, front to back)
+## round a leg or shin armor bigger than it was made for: the cuff and its
+## strap rebuilt that much wider, the lit side moved out and the heel
+## thruster moved back with them.
+static func fit_boot(boot: Node3D, side: float, grow: Vector2) -> void:
+	var cuff := boot.get_node_or_null("Cuff") as MeshInstance3D
+	var strap := boot.get_node_or_null("CuffStrap") as MeshInstance3D
+	if cuff == null or strap == null:
+		return
+	cuff.mesh = _cuff(CUFF_RADIUS, CUFF_INNER, 0.02, CUFF_TOP - 0.005, cuff.material_override, grow).mesh
+	strap.mesh = _cuff(CUFF_RADIUS + 0.004, CUFF_RADIUS - 0.004, 0.047, 0.063, strap.material_override, grow).mesh
+	(boot.get_node("Side") as Node3D).position = Vector3(side * grow.x, 0.0, 0.0)
+	(boot.get_node("Heel") as Node3D).position = Vector3(0.0, 0.0, grow.y)
+
+
 # --- Parts ----------------------------------------------------------------------
+
+## An open band round the ankle, `outer` to `inner` radius across (deeper
+## front to back by `CUFF_DEPTH`, its middle `CUFF_Z` back) from `low` to
+## `high` up, its edges rounded over, opened `grow` wider (across, front to
+## back).
+static func _cuff(outer: float, inner: float, low: float, high: float, mat: Material, grow := Vector2.ZERO) -> MeshInstance3D:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := 28
+	var lip := minf((outer - inner) * 0.5, (high - low) * 0.3)
+	# The band's outline as it goes round: inner wall up, over the top, down
+	# the outer wall and back under.
+	var section := [Vector2(inner, low + lip), Vector2(inner, high - lip), Vector2(inner + lip, high), Vector2(outer - lip, high),
+			Vector2(outer, high - lip), Vector2(outer, low + lip), Vector2(outer - lip, low), Vector2(inner + lip, low)]
+	for i in n:
+		var a0 := TAU * i / n
+		var a1 := TAU * (i + 1) / n
+		for k in section.size():
+			var p: Vector2 = section[k]
+			var q: Vector2 = section[(k + 1) % section.size()]
+			var v := [_cuff_at(p, a0, grow), _cuff_at(q, a0, grow), _cuff_at(q, a1, grow), _cuff_at(p, a1, grow)]
+			st.add_vertex(v[0])
+			st.add_vertex(v[2])
+			st.add_vertex(v[1])
+			st.add_vertex(v[0])
+			st.add_vertex(v[3])
+			st.add_vertex(v[2])
+	st.generate_normals()
+	var part := MeshInstance3D.new()
+	part.mesh = st.commit()
+	if mat is BaseMaterial3D:
+		(mat as BaseMaterial3D).cull_mode = BaseMaterial3D.CULL_DISABLED
+	part.material_override = mat
+	return part
+
+
+static func _cuff_at(p: Vector2, a: float, grow: Vector2) -> Vector3:
+	return Vector3(sin(a) * (p.x + grow.x), p.y, CUFF_Z - cos(a) * (p.x * CUFF_DEPTH + grow.y))
+
 
 func _mat(color: Color, glow := 0.0) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()

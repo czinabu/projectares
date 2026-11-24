@@ -25,6 +25,11 @@ func _ready() -> void:
 	# Most checks want a player ready to fight where they spawn, unhurt by the
 	# ground; the risk zone checks turn the gates and hazards back on.
 	Raid.zone_rules = false
+	# The checks are written against worlds with their enemies, whatever the
+	# project's switch says; servers this starts inherit it.
+	Raid.enemies = true
+	OS.set_environment("ARES_ENEMIES", "1")
+	OS.set_environment("ARES_ENEMY_CAP", "0")
 	# DEV MODE: tests never run on the dev save, whatever the machine has.
 	DevMode.persist = false
 	DevMode.enabled = false
