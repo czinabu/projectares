@@ -855,6 +855,8 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 	player.slide_low = 1.0
 	player.velocity = player.global_basis * Vector3(0, 0, -player.slide_speed)
 	skin._process(1.0)
+	# A moment on, past the drop into it.
+	skin._process(0.6)
 	t.check(skin._current in skin.STANDS, tag + "a sliding model stops running its legs")
 	if skeleton and loco._lead.size() == 3:
 		var saved_slide := {}
@@ -877,6 +879,31 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 			skeleton.set_bone_pose_rotation(bone, saved_slide[bone][1])
 	player.slide_left = 0.0
 	player.slide_low = 0.0
+	# With the pack's drop into the slide and rise out of it, it plays
+	# through them: blended in from the run, whole while held, and the rise
+	# fades into what comes next instead of snapping up.
+	if loco._slide_anim != null and not loco._slide_clips[0].is_empty() and not loco._slide_clips[2].is_empty():
+		loco._slide_phase = loco.SLIDE_NONE
+		player.slide_left = 0.5
+		loco._advance_slide(0.0)
+		t.check(loco._slide_phase == loco.SLIDE_IN and loco.slide_weight() < 0.01,
+				tag + "a slide starts with the drop into it, blended in from the run")
+		loco._advance_slide(0.06)
+		t.check(loco.slide_weight() > 0.3, tag + "the drop takes over in a moment (%.2f)" % loco.slide_weight())
+		loco._advance_slide(1.0)
+		t.check(loco._slide_phase == loco.SLIDE_HOLD and is_equal_approx(loco.slide_weight(), 1.0),
+				tag + "then the slide is held")
+		player.slide_left = 0.0
+		player.airborne_time = 0.0
+		loco._advance_slide(0.0)
+		t.check(loco._slide_phase == loco.SLIDE_OUT and loco.slide_weight() > 0.99,
+				tag + "its end rises out of it")
+		var exit_length: float = (loco._slide_clips[2][0] as Animation).length / loco.slide_out_rate
+		loco._advance_slide(exit_length * 0.8)
+		var fading: float = loco.slide_weight()
+		t.check(fading > 0.01 and fading < 0.9, tag + "the rise fades into the run (%.2f)" % fading)
+		loco._advance_slide(exit_length)
+		t.check(loco._slide_phase == loco.SLIDE_NONE and loco.slide_weight() == 0.0, tag + "and is done")
 
 	# Room for armor: the elbows swing out from the body by `arm_clear`.
 	if skeleton and loco._arms.size() == 2 and not loco._arms[1].is_empty():
@@ -923,6 +950,15 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 		# The heel comes up a little (onto the ball of the foot); it never sinks.
 		t.check(feet_after > feet_before - 0.03 and feet_after < feet_before + 0.1,
 				tag + "a crouched model keeps its planted foot on the ground (%.2f m)" % (feet_after - feet_before))
+		# The knees bend forward over the toes, never out to the side (the
+		# melee stance's flared leg).
+		for leg: Array[int] in [loco._lead, loco._trail]:
+			var hip := to_actor * skeleton.get_bone_global_pose(leg[0]).origin
+			var knee := to_actor * skeleton.get_bone_global_pose(leg[1]).origin
+			var ankle := to_actor * skeleton.get_bone_global_pose(leg[2]).origin
+			var line := (ankle - hip).normalized()
+			var off := (knee - hip) - line * line.dot(knee - hip)
+			t.check(-off.z > absf(off.x) * 1.5, tag + "a bent knee points forward, not out (%s)" % off.snapped(Vector3.ONE * 0.01))
 		player.crouch = 0.0
 		for bone: int in saved_crouch:
 			skeleton.set_bone_pose_position(bone, saved_crouch[bone][0])

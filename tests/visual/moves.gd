@@ -7,9 +7,13 @@ extends RefCounted
 ## a blade out: a slide out of a sprint, light cuts from each side, a heavy,
 ## a kick, and standing on guard. Each row is one move, left to right in
 ## time, so a snap between poses or a leg that flares shows as a jump
-## between neighbours. `only=slide,kick` shoots just those rows.
+## between neighbours. `only=slide,kick` shoots just those rows. `frames`
+## instead saves every other tick of each move, from three sides, as
+## `moves/<move>_<view>_NN.png`, to be strung into a clip (30 a second plays
+## them at the game's speed).
 static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 	var names: PackedStringArray = []
+	var frames := args.has("frames")
 	for arg in args:
 		if arg.begins_with("only="):
 			names = arg.substr(5).split(",")
@@ -48,12 +52,14 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 	raid.add_child(cam)
 	cam.current = true
 	cam.fov = 40.0
-	var D := MeleeWeapon.Dir
 	# [name, frames between shots]
-	var rows := [["slide", 5], ["light_right", 3], ["light_left", 3], ["overhead", 3], ["heavy", 5], ["kick", 4], ["guard", 8]]
+	var rows := [["slide", 6], ["light_right", 3], ["light_left", 3], ["overhead", 3], ["heavy", 5], ["kick", 4], ["guard", 8]]
 	if not names.is_empty():
 		rows = rows.filter(func(row: Array) -> bool: return String(row[0]) in names)
-	var shots := 14
+	var shots := 42 if frames else 14
+	var views := ["side", "front", "quarter"] if frames else ["side", "front"]
+	if frames:
+		DirAccess.make_dir_recursive_absolute(out_dir.path_join("moves"))
 	var cell := Vector2i(240, 300)
 	var sheets := {}
 	for view: String in ["side", "front"]:
@@ -74,7 +80,6 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 			p.cmd.move = Vector2(0, 1)
 			p.cmd.sprint = true
 			await v._settle(70)
-			p.cmd.slide = true
 		elif move == "kick":
 			p.cmd.kick_pressed = true
 		elif move != "guard":
@@ -85,7 +90,10 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 			else:
 				p.cmd.primary_pressed = true
 		for i in shots:
-			for k in int(rows[row][1]):
+			# The slide starts two shots in, after a glimpse of the sprint.
+			if move == "slide" and i == (5 if frames else 2):
+				p.cmd.slide = true
+			for k in (2 if frames else int(rows[row][1])):
 				await v.get_tree().process_frame
 				p.cmd.primary_pressed = false
 				p.cmd.tertiary_pressed = false
@@ -93,9 +101,11 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 				if move == "slide" and p.slide_left > 0.0:
 					p.cmd.slide = false
 					p.cmd.sprint = false
-			for view: String in ["side", "front"]:
+			for view: String in views:
 				var at := p.global_position + Vector3(0, 0.9, 0)
 				var off := p.global_basis.x if view == "side" else -p.global_basis.z
+				if view == "quarter":
+					off = (p.global_basis.x - p.global_basis.z).normalized()
 				cam.look_at_from_position(at + off * 5.0, at)
 				await RenderingServer.frame_post_draw
 				var frame := v.get_viewport().get_texture().get_image()
@@ -104,8 +114,11 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 				var cut := frame.get_region(Rect2i(frame.get_width() / 2 - size.x / 2, h / 2 - size.y / 2, size.x, size.y))
 				cut.resize(cell.x, cell.y)
 				cut.convert(Image.FORMAT_RGBA8)
+				if frames:
+					cut.save_png(out_dir.path_join("moves/%s_%s_%02d.png" % [move, view, i]))
+					continue
 				(sheets[view] as Image).blit_rect(cut, Rect2i(Vector2i.ZERO, cell), Vector2i(i * cell.x, row * cell.y))
-	for view: String in sheets:
+	for view: String in ([] if frames else sheets.keys()):
 		(sheets[view] as Image).save_png(out_dir.path_join("moves_%s.png" % view))
 		print("saved moves_%s.png" % view)
 	raid.queue_free()

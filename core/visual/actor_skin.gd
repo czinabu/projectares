@@ -896,6 +896,12 @@ func _update(delta: float) -> void:
 		_play("attack", 1.3)
 	_attack_left -= delta
 	if _attack_left > 0.0:
+		# The swing's clip is the old body's, its legs set wide: a blade
+		# swings over the relaxed stand's legs, and its footwork and stance
+		# (`Locomotion._fight_pose`) step them. The kick keeps its own legs.
+		if _current == "attack":
+			locomotion.stand_legs = true
+			locomotion.stand_legs_hips = false
 		return
 	# In a fight (shooting, aiming, reloading, or just after) the gun stays up
 	# on the move, pointing where it shoots; out of one it is carried.
