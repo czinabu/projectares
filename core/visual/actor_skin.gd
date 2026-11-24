@@ -3752,6 +3752,9 @@ func _update_materialize() -> void:
 	if _materializing != null and (model != _materializing or not is_instance_valid(_materializing)):
 		if is_instance_valid(_materializing):
 			_set_materialize(_materializing, 1.0)
+			# Measured as it came together, its bounds go with its parts
+			# still flying in: measured again as it now stands.
+			_materializing.remove_meta("model_box")
 		_materializing = null
 	if model == null:
 		return
