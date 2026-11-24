@@ -1308,24 +1308,21 @@ func _bind_sheet(out_dir: String, id: String) -> void:
 		else:
 			bot.global_position += Vector3(0, -300, 0)
 	await _settle(10)
-	for i in player.weapons.size():
-		if player.weapons[i] is MeleeWeapon:
-			player.cmd.switch_weapon = i
-	await _settle(5)
-	player.cmd.switch_weapon = -1
-	await _settle(40)
+	# Players arrive unarmed: the blade is drawn as a player would.
 	raid.zone_rules = false
 	player.weapons_locked = false
+	for i in player.weapons.size():
+		if player.weapons[i] is MeleeWeapon:
+			player._draw_weapon(i)
+	await _settle(40)
 	foe.weapons_locked = false
-	for w in foe.weapons:
-		if w.visual:
-			w.visual.queue_free()
-		w.queue_free()
-	foe.weapons.clear()
-	var guard := MeleeWeapon.new()
-	guard.item_id = id
-	foe.equip_weapon(guard)
-	foe.active_weapon_index = 0
+	# The foe dressed and armed through the kit like anyone, so its blade
+	# has its model and stats.
+	Loadout.refit(foe, [id, "plate_light"])
+	for i in foe.weapons.size():
+		if foe.weapons[i] is MeleeWeapon:
+			foe._draw_weapon(i)
+	await _settle(20)
 	var blade := player.get_active_weapon() as MeleeWeapon
 	blade.light_stamina = 0.0
 	blade.heavy_stamina = 0.0

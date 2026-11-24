@@ -92,6 +92,21 @@ var step_heavy := 0.24
 var step_guard := -0.04
 var step_reel := -0.22
 var step_rate := 16.0
+## Each technique's footwork (Caleb's ask: each weapon moves the body its
+## own way), [windup, strike, rate] as multiples of the steps above: a
+## knife's steps are short and quick, a one-handed axe settles back further
+## to chop, a hammer hauls the weight right back and drives a long step in
+## slowly, a spear lunges the furthest, a katana steps in a touch more than
+## a sword. View only.
+var technique_steps := {
+	"slash": [1.0, 1.0, 1.0],
+	"chop": [1.3, 1.15, 0.9],
+	"knife": [0.5, 0.7, 1.4],
+	"stab": [0.8, 1.1, 1.3],
+	"chop2": [1.8, 1.3, 0.7],
+	"thrust2": [1.0, 1.5, 1.0],
+	"cut": [1.1, 1.15, 1.0],
+}
 var footwork := 0.0
 ## Blades meet at one point (Caleb's call, so a guarded strike reads
 ## clean): a strike met by a guard sets `bind` on both fighters, and for
@@ -756,7 +771,8 @@ func advance(delta: float) -> void:
 		if not holding or melee.is_winding_up() or melee.is_blocking():
 			_follow_left = 0.0
 
-	footwork = lerpf(footwork, footwork_wanted(melee) if holding else 0.0, 1.0 - exp(-step_rate * delta))
+	var steps: Array = _steps_of(melee) if holding else [1.0, 1.0, 1.0]
+	footwork = lerpf(footwork, footwork_wanted(melee) if holding else 0.0, 1.0 - exp(-step_rate * float(steps[2]) * delta))
 	var wanted: Variant = arm_reach(melee) if holding else null
 	_update_bind(melee if holding else null, delta)
 	if wanted != null:
@@ -807,10 +823,12 @@ func footwork_wanted(melee: MeleeWeapon) -> float:
 		return step_reel * reel
 	if melee.is_blocking():
 		return step_guard
-	var strike := step_heavy if melee._shown_kind == "heavy" or melee._dashing else step_light
+	var steps := _steps_of(melee)
+	var strike := (step_heavy if melee._shown_kind == "heavy" or melee._dashing else step_light) * float(steps[1])
+	var windup := step_windup * float(steps[0])
 	if melee.is_winding_up():
 		var heavy := melee._windup_kind == "heavy"
-		return step_windup * (1.6 if heavy else 1.0)
+		return windup * (1.6 if heavy else 1.0)
 	var arc := melee.swing_arc()
 	if arc >= 0.0:
 		return strike * smoothstep(0.0, 0.6, arc)
@@ -821,8 +839,13 @@ func footwork_wanted(melee: MeleeWeapon) -> float:
 		return strike * back
 	var charge := charge_amount(melee)
 	if charge > 0.0:
-		return step_windup * charge
+		return windup * charge
 	return 0.0
+
+
+## The footwork multiples for `melee`'s technique (`technique_steps`).
+func _steps_of(melee: MeleeWeapon) -> Array:
+	return technique_steps.get(technique(melee), [1.0, 1.0, 1.0])
 
 
 ## True while the body rolls (`Actor.dodge_style` "roll"): the clip has the
