@@ -511,7 +511,7 @@ var carry_stance_share := 0.6
 ## ahead of the eyes along the aim, the pitch clamped to `inspect_pitch`),
 ## whatever is in hand; `inspect_rate` is how fast it comes up and goes
 ## back (per second).
-var inspect_from_eyes := Vector3(0.05, -0.18, -0.45)
+var inspect_from_eyes := Vector3(-0.08, -0.18, -0.45)
 var inspect_pitch := Vector2(-0.7, 0.5)
 var inspect_rate := 3.5
 ## How long a look over takes, in seconds. The controller holds the flag
