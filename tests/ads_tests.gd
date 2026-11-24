@@ -112,6 +112,10 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 		Look.enabled = false
 		raid.queue_free()
 		return
+	# A power weapon summoned from the watch materializes before it can be
+	# used (`Actor.materialize_left`, game time), so it is aimed once it has.
+	while p.materialize_left > 0.0:
+		await t.frames(1)
 	p.set_physics_process(false)
 	var gun: Gun = null
 	for i in p.weapons.size():
@@ -129,7 +133,11 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	await t.frames(5)
 	var before := ActionPose.sight_shown(gun)
 	_aim(p, gun, true)
-	await t.frames(40)
+	# Two thirds of a second of game time, however fast the frames run.
+	var waited := 0.0
+	while waited < 0.66:
+		await t.get_tree().process_frame
+		waited += t.get_process_delta_time()
 	t.check(pose.ads > 0.99, "%s: the gun is up (%.2f)" % [what, pose.ads])
 	var aimed := p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch)
 	var ahead := -aimed.z
