@@ -923,7 +923,10 @@ func _simulate_hover(delta: float) -> void:
 		var clumsy := flight.indoor_factor()
 		var want := Basis(Vector3.UP, heading) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed) * clumsy
 		want.y += flight.max_rise_speed * flight.climb_room() * clumsy if climb > 0.0 else climb * flight.descend_speed
-		velocity = velocity.move_toward(want, flight.boost_accel * delta)
+		# Spooling up from slow it pulls hard, easing off near cruise speed.
+		var going := clampf(Vector2(velocity.x, velocity.z).length() / maxf(flight.boost_speed, 0.1), 0.0, 1.0)
+		var accel := lerpf(maxf(flight.boost_launch_accel, flight.boost_accel), flight.boost_accel, going * going)
+		velocity = velocity.move_toward(want, accel * delta)
 		# Travel is cheap; a climb in a boost costs what any climb does.
 		flight.tick(true, delta, lerpf(flight.boost_heat_mult, maxf(flight.boost_heat_mult, flight.climb_heat_mult),
 				flight.climb_room()) if climb > 0.0 else flight.boost_heat_mult)
@@ -1100,7 +1103,10 @@ func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool,
 	_air_dash_cd = maxf(0.0, _air_dash_cd - delta)
 	if on_floor or staggered:
 		air_dash_left = 0.0
-	elif cmd.sprint_pressed and _air_dash_cd <= 0.0 and air_dash_left <= 0.0:
+	elif cmd.sprint_pressed and _air_dash_cd <= 0.0 and air_dash_left <= 0.0 \
+			and not _wants_boost(on_floor, staggered):
+		# A press that starts (or is in) a jetpack boost is the boost's,
+		# not a dash on top of it: that lurched ahead and stalled.
 		var boost := _glide_boost_kind()
 		if not flight.try_air_dash(flight.glide_boost_heat if boost != 0 else -1.0):
 			return Vector3.ZERO

@@ -111,8 +111,8 @@ static func _test_jetpack(t: Node) -> void:
 	t.check(absf(rise - 8.0) < 0.3 and absf(climb_rate - f.heat_per_sec * 1.3) < 0.5,
 			"climbing rises at %.1f m/s for 1.3x the heat (%.1f a second)" % [rise, climb_rate])
 	# The boost is the jetpack's cruise (Caleb's call: every rig cruises):
-	# 0.15x, so a bar lasts about 45 s prone (the Shift press's air dash
-	# takes its bit first) and carries you about 720 m, level.
+	# 0.18x, so a bar lasts about 45 s prone and carries you about 720 m,
+	# level (the Shift press that starts it is not also an air dash).
 	p.cmd.jump = false
 	p.cmd.secondary = false
 	f.heat = 0.0

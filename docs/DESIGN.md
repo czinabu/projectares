@@ -2527,7 +2527,7 @@ measures them.
 | Climb | 8 m/s | kicks (about 6 m/s on average) | none of their own |
 | Max height | 40 m | 10 m | their launch height |
 | Hover | 8 s | 1.5 s skim per jump | none |
-| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, cruise 0.15x (about 45 s, 720 m a bar) | 4 charges for kicks and dashes; the skate is free | about 62 s of glide stamina (gliding or soaring) |
+| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, cruise 0.18x (about 45 s, 720 m a bar) | 4 charges for kicks and dashes; the skate is free | about 62 s of glide stamina (gliding or soaring) |
 | Recharge | 4 s on the ground (coasting cools too) | 1 charge per 1.5 s, anywhere | 5 s, on the ground only |
 | Cross Ashfront (550 m) | about 36 s cruising (measured 35) | about 32 s skating (measured 31) | about 25 s from a 30 m perch (measured 26) |
 | Air aim spread | +10% with the jets lit | +0% mid-dash or skimming low | +50% gliding |
@@ -2550,7 +2550,7 @@ and each feels different:
 - **Jetpack: rocket cruise.** The prone boost is the cruise: you lie out
   flat and fly straight and level along the view at 16 m/s, Space and C
   to climb and sink. The steadiest and easiest to point, and aim or the
-  trigger stops it dead into a hover. It costs 0.15x the hover's heat, so
+  trigger stops it dead into a hover. It costs 0.18x the hover's heat, so
   a cool bar carries you about 45 s and 720 m; climbing first costs what a
   climb does.
 - **Boots: ground skate.** Held Shift within 4 m of whatever is below (a

@@ -50,7 +50,7 @@ date in the same PR.
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
   full bar, climbing 1.3x the heat, a 40 m ceiling, steady aim), its prone
-  boost its cruise (Caleb's call: 16 m/s at 0.15x, about 45 s and 720 m a
+  boost its cruise (Caleb's call: 16 m/s at 0.18x, about 45 s and 720 m a
   bar, a climb in it costs the climb's heat) paid for in the fight, not in heat: aim or
   the trigger held brings you upright into a hover (`Actor._wants_boost`,
   `_boost_flare`, the jets held while the trigger is) and a gun waits out

@@ -50,7 +50,7 @@ static func _flat_speed(p: Actor) -> float:
 
 
 ## The jetpack's cruise is its boost: level along the view at 16 m/s, on
-## 0.15x the hover's heat.
+## 0.18x the hover's heat.
 static func _jetpack(t: Node) -> void:
 	var arena := _arena(t, Vector3(0, 0, 12000))
 	var p := _actor(arena, ["jetpack_mk1"])

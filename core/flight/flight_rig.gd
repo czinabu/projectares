@@ -98,8 +98,8 @@ var glide_accel := 22.0
 ## `cruise_heat_mult`, climbing `climb_heat_mult` and boosting
 ## `boost_heat_mult` (Caleb's call: 1x, 1x, 1.5x; the climb trimmed to
 ## 1.3x so a cool Mk1 reaches its ceiling in one climb). The boost is the
-## jetpack's travel (Caleb's call): 0.7x, so a Mk1 bar lasts about 10 s
-## prone, paid for by no shooting from it (`Actor._wants_boost`); a climb
+## jetpack's travel and cruise (Caleb's call): `boost_heat_mult`, so a Mk1
+## bar lasts about 45 s prone, paid for by no shooting from it (`Actor._wants_boost`); a climb
 ## in a boost costs the climb's heat.
 ## At cruise speed the heading turns at most `cruise_turn_rate` rad/s: a
 ## jetpack makes wide turns but stops dead. Landing or overheating puts the
@@ -108,6 +108,11 @@ var fly_speed := CRUISE_SPEED
 var fly_accel := 24.0
 var boost_speed := 0.0
 var boost_accel := 16.0
+## Out of a standstill or a hover the boost spools up harder, easing down to
+## `boost_accel` as it nears `boost_speed`, so it pulls away at once and
+## settles into the cruise without a lurch (the Shift press that starts it
+## is not also an air dash).
+var boost_launch_accel := 36.0
 var descend_speed := 6.0
 ## How fast the jets bring your climb or sink to what you ask for, in m/s².
 var hover_accel := 30.0
