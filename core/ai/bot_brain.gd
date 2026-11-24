@@ -582,6 +582,10 @@ func _physics_process(delta: float) -> void:
 		cmd.reload_pressed = true
 	if uses_kit:
 		_tend_kit(cmd)
+	# A bot's paths are walked and hopped: held Shift in the air would put
+	# boots into a skate or wings into a soar (the cruises are a player's).
+	if not actor.is_on_floor() and (actor.flight.can_skate() or actor.flight.can_soar()):
+		cmd.sprint = false
 
 
 ## Looks after a player's kit (`uses_kit`): heal when hurt and safe enough,

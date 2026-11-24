@@ -208,7 +208,9 @@ static func _drops(t: Node) -> void:
 							gentle_data += 1
 						elif id in ["cryo_core", "glacial_alloy", "engine_coil"]:
 							gentle_parts[id] = true
-		elif hands_out:
+		elif hands_out and (pvp == null or world.id == "ashfront"):
+			# The war's world; the Basalt Rift hands out rig rewards too, but
+			# only the rigs' blueprints (`rift_rewards_tests.gd`).
 			pvp = world
 	t.check(pvp != null and gentle and gentle_prints.size() == 2,
 			"the war's blueprints come from the full-loot world; the gentle one's caches hold only its own (%d)" % gentle_prints.size())

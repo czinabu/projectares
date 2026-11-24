@@ -141,7 +141,7 @@ A new system gets a new file and a line here.
 - `docs/systems/bots.md`: Armies, commanders, kinds, doctrine, group fights, senses, grudges, cover and melee bots.
 - `docs/systems/melee.md`: Melee types, techniques, the one button, timing, guards, feints, the kick and the dodge.
 - `docs/systems/guns-and-feel.md`: Loadout slots and keys, attachments, power weapons, recoil, handling, feel benches and feedback.
-- `docs/systems/gear.md`: Flight rigs, artifacts, visors and helmets, armor frames and paints.
+- `docs/systems/gear.md`: Flight rigs and thruster trails, artifacts, visors and helmets, armor frames and paints.
 - `docs/systems/vehicles.md`: Vehicles, riding, seats, aircraft, drifting and toy vehicles on the watch.
 - `docs/systems/economy-and-progression.md`: Bounties, mastery, the scrap kit, safety nets, crafting, money, scrip, contracts, the market and cosmetics.
 - `docs/systems/online.md`: Sign-in, encryption, input and movement netcode, lag compensation, the account service, server stashes, several sessions in one process, one program per world and travel.
@@ -151,7 +151,7 @@ A new system gets a new file and a line here.
 - `docs/systems/arena-and-race.md`: The arena venue and its rules, and Meridian's races, league, ghosts and tuning.
 - `docs/systems/updates-and-dev-mode.md`: The self-updater, the installer, the temporary dev mode and its tools (capture and snapshot keys, the phone's console).
 - `docs/systems/dunes.md`: The Dune Sea: its map, salvage crates, carrying, cargo, banking a haul and losing it, sandstorms that bury and uncover the wreck fields, and convoys.
-- `docs/systems/rift.md`: The Basalt Rift: its map of basalt over lava, the lava that burns and what floats on it, updrafts, and the Sky Leviathan.
+- `docs/systems/rift.md`: The Basalt Rift: its map of basalt over lava, the lava that burns and what floats on it, updrafts, the Sky Leviathan and its rig rewards.
 
 ## Conventions
 

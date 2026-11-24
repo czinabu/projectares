@@ -80,6 +80,10 @@ static func sanitize(raw: Variant) -> Dictionary:
 	var paints := ArmorPaint.clean(source.get("paints"))
 	if not paints.is_empty():
 		out["paints"] = paints
+	# The thruster trail (`RigTrail`); left out when none.
+	var trail := RigTrail.clean(source.get("trail"))
+	if trail != "":
+		out["trail"] = trail
 	return out
 
 
@@ -100,7 +104,7 @@ static func wearable(build: String, owned: Array = []) -> Array[String]:
 
 ## A valid appearance a player is allowed to wear. Like `sanitize`, but any
 ## part from an outfit that is neither starter clothing nor in `owned` falls
-## back to starter clothing, and an armor paint not in `owned` comes off. Bots and other non-players use `sanitize`.
+## back to starter clothing, an armor paint not in `owned` comes off, and so does a thruster trail. Bots and other non-players use `sanitize`.
 static func player_look(raw: Variant, owned: Array = []) -> Dictionary:
 	var out := sanitize(raw)
 	var allowed := wearable(out["build"], owned)
@@ -114,6 +118,9 @@ static func player_look(raw: Variant, owned: Array = []) -> Dictionary:
 			out.erase("paints")
 		else:
 			out["paints"] = paints
+	# And only a thruster trail owned ("trail:<id>" in `owned`).
+	if out.has("trail") and RigTrail.clean(out["trail"], owned) == "":
+		out.erase("trail")
 	return out
 
 

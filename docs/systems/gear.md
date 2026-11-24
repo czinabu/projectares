@@ -1,6 +1,6 @@
 # Gear: flight, artifacts, helmets, armor and backpacks
 
-Rules for flight rigs, artifacts, visors and helmets, armor frames and paints, and backpacks. These are part of the rules in `CLAUDE.md` that must not be
+Rules for flight rigs and their thruster trails, artifacts, visors and helmets, armor frames and paints, and backpacks. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -33,24 +33,36 @@ date in the same PR.
   boost started by a sprint press in the air and held on sprint, no hover
   needed (`Actor._wants_boost`), that speeds you up along the look
   direction while the skin lays the body out prone as the speed builds, and a glide whose speed is energy
-  (`Actor._glide_velocity`). Each rig has one job and one weakness
+  (`Actor._glide_velocity`). Every rig cruises on held sprint in the air
+  (Caleb's call, DESIGN.md "Cruising"): the jetpack's boost is its cruise;
+  boots skate (`Actor._wants_skate`, `_skate_velocity`,
+  `_simulate_skate`, `FlightRig.is_skating`: `skate_height` over whatever
+  the ray finds below, within `skate_reach`, at `skate_speed`, for
+  nothing; a skate that touches down lifts straight off again, back brakes
+  out); wings soar (`FlightRig.is_soaring`, `soar_accel`, `soar_climb`:
+  held sprint keeps a glide going with jump let go, level at glide speed,
+  on glide stamina). All three are read from the command, so clients
+  predict them like the rest. The skin poses the skate as a skater, not
+  the boots' flying pose (`ActorSkin.skate_legs`, `_skate_tilt`, leaning
+  into the carve from the heading's swing), and keeps the glide and prone
+  boost poses for the other two. Check by eye with `--flight-only`. Each rig has one job and one weakness
   (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
   full bar, climbing 1.3x the heat, a 40 m ceiling, steady aim), its prone
-  boost its travel (Caleb's call: 0.7x, about 10 s and 170 m a bar, a climb
-  in it costs the climb's heat) paid for in the fight, not in heat: aim or
+  boost its cruise (Caleb's call: 16 m/s at 0.18x, about 45 s and 720 m a
+  bar, a climb in it costs the climb's heat) paid for in the fight, not in heat: aim or
   the trigger held brings you upright into a hover (`Actor._wants_boost`,
   `_boost_flare`, the jets held while the trigger is) and a gun waits out
   `sprint_out_time` as out of a sprint, and free look (E) holds the boost's
   heading (`_boost_yaw`) like the wings'; it is loud and clumsy under a roof;
   the boots are ground agility and stealth: no heat, `max_charges` pay for
-  kicks and dashes, a short skim (`skim_time`), faster on foot
+  kicks and dashes, a short skim (`skim_time`), a free skate, faster on foot
   (`ground_speed_mult`), no fall damage, a graze window on every dash
   (`Actor.graze_left`, checked in `Actor.modify_incoming`), but a 10 m
   ceiling; the wings are distance and speed: a launch, a fast glide on glide
-  stamina (`glide_heat`, refilled on the ground only) and two boosts a
-  flight, but no hover or climb of their own, poor aim, sidearm only, and
+  stamina (`glide_heat`, refilled on the ground only), a level soar on it
+  and two boosts a flight, but no hover and only a slow climb in a soar, poor aim, sidearm only, and
   no use indoors. A rig's `scan_range` is how far scans and thermal pick
   its wearer up (`Visor.reach_to`), `indoor_mult` how well it flies with a
   roof overhead (`FlightRig.indoors`, probed by `Actor._measure_indoors`),
@@ -332,6 +344,19 @@ date in the same PR.
   stands (`HomeBase.PaintSwatch`, `paint_requested`, `show_paints`).
   Check by eye with
   `visual_check.tscn -- <dir> --armor-only`.
+- Thruster trails (DESIGN.md "Thruster trails"): `RigTrail`
+  (`core/visual/rig_trail.gd`) colours the flames of every rig worn, a
+  glow and a core held in a safe range (`RigTrail.SAFE`), and never a stat
+  or the flame's size. `Vfx.nozzle_flame` takes the trail and
+  `ActorSkin._wear_rig` passes the body's (`rig_trail`); "" is the factory
+  blue, and a chosen trail burns `TRAIL_DIM` as bright so its colour
+  reads. A trail is a cosmetic item tagged "trail" (the Tailor sells the
+  plain ones; the earned ones are Relic loot, never sold or traded),
+  unlocked as "trail:<id>" by `Economy.unlocked_outfits`; the choice (one
+  id) rides in the appearance's "trail", checked by `Human.player_look`.
+  It is picked at the base's rig stands (`HomeBase.TrailSwatch`,
+  `trail_requested`, `show_trail`), whose nozzles glow in it. Check with
+  `tests/rig_trail_tests.gd` and by eye with `--trails-only`.
 - Backpacks (DESIGN.md "Backpacks") are data: items tagged "backpack" in the
   optional `pack` loadout slot, with `capacity`, `sprint_mult` and
   `pack_size` stats. `Loadout.wear_pack` sets `Actor.pack_id`, the
