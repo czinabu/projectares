@@ -33,24 +33,36 @@ date in the same PR.
   boost started by a sprint press in the air and held on sprint, no hover
   needed (`Actor._wants_boost`), that speeds you up along the look
   direction while the skin lays the body out prone as the speed builds, and a glide whose speed is energy
-  (`Actor._glide_velocity`). Each rig has one job and one weakness
+  (`Actor._glide_velocity`). Every rig cruises on held sprint in the air
+  (Caleb's call, DESIGN.md "Cruising"): the jetpack's boost is its cruise;
+  boots skate (`Actor._wants_skate`, `_skate_velocity`,
+  `_simulate_skate`, `FlightRig.is_skating`: `skate_height` over whatever
+  the ray finds below, within `skate_reach`, at `skate_speed`, for
+  nothing; a skate that touches down lifts straight off again, back brakes
+  out); wings soar (`FlightRig.is_soaring`, `soar_accel`, `soar_climb`:
+  held sprint keeps a glide going with jump let go, level at glide speed,
+  on glide stamina). All three are read from the command, so clients
+  predict them like the rest. The skin poses the skate as a skater, not
+  the boots' flying pose (`ActorSkin.skate_legs`, `_skate_tilt`, leaning
+  into the carve from the heading's swing), and keeps the glide and prone
+  boost poses for the other two. Check by eye with `--flight-only`. Each rig has one job and one weakness
   (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
   full bar, climbing 1.3x the heat, a 40 m ceiling, steady aim), its prone
-  boost its travel (Caleb's call: 0.7x, about 10 s and 170 m a bar, a climb
-  in it costs the climb's heat) paid for in the fight, not in heat: aim or
+  boost its cruise (Caleb's call: 16 m/s at 0.15x, about 45 s and 720 m a
+  bar, a climb in it costs the climb's heat) paid for in the fight, not in heat: aim or
   the trigger held brings you upright into a hover (`Actor._wants_boost`,
   `_boost_flare`, the jets held while the trigger is) and a gun waits out
   `sprint_out_time` as out of a sprint, and free look (E) holds the boost's
   heading (`_boost_yaw`) like the wings'; it is loud and clumsy under a roof;
   the boots are ground agility and stealth: no heat, `max_charges` pay for
-  kicks and dashes, a short skim (`skim_time`), faster on foot
+  kicks and dashes, a short skim (`skim_time`), a free skate, faster on foot
   (`ground_speed_mult`), no fall damage, a graze window on every dash
   (`Actor.graze_left`, checked in `Actor.modify_incoming`), but a 10 m
   ceiling; the wings are distance and speed: a launch, a fast glide on glide
-  stamina (`glide_heat`, refilled on the ground only) and two boosts a
-  flight, but no hover or climb of their own, poor aim, sidearm only, and
+  stamina (`glide_heat`, refilled on the ground only), a level soar on it
+  and two boosts a flight, but no hover and only a slow climb in a soar, poor aim, sidearm only, and
   no use indoors. A rig's `scan_range` is how far scans and thermal pick
   its wearer up (`Visor.reach_to`), `indoor_mult` how well it flies with a
   roof overhead (`FlightRig.indoors`, probed by `Actor._measure_indoors`),

@@ -10,7 +10,9 @@ extends RefCounted
 const RIGS := ["jetpack_mk1", "boots_thruster", "wings_glide"]
 ## The design table's cross-map times (s), and how far a measured run may
 ## stray from them.
-const CROSS_TARGET := {"jetpack_mk1": 45.0, "boots_thruster": 60.0, "wings_glide": 25.0}
+## Every rig crosses on its cruise (Caleb's call): the jetpack's rocket
+## cruise at 16 m/s, the boots' skate at 18, the wings' glide at 22.
+const CROSS_TARGET := {"jetpack_mk1": 36.0, "boots_thruster": 32.0, "wings_glide": 25.0}
 const CROSS_SLACK := 0.35
 ## How far "across Ashfront" is, in meters: its playable field, edge to edge.
 const CROSS_DISTANCE := 550.0
@@ -82,7 +84,7 @@ static func _test_jetpack(t: Node) -> void:
 	var f := p.flight
 	await t.frames(5)
 	t.check(is_equal_approx(f.ceiling, 40.0) and is_equal_approx(f.max_rise_speed, 8.0)
-			and is_equal_approx(f.boost_speed, 18.0), "the Mk1 jetpack climbs at 8 m/s to 40 m and boosts at 18 m/s")
+			and is_equal_approx(f.boost_speed, 16.0), "the Mk1 jetpack climbs at 8 m/s to 40 m and cruises at 16 m/s")
 	p.global_position.y = 20.0
 	p.velocity = Vector3.ZERO
 	p.cmd.secondary = true
@@ -108,9 +110,9 @@ static func _test_jetpack(t: Node) -> void:
 	var climb_rate := (f.heat - heat)
 	t.check(absf(rise - 8.0) < 0.3 and absf(climb_rate - f.heat_per_sec * 1.3) < 0.5,
 			"climbing rises at %.1f m/s for 1.3x the heat (%.1f a second)" % [rise, climb_rate])
-	# Boosting is the jetpack's travel (Caleb's call): 0.7x, so a bar lasts
-	# about 10 s prone (the Shift press's air dash takes its bit first) and
-	# carries you about 170 m, level.
+	# The boost is the jetpack's cruise (Caleb's call: every rig cruises):
+	# 0.15x, so a bar lasts about 45 s prone (the Shift press's air dash
+	# takes its bit first) and carries you about 720 m, level.
 	p.cmd.jump = false
 	p.cmd.secondary = false
 	f.heat = 0.0
@@ -122,11 +124,12 @@ static func _test_jetpack(t: Node) -> void:
 	p.cmd.sprint_pressed = false
 	t.check(f.is_boosting, "Shift boosts the jetpack")
 	var from := p.global_position
-	var boost := await _until(t, func() -> bool: return f.overheated, 15.0)
+	var boost := await _until(t, func() -> bool: return f.overheated, 70.0)
 	var carried := Vector2(p.global_position.x - from.x, p.global_position.z - from.z).length()
-	t.check(boost > 9.0 and boost < 10.5, "a held boost lasts about 10 s on a full bar (%.1f s)" % boost)
-	t.check(carried > 150.0 and carried < 190.0, "a full bar of boost carries about 170 m (%.0f m)" % carried)
-	t.check(carried < 556.0 * 0.5, "wings still go further on a flight than a jetpack's bar of boost")
+	t.check(boost > 43.0 and boost < 48.0, "a held cruise lasts about 45 s on a full bar (%.1f s)" % boost)
+	t.check(carried > 660.0 and carried < 780.0, "a full bar of cruise carries about 720 m (%.0f m)" % carried)
+	var soar: float = 22.0 * 100.0 / float(ItemDB.item_stats("wings_glide")["glide_heat"])
+	t.check(carried < soar, "wings still go further on a bar of soaring than a jetpack on a bar of cruise")
 	await _test_boost_is_travel(t, p)
 	p.cmd = ActorCommand.new()
 	arena.queue_free()
@@ -199,7 +202,7 @@ static func _test_boost_is_travel(t: Node, p: Actor) -> void:
 	t.check(now.dot(Vector2(view.x, view.z)) > 0.95, "let go, the boost comes round onto the view")
 
 
-## Wings: 25 s of glide stamina that refills on the ground only (in about
+## Wings: about 62 s of glide stamina that refills on the ground only (in about
 ## 5 s), two boosts a flight, and a glide at 22 m/s that dives to 30.
 static func _test_wings(t: Node) -> void:
 	var arena := _arena(t, Vector3(0, 0, 9400), Vector3(80, 1, 1600))
@@ -213,8 +216,8 @@ static func _test_wings(t: Node) -> void:
 	p.global_position.y = 400.0
 	p.velocity = Vector3(0, -1, -15)
 	p.cmd.jump = true
-	var glide := await _until(t, func() -> bool: return f.overheated, 40.0)
-	t.check(absf(glide - 25.0) < 1.0 and not f.is_gliding, "a full bar of glide stamina lasts 25 s (%.1f s)" % glide)
+	var glide := await _until(t, func() -> bool: return f.overheated, 80.0)
+	t.check(absf(glide - 62.5) < 1.5 and not f.is_gliding, "a full bar of glide stamina lasts about 62 s (%.1f s)" % glide)
 	f.charges = 0
 	p.cmd.jump = false
 	await _until(t, func() -> bool: return p.is_on_floor(), 30.0)
@@ -344,9 +347,9 @@ static func _test_cross(t: Node) -> void:
 		var target: float = CROSS_TARGET[id]
 		t.check(absf(took - target) <= target * CROSS_SLACK,
 				"%s crosses %d m in %.0f s (design: about %.0f s)" % [id, int(CROSS_DISTANCE), took, target])
-	t.check(results.get("wings_glide", INF) < results.get("jetpack_mk1", INF)
-			and results.get("jetpack_mk1", INF) < results.get("boots_thruster", INF),
-			"across the map the wings are fastest, then the jetpack, then the boots")
+	t.check(results.get("wings_glide", INF) < results.get("boots_thruster", INF)
+			and results.get("boots_thruster", INF) < results.get("jetpack_mk1", INF),
+			"across the map the wings are fastest, then the boots' skate, then the jetpack's cruise")
 	for node in t.get_children():
 		if node is Node3D and (node as Node3D).position.z == -9000.0:
 			node.queue_free()
@@ -371,26 +374,46 @@ static func _cross_one(t: Node, p: Actor, id: String, results: Dictionary) -> vo
 		p.cmd.move = Vector2.ZERO
 		p.cmd.jump = true
 	elif f.can_hover():
+		# Up a little, then the rocket cruise on Shift.
 		p.cmd.sprint = false
+		p.cmd.jump_pressed = true
+		p.cmd.jump = true
+		await t.frames(1)
+		p.cmd.jump_pressed = false
+		await t.frames(tps / 2)
+		p.cmd.jump = false
+		p.cmd.sprint = true
+		p.cmd.sprint_pressed = true
+		await t.frames(1)
+		p.cmd.sprint_pressed = false
+	elif f.can_skate():
+		# Running, a jump into the skate.
+		await t.frames(tps / 2)
 		p.cmd.jump_pressed = true
 		await t.frames(1)
 		p.cmd.jump_pressed = false
-	var cooling := false
 	for i in 110 * tps:
 		if start - p.global_position.z >= CROSS_DISTANCE:
 			results[id] = float(i) / tps
 			break
 		if f.can_hover():
+			# Off the ground, up a few meters, then the cruise on Shift.
 			var height := p.global_position.y - p.ground_level()
-			if f.heat > 80.0:
-				cooling = true
-			elif f.heat < 25.0:
-				cooling = false
-			p.cmd.secondary = not f.overheated
-			p.cmd.jump = not cooling and height < 18.0
-			p.cmd.descend = cooling and height > 3.0
-			p.cmd.jump_pressed = p.is_on_floor() and not f.overheated and i % 20 == 0
-		elif f.glide_fall_speed > 0.0 and p.is_on_floor():
+			p.cmd.sprint_pressed = false
+			p.cmd.jump_pressed = p.is_on_floor() and i % 20 == 0
+			if p.is_on_floor() or (not f.is_boosting and height < 4.0):
+				p.cmd.jump = true
+				p.cmd.sprint = false
+			elif not f.is_boosting:
+				p.cmd.jump = false
+				p.cmd.sprint = true
+				p.cmd.sprint_pressed = true
+		elif f.can_skate():
+			p.cmd.jump_pressed = p.is_on_floor() and i % 20 == 0
+		if OS.get_environment("CROSS_DEBUG") != "" and i % 60 == 0:
+			print("  %s t=%d pos=%s v=%s boost=%s heat=%.0f floor=%s" % [id, i / tps, p.global_position.snapped(Vector3.ONE * 0.1),
+					p.velocity.snapped(Vector3.ONE * 0.1), f.is_boosting, f.heat, p.is_on_floor()])
+		if f.glide_fall_speed > 0.0 and p.is_on_floor():
 			# Wings down: run the rest.
 			p.cmd.jump = false
 			p.cmd.move = Vector2(0, 1)
@@ -508,7 +531,8 @@ static func _fly_course(t: Node, base: HomeBase, id: String) -> float:
 				var brake := flat * flat / (2.0 * f.fly_accel) + 0.6
 				p.cmd.move = Vector2(0, 1) if (above or lp.y > target.y + 1.0 or h > 6.0) and h > brake else Vector2.ZERO
 			"boots_thruster":
-				p.cmd.sprint = true
+				# Sprint on the ground only: held in the air it would skate.
+				p.cmd.sprint = p.is_on_floor()
 				var over := stage < 2 and h < 2.5 and above
 				p.cmd.move = Vector2(0, -1) if over and Vector2(p.velocity.x, p.velocity.z).length() > 2.0 \
 						else (Vector2.ZERO if over else Vector2(0, 1))

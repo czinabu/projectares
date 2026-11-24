@@ -117,8 +117,9 @@ rows marked **pre-playtest** come before the friends playtest.
 | Item | State | Notes |
 | --- | --- | --- |
 | Each rig has one job and one weakness, tuned to the Mk1 table (DESIGN.md section 5) | Built | Caleb's balance pass: `ItemDB.JETPACK_MK1`, `BOOTS_MK1`, `WINGS_MK1`, measured by `tests/rig_balance_tests.gd` (hover, heat, glide stamina, cross-map times). Unplaytested. |
+| Every rig cruises its own way on held Shift (DESIGN.md "Cruising") | Built | Caleb's call: the jetpack's rocket cruise (its boost, 16 m/s on 0.15x heat), the boots' skate (`FlightRig.skate_speed`, 18 m/s low over the ground, free) and the wings' soar (`FlightRig.soar_accel`, level at 22 m/s on glide stamina), measured by `tests/rig_cruise_tests.gd`; the skate has a skater's pose (`ActorSkin.skate_legs`). Unplaytested. |
 | Jetpack cruise and coast loop, hover 1x, climb 1.3x, boost 2.5x heat | Built | `FlightRig.hover_heat_mult`, `climb_heat_mult`, `boost_heat_mult`. |
-| Wings: glide stamina, two boosts a flight, stall, barrel roll, sidearm-only while spread, slide landing | Built | `glide_heat` refilled on the ground only, boosts on `max_charges`. Pulses are gone: wings cannot climb on their own. |
+| Wings: glide stamina, two boosts a flight, stall, barrel roll, sidearm-only while spread, slide landing | Built | `glide_heat` refilled on the ground only, boosts on `max_charges`. Pulses are gone: wings climb only in a soar, slowly. |
 | Boots: charges for kicks and dashes, a short skim, +15% ground speed, no fall damage, a graze window on every dash | Built | `max_charges`, `skim_time`, `ground_speed_mult`, `graze_window`. |
 | Air aim penalty by rig | Built | `Actor.air_aim` and `FlightRig.flight_aim`: +10% jetpack, none for boots mid-dash, +50% wings. |
 | Scan and thermal reach by rig, indoor limits, fall damage | Built | Simple first versions: `Visor.reach_to`, `FlightRig.indoor_mult` with a roof probe (`Actor.roof_reach`), `Actor._hurt_by_fall`. Missing: rig noise for bots to hear (only guns make noise today). |

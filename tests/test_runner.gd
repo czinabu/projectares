@@ -672,7 +672,7 @@ func _check_free_flight(p: Actor) -> void:
 	await frames(30)
 	check(p.flight.is_boosting and p.velocity.y > 5.0, "holding jump climbs during a boost")
 	p.cmd.jump = false
-	check(boost_heat < hover_heat and boost_heat > hover_heat * 0.5, "boosting is the jetpack's travel: a little cooler than hovering")
+	check(boost_heat > 0.0 and boost_heat < hover_heat * 0.3, "boosting is the jetpack's cruise: far cooler than hovering")
 	p.cmd.sprint = false
 	p.cmd.secondary = true
 	p.cmd.move = Vector2.ZERO

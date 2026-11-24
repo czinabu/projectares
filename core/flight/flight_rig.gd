@@ -187,6 +187,26 @@ var skim_mid_heat := 8.0
 var skim_high_heat := 20.0
 ## How far down the boots look for a surface.
 var skim_probe := 30.0
+## Every rig cruises on held sprint in the air (Caleb's call: each rig has
+## its own sustained forward flight). A jetpack's is its boost
+## (`boost_speed`, `boost_heat_mult`). Boots skate: held sprint within
+## `skate_reach` meters of a surface flies you `skate_height` over it at
+## `skate_speed`, carving after the view at `skate_turn_rate`, for nothing
+## (a kick hops you off it and you skate again once you are back down in
+## reach). 0 speed: no skate.
+var skate_speed := 0.0
+var skate_accel := 14.0
+var skate_height := 1.6
+var skate_reach := 4.0
+var skate_turn_rate := 3.2
+## How fast the boots chase the skate height (m/s at most, up and down).
+var skate_lift := 6.0
+## Wings soar: held sprint in a glide keeps the wings at `glide_speed`
+## (thrust making up what drag, turns and climbs cost, at `soar_accel`) and
+## level instead of sinking, on glide stamina; pulling up climbs at up to
+## `soar_climb` m/s. 0 accel: no soar.
+var soar_accel := 0.0
+var soar_climb := 4.0
 ## Every rig: pressing sprint in the air dashes the way the move keys point
 ## (forward with none held). The dash adds `air_dash_speed` that way on top
 ## of how the rig is flying for `air_dash_time`, then takes it back off, so
@@ -271,6 +291,10 @@ var is_boosting := false
 var is_coasting := false
 ## Boots skimming (holding jump in the air).
 var is_skimming := false
+## Boots skating: the cruise low over the ground (`skate_speed`).
+var is_skating := false
+## Wings soaring: the cruise, level at glide speed (`soar_accel`).
+var is_soaring := false
 ## Boots: the height over the surface below while skimming, in meters.
 var skim_height := 0.0
 ## Boots in the air at `skim_low` or more over the surface below: they do not
@@ -335,6 +359,14 @@ func skim(delta: float, height: float) -> void:
 ## Which band a skim is in: 0 cool (low), 1 warm, 2 burning.
 func skim_band() -> int:
 	return 0 if skim_height < skim_low else (1 if skim_height < skim_high else 2)
+
+
+func can_skate() -> bool:
+	return working() and skate_speed > 0.0
+
+
+func can_soar() -> bool:
+	return working() and soar_accel > 0.0
 
 
 func can_skim() -> bool:
@@ -456,6 +488,8 @@ func jam(seconds: float) -> void:
 	is_boosting = false
 	is_gliding = false
 	is_skimming = false
+	is_skating = false
+	is_soaring = false
 
 
 ## Overheats the rig at once (an Overclock Core burning out).
@@ -467,6 +501,8 @@ func lock_up() -> void:
 	is_hovering = false
 	is_boosting = false
 	is_skimming = false
+	is_skating = false
+	is_soaring = false
 
 
 ## Heat that `amount` really adds: none while overclocked.
@@ -501,6 +537,9 @@ func controls_hint() -> String:
 	if can_glide():
 		parts.append("hold while falling to glide (look to steer, W dives, S climbs, Shift boosts%s)"
 				% (", press again to pulse up" if pulse_velocity > 0.0 else ""))
+	if boost_speed > 0.0 or skate_speed > 0.0 or soar_accel > 0.0:
+		parts.append("hold Shift in the air to cruise" if skate_speed <= 0.0 and soar_accel <= 0.0
+				else ("hold Shift near the ground to skate" if skate_speed > 0.0 else "hold Shift in a glide to soar level"))
 	if air_dash_speed > 0.0:
 		parts.append("Shift + a move key dashes that way in the air%s" % (" (gliding, Shift boosts ahead and Shift + S climbs)" if can_glide() else ""))
 	return ", ".join(parts)
