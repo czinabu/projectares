@@ -236,6 +236,12 @@ var _tour_stash_size := -1
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	# Enemies on or off in every world this program runs (`Raid.enemies`).
+	Raid.enemies = Raid.enemies_wanted(args)
+	Raid.enemy_cap = Raid.enemy_cap_wanted(args)
+	# The near cap is part of the same budget: no enemy cap, no near cap.
+	Raid.near_full_cap = maxi(int(ProjectSettings.get_setting("ares/stability/enemies_full_detail", 0)), 0) \
+			if Raid.enemy_cap > 0 else 0
 	# Every life a raid here finishes goes in the life log (`LifeLog`), to
 	# tune the worlds from: `--life-log <dir>` puts it elsewhere.
 	var log_at := args.find("--life-log")
@@ -1272,6 +1278,7 @@ func _setup_phone() -> void:
 	dev_tools = DevToolsScript.new()  # DEV MODE
 	dev_tools.name = "DevTools"  # DEV MODE
 	dev_tools.context_source = report_context  # DEV MODE
+	dev_tools.body_source = func() -> Variant: return controller.actor if controller != null and is_instance_valid(controller) else null  # DEV MODE
 	dev_tools.notice.connect(_dev_notice)  # DEV MODE
 	add_child(dev_tools)  # DEV MODE
 	phone.console_command.connect(_run_console)  # DEV MODE

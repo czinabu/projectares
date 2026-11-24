@@ -65,11 +65,28 @@ date in the same PR.
   a long gun's low ready by `carry_stance_share`), so the off hand reaches
   the fore end, the gun shows low in the view and the clip's arm swing
   never reaches it (the clips' own hold put the gun out past the new
-  body's reach). A gun braced at the hip (`shoulders_never`) or held on a
-  vehicle keeps the clip's wrist averaged over a stride.
+  body's reach). A gun braced at the hip (`shoulders_never`, the Storm
+  Cannon) is held the same way, lower (`hip_from_eyes_braced`), both hands
+  on it; a heavy weapon (`heavy_tags`, the power weapons) is carried level
+  across the hips and never thrown up to port (`carry_low_heavy`,
+  `carry_port_heavy`). A gun held on a vehicle keeps the clip's wrist
+  averaged over a stride.
   `_check_hip_after_aim_tap` measures the steadiness, and
   `gun_hold_tests.gd` the off hand on the gun, the gun on the aim and the
-  gun in the first-person frame through every way of moving. All of it is read from velocity and the command, so
+  gun in the first-person frame through every way of moving.
+  The gun has weight in the hands, all view only and the same body in both
+  views: the carry's sway spring (`ActionPose._update_sway`) also takes
+  the view's pitch (`sway_pitch`) and the body's rise and fall
+  (`sway_vertical`, a landing throws it down by `land_dip`), and moves the
+  gun held up at the hip as well as carried; a shot (`ActorSkin._on_fired`
+  calls `ActionPose.kick`) drives it back and tips the muzzle up on its own
+  spring (`tip`), scaled by `Gun.model_kick`, never in the sights, where
+  the view has its own recoil. A wall in front of the muzzle of a gun up
+  at the hip draws it in and tips it up instead of letting it through
+  (`WeaponArm._check_wall`, one ray against the world every other pose
+  step, only for a body being posed with its gun up; `ActionPose.blocked`,
+  `wall_back`, `wall_tip`). Skins exist only where `Look` runs, so none of
+  it costs a server anything. All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
@@ -85,7 +102,8 @@ date in the same PR.
   the skin rests the weapon's near side on the rail; an empty rail has
   nothing sticking out), a
   sidearm muzzle down on the right hip, and a one-handed blade on the left
-  hip. These are view-only copies; the weapon's own node stays on the hand.
+  hip, each moved to sit snug over the body, armor and other gear under it
+  (`ActorSkin._fit_worn`, see gear.md). These are view-only copies; the weapon's own node stays on the hand.
   A switch is shown as the hand putting one away and drawing the next
   (`ActorSkin._update_switch`, reaching through `WeaponArm.override_point`),
   but only the view waits: the actor switches at once. The holster key (Z)

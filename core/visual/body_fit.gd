@@ -45,8 +45,7 @@ static func reach(build: String, y: float, a: float) -> float:
 ## `gap`: within its reach at that height and toward that side. Above or
 ## below the measured trunk nothing is inside.
 static func inside(build: String, p: Vector3, gap := 0.0) -> bool:
-	var top := D.TRUNK_LOW + D.TRUNK_STEP * (_hulled(build_of(build), "trunk").size() - 1)
-	if p.y < D.TRUNK_LOW or p.y > top:
+	if p.y < D.TRUNK_LOW or p.y > trunk_top(build):
 		return false
 	var d := Vector2(p.x, p.z - D.TRUNK_Z)
 	return d.length() < reach(build, p.y, atan2(p.x, -(p.z - D.TRUNK_Z))) + gap
@@ -62,6 +61,15 @@ static func arm_poses(build: String, out: float) -> Array[Transform3D]:
 	for x: Transform3D in D.DATA[build_of(build)].get("arm_poses", []):
 		poses.append(x if out < 0.0 else flip * x * flip)
 	return poses
+
+
+## The lowest and highest heights the trunk is measured at, actor frame.
+static func trunk_low() -> float:
+	return D.TRUNK_LOW
+
+
+static func trunk_top(build: String) -> float:
+	return D.TRUNK_LOW + D.TRUNK_STEP * (_hulled(build_of(build), "trunk").size() - 1)
 
 
 ## The trunk's axis, actor frame Z.

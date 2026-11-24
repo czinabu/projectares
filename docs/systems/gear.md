@@ -289,7 +289,22 @@ date in the same PR.
   plate against plate within a piece, on both builds in every stance,
   and must report 0 clashes after any change to the armor or the bodies.
   An arm meeting the armor in a stance is the stance's to keep clear, so
-  it is counted apart (`--arms`). The kit: a fabric carrier with straps,
+  it is counted apart (`--arms`). Everything else worn goes over the body
+  and the armor as they are (`ActorSkin._fit_worn`, `worn_fit.gd`): a
+  back rig is moved back until it sits snug over the back or the armor,
+  with its shoulder straps laid over whatever is there in place of the
+  rig model's own ("Straps"), then a backpack, then the weapons slung on
+  the back, each pushed back over what came before; a weapon clamped to
+  a rig's rail moves with the rig, and a sidearm, a hip blade and a
+  clipped helmet are pushed out to their side. Worked out once per kit
+  and build from the body at rest, so a new piece of gear or a new place
+  for one needs no numbers of its own. `tools/armor_fit/gear_check.tscn`
+  wears every frame (and none) with every kind of rig, the weapons put
+  away, a backpack and a helmet on the belt on both builds, tests every
+  piece of gear against the armor, the body and the other gear, and must
+  report 0 clashes after any change to gear, armor or where gear is worn
+  (a hand or the weapon in it is counted apart, `--arms`); see it with
+  `visual_check.tscn -- <dir> --gear-only`. The kit: a fabric carrier with straps,
   webbing and pouches under curved, bevelled plates, a padded battle belt
   under a webbing belt on every frame, and a cloth seat over the backside
   that spans the cleft instead of hugging it (no plates on the backside,
@@ -327,7 +342,7 @@ date in the same PR.
   throws items out: a pack over its capacity just takes no more. The pack
   is gear (`gear_items`), so it drops with you. It is not put on from the
   watch's pack list mid-life. The worn model is `ActorSkin.build_backpack`
-  hung on the hips (`_update_pack`, `pack_offset`, lower and further out
-  under a back rig by `pack_rig_shift`), merged like other worn pieces and
+  hung on the hips (`_update_pack`, `pack_offset`, lower under a back rig
+  by `pack_rig_shift`, and back over whatever is there by `_fit_worn`), merged like other worn pieces and
   shadowless when far; the gear room hangs the same model on hooks
   (`BaseLayout` kind `pack_hooks`). Sold by the Outfitter (`ShopDB`).

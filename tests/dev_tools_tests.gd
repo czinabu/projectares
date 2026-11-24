@@ -15,6 +15,7 @@ static func run(t: Node) -> void:
 	_check_summary(t)
 	await _check_capture(t)
 	_check_snapshot(t)
+	await _check_shooters(t)
 	await _check_console(t)
 	await _check_console_app(t)
 
@@ -75,6 +76,57 @@ static func _check_snapshot(t: Node) -> void:
 	t.check("screenshot.png" in names and shot.get_width() == 8 and typeof(info) == TYPE_DICTIONARY
 			and info.context.position == "1, 2, 3" and info.has("machine") and info.has("settings"),
 			"it keeps the screenshot, where the player was, the machine and the settings")
+
+
+## Who shot the player goes in the snapshot with how they were drawn, so
+## an enemy firing without a body on screen can be caught on Caleb's card.
+static func _check_shooters(t: Node) -> void:
+	var raid := Raid.new()
+	t.add_child(raid)
+	raid.apply_to_profile = false
+	raid.start(Worlds.get_world("ashfront"), 43)
+	await t.frames(2)
+	var me := raid.player
+	var bot := raid.spawn_bot("Shooter", me.global_position + Vector3(0, 0, -12), 7, false, "tide")
+	await t.frames(1)
+	var camera := Camera3D.new()
+	t.add_child(camera)
+	camera.global_position = me.get_eye_position()
+	camera.look_at(bot.global_position + Vector3.UP, Vector3.UP)
+	var state: Dictionary = DevToolsScript.draw_state(bot, camera)
+	t.check(state.name == "Shooter" and state.faction == "tide" and absf(float(state.distance) - 12.0) < 2.0
+			and state.framed and state.has("line_clear") and state.has("in_view") and state.has("shown_to_camera"),
+			"a draw state says who it is, how far, whether the camera frames it and has a clear line, and what of it is shown")
+	var tools: Node = DevToolsScript.new()
+	tools.save_dir = DIR
+	tools.force_enabled = true
+	tools.body_source = func() -> Variant: return me
+	t.add_child(tools)
+	# Each frame it looks for the player's body (a new one every life).
+	tools.watch_body()
+	var info := DamageInfo.new()
+	info.amount = 1.0
+	info.source = bot
+	info.kind = "bullet"
+	me.health.damaged.emit(info)
+	t.check(tools.shooters.size() == 1 and tools.shooters[0].name == "Shooter" and tools.shooters[0].hit == "bullet",
+			"a hit on the player's body keeps the shooter and how it was drawn")
+	var self_hit := DamageInfo.new()
+	self_hit.source = me
+	me.health.damaged.emit(self_hit)
+	t.check(tools.shooters.size() == 1, "a hit by the player's own body is left out")
+	var path: String = DevToolsScript.write_snapshot(null, {}, DIR, {"shooters": tools.shooters, "near": []})
+	var reader := ZIPReader.new()
+	var kept: Variant = null
+	if path != "" and reader.open(path) == OK:
+		kept = JSON.parse_string(reader.read_file("snapshot.json").get_string_from_utf8())
+		reader.close()
+	t.check(typeof(kept) == TYPE_DICTIONARY and kept.shooters.size() == 1 and kept.shooters[0].name == "Shooter"
+			and kept.has("near"), "the snapshot keeps the shooters and everyone near")
+	tools.queue_free()
+	camera.queue_free()
+	raid.queue_free()
+	await t.frames(1)
 
 
 static func _check_console(t: Node) -> void:
