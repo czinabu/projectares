@@ -88,6 +88,23 @@ date in the same PR.
   `wall_back`, `wall_tip`). Skins exist only where `Look` runs, so none of
   it costs a server anything. All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
+  Keeping guns out of the body: the long guns' grip sits about half a
+  metre ahead of the butt, more than the body's whole arm, so the hold
+  moves the body to the gun. In the sights a long gun takes a cheek weld:
+  the eyes come down and over onto the stock (`ActionPose.cheek_eye`,
+  added in `ActorSkin.eye_point`, so the sights and the first-person
+  camera stay on them) and the head tips with them at the neck
+  (`cheek_long`, `WeaponArm.cheek`), so the butt meets the shoulder
+  instead of the neck. Stood at ease out of a fight a gun is held at the
+  low ready in both hands (`WeaponArm` takes `low` as a carry), lower and
+  tipped further down than on the move (`carry_rest`, `ActionPose.at_ease`),
+  never hung from one hand by the clip, which ran it through the arm.
+  `tests/visual/clip.gd` (`--clip-only`) shoots the upper body close up
+  with each hold, and `tests/visual/gun_moves.gd` (`--gun-moves-only`)
+  films a gun through the holds as frames for a GIF, from outside and
+  from the eyes. A summoned weapon's bounds (`ActionPose.model_box`) are
+  measured again once it has come together (`ActorSkin._update_materialize`):
+  measured while its parts flew in, every aim after a summon was off the eye.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
   with `--carry-only`.

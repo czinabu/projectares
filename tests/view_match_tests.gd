@@ -251,8 +251,11 @@ static func _check_with_skin(t: Node) -> void:
 			"a raised watch lifts the left arm")
 	p.cmd.watch_up = false
 	await t.frames(20)
-	t.check(pose.watch == 0.0 and (skin.arm.off_ik == null or skin.arm.off_ik.influence < 0.01),
-			"lowering the watch lets the arm down")
+	# Back to what the off arm does without it: down, or on the gun where
+	# both hands hold it (a long gun at the low ready at ease too).
+	t.check(pose.watch == 0.0 and (skin.arm.off_ik == null
+			or absf(skin.arm.off_ik.influence - maxf(skin.arm._support, skin.arm._off_weight)) < 0.01),
+			"lowering the watch lets the arm back to its hold")
 
 	# Standing still with a gun, it is held low.
 	p.cmd.primary = false

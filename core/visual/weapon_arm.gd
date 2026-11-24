@@ -493,7 +493,10 @@ func step(delta: float) -> void:
 	_gun_carry = 0.0
 	if gun != null and gun.visual != null and gun.visual.visible and not _let_go() and override_weight <= 0.001:
 		raised = (1.0 - shared.low) * (1.0 - shared.reload) * (1.0 - shared.inspect_for("gun"))
-		_gun_carry = shared.carry if _weight <= 0.001 else 0.0
+		# Lowered out of a fight (standing at ease), it is held at the low
+		# ready in both hands as on the move, not hung from one hand by the
+		# clip (which ran the gun through the arm).
+		_gun_carry = maxf(shared.carry, shared.low) if _weight <= 0.001 else 0.0
 		raised = lerpf(raised, shared.carry_support(gun), _gun_carry)
 	_support = maxf(_ads, raised)
 	var in_hand := gun != null and gun.visual != null and gun.visual.visible and not _let_go()
@@ -508,7 +511,8 @@ func step(delta: float) -> void:
 	# a sprint the gun is across the chest and the shoulders stay square.
 	var carried_low := 0.0
 	if gun != null and not gun.is_sidearm:
-		carried_low = _gun_carry * (1.0 - shared.sprint) * shared.carry_stance_share
+		# On the move only: stood at ease the body stays square.
+		carried_low = minf(_gun_carry, shared.carry) * (1.0 - shared.sprint) * shared.carry_stance_share
 	var stance := maxf(maxf(_ads, hip_up * shared.hip_stance_share), carried_low)
 	_ads_turn = shared.ads_stance(gun) * stance if stance > 0.0 else Vector2.ZERO
 	var weld := _ads if _ads > 0.0 and shared.cheeks(gun) else 0.0

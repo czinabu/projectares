@@ -132,6 +132,7 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	controller.view_mode = PlayerController.ViewMode.FIRST
 	await t.frames(5)
 	var before := ActionPose.sight_shown(gun)
+	var eye_before: Vector3 = skin.eye_point(p.global_basis.orthonormalized() * Basis(Vector3.RIGHT, p.cmd.pitch))
 	_aim(p, gun, true)
 	# Two thirds of a second of game time, however fast the frames run.
 	var waited := 0.0
@@ -161,7 +162,10 @@ static func _check_with_skin(t: Node, kit: Array, what: String) -> void:
 	var relief := (sight - eye).dot(ahead)
 	t.check(absf(relief - pose.relief_now) < 0.03 and pose.relief_now <= pose.relief_for(gun) + 0.001,
 			"%s: the sight sits its relief in front of the eye (%.2f m)" % [what, relief])
-	t.check(sight.y > before.y + 0.05, "%s: aiming raises the gun from its hold" % what)
+	# Held below the eyes, it comes up onto them (the eyes come down onto a
+	# long gun's stock some way too, `ActionPose.cheek_eye`).
+	t.check(before.y < eye_before.y - 0.08 and sight.y > before.y,
+			"%s: aiming raises the gun from its hold (%.2f below the eyes, then %.2f)" % [what, eye_before.y - before.y, sight.y - before.y])
 	var off_hand: Vector3 = skin.arm._off_target.global_position
 	t.check(skin.arm.off_ik.influence > 0.99, "%s: the off hand comes onto the gun" % what)
 	var gun_box_reach := off_hand.distance_to(gun.visual.global_position)

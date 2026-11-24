@@ -453,7 +453,7 @@ var toy_elbow := Vector3(0.9, 1.75, 0.3)
 ## An optic's eye point is its own relief.
 var ads_rate := 7.0
 var sidearm_relief := 0.5
-var stock_ahead := 0.06
+var stock_ahead := 0.17
 var min_relief := 0.06
 ## Guns with any of these tags are braced at the hip, never shouldered
 ## (a spinning cannon is too heavy to bring to the eye).
@@ -483,7 +483,7 @@ var cheek_long := Vector2(0.4, 0.4)
 ## pitch is clamped to `hip_pitch` for the place (the gun still turns to the
 ## full aim), and the body blades `hip_stance_share` of the way into its
 ## aiming stance (`ads_stance`).
-var hip_from_eyes_long := Vector3(0.08, -0.27, -0.12)
+var hip_from_eyes_long := Vector3(0.1, -0.32, -0.12)
 var hip_from_eyes_sidearm := Vector3(0.0, -0.23, -0.17)
 ## A gun too heavy for the shoulder (`shoulders_never`, a spinning cannon)
 ## is braced low at the hip instead, the off hand on its fore grip.
@@ -541,8 +541,8 @@ const INSPECT_TURNS := [
 ## (on the new body the chest-set carries hung half a metre under the eyes
 ## and out of view), and from the shoulders, so both arms reach it however
 ## far a run or a crouch puts the head forward.
-var carry_low_long := Vector3(0.1, -0.33, -0.2)
-var carry_low_long_turn := Vector3(-0.15, 0.15, 0.08)
+var carry_low_long := Vector3(0.1, -0.34, -0.24)
+var carry_low_long_turn := Vector3(-0.25, 0.12, 0.05)
 var carry_port_long := Vector3(0.13, -0.4, -0.42)
 var carry_port_long_turn := Vector3(0.75, 1.0, 0.6)
 var carry_low_sidearm := Vector3(0.03, -0.31, -0.28)
@@ -553,8 +553,13 @@ var carry_port_sidearm_turn := Vector3(-0.6, 0.15, 0.15)
 ## port: carried level across the hips in both hands, the muzzle a little to
 ## the off side, and in a sprint only dropped a little lower and turned in.
 var heavy_tags: Array[String] = ["power"]
-var carry_low_heavy := Vector3(0.1, -0.31, -0.14)
-var carry_low_heavy_turn := Vector3(-0.08, 0.12, 0.05)
+## Standing at ease out of a fight the gun is held at the low ready too,
+## in both hands (`WeaponArm`), this much lower and further tipped down
+## than on the move (`at_ease`), out of the view and off the body.
+var carry_rest := Vector3(0.0, -0.1, 0.03)
+var carry_rest_turn := Vector3(-0.25, 0.0, 0.0)
+var carry_low_heavy := Vector3(0.12, -0.36, -0.24)
+var carry_low_heavy_turn := Vector3(0.0, 0.1, 0.05)
 var carry_port_heavy := Vector3(0.1, -0.35, -0.2)
 var carry_port_heavy_turn := Vector3(-0.15, 0.2, 0.1)
 ## How much the off hand holds the gun in each carry: both hands at a low
@@ -937,7 +942,13 @@ func carry_point(gun: Gun) -> Vector3:
 	var heavy := is_heavy_gun(gun)
 	var low_at := carry_low_sidearm if side else (carry_low_heavy if heavy else carry_low_long)
 	var port_at := carry_port_sidearm if side else (carry_port_heavy if heavy else carry_port_long)
-	return low_at.lerp(port_at, sprint) + carry_bob() + sway
+	return low_at.lerp(port_at, sprint) + carry_rest * at_ease() + carry_bob() + sway
+
+
+## How far the gun is held at ease: lowered out of a fight and standing
+## (`low` without the move's `carry`).
+func at_ease() -> float:
+	return clampf(low - carry, 0.0, 1.0)
 
 
 func carry_turn(gun: Gun) -> Vector3:
@@ -946,7 +957,7 @@ func carry_turn(gun: Gun) -> Vector3:
 	var low_turn := carry_low_sidearm_turn if side else (carry_low_heavy_turn if heavy else carry_low_long_turn)
 	var port_turn := carry_port_sidearm_turn if side else (carry_port_heavy_turn if heavy else carry_port_long_turn)
 	var drop := cos(TAU * 2.0 * stride_phase) * stride_amount
-	return low_turn.lerp(port_turn, sprint) + Vector3(-bob_tip * drop, 0.0, 0.0)
+	return low_turn.lerp(port_turn, sprint) + carry_rest_turn * at_ease() + Vector3(-bob_tip * drop, 0.0, 0.0)
 
 
 ## A turn given as pitch (up), yaw (toward the off side) and roll (top
@@ -1141,16 +1152,14 @@ func shoulders_never(gun: Gun) -> bool:
 ## How far in front of the eyes the sight of `gun` sits when sighted.
 ## An optic's "Sight" marker is already its eye point, so it needs none.
 func relief_for(gun: Gun) -> float:
+	if optic_sight(gun) != null:
+		return 0.0
 	if gun.is_sidearm or ItemDB.has_tag(gun.item_id, "sidearm"):
 		return sidearm_relief
 	var box := model_box(gun)
-	# A magnifying scope is looked into at its own eye point.
-	if gun.scope_lens and optic_sight(gun) != null:
-		return 0.0
-	var optic := optic_sight(gun) != null
 	if box.size == Vector3.ZERO:
-		return 0.0 if optic else min_relief
-	return maxf(box.end.z - stock_ahead - sight_local(gun).z, 0.0 if optic else min_relief)
+		return min_relief
+	return maxf(box.end.z - stock_ahead - sight_local(gun).z, min_relief)
 
 
 ## The bounds of the gun as drawn, in the space of its visual (worked out
