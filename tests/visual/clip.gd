@@ -20,6 +20,10 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 		["jog", Vector3(0, 0, -1), false, false],
 	]
 	var size := Vector2i(300, 300)
+	# `CLIP_AIM_ONLY`: only the aim, closer in on the shoulder.
+	var close := OS.has_environment("CLIP_AIM_ONLY")
+	if close:
+		moves = [moves[0]]
 	for id: String in ids:
 		var raid := Raid.new()
 		v.add_child(raid)
@@ -69,6 +73,17 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 			var chest := p.global_position + Vector3(0, 1.4, 0)
 			var spots := [p.global_basis * Vector3(1.4, 0.1, -0.3), p.global_basis * Vector3(0.05, 1.5, -0.25),
 					p.global_basis * Vector3(0.2, 0.1, -1.4), p.global_basis * Vector3(-1.4, 0.1, -0.3)]
+			if close:
+				# Gun side, from above and behind the shoulder, from ahead
+				# of the shoulder, and from behind.
+				chest = p.global_position + Vector3(0, 1.45, 0) + p.global_basis.x * 0.1
+				spots = [p.global_basis * Vector3(0.7, 0.05, -0.1), p.global_basis * Vector3(0.25, 0.6, 0.45),
+						p.global_basis * Vector3(0.45, 0.1, -0.6), p.global_basis * Vector3(0.1, 0.25, 0.8)]
+			if OS.has_environment("CLIP_WIDE"):
+				# `CLIP_WIDE`: the whole body, to see where a gun hangs.
+				chest = p.global_position + Vector3(0, 1.0, 0)
+				for i in spots.size():
+					spots[i] = (spots[i] as Vector3) * 2.2
 			for col in 4:
 				cam.global_position = chest + (spots[col] as Vector3)
 				cam.look_at(chest, p.global_basis.z if col == 1 else Vector3.UP)

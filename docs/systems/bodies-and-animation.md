@@ -66,8 +66,9 @@ date in the same PR.
   the fore end, the gun shows low in the view and the clip's arm swing
   never reaches it (the clips' own hold put the gun out past the new
   body's reach). A gun braced at the hip (`shoulders_never`, the Storm
-  Cannon) is held the same way, lower (`hip_from_eyes_braced`), both hands
-  on it; a heavy weapon (`heavy_tags`, the power weapons) is carried level
+  Cannon) is held the same way, low at the hips the way a heavy gunner
+  hangs one from a sling (`hip_from_eyes_braced`), both hands on it, and
+  carried low there too (`carry_low_braced`); a heavy weapon (`heavy_tags`, the power weapons) is carried level
   across the hips and never thrown up to port (`carry_low_heavy`,
   `carry_port_heavy`). A gun held on a vehicle keeps the clip's wrist
   averaged over a stride.
@@ -95,12 +96,19 @@ date in the same PR.
   added in `ActorSkin.eye_point`, so the sights and the first-person
   camera stay on them) and the head tips with them at the neck
   (`cheek_long`, `WeaponArm.cheek`), so the butt meets the shoulder
-  instead of the neck. Stood at ease out of a fight a gun is held at the
+  instead of the neck; far enough over (`cheek_eye.x`) that the butt
+  sits in the shoulder pocket outside the collar. A launcher
+  (`shoulder_fired_tags`, the Helion) takes no cheek weld: its tube rests
+  on top of the gun shoulder beside the head, its sight
+  `ActionPose.shoulder_fired` from the eyes (`sight_aside`, used by
+  `WeaponArm.sight_target` and the first-person camera alike), and the
+  eye looks along its side. Stood at ease out of a fight a gun is held at the
   low ready in both hands (`WeaponArm` takes `low` as a carry), lower and
   tipped further down than on the move (`carry_rest`, `ActionPose.at_ease`),
   never hung from one hand by the clip, which ran it through the arm.
   `tests/visual/clip.gd` (`--clip-only`) shoots the upper body close up
-  with each hold, and `tests/visual/gun_moves.gd` (`--gun-moves-only`)
+  with each hold (`CLIP_AIM_ONLY` closer on the shoulder in the sights,
+  `CLIP_WIDE` the whole body), and `tests/visual/gun_moves.gd` (`--gun-moves-only`)
   films a gun through the holds as frames for a GIF, from outside and
   from the eyes. A summoned weapon's bounds (`ActionPose.model_box`) are
   measured again once it has come together (`ActorSkin._update_materialize`):

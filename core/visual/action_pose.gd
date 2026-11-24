@@ -458,6 +458,13 @@ var min_relief := 0.06
 ## Guns with any of these tags are braced at the hip, never shouldered
 ## (a spinning cannon is too heavy to bring to the eye).
 var ads_hip_tags: Array[String] = ["minigun"]
+## Guns with any of these tags are aimed on the shoulder, not at the cheek:
+## a launcher's tube rests on top of the gun shoulder, beside the head, and
+## the eye looks along its side. `shoulder_fired` is where its sight sits
+## from the eyes (metres right, up and ahead, along the aim) in place of
+## the sight line running through them.
+var shoulder_fired_tags: Array[String] = ["launcher"]
+var shoulder_fired := Vector3(0.17, -0.02, -0.1)
 ## Where the off hand's fist closes round a sidearm's grip, wrapped over
 ## the gun hand's fingers from the off side: from the grip spot
 ## (`hold_local`), in the gun's space.
@@ -473,7 +480,7 @@ var ads_stance_sidearm := Vector2(0.3, -0.06)
 ## frame), so the butt meets the shoulder instead of the neck, and the head
 ## tips toward the gun side (x) and forward (y), in radians at the neck, to
 ## go with them. The sights stay on the eyes (`ActorSkin.eye_point`).
-var cheek_eye := Vector3(0.05, -0.07, 0.03)
+var cheek_eye := Vector3(0.09, -0.07, 0.03)
 var cheek_long := Vector2(0.4, 0.4)
 ## Held up at the hip (in a fight, out of the sights and the carry): where
 ## the gun hand's wrist goes, from the eyes along the aim (metres right, up
@@ -486,8 +493,9 @@ var cheek_long := Vector2(0.4, 0.4)
 var hip_from_eyes_long := Vector3(0.1, -0.32, -0.12)
 var hip_from_eyes_sidearm := Vector3(0.0, -0.23, -0.17)
 ## A gun too heavy for the shoulder (`shoulders_never`, a spinning cannon)
-## is braced low at the hip instead, the off hand on its fore grip.
-var hip_from_eyes_braced := Vector3(0.1, -0.45, -0.12)
+## is braced low at the hips instead, the way a heavy gunner hangs it from
+## a sling, the off hand on its fore grip.
+var hip_from_eyes_braced := Vector3(0.12, -0.52, -0.24)
 var hip_pitch := Vector2(-0.8, 0.7)
 var hip_stance_share := 0.8
 ## The share of the aiming stance a long gun carried at a low ready blades
@@ -560,6 +568,8 @@ var carry_rest := Vector3(0.0, -0.1, 0.03)
 var carry_rest_turn := Vector3(-0.25, 0.0, 0.0)
 var carry_low_heavy := Vector3(0.12, -0.36, -0.24)
 var carry_low_heavy_turn := Vector3(0.0, 0.1, 0.05)
+## A gun braced at the hips (`shoulders_never`) is carried there too.
+var carry_low_braced := Vector3(0.12, -0.42, -0.18)
 var carry_port_heavy := Vector3(0.1, -0.35, -0.2)
 var carry_port_heavy_turn := Vector3(-0.15, 0.2, 0.1)
 ## How much the off hand holds the gun in each carry: both hands at a low
@@ -941,6 +951,8 @@ func carry_point(gun: Gun) -> Vector3:
 	var side := gun != null and gun.is_sidearm
 	var heavy := is_heavy_gun(gun)
 	var low_at := carry_low_sidearm if side else (carry_low_heavy if heavy else carry_low_long)
+	if gun != null and shoulders_never(gun):
+		low_at = carry_low_braced
 	var port_at := carry_port_sidearm if side else (carry_port_heavy if heavy else carry_port_long)
 	return low_at.lerp(port_at, sprint) + carry_rest * at_ease() + carry_bob() + sway
 
@@ -1138,7 +1150,24 @@ func ads_stance(gun: Gun) -> Vector2:
 ## True for a gun that takes a cheek weld in the sights (`cheek_eye`): not
 ## a sidearm held out or a gun braced at the hip.
 func cheeks(gun: Gun) -> bool:
-	return gun != null and not gun.is_sidearm and not shoulders_never(gun)
+	return gun != null and not gun.is_sidearm and not shoulders_never(gun) and not on_shoulder(gun)
+
+
+## True for a gun aimed with its tube on the shoulder (`shoulder_fired_tags`).
+func on_shoulder(gun: Gun) -> bool:
+	if gun == null:
+		return false
+	for tag in shoulder_fired_tags:
+		if ItemDB.has_tag(gun.item_id, tag):
+			return true
+	return false
+
+
+## Where the sight of `gun` sits from the eyes when sighted, besides its
+## relief straight ahead: beside the head for a gun on the shoulder
+## (`shoulder_fired`), nothing for any other.
+func sight_aside(gun: Gun) -> Vector3:
+	return shoulder_fired if on_shoulder(gun) else Vector3.ZERO
 
 
 ## True for a gun that is aimed from the hip (`ads_hip_tags`).
@@ -1152,7 +1181,7 @@ func shoulders_never(gun: Gun) -> bool:
 ## How far in front of the eyes the sight of `gun` sits when sighted.
 ## An optic's "Sight" marker is already its eye point, so it needs none.
 func relief_for(gun: Gun) -> float:
-	if optic_sight(gun) != null:
+	if optic_sight(gun) != null or on_shoulder(gun):
 		return 0.0
 	if gun.is_sidearm or ItemDB.has_tag(gun.item_id, "sidearm"):
 		return sidearm_relief

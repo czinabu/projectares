@@ -921,7 +921,7 @@ func sight_target(gun: Gun, aimed: Basis) -> Vector3:
 	var eye: Variant = skin.eye_point(aimed) if skin != null and skin.has_method("eye_point") else null
 	if eye == null:
 		eye = actor.get_eye_position()
-	return (eye as Vector3) + aimed * Vector3(0.0, 0.0, -_relief_now)
+	return (eye as Vector3) + aimed * (Vector3(0.0, 0.0, -_relief_now) + _pose().sight_aside(gun))
 
 
 ## Turns the spine toward the attack before the arms reach, so they reach
