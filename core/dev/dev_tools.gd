@@ -321,7 +321,7 @@ static func draw_state(actor: Actor, camera: Camera3D) -> Dictionary:
 		state["skin_visible"] = (skin as Node3D).visible
 		state["posed_every"] = skin.get("_detail_every")
 	var chest := actor.global_position + Vector3.UP * actor.body_height() * 0.6
-	var in_view: Array = []
+	var in_view := {}
 	if camera != null:
 		state["distance"] = snappedf(camera.global_position.distance_to(chest), 0.1)
 		state["framed"] = camera.is_position_in_frustum(chest)
@@ -332,7 +332,17 @@ static func draw_state(actor: Actor, camera: Camera3D) -> Dictionary:
 			var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
 			state["line_clear"] = hit.is_empty()
 			if DisplayServer.get_name() != "headless":
-				in_view = RenderingServer.instances_cull_convex(camera.get_frustum(), actor.get_world_3d().scenario)
+				# The view's planes and a box round the actor, so the renderer
+				# only lists the actor's own neighbourhood, not the whole world
+				# (a scan of every instance on every hit sank the frame rate).
+				var planes := camera.get_frustum()
+				var low := actor.global_position - Vector3(3.0, 1.0, 3.0)
+				var high := actor.global_position + Vector3(3.0, actor.body_height() + 2.0, 3.0)
+				planes.append_array([Plane(Vector3.RIGHT, high.x), Plane(Vector3.LEFT, -low.x),
+						Plane(Vector3.UP, high.y), Plane(Vector3.DOWN, -low.y),
+						Plane(Vector3.BACK, high.z), Plane(Vector3.FORWARD, -low.z)])
+				for id: int in RenderingServer.instances_cull_convex(planes, actor.get_world_3d().scenario):
+					in_view[id] = true
 	else:
 		state["distance"] = -1.0
 	var meshes := 0
@@ -358,7 +368,7 @@ static func draw_state(actor: Actor, camera: Camera3D) -> Dictionary:
 		if (part.layers & camera.cull_mask) == 0 or (reach > 0.0 and float(state.distance) > reach + part.visibility_range_end_margin):
 			continue
 		to_camera += 1
-		if not in_view.is_empty() and part.get_instance_id() in in_view:
+		if in_view.has(part.get_instance_id()):
 			culled += 1
 	state["meshes"] = meshes
 	state["shown"] = shown
