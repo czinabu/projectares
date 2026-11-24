@@ -5,7 +5,8 @@ extends RefCounted
 
 ## Contact sheets, side on and from the front, of moves played for real with
 ## a blade out: a slide out of a sprint, light cuts from each side, a heavy,
-## a kick, and standing on guard. Each row is one move, left to right in
+## a kick, standing on guard, a sprint started and stopped, and a jump from a
+## stand and from a sprint. Each row is one move, left to right in
 ## time, so a snap between poses or a leg that flares shows as a jump
 ## between neighbours. `only=slide,kick` shoots just those rows. `frames`
 ## instead saves every other tick of each move, from three sides, as
@@ -53,7 +54,8 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 	cam.current = true
 	cam.fov = 40.0
 	# [name, frames between shots]
-	var rows := [["slide", 6], ["light_right", 3], ["light_left", 3], ["overhead", 3], ["heavy", 5], ["kick", 4], ["guard", 8]]
+	var rows := [["slide", 6], ["light_right", 3], ["light_left", 3], ["overhead", 3], ["heavy", 5], ["kick", 4], ["guard", 8],
+			["start", 4], ["stop", 4], ["jump", 5], ["run_jump", 5]]
 	if not names.is_empty():
 		rows = rows.filter(func(row: Array) -> bool: return String(row[0]) in names)
 	var shots := 42 if frames else 14
@@ -75,11 +77,13 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 		blade.heavy_stamina = 0.0
 		p.stamina = p.max_stamina
 		await v._settle(40)
-		if move == "slide":
-			# A sprint, the slide, and on out of it.
+		if move in ["slide", "stop", "run_jump"]:
+			# A sprint, then the move out of it.
 			p.cmd.move = Vector2(0, 1)
 			p.cmd.sprint = true
 			await v._settle(70)
+		elif move in ["start", "jump"]:
+			pass
 		elif move == "kick":
 			p.cmd.kick_pressed = true
 		elif move != "guard":
@@ -91,13 +95,26 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 				p.cmd.primary_pressed = true
 		for i in shots:
 			# The slide starts two shots in, after a glimpse of the sprint.
-			if move == "slide" and i == (5 if frames else 2):
-				p.cmd.slide = true
+			if i == (5 if frames else 2):
+				match move:
+					"slide":
+						p.cmd.slide = true
+					"start":
+						p.cmd.move = Vector2(0, 1)
+						p.cmd.sprint = true
+					"stop":
+						p.cmd.move = Vector2.ZERO
+						p.cmd.sprint = false
+					"jump", "run_jump":
+						p.cmd.jump_pressed = true
+						p.cmd.jump = true
 			for k in (2 if frames else int(rows[row][1])):
 				await v.get_tree().process_frame
 				p.cmd.primary_pressed = false
 				p.cmd.tertiary_pressed = false
 				p.cmd.kick_pressed = false
+				p.cmd.jump_pressed = false
+				p.cmd.jump = false
 				if move == "slide" and p.slide_left > 0.0:
 					p.cmd.slide = false
 					p.cmd.sprint = false

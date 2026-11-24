@@ -872,6 +872,7 @@ func _update(delta: float) -> void:
 	locomotion.overlay = false
 	locomotion.stand_legs = false
 	locomotion.stand_legs_hips = true
+	locomotion.air_legs = false
 	ActionPose.of(actor).carry_wanted = false
 	if actor.is_dead:
 		_play("death")
@@ -925,6 +926,7 @@ func _update(delta: float) -> void:
 		# the air pose, so the arms keep their hold on the weapon.
 		_play("idle_melee" if melee and _anims.has("idle_melee") else stand_key(weapon))
 		locomotion.stand_legs = _current in LEGS_FROM_STAND
+		locomotion.air_legs = true
 	elif actor.is_sliding():
 		# The slide pose bends whatever plays under it; the arms keep their
 		# hold: a gun carried, or raised to shoot out of the slide.

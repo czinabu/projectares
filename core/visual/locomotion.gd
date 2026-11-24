@@ -235,6 +235,17 @@ var stand_legs := false
 ## Whether the relaxed stand also sets the hips, or only the legs below
 ## them: a blade keeps its clip's hips, which the swings are tuned on.
 var stand_legs_hips := true
+## Off the ground on foot (set by the skin): the legs take the pack's jump
+## (`anims["air_legs"]`, its legs only, below the hips) over the stand that
+## plays under the air, eased in at `air_legs_rate` a second and out the
+## same on touchdown, so a running jump does not snap the stride into a
+## stand and back. A flight rig's own air poses come after it.
+var air_legs := false
+var air_legs_weight := 0.0
+var air_legs_rate := 7.0
+var _air_anim: Animation
+var _air_tracks: Array = []
+var _air_time := 0.0
 ## Room for worn armor: each upper arm swings out from the body so the
 ## elbow sits `arm_clear` m further out (a hanging hand about half again
 ## as much), past the plates and pouches a frame hangs at the sides. Set
@@ -379,6 +390,16 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 			var bone := skeleton.find_bone(String(_stand_anim.track_get_path(track)).get_slice(":", 1))
 			if bone >= 0 and bone != _spine[0] and not _is_under(bone, _spine[0]):
 				_stand_tracks.append([bone, track, type])
+
+	if player and anims.has("air_legs") and player.has_animation(anims["air_legs"]) and not _spine.is_empty():
+		_air_anim = player.get_animation(anims["air_legs"])
+		var hips := skeleton.find_bone(_hip_name)
+		for track in _air_anim.get_track_count():
+			if _air_anim.track_get_type(track) != Animation.TYPE_ROTATION_3D:
+				continue
+			var bone := skeleton.find_bone(String(_air_anim.track_get_path(track)).get_slice(":", 1))
+			if bone >= 0 and hips >= 0 and _is_under(bone, hips) and bone != _spine[0] and not _is_under(bone, _spine[0]):
+				_air_tracks.append([bone, track])
 
 	if player and anims.has("slide") and _spine.size() > 1:
 		var keys := ["slide_start", "slide", "slide_exit"]
@@ -648,6 +669,10 @@ func update(delta: float) -> void:
 	stride = move_toward(stride, stride_target, stride_rate * delta)
 	stand_legs_weight = move_toward(stand_legs_weight, 1.0 if stand_legs and not _stand_tracks.is_empty() else 0.0,
 			stand_legs_rate * delta)
+	air_legs_weight = move_toward(air_legs_weight, 1.0 if air_legs and not _air_tracks.is_empty() else 0.0,
+			air_legs_rate * delta)
+	if _air_anim and _air_anim.length > 0.0:
+		_air_time = fposmod(_air_time + delta, _air_anim.length) if air_legs_weight > 0.0 else 0.0
 	shiver = move_toward(shiver, 1.0 if actor.shivering and not actor.is_dead else 0.0, shiver_ease * delta)
 	_update_look(delta)
 	_shiver_time += delta
@@ -676,6 +701,11 @@ func update(delta: float) -> void:
 ## is doing.
 func _stand_legs() -> void:
 	_slide_clip()
+	_stand_legs_clip()
+	_air_legs_clip()
+
+
+func _stand_legs_clip() -> void:
 	if stand_legs_weight <= 0.0 or _stand_anim == null:
 		return
 	var hips := -1 if stand_legs_hips else skeleton.find_bone(_hip_name)
@@ -689,6 +719,17 @@ func _stand_legs() -> void:
 		else:
 			var at := _stand_anim.position_track_interpolate(entry[1], _stand_time)
 			skeleton.set_bone_pose_position(bone, skeleton.get_bone_pose_position(bone).lerp(at, stand_legs_weight))
+
+
+## Lays the jump's legs over whatever plays while off the ground.
+func _air_legs_clip() -> void:
+	var weight := smoothstep(0.0, 1.0, air_legs_weight)
+	if weight <= 0.001 or _air_anim == null:
+		return
+	for entry: Array in _air_tracks:
+		var bone: int = entry[0]
+		var q := _air_anim.rotation_track_interpolate(entry[1], _air_time)
+		skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(q, weight))
 
 
 ## Swings each upper arm out from the body by `arm_clear` at the elbow:

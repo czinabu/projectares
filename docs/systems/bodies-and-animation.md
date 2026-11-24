@@ -26,7 +26,11 @@ date in the same PR.
   next so the legs pick up their run without a snap (`_advance_slide`,
   `slide_weight`). Leaving the ground cuts the rise. A body with only the
   held clip lays it on by `slide_low`; one without a slide clip is bent
-  into a slide pose instead (`_slide_pose`).
+  into a slide pose instead (`_slide_pose`). Off the ground on foot the
+  legs take the pack's jump ("Jump", `HUMAN_ANIMS["air_legs"]`, leg
+  rotations below the hips only) over the stand that plays in the air,
+  eased in and out at `Locomotion.air_legs_rate`, so a running jump does
+  not snap the stride into a stand and back.
   The crouch key (C) slides from a sprint and otherwise toggles the crouch
   (`PlayerController.crouch_key`), sent as the held `ActorCommand.crouch` so
   it predicts and every view sees it. `Actor.crouched` follows it but stays

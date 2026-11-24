@@ -905,6 +905,25 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 		loco._advance_slide(exit_length)
 		t.check(loco._slide_phase == loco.SLIDE_NONE and loco.slide_weight() == 0.0, tag + "and is done")
 
+	# Off the ground the legs take the jump's, eased in and out, instead of
+	# snapping from a stride to a stand and back.
+	if loco._air_anim != null:
+		var keep_velocity := player.velocity
+		player.velocity = Vector3.ZERO
+		player.airborne_time = 1.0
+		# The skin decides each frame what the next one eases toward.
+		skin._process(0.05)
+		skin._process(0.05)
+		var easing: float = loco.air_legs_weight
+		skin._process(0.5)
+		t.check(loco.air_legs and easing > 0.0 and easing < 0.9 and loco.air_legs_weight > 0.99,
+				tag + "off the ground the legs ease into the jump's (%.2f)" % easing)
+		player.airborne_time = 0.0
+		skin._process(0.05)
+		skin._process(0.5)
+		t.check(not loco.air_legs and loco.air_legs_weight == 0.0, tag + "and back out on the ground")
+		player.velocity = keep_velocity
+
 	# Room for armor: the elbows swing out from the body by `arm_clear`.
 	if skeleton and loco._arms.size() == 2 and not loco._arms[1].is_empty():
 		var saved_arms := {}
