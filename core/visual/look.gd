@@ -366,6 +366,9 @@ var _gun_mounts := {}
 var draw_distance_per_metre := 70.0
 var draw_distance_min := 40.0
 var draw_distance_cap := 380.0
+## Map props smaller than this (metres, their longest side) cast no sun
+## shadow (`_limit_draw_distance`).
+var shadow_min_size := 0.6
 ## Iron sights (`_iron_sights`) are drawn out to this many metres: further
 ## the widest of them is about two pixels at 1080p, so on someone else's gun
 ## they are not drawn at all (your own are always within reach).
@@ -446,6 +449,13 @@ func _limit_draw_distance(map: Node3D) -> void:
 			if mesh == null or mesh.mesh == null:
 				continue
 			var size := (mesh.global_transform * mesh.get_aabb()).size
+			# A prop smaller than `shadow_min_size` casts no sun shadow: a
+			# pebble's shadow is a few pixels, but it is drawn again in every
+			# shadow split (on Ashfront the sun's shadows were nine draws in
+			# ten).
+			if maxf(size.x, maxf(size.y, size.z)) < shadow_min_size \
+					and mesh.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
+				mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			var reach := maxf(size.x, maxf(size.y, size.z)) * draw_distance_per_metre
 			base = maxf(reach, draw_distance_min) if reach < draw_distance_cap else 0.0
 		shape.set_meta(DRAW_BASE, base)
