@@ -374,6 +374,8 @@ var _wing_stow := 0.0
 ## Jetpack: the trigger pulled in a boost brings you upright into a hover,
 ## and the jets hold you there while it stays held (`_wants_hover`).
 var _boost_flare := false
+## Skating last tick: touching the floor mid-skate lifts you straight back up.
+var _was_skating := false
 ## Jetpack: the heading a boost holds while free look is held (NAN: none,
 ## the boost follows the view).
 var _boost_yaw := NAN
@@ -698,15 +700,22 @@ func _simulate_movement(delta: float) -> void:
 	_boost_flare = cmd.primary and not on_floor and (_boost_flare or flight.is_boosting)
 	# Gliding: holding jump while falling with wings carries you forward.
 	# Once gliding you stay gliding while you climb on your speed.
-	flight.is_gliding = flight.can_glide() and cmd.jump and not on_floor and not staggered \
+	# Soaring (held sprint), the wings keep gliding with jump let go.
+	flight.is_gliding = flight.can_glide() and not on_floor and not staggered \
+			and (cmd.jump or (flight.is_gliding and cmd.sprint and flight.can_soar())) \
 			and (velocity.y < 0.0 or flight.is_gliding)
-	flight.is_skimming = flight.skim_ready() and cmd.jump and not on_floor and not staggered
+	flight.is_soaring = flight.is_gliding and cmd.sprint and flight.can_soar() and not flight.overheated
+	flight.is_skating = _wants_skate(on_floor, staggered)
+	_was_skating = flight.is_skating
+	flight.is_skimming = flight.skim_ready() and cmd.jump and not on_floor and not staggered and not flight.is_skating
 	if not flight.is_gliding:
 		if not _glide_launch:
 			_first_spread = false
 		_bank = 0.0
 		_glide_launch = true
-	if on_floor:
+	if flight.is_skating:
+		horizontal = _skate_velocity(horizontal, wish, yaw_basis, delta)
+	elif on_floor:
 		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
 	elif flight.is_skimming:
 		horizontal = horizontal.move_toward(wish * flight.skim_speed, flight.skim_accel * delta)
@@ -775,6 +784,8 @@ func _simulate_movement(delta: float) -> void:
 		_boost_yaw = NAN
 	if flight.is_hovering:
 		_simulate_hover(delta)
+	elif flight.is_skating:
+		_simulate_skate(delta)
 	elif flight.is_skimming:
 		_simulate_skim(delta)
 	else:
@@ -801,8 +812,11 @@ func _simulate_movement(delta: float) -> void:
 				var lift := air_speed * sin(pull * 0.7) * clampf(spare / (flight.glide_speed * 0.15), 0.0, 1.0)
 				# Banked, the pull goes into the turn more than into height.
 				lift *= 1.0 - flight.glide_bank_lift_loss * absf(_bank)
-				# Speed buys height only up to the ceiling.
+				# Speed buys height only up to the ceiling; soaring, the
+				# thrust climbs steadily, never in a zoom.
 				lift = minf(lift, flight.lift_cap(gravity))
+				if flight.is_soaring:
+					lift = minf(lift, flight.soar_climb)
 				caught = maxf(caught, minf(lift, velocity.y + (gravity + flight.glide_lift_accel) * delta))
 			velocity.y = caught
 	_take_gusts(on_floor, delta)
@@ -909,7 +923,10 @@ func _simulate_hover(delta: float) -> void:
 		var clumsy := flight.indoor_factor()
 		var want := Basis(Vector3.UP, heading) * Vector3(cmd.move.x * flight.fly_speed * 0.5, 0.0, -flight.boost_speed) * clumsy
 		want.y += flight.max_rise_speed * flight.climb_room() * clumsy if climb > 0.0 else climb * flight.descend_speed
-		velocity = velocity.move_toward(want, flight.boost_accel * delta)
+		# Spooling up from slow it pulls hard, easing off near cruise speed.
+		var going := clampf(Vector2(velocity.x, velocity.z).length() / maxf(flight.boost_speed, 0.1), 0.0, 1.0)
+		var accel := lerpf(maxf(flight.boost_launch_accel, flight.boost_accel), flight.boost_accel, going * going)
+		velocity = velocity.move_toward(want, accel * delta)
 		# Travel is cheap; a climb in a boost costs what any climb does.
 		flight.tick(true, delta, lerpf(flight.boost_heat_mult, maxf(flight.boost_heat_mult, flight.climb_heat_mult),
 				flight.climb_room()) if climb > 0.0 else flight.boost_heat_mult)
@@ -926,6 +943,43 @@ func _simulate_hover(delta: float) -> void:
 	# Under the ceiling the climb eases off, and so does what it costs: held
 	# on the ceiling, the jets only hold you there.
 	flight.tick(true, delta, lerpf(level, flight.climb_heat_mult, flight.climb_room()) if climb > 0.0 else level)
+
+
+## Boots skate (Caleb's call: every rig cruises its own way): held sprint
+## in the air, or on from a skate that touched down, within `skate_reach`
+## of a surface. Back held brakes out of it.
+func _wants_skate(on_floor: bool, staggered: bool) -> bool:
+	if not flight.can_skate() or staggered or not cmd.sprint or cmd.move.y < -0.1:
+		return false
+	if on_floor and not _was_skating:
+		return false
+	return on_floor or height_above_ground(flight.skate_reach) < flight.skate_reach
+
+
+## Skating: the boots carve after the view (and the strafe keys) at
+## `skate_turn_rate`, speeding up to `skate_speed`.
+func _skate_velocity(horizontal: Vector3, wish: Vector3, yaw_basis: Basis, delta: float) -> Vector3:
+	var want := wish.normalized() if wish.length() > 0.1 else yaw_basis * Vector3.FORWARD
+	var speed := horizontal.length()
+	var heading := horizontal / speed if speed > 1.0 else want
+	var angle := heading.signed_angle_to(want, Vector3.UP)
+	var step := flight.skate_turn_rate * delta
+	heading = heading.rotated(Vector3.UP, clampf(angle, -step, step))
+	# A hard carve costs a little speed.
+	var top := flight.skate_speed * flight.indoor_factor() * (1.0 - 0.15 * clampf(absf(angle), 0.0, 1.0))
+	return heading * move_toward(speed, top, flight.skate_accel * delta)
+
+
+## Skating: the boots hold `skate_height` over whatever is below, rising and
+## sinking with it; a kick still carries you up first.
+func _simulate_skate(delta: float) -> void:
+	var height := height_above_ground(flight.skate_reach)
+	if velocity.y > 0.0 and height > flight.skate_height:
+		velocity.y -= gravity * delta
+	else:
+		var want := clampf((flight.skate_height - height) * 4.0, -flight.skate_lift, flight.skate_lift)
+		velocity.y = move_toward(velocity.y, want, (gravity + 20.0) * delta)
+	flight.tick(false, delta)
 
 
 ## Boots skimming: a kick rises as usual, then the boots hold your height
@@ -1049,7 +1103,10 @@ func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool,
 	_air_dash_cd = maxf(0.0, _air_dash_cd - delta)
 	if on_floor or staggered:
 		air_dash_left = 0.0
-	elif cmd.sprint_pressed and _air_dash_cd <= 0.0 and air_dash_left <= 0.0:
+	elif cmd.sprint_pressed and _air_dash_cd <= 0.0 and air_dash_left <= 0.0 \
+			and not _wants_boost(on_floor, staggered):
+		# A press that starts (or is in) a jetpack boost is the boost's,
+		# not a dash on top of it: that lurched ahead and stalled.
 		var boost := _glide_boost_kind()
 		if not flight.try_air_dash(flight.glide_boost_heat if boost != 0 else -1.0):
 			return Vector3.ZERO
@@ -1108,7 +1165,8 @@ func air_aim() -> float:
 		return 0.0
 	if flight.is_hovering and not flight.is_boosting:
 		return flight.flight_aim
-	if (flight.is_skimming and flight.skim_band() == 0) or (air_dash_left > 0.0 and flight.graze_window > 0.0):
+	if flight.is_skating or (flight.is_skimming and flight.skim_band() == 0) \
+			or (air_dash_left > 0.0 and flight.graze_window > 0.0):
 		return flight.flight_aim
 	if flight.is_gliding:
 		return flight.flight_aim
@@ -1200,6 +1258,9 @@ func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delt
 	if not _glide_launch:
 		# A turn costs speed, and a tight one, pulled in, costs more.
 		air_speed -= flight.glide_turn_drag * absf(_bank) * (1.0 + pull) * delta
+	if flight.is_soaring and air_speed < cruise:
+		# Soaring: the thrust makes up what turns and climbs cost.
+		air_speed = minf(cruise, air_speed + flight.soar_accel * delta)
 	return heading * maxf(air_speed, 0.0)
 
 
@@ -1215,6 +1276,9 @@ func _glide_sink() -> float:
 	if flight.stall_sink > 0.0 and glide_stalled():
 		return flight.stall_sink
 	var trim := glide_trim()
+	if flight.is_soaring and trim <= 0.0:
+		# Soaring holds the wings level.
+		return 0.0
 	var sink := lerpf(flight.glide_fall_speed, flight.glide_dive_fall, trim) if trim > 0.0 else flight.glide_fall_speed
 	return sink * (1.0 + flight.glide_bank_sink * absf(_bank))
 

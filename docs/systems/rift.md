@@ -2,9 +2,10 @@
 
 Rules for `worlds/rift/` (DESIGN.md "Basalt Rift", "The Basalt Rift (part
 one, built: the world and updrafts)", "(part two, built: the Sky
-Leviathan)"). Check it with `tests/rift_tests.gd` and
-`tests/rift_leviathan_tests.gd`, and by eye with `visual_check.tscn --
-<dir> --rift-only` and `--leviathan-only`.
+Leviathan)", "(part three, built: the rig rewards)"). Check it with
+`tests/rift_tests.gd`, `tests/rift_leviathan_tests.gd` and
+`tests/rift_rewards_tests.gd`, and by eye with `visual_check.tscn --
+<dir> --rift-only`, `--leviathan-only` and `--trails-only`.
 
 ## The map
 
@@ -91,6 +92,25 @@ Leviathan)"). Check it with `tests/rift_tests.gd` and
   of its keel).
 - A broken weak spot drops `roll_loot("airship_part")` under it; the crash
   drops the hold, `roll_loot("airship_hold")` with a supply pod's war loot.
+
+## The rig rewards
+
+- The rift's blueprints are the flight rigs' only: the world overrides
+  `roll_crafting_loot` to pick from `RIG_BLUEPRINTS`, so the warlord
+  (`warlord_blueprint_chance`, `warlord_upgrade_data`) and anything else
+  that asks never hands out a gun or vehicle blueprint here.
+- The Crown's three caches carry `loot_source` "crown" (`CROWN_TABLE`, with
+  upgrade data and the rig blueprints); the plain cache table holds no
+  upgrade data. A Crown cache counts as "cache:crown", not toward the
+  "cache:cache" contract.
+- The Leviathan pays rig rewards in its own tables: `LEVIATHAN_PART_TABLE`
+  holds upgrade data, and `roll_loot("airship_hold")` adds
+  `LEVIATHAN_HOLD_DATA`, a rig blueprint at `LEVIATHAN_HOLD_BLUEPRINT` and
+  the earned Leviathan trail at `LEVIATHAN_TRAIL_CHANCE`. The world leaves
+  `pod_upgrade_data` and `pod_blueprint_chance` at 0, so supply pods stay
+  as they were.
+- The warlord's earned cosmetic is a thruster trail, Magma
+  (`warlord_paint`, which takes any earned cosmetic item).
 
 ## Rules
 

@@ -148,7 +148,9 @@ static func _check_pose(t: Node) -> void:
 		var turned := rad_to_deg(Quaternion(ready_turn).angle_to(Quaternion(in_turn)))
 		t.check(pose.inspecting() != "", "%s: looked over from the command alone, so anyone who gets it sees the same" % kind)
 		var side := p.global_basis.x
-		t.check((in_at - eye).dot(side) < (ready_at - eye).dot(side) - 0.04,
+		# A long gun's low ready may already be near the middle: then it
+		# stays there.
+		t.check((in_at - eye).dot(side) < (ready_at - eye).dot(side) - 0.04 or absf((in_at - eye).dot(side)) < 0.06,
 				"%s: brought in toward the middle of the body (%.2f m in)" % [kind, (ready_at - in_at).dot(side)])
 		t.check((in_at - eye).dot(ahead) > 0.1, "%s: still in front of the eyes, where first person sees it" % kind)
 		t.check(turned > 25.0, "%s: turned in the hand to show a side (%.0f degrees)" % [kind, turned])

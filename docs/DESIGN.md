@@ -1393,9 +1393,10 @@ built in this order, cheapest and most connected first:
    flight rigs decide every fight, with updrafts, the Sky Leviathan and
    Ashfront's death rule. It pays rig upgrade data and rig cosmetics.
    Built in three parts (Caleb's call: the world and its updrafts first,
-   then the Sky Leviathan, then the rig rewards); parts one and two are
-   built (below, "The Basalt Rift (part one, built: the world and
-   updrafts)" and "(part two, built: the Sky Leviathan)").
+   then the Sky Leviathan, then the rig rewards); all three are built
+   (below, "The Basalt Rift (part one, built: the world and updrafts)",
+   "(part two, built: the Sky Leviathan)" and "(part three, built: the rig
+   rewards)").
 
 The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
 Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
@@ -1747,8 +1748,8 @@ is the point here.
   Crown and the high perches: the updrafts are how you get up there. Two
   of them rise beside the Crown, one beside the Shelf for a first ride,
   and the watch says "updraft" while you are in one.
-- **Still to come.** The rig rewards, upgrade data and rig cosmetics (part
-  three).
+- **Since built.** The rig rewards, upgrade data and rig cosmetics (part
+  three, below).
 
 ### The Basalt Rift (part two, built: the Sky Leviathan)
 
@@ -1793,6 +1794,26 @@ crashes with a big haul.
   weak spots are bots the server seats on it, built the same on every
   machine from their kind, and a client shows a piece wrecked once the
   server empties its seat.
+
+### The Basalt Rift (part three, built: the rig rewards)
+
+The rift is where a rig is stepped up and shown off. It pays upgrade data
+and rig blueprints, the two things a Mk2 or Mk3 rig is crafted from
+(section 10), and the earned thruster trails (below, "Thruster trails").
+
+- **Only rig blueprints.** Every blueprint the rift hands out is a flight
+  rig's (jetpack, thruster boots, glide wings); the war's gun and vehicle
+  blueprints stay in Ashfront.
+- **The Crown's caches.** The three caches on the Crown, the mesa only an
+  updraft reaches, are the rift's best: upgrade data more often than not,
+  now and then a rig blueprint, reactor cores and targeting chips. The
+  rift's other caches hold no upgrade data.
+- **The Lord of the Crown** carries two upgrade data, a rig blueprint half
+  the time, and now and then the earned Magma trail.
+- **The Sky Leviathan.** A broken weak spot sometimes drops upgrade data
+  with its salvage. The downed ship's hold always holds two, a rig
+  blueprint about half the time, and now and then the earned Leviathan
+  trail.
 
 ## 3. The watch
 
@@ -2203,6 +2224,28 @@ strength alone (`core/visual/armor_paint.gd`, `ArmorPaint`).
 - **Always readable.** Every colour is held in a safe range: plates never
   near black or white, an accent always a clear lit colour, never neon.
 
+### Thruster trails
+
+The flame every flight rig's nozzles burn in can be coloured. A trail is a
+colour, never a stat: it changes no thrust, speed, heat or how long or wide
+the flame is (`core/visual/rig_trail.gd`, `RigTrail`). It is the "thruster
+trail colours" the hub sells for scrip (section 10, "Currency: scrip").
+
+- **Bought or earned, owned for good.** Like a paint, a trail is a
+  cosmetic stash item that never goes on a raid. The Tailor sells Ember,
+  Toxic, Violet and Redline. Two are earned only, in the Basalt Rift: Magma
+  from the Lord of the Crown and Leviathan from the Sky Leviathan's hold.
+- **One for every rig.** The choice is one trail, worn on whatever rig you
+  fly. With none, rigs burn the factory blue.
+- **Picked at the rig stands.** Each rig stand in the gear hall has a trail
+  swatch beside it, and the stand's nozzles glow in the trail worn: using
+  the swatch turns through the trails owned and back to the factory flame.
+- **Part of the look.** The choice rides in the appearance, checked like
+  clothing, so everyone sees your flames.
+- **Always readable.** The glow is always a clear colour and the hot core a
+  pale one, and a chosen trail burns a little less bright than the factory
+  flame so its colour reads instead of blooming white.
+
 ### Weight
 
 A loadout has one of three weight tiers: **light, medium or heavy**. It is
@@ -2462,8 +2505,8 @@ Tune against the table below; the numbers live in `ItemDB` as
 measures them.
 
 - **Jetpack: height and hover.** The best at climbing, holding a position
-  and aiming in the air. Slow across the map and it burns heat fast, so it
-  takes rooftops and fights from above; it is not for travel.
+  and aiming in the air. It burns heat fast holding still, so it takes
+  rooftops and fights from above; its cruise is the slowest of the three.
 - **Thruster boots: ground agility and stealth.** Short bursts (kicks, air
   dashes, a brief skim) low to the ground, the quickest recovery and the
   lowest ceiling. Always on: faster on foot, no fall damage, a dodge on every
@@ -2479,13 +2522,14 @@ measures them.
 |---|---|---|---|
 | **Role** | Height and hover | Agility and stealth | Distance and speed |
 | Ground speed | 100% | 115% (sprint and slide too) | 95% |
-| Top air speed | 14 m/s cruise, 18 m/s boost | 14 m/s dash | 22 m/s glide, 30 m/s dive |
+| Cruise (held Shift) | 16 m/s rocket cruise, level | 18 m/s skate, 1.6 m over the ground | 22 m/s soar, level |
+| Top air speed | 14 m/s hover drift, 16 m/s cruise | 18 m/s skate, 14 m/s dash on top | 22 m/s glide, 30 m/s dive |
 | Climb | 8 m/s | kicks (about 6 m/s on average) | none of their own |
 | Max height | 40 m | 10 m | their launch height |
 | Hover | 8 s | 1.5 s skim per jump | none |
-| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, prone boost 0.7x (about 10 s, 170 m a bar) | 4 charges for kicks and dashes | 25 s of glide stamina |
+| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, cruise 0.18x (about 45 s, 720 m a bar) | 4 charges for kicks and dashes; the skate is free | about 62 s of glide stamina (gliding or soaring) |
 | Recharge | 4 s on the ground (coasting cools too) | 1 charge per 1.5 s, anywhere | 5 s, on the ground only |
-| Cross Ashfront (550 m) | about 45 s (measured 40) | about 60 s (measured 51) | about 25 s from a 30 m perch (measured 26) |
+| Cross Ashfront (550 m) | about 36 s cruising (measured 35) | about 32 s skating (measured 31) | about 25 s from a 30 m perch (measured 26) |
 | Air aim spread | +10% with the jets lit | +0% mid-dash or skimming low | +50% gliding |
 | Dodge | none | 0.2 s graze window per dash: rounds do 25% | none |
 | Fall damage | half | none | none out of a glide |
@@ -2498,22 +2542,52 @@ or a small lift (Shift + S), refilled only on the ground. That launches them
 off flat ground or saves a dying glide, but it never climbs for long, so the
 jetpack keeps vertical play. A launch is free, once per time in the air.
 
+### Cruising (Caleb's call)
+
+Every rig has its own sustained forward flight, held on Shift in the air,
+and each feels different:
+
+- **Jetpack: rocket cruise.** The prone boost is the cruise: you lie out
+  flat and fly straight and level along the view at 16 m/s, Space and C
+  to climb and sink. The steadiest and easiest to point, and aim or the
+  trigger stops it dead into a hover. It costs 0.18x the hover's heat, so
+  a cool bar carries you about 45 s and 720 m; climbing first costs what a
+  climb does.
+- **Boots: ground skate.** Held Shift within 4 m of whatever is below (a
+  sprinting jump is the way in) skates you 1.6 m over it at 18 m/s, rising
+  and sinking with the ground, up a step or a slope and on, carving after
+  the view and the strafe keys, leaning into the turn like a skater. It
+  costs nothing, so it lasts as long as you like, and it is as steady to
+  aim from as a dash. A kick hops you off it over a wall or a car, and back
+  down in reach you skate on. Back brakes out of it. It works indoors.
+- **Wings: powered soar.** In a glide, held Shift keeps the wings level at
+  22 m/s instead of sinking, thrust making up what turns cost, with Space
+  let go. Pulled up (S) they climb at up to 4 m/s, so a launch off flat
+  ground and a soar gets you up without a perch. It spends glide stamina,
+  about 62 s a bar, refilled on the ground. The Shift press is still the
+  wing boost. The fastest of the three, with wide sweeping turns.
+
+So the jetpack's cruise is steady and controlled, the boots' low and
+nimble, and the wings' fast and sweeping. Across the map the wings are
+fastest, then the boots, then the jetpack; the jetpack still owns height
+and holding still.
+
 Strengths and weaknesses:
 
 - **Jetpack:** the best high ground and air fights, with an 8 s hover and
-  steady aim. Its prone boost is its travel (Caleb's call): about 10 s and
-  170 m a bar (the Shift press is also an air dash), but no shooting from
+  steady aim. Its prone boost is its cruise (Caleb's calls): about 45 s and
+  720 m a bar (the Shift press is also an air dash), but no shooting from
   it. Aim or the trigger brings you upright into a hover first, and the
   gun waits out the same beat as coming out of a sprint, so a boost is
   never a fighting stance. Free look (E) holds the boost's heading while
   you look round, like the wings. It is loud, shows on scans at 120 m and
-  is still slower across the map than wings from height (556 m a flight).
+  is the slowest cruise of the three.
 - **Boots:** the fastest on foot, the only rig with a dodge, quiet, and they
-  work anywhere, the Foundry's buildings included. But they top out at
-  10 m and are slow over open ground, so jetpacks shoot down at them and
-  wings outrun them.
-- **Wings:** twice as fast across the map as the others, great for flanking
-  and escaping. But they cannot hover or climb on their own, aim is poor in
+  work anywhere, the Foundry's buildings included; their skate cruises low
+  for as long as you like. But they top out at 10 m, so jetpacks shoot down
+  at them and wings outrun them.
+- **Wings:** the fastest across the map, great for flanking and escaping.
+  But they cannot hover, they climb only slowly in a soar, aim is poor in
   flight, only a sidearm fires with them spread, and they are useless
   indoors.
 
@@ -2565,7 +2639,7 @@ wings 9.8 s (4.4, 2.7, 2.7), boots 13.5 s (4.1, 5.4 with a wait for charges,
 
 Flying controls (Caleb's call): the keys fly every rig and the mouse only
 looks and aims. Space climbs, kicks, launches or glides (by rig), C sinks or
-coasts. Shift + a move key is an air dash that way on every rig, for a little
+coasts, and held Shift in the air cruises (above, "Cruising"). Shift + a move key is an air dash that way on every rig, for a little
 heat (Shift alone dashes forward). A jetpack hovers only while aim (right
 mouse) is held (Caleb's call: no hover that stays on by itself); let go and
 you fall, or climb on held Space. Pressing Shift in the air on a jetpack

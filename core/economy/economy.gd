@@ -229,8 +229,9 @@ static func loot_value(stash: Array) -> int:
 
 
 ## The character customizer outfits the stash unlocks: every id in the
-## "outfits" stat of the cosmetic items owned, and "paint:<id>" for every
-## armor paint owned (`ArmorPaint`). Pass it to the customizer, and to
+## "outfits" stat of the cosmetic items owned, "paint:<id>" for every
+## armor paint owned (`ArmorPaint`) and "trail:<id>" for every thruster
+## trail (`RigTrail`). Pass it to the customizer, and to
 ## `Look.clean_appearance`, as its `owned` list.
 static func unlocked_outfits(stash: Array) -> Array[String]:
 	var out: Array[String] = []
@@ -244,6 +245,10 @@ static func unlocked_outfits(stash: Array) -> Array[String]:
 		var paint: Variant = ItemDB.item_stats(id).get("paint")
 		if typeof(paint) == TYPE_STRING and ArmorPaint.owned_key(paint) not in out:
 			out.append(ArmorPaint.owned_key(paint))
+		# A thruster trail item unlocks its trail (`RigTrail`).
+		var trail: Variant = ItemDB.item_stats(id).get("trail")
+		if typeof(trail) == TYPE_STRING and RigTrail.owned_key(trail) not in out:
+			out.append(RigTrail.owned_key(trail))
 	return out
 
 

@@ -15,7 +15,7 @@ static func run(t: Node) -> void:
 		return
 	var rng := RandomNumberGenerator.new()
 	var real := true
-	for source: String in ["cache", "bot", "airship_part", "airship_hold"]:
+	for source: String in ["cache", "bot", "airship_part", "airship_hold", "crown"]:
 		for i in 50:
 			rng.seed = i
 			real = real and world.roll_loot(source, rng).all(func(id: String) -> bool: return ItemDB.has_item(id))

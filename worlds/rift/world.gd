@@ -11,7 +11,11 @@ extends WorldDef
 ## as a world event (`airship_vehicle`, Caleb's call: "a world event that
 ## fights and falls"), its turrets shooting at flyers, weak spots at three
 ## heights that drop salvage as they break, and a crash with a big haul.
-## The rig rewards (upgrade data, rig cosmetics) come in part three.
+## Part three: the rig rewards. The Crown's caches, the Lord of the Crown
+## and the Leviathan pay upgrade data and rig blueprints (and only rig
+## blueprints: `roll_crafting_loot`), and the two hardest fights carry
+## earned thruster trails (`RigTrail`): Magma on the warlord, Leviathan in
+## the downed ship's hold.
 
 const MapScript := preload("map.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
@@ -63,6 +67,7 @@ const LEVIATHAN_SEATS := [
 ## What a broken weak spot drops under the ship, and what is in its hold
 ## when it crashes (with a supply pod's war loot on top).
 const LEVIATHAN_PART_TABLE := [
+	{"id": "upgrade_data", "weight": 12.0},
 	{"id": "alloy_ingot", "weight": 30.0},
 	{"id": "power_cell", "weight": 30.0},
 	{"id": "circuit_board", "weight": 20.0},
@@ -78,6 +83,33 @@ const LEVIATHAN_HOLD_TABLE := [
 	{"id": "rifle_carbine", "weight": 5.0},
 	{"id": "frame_runner", "weight": 5.0},
 	{"id": "helm_spotter", "weight": 4.0},
+]
+
+## What the downed Leviathan's hold pays for rigs on top (part three): this
+## much upgrade data, a rig blueprint at this chance, and the earned
+## Leviathan trail at this chance.
+const LEVIATHAN_HOLD_DATA := 2
+const LEVIATHAN_HOLD_BLUEPRINT := 0.5
+const LEVIATHAN_TRAIL := "trail_leviathan"
+const LEVIATHAN_TRAIL_CHANCE := 0.2
+## The blueprints this world hands out: the flight rigs', nothing else.
+const RIG_BLUEPRINTS: Array[String] = ["bp_jetpack", "bp_boots_thruster", "bp_wings_glide"]
+## The Crown's caches (its `loot_source` "crown"), the warlord's mesa only an
+## updraft reaches: the best of the cache table, and the rig rewards.
+const CROWN_TABLE := [
+	{"id": "upgrade_data", "weight": 14.0},
+	{"id": "bp_jetpack", "weight": 2.0},
+	{"id": "bp_boots_thruster", "weight": 2.0},
+	{"id": "bp_wings_glide", "weight": 2.0},
+	{"id": "reactor_core", "weight": 6.0},
+	{"id": "targeting_chip", "weight": 8.0},
+	{"id": "alloy_ingot", "weight": 10.0},
+	{"id": "power_cell", "weight": 10.0},
+	{"id": "medkit", "weight": 10.0},
+	{"id": "boots_thruster", "weight": 5.0},
+	{"id": "wings_glide", "weight": 4.0},
+	{"id": "frame_runner", "weight": 4.0},
+	{"id": "optic_reflex", "weight": 3.0},
 ]
 
 ## What the lava does to whoever goes in, four times a second (armor is no
@@ -145,6 +177,12 @@ func _init() -> void:
 	airship_vehicle = LEVIATHAN
 	airship_faction = LEVIATHAN_FACTION
 	airship_passes = 3
+	# The rig rewards (part three): the Lord of the Crown carries upgrade
+	# data, often a rig blueprint, and now and then the earned Magma trail.
+	warlord_blueprint_chance = 0.5
+	warlord_upgrade_data = 2
+	warlord_paint = "trail_magma"
+	warlord_paint_chance = 0.1
 
 
 ## Items only this world adds. Ids are global, so prefix them with the
@@ -239,9 +277,29 @@ func roll_loot(source: String, rng: RandomNumberGenerator) -> Array[String]:
 		"airship_hold":
 			table = LEVIATHAN_HOLD_TABLE
 			count = rng.randi_range(3, 5)
+		"crown":
+			table = CROWN_TABLE
+			count = rng.randi_range(3, 4)
 	var out: Array[String] = []
 	for i in count:
 		out.append(ItemDB.roll(table, rng))
+	if source == "airship_hold":
+		# The rig rewards: upgrade data, a chance at a rig blueprint and at
+		# the earned Leviathan trail.
+		out.append_array(roll_crafting_loot(rng, LEVIATHAN_HOLD_BLUEPRINT, LEVIATHAN_HOLD_DATA))
+		if rng.randf() < LEVIATHAN_TRAIL_CHANCE:
+			out.append(LEVIATHAN_TRAIL)
+	return out
+
+
+## Only the flight rigs' blueprints (`RIG_BLUEPRINTS`): the rift is where a
+## rig is stepped up, so its warlord and its Leviathan pay for that.
+func roll_crafting_loot(rng: RandomNumberGenerator, chance: float, data: int) -> Array[String]:
+	var out: Array[String] = []
+	if chance > 0.0 and rng.randf() < chance:
+		out.append(RIG_BLUEPRINTS[rng.randi() % RIG_BLUEPRINTS.size()])
+	for i in maxi(data, 0):
+		out.append("upgrade_data")
 	return out
 
 

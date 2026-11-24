@@ -73,6 +73,10 @@ signal room_placed(socket: String, room: String)
 ## `look`. Whoever owns the account keeps it in the appearance and calls
 ## `show_paints` with the paints worn.
 signal paint_requested(look: String, paint: String)
+## The player used a rig stand's trail swatch: wear `trail` (a `RigTrail`
+## id, "" for the factory flame) on every rig. Whoever owns the account keeps
+## it in the appearance and calls `show_trail` with the trail worn.
+signal trail_requested(trail: String)
 ## A shot hit a plate on the test lane or a target on the firing range.
 ## Nothing there is real damage; the new player's tour listens for it.
 signal target_hit
@@ -316,6 +320,9 @@ var loadout := {}
 ## The armor paints the owner wears, frame look to paint (`ArmorPaint`,
 ## from their appearance; `show_paints`): the armor stands show them.
 var paints := {}
+## The thruster trail the owner wears (`RigTrail`, from their appearance;
+## `show_trail`): the rig stands burn in it.
+var trail := ""
 ## The upgrade ids this base's owner has (see `BaseUpgrades`). Empty is the
 ## starter bunker.
 var upgrades: Array[String] = []
@@ -597,6 +604,30 @@ class PaintSwatch:
 	func interact(_actor: Actor) -> void:
 		if base and not base.read_only and not base.owned_paints().is_empty():
 			base.paint_requested.emit(look, base.next_paint(look))
+
+
+## The trail swatch on a rig stand: shows the thruster trail every rig burns
+## in, and using it puts on the next trail owned (`trail_requested`), round
+## to the factory flame. Trails are bought at the Tailor or earned
+## (`RigTrail`).
+class TrailSwatch:
+	extends Interactable
+
+	var base: HomeBase
+
+	func get_prompt() -> String:
+		if base == null:
+			return "Trail"
+		var now := RigTrail.trail_name(base.trail)
+		if base.read_only:
+			return "Trail: %s" % now
+		if base.owned_trails().is_empty():
+			return "Trail: %s. Thruster trails are sold at the Tailor" % now
+		return "[F] Trail: %s (next %s)" % [now, RigTrail.trail_name(base.next_trail())]
+
+	func interact(_actor: Actor) -> void:
+		if base and not base.read_only and not base.owned_trails().is_empty():
+			base.trail_requested.emit(base.next_trail())
 
 
 ## The way out.
@@ -3478,6 +3509,7 @@ func _fill(display: Display) -> void:
 			plate_size = 0.09
 		"rig_stand":
 			_build_rig(model, id, color)
+			_build_trail_swatch(display)
 			box = Vector3(1.2, 2.0, 1.0)
 			box_at = Vector3(0, 1.0, 0)
 			plate_at = Vector3(0, 2.25, 0)
@@ -4294,11 +4326,67 @@ func show_paints(p_paints: Variant) -> void:
 		_rebuild()
 
 
-## The paint an armor stand's frame is shown in ("" for anything else).
+## The paint an armor stand's frame is shown in, or the trail a rig stand's
+## nozzles burn in ("" for anything else).
 func _stand_paint(entry: Dictionary) -> String:
-	if entry.get("kind", "") != "armor_stand":
-		return ""
-	return str(paints.get(SkinScript.frame_look(str(entry.get("id", ""))), ""))
+	match entry.get("kind", ""):
+		"armor_stand":
+			return str(paints.get(SkinScript.frame_look(str(entry.get("id", ""))), ""))
+		"rig_stand":
+			return trail
+	return ""
+
+
+## The thruster trails the stash holds (`RigTrail`), in their order.
+func owned_trails() -> Array[String]:
+	return RigTrail.owned_trails(Economy.unlocked_outfits(stash))
+
+
+## The trail after the one worn now, among those owned, round to "" (the
+## factory flame).
+func next_trail() -> String:
+	var choices: Array[String] = [""]
+	choices.append_array(owned_trails())
+	var at := choices.find(trail)
+	return choices[(at + 1) % choices.size()]
+
+
+## Shows the thruster trail worn (cleaned): the rig stands are built again
+## when it changed.
+func show_trail(p_trail: Variant) -> void:
+	var fresh := RigTrail.clean(p_trail)
+	if fresh == trail:
+		return
+	trail = fresh
+	if is_inside_tree():
+		_rebuild()
+
+
+## The trail swatch beside a rig stand (`TrailSwatch`): a small card on an
+## arm at the stand's front right, a nozzle on it burning in the trail worn,
+## named under it.
+func _build_trail_swatch(display: Display) -> void:
+	var colours := RigTrail.colours(trail)
+	var swatch := TrailSwatch.new()
+	swatch.name = "TrailSwatch"
+	swatch.base = self
+	swatch.position = Vector3(0.42, 0.95, 0.56)
+	swatch.add_child(_part(Vector3(0.03, 0.03, 0.2), Vector3(0, -0.05, -0.12), Color(0.2, 0.2, 0.22)))
+	swatch.add_child(_part(Vector3(0.24, 0.2, 0.025), Vector3.ZERO, Color(0.1, 0.1, 0.11)))
+	swatch.add_child(_part(Vector3(0.06, 0.04, 0.02), Vector3(0, 0.07, 0.016), Color(0.3, 0.3, 0.32)))
+	var glow := _part(Vector3(0.07, 0.08, 0.01), Vector3(0, 0.01, 0.016), colours["glow"], true)
+	glow.name = "Glow"
+	swatch.add_child(glow)
+	var core := _part(Vector3(0.03, 0.05, 0.012), Vector3(0, 0.025, 0.018), colours["core"], true)
+	core.name = "Core"
+	swatch.add_child(core)
+	var label := _label(RigTrail.trail_name(trail), Color(0.85, 0.87, 0.9), 0.04)
+	label.position = Vector3(0, -0.075, 0.016)
+	label.name = "TrailName"
+	_near_only(label, 4.0)
+	swatch.add_child(label)
+	_add_collision(swatch, Vector3(0.26, 0.24, 0.08), Vector3.ZERO)
+	display.add_child(swatch)
 
 
 ## The paint swatch beside an armor stand (`PaintSwatch`): a small card on
@@ -4366,6 +4454,8 @@ func _build_armor(model: Node3D, id: String, _color: Color) -> void:
 func _build_rig(model: Node3D, id: String, color: Color) -> void:
 	var stats := ItemDB.item_stats(id)
 	var dark := Color(0.2, 0.2, 0.22)
+	# The nozzles glow in the thruster trail worn (`RigTrail`).
+	var flame: Color = RigTrail.colours(trail)["glow"]
 	model.add_child(_part(Vector3(0.7, 0.08, 0.7), Vector3(0, 0.04, 0), dark))
 	model.add_child(_part(Vector3(0.1, 1.3, 0.1), Vector3(0, 0.7, -0.1), dark))
 	if stats.has("glide_fall_speed"):
@@ -4377,12 +4467,12 @@ func _build_rig(model: Node3D, id: String, color: Color) -> void:
 	elif float(stats.get("thrust_accel", 1.0)) <= 0.0:
 		for x: float in [-0.16, 0.16]:
 			model.add_child(_part(Vector3(0.18, 0.4, 0.34), Vector3(x, 0.3, 0.1), color))
-			model.add_child(_part(Vector3(0.1, 0.08, 0.1), Vector3(x, 0.1, -0.02), Color(1.0, 0.6, 0.2), true))
+			model.add_child(_part(Vector3(0.1, 0.08, 0.1), Vector3(x, 0.1, -0.02), flame, true))
 	else:
 		model.add_child(_part(Vector3(0.5, 0.6, 0.2), Vector3(0, 1.25, 0), color))
 		for x: float in [-0.18, 0.18]:
 			model.add_child(_part(Vector3(0.16, 0.5, 0.16), Vector3(x, 1.05, -0.16), dark))
-			model.add_child(_part(Vector3(0.1, 0.06, 0.1), Vector3(x, 0.78, -0.16), Color(1.0, 0.6, 0.2), true))
+			model.add_child(_part(Vector3(0.1, 0.06, 0.1), Vector3(x, 0.78, -0.16), flame, true))
 
 
 func _add_collision(body: Interactable, size: Vector3, at: Vector3) -> void:

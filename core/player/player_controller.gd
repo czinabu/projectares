@@ -1510,7 +1510,7 @@ func _process(delta: float) -> void:
 	# Sighted, the eye sits on the gun's sight line, not on the head.
 	_eyes_weight *= 1.0 - up
 	if up > 0.0:
-		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, (pose.relief_now if pose.relief_now >= 0.0 else pose.relief_for(gun)) + eye_relief)
+		var at := ActionPose.sight_shown(gun) + look * Vector3(0.0, 0.0, (pose.relief_now if pose.relief_now >= 0.0 else pose.relief_for(gun)) + eye_relief) - look * pose.sight_aside(gun)
 		camera.global_transform = camera.global_transform.interpolate_with(Transform3D(look, at), up)
 	_update_scope(gun if up > 0.5 else null)
 

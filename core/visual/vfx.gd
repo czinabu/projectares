@@ -118,10 +118,12 @@ static func impact(parent: Node, at: Vector3, normal: Vector3, bright := true) -
 ## A flame for one flight rig nozzle, starting at the node and pointing down
 ## (-Y): a hot core inside a wider blue cone. `light` adds a glow on the
 ## ground; one per rig is plenty. The caller shows and hides it.
-static func nozzle_flame(radius: float, length: float, light := true) -> Node3D:
+static func nozzle_flame(radius: float, length: float, light := true, trail := "") -> Node3D:
 	var root := Node3D.new()
 	root.name = "Flame"
-	for layer: Array in [[1.0, 1.0, Color(1.2, 1.8, 3.4, 0.55)], [0.5, 0.6, Color(3.0, 2.6, 2.0, 0.9)]]:
+	# Its colours are the thruster trail worn (`RigTrail`, "" the factory one).
+	var colours := RigTrail.flame_colours(trail)
+	for layer: Array in [[1.0, 1.0, colours["outer"]], [0.5, 0.6, colours["core"]]]:
 		var cone := CylinderMesh.new()
 		cone.top_radius = radius * float(layer[0])
 		cone.bottom_radius = 0.0
@@ -142,7 +144,7 @@ static func nozzle_flame(radius: float, length: float, light := true) -> Node3D:
 		root.add_child(flame)
 	if light:
 		var glow := OmniLight3D.new()
-		glow.light_color = Color(0.5, 0.7, 1.0)
+		glow.light_color = colours["light"]
 		glow.light_energy = 2.0
 		glow.omni_range = 5.0
 		glow.shadow_enabled = false
