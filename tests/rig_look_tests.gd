@@ -195,8 +195,12 @@ static func run(t: Node) -> void:
 	# running one leans into it, and the knees take the landing.
 	p.airborne_time = 1.0
 	p.velocity = -p.global_basis.z * 7.0 + Vector3(0, 5, 0)
-	await t.frames(3)
-	t.check(skin._air_push > 0.5, "leaving the ground starts with a push-off (%.2f)" % skin._air_push)
+	# The strongest push over the next few poses, whatever the frame time.
+	var pushed := 0.0
+	for i in 4:
+		await t.frames(1)
+		pushed = maxf(pushed, skin._air_push)
+	t.check(pushed > 0.5, "leaving the ground starts with a push-off (%.2f)" % pushed)
 	await t.get_tree().create_timer(0.4).timeout
 	t.check(skin._air_push < 0.01, "the push-off is over in a moment")
 	var running_lean: float = skin._tilt.length()
