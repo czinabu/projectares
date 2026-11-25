@@ -78,7 +78,7 @@ const POCKET_WAKE := 150.0
 ## times). Made for one player; each other player near it makes it tougher
 ## by `SENTINEL_PARTY` (`WorldDef.boss_party_scale`).
 const SENTINEL_HEIGHT := 3.2
-const SENTINEL_HEALTH := 650.0
+const SENTINEL_HEALTH := 480.0
 const SENTINEL_ARMOR := 40.0
 const SENTINEL_REAR := 2.0
 const SENTINEL_LOCK := 1.2
@@ -93,11 +93,11 @@ const SENTINEL_PARTY := 0.6
 ## "boss_socket" and "purge" markers). Made for one player, it scales with
 ## company like the Sentinel.
 const HEART_HEIGHT := 4.2
-const HEART_HEALTH := 1400.0
+const HEART_HEALTH := 620.0
 const HEART_ARMOR := 50.0
 const HEART_REAR := 2.5
 const HEART_LOCK := 0.9
-const HEART_DAMAGE := 24.0
+const HEART_DAMAGE := 21.0
 const HEART_INTERVAL := 0.55
 ## Its vault (Caleb's call): every player who fought it gets a share of its
 ## own, the best parts, the Mk3 materials, upgrade data, a chance at an
