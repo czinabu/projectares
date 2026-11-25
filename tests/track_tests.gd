@@ -65,6 +65,7 @@ static func _laid_down(t: Node) -> void:
 	# only the walker's feet mark the snow.
 	me.global_position = Vector3(x, MapScript.floor_at(106.0) + 1.0, 106.0)
 	raid._tick_pockets()
+	raid._stand_queued(99)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)

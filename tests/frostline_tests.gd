@@ -140,4 +140,5 @@ static func _wake_near(raid: Raid, faction: String) -> void:
 		if str(marker.get_meta("faction", "")) == faction and not str(marker.get_meta("pocket", "")).begins_with("engine"):
 			raid.player.global_position = marker.global_position + Vector3(30, 1, 0)
 			raid._tick_pockets()
+			raid._stand_queued(99)
 			return

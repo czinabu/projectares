@@ -44,9 +44,17 @@ static func run(t: Node) -> void:
 	# Walk up to it: it wakes, all three of its Ferals standing.
 	raid.player.global_position = den.global_position + Vector3(world.pocket_wake - 20.0, 1, 0)
 	raid._tick_guards(Raid.POCKET_EVERY)
+	var queued := raid._pocket_queue.size()
+	var was := raid.bots.size()
+	raid._tick_guards(0.02)
+	var one_tick := raid.bots.size() - was
+	for i in queued:
+		raid._tick_guards(0.02)
 	var pack := _standing(raid, pocket)
 	t.check(pocket.awake and pack.size() == (pocket.guards as Array).size() and pack.size() == 3,
 			"walking up wakes the den with its whole pack (%d)" % pack.size())
+	t.check(queued >= 3 and one_tick == 1,
+			"the woken stand one a tick, not all in one frame (%d waiting, %d in a tick)" % [queued, one_tick])
 	# Leave: a while later it sleeps, quietly.
 	var before := raid.bots.size()
 	raid.player.global_position = den.global_position + Vector3(world.pocket_wake + Raid.POCKET_SLEEP_MARGIN + 60.0, 1, 0)
@@ -60,6 +68,8 @@ static func run(t: Node) -> void:
 	# Back again: whole.
 	raid.player.global_position = den.global_position + Vector3(world.pocket_wake - 20.0, 1, 0)
 	raid._tick_guards(Raid.POCKET_EVERY)
+	for i in raid._pocket_queue.size():
+		raid._tick_guards(0.02)
 	pack = _standing(raid, pocket)
 	t.check(pack.size() == 3 and pack.all(func(b: Actor) -> bool: return b.health.health >= b.health.max_health),
 			"it wakes again with its whole pack, unhurt")

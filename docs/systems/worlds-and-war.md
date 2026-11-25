@@ -183,10 +183,14 @@ date in the same PR.
   living player comes within range of a marker of the same "pocket"
   (marker meta "wake" overrides the range), checked every `POCKET_EVERY`
   by `Raid._tick_pockets`. A waking pocket stands whole or waits for room
-  under `enemy_cap`, nearest first, and awake pockets nobody is fighting
-  that every player is `POCKET_YIELD` further from give up their room to
-  it, farthest first. A pocket
-  nobody has been within range plus `POCKET_SLEEP_MARGIN` of for
+  under `enemy_cap`, nearest first; its guards queue
+  (`_pocket_queue`, their room kept by `_pocket_room`) and stand one a
+  tick (`_stand_queued`), because a body's first dressed frame is dear on
+  a machine that draws it (three in one frame were a 50 ms hitch on
+  Caleb's PC). At the start, everyone near stands at once. Short of room,
+  awake pockets nobody is fighting that every player is `POCKET_YIELD`
+  further from sleep for a waking one, farthest first. A pocket nobody
+  has been within range plus `POCKET_SLEEP_MARGIN` of for
   `POCKET_SLEEP_AFTER`, and none of whose guards has a target, sleeps
   (`_sleep_pocket`): its guards and their brood leave through
   `_remove_actor`, with no body, loot or respawn timer, and stand again

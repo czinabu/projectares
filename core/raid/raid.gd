@@ -346,6 +346,11 @@ var _guards: Array[Dictionary] = []
 ## idle (seconds nobody has been near while awake) }.
 var _pockets := {}
 var _pocket_in := 0.0
+## Guards of pockets just woken, waiting their turn to stand: one a tick
+## (`_tick_pocket_guards`), since a body's first frame dressed is dear on
+## the machines that draw it (three at once were a 50 ms hitch). Their room
+## is kept for them (`_pocket_room`).
+var _pocket_queue: Array[Dictionary] = []
 ## How often pockets are woken and put to sleep (seconds).
 const POCKET_EVERY := 0.5
 ## Past its wake range by this much, for `POCKET_SLEEP_AFTER` seconds with
@@ -2471,7 +2476,9 @@ func _spawn_guards() -> void:
 			(_pockets[key].guards as Array).append(_guards.size())
 			_guards.append({"marker": marker, "bot": null, "back_in": 0.0, "brood": [],
 					"brood_in": float(marker.get_meta("brood_every", 0.0)) * 0.5, "pocket": _pockets[key]})
+		# At the start everyone near stands at once: the world is loading.
 		_tick_pockets()
+		_stand_queued(_pocket_queue.size())
 		_seal_hives()
 		return
 	for marker in _map_nodes("spawn_guard"):
@@ -2521,7 +2528,7 @@ func _tick_guards(delta: float) -> void:
 ## once it is due stands again when its pocket wakes, or, while it is
 ## awake, as soon as no player is within `POCKET_REFILL_CLEAR` of its post.
 func _tick_pocket_guards(delta: float) -> void:
-	var changed := false
+	var changed := _stand_queued(1)
 	for guard in _guards:
 		var bot: Variant = guard.bot
 		if bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
@@ -2536,7 +2543,7 @@ func _tick_pocket_guards(delta: float) -> void:
 			guard.back_in -= delta
 			continue
 		var pocket: Dictionary = guard.pocket
-		if pocket.awake and enemy_room() > 0 \
+		if pocket.awake and not guard.get("queued", false) and _pocket_room() > 0 \
 				and _nearest_player(guard.marker.global_position) > POCKET_REFILL_CLEAR:
 			guard.bot = _add_guard(guard.marker)
 			changed = true
@@ -2595,22 +2602,42 @@ func _tick_pockets() -> bool:
 		# player is further from (by `POCKET_YIELD` metres) sleep for it,
 		# farthest first: the room goes where someone is.
 		var fits := enemy_cap - _bosses.size()
-		while enemy_room() < mini(due, fits) and not spare.is_empty() \
+		while _pocket_room() < mini(due, fits) and not spare.is_empty() \
 				and float(spare.back()[0]) > float(entry[0]) + POCKET_YIELD:
 			var far: Array = spare.pop_back()
 			if far[1].awake:
 				_sleep_pocket(far[1])
 				changed = true
-		var room := enemy_room()
+		var room := _pocket_room()
 		if room <= 0 or (due > room and due <= fits):
 			continue
 		pocket.awake = true
 		for i: int in pocket.guards:
 			var guard: Dictionary = _guards[i]
-			if guard.bot == null and guard.back_in <= 0.0 and enemy_room() > 0:
-				guard.bot = _add_guard(guard.marker)
-				changed = true
+			if guard.bot == null and guard.back_in <= 0.0 and not guard.get("queued", false) \
+					and _pocket_room() > 0:
+				guard.queued = true
+				_pocket_queue.append(guard)
 	return changed
+
+
+## Stands up to `count` of the woken pockets' guards waiting their turn
+## (a pocket that fell asleep again drops its own). Says whether any stood.
+func _stand_queued(count: int) -> bool:
+	var stood := 0
+	while stood < count and not _pocket_queue.is_empty():
+		var guard: Dictionary = _pocket_queue.pop_front()
+		guard.queued = false
+		if not guard.pocket.awake or guard.bot != null or guard.back_in > 0.0 or enemy_room() <= 0:
+			continue
+		guard.bot = _add_guard(guard.marker)
+		stood += 1
+	return stood > 0
+
+
+## Room under `enemy_cap` for pockets, less what the queued guards keep.
+func _pocket_room() -> int:
+	return enemy_room() - _pocket_queue.size()
 
 
 func _pocket_fighting(pocket: Dictionary) -> bool:
