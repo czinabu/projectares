@@ -265,12 +265,14 @@ func build(args: Dictionary) -> int:
 			library.remove_animation(clip)
 		library.add_animation(clip, jog)
 	# The pack's slide reaches out the right leg; the game's lead leg is the
-	# left (`Look.HUMAN_LEAD_LEG`), so the slide it plays is that mirrored.
-	var slide: Animation = ual.get("Slide", ual.get("Slide_Loop"))
-	if slide:
-		library.add_animation("Slide_L", _mirror(slide, out_skeleton))
-	else:
-		print("  missing: Slide_L <- Slide")
+	# left (`Look.HUMAN_LEAD_LEG`), so the slide it plays is that mirrored,
+	# and its drop into it and its rise out of it with it.
+	for part: Array in [["Slide", "Slide_L"], ["Slide_Start", "Slide_Start_L"], ["Slide_Exit", "Slide_Exit_L"]]:
+		var slide: Animation = ual.get(part[0], ual.get(part[0] + "_Loop"))
+		if slide:
+			library.add_animation(part[1], _mirror(slide, out_skeleton))
+		else:
+			print("  missing: ", part[1], " <- ", part[0])
 	var stand := _stand(ual.get(STAND_BASE), ual.get(CURL_CLIP, ual.get(CURL_CLIP + "_Loop")), out_skeleton)
 	if stand:
 		library.add_animation("Idle_Stand", stand)

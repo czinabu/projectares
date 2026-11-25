@@ -15,10 +15,22 @@ date in the same PR.
   is simulated from `ActorCommand.slide` like a dash, so it predicts and
   replicates; the skin lays the pack's feet-first slide, mirrored to lead with the left leg ("Slide_L",
   `HUMAN_ANIMS["slide"]`) over the hips, legs and spine up to the chest
-  by `slide_low` (`Locomotion._slide_clip`, before the legs turn to
-  travel, so it slides the way the body moves); the shoulders, arms and
-  head stay the stand's, so a weapon keeps its hold. A body without a
-  slide clip is bent into a slide pose instead (`_slide_pose`).
+  (`Locomotion._slide_clip`, before the legs turn to travel, so it slides
+  the way the body moves); the shoulders, arms and head stay the stand's,
+  so a weapon keeps its hold. It plays through the pack's own drop into
+  it and rise out of it, mirrored the same way ("Slide_Start_L",
+  "Slide_Exit_L", `HUMAN_ANIMS["slide_start"]` and `["slide_exit"]`): the
+  drop blended in from the run (`slide_in_rate`, `slide_in_blend`), the
+  held slide looped while `slide_left` lasts, then the rise
+  (`slide_out_rate`), its last `slide_out_fade` fading into whatever plays
+  next so the legs pick up their run without a snap (`_advance_slide`,
+  `slide_weight`). Leaving the ground cuts the rise. A body with only the
+  held clip lays it on by `slide_low`; one without a slide clip is bent
+  into a slide pose instead (`_slide_pose`). Off the ground on foot the
+  legs take the pack's jump ("Jump", `HUMAN_ANIMS["air_legs"]`, leg
+  rotations below the hips only) over the stand that plays in the air,
+  eased in and out at `Locomotion.air_legs_rate`, so a running jump does
+  not snap the stride into a stand and back.
   The crouch key (C) slides from a sprint and otherwise toggles the crouch
   (`PlayerController.crouch_key`), sent as the held `ActorCommand.crouch` so
   it predicts and every view sees it. `Actor.crouched` follows it but stays
@@ -115,7 +127,10 @@ date in the same PR.
   measured while its parts flew in, every aim after a summon was off the eye.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
-  with `--carry-only`.
+  with `--carry-only`. One-shot moves with a blade out (the slide, each
+  cut, the heavy, the kick, the guard) frame by frame with `--moves-only`
+  (run it with `--fixed-fps 60`; `frames` saves every other tick from
+  three sides, to string into a clip).
   Holstered weapons are worn, not hidden (`ActorSkin.stow_place`): a primary
   gun or two-handed weapon slung across the back, outside a worn back rig
   (on a jetpack or wing pack, clamped to the flush mag-lock rail on the
@@ -179,7 +194,12 @@ date in the same PR.
   stands spread the new bodies' feet wide and bow the knees, so a gun held
   low and a blade out stand on the relaxed stand's legs
   (`ActorSkin.LEGS_FROM_STAND`); the blade's ready stance is the fighting
-  pose's stagger on top (`Locomotion.fight_*`). A gun raised to shoot
+  pose's stagger on top (`Locomotion.fight_*`). A swing plays the old
+  body's slash clip for its arms only: its legs are the relaxed stand's
+  too, stepped by the footwork (the old clip's legs flared one out). Any
+  knee `_sink` bends (the crouch, the fighting stance, a landing) bends
+  forward over the toes and a touch out (`knee_out`), never the way the
+  clip's relaxed knee happened to point. A gun raised to shoot
   keeps its clip's stance: the sights' relief is tuned on it. Worn armor
   gets room: `Locomotion.arm_clear` (meters, 0 bare; set by whoever
   dresses the body in a frame) swings each upper arm out so the elbow
