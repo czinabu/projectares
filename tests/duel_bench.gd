@@ -286,11 +286,11 @@ func _make_enemy(type: String, at: Vector3, equip_seed: int) -> Actor:
 			brain.flies = bot.flight.enabled
 		"warlord":
 			# Rolled until the world would let it be a warlord
-			# (`WorldDef.bot_allowed`: never a walker).
+			# (`WorldDef.bot_allowed`: never a walker or a crawler).
 			var try_seed := equip_seed
 			while true:
 				bot = _raid.spawn_bot("Foe%d" % try_seed, at, try_seed, true, "", def.zone)
-				if bot.get_meta("kind", "") != "walker":
+				if _world.bot_allowed(bot, _raid):
 					break
 				_raid._remove_actor(bot)
 				try_seed += 7919
@@ -389,6 +389,12 @@ class Field extends WorldDef:
 
 	func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		source.equip_bot(bot, rng)
+		# No edges here and no navmesh to keep to: a bot that keeps off a
+		# mesa's edge (the Rift's) would never take a step.
+		bot.remove_meta("edge_guard")
+
+	func bot_allowed(bot: Actor, raid: Node) -> bool:
+		return source.bot_allowed(bot, raid)
 
 	func make_warlord(bot: Actor) -> void:
 		source.make_warlord(bot)

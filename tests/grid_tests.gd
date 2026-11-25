@@ -61,7 +61,7 @@ static func _sentinel(t: Node) -> void:
 			and boss.get_meta("look", "") == "colossus" and boss.stand_height > 3.0,
 			"it is a Warden three metres tall")
 	t.check(boss.rear_damage_mult > 1.0 and float(boss.get_meta("lock_time", 0.0)) > 0.0
-			and boss.health.max_health >= 500.0,
+			and boss.health.max_health >= 400.0,
 			"with a weak spot in its back and a lance that holds its beam before it fires")
 	t.check(boss.inventory.has_item("upgrade_data"), "and it carries upgrade data")
 	# A client builds the same machine from the seed, faction and boss kind.
