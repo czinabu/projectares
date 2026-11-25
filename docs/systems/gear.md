@@ -45,7 +45,12 @@ date in the same PR.
   predict them like the rest. The skin poses the skate as a skater, not
   the boots' flying pose (`ActorSkin.skate_legs`, `_skate_tilt`, leaning
   into the carve from the heading's swing), and keeps the glide and prone
-  boost poses for the other two. Check by eye with `--flight-only`. Each rig has one job and one weakness
+  boost poses for the other two. Touching down out of a glide or a boost
+  at speed is a run-out (`ActorSkin._run_out`): the body leans back
+  against the skid (`run_out_lean`) with a shallow squat (`run_out_squat`)
+  until it slows, never pitched forward onto the ground. Check by eye with
+  `--flight-only` (run with `--fixed-fps 60`; it waits out each tick's step
+  so a press on any tick lands). Each rig has one job and one weakness
   (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
