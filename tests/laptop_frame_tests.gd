@@ -3,10 +3,13 @@ extends RefCounted
 ## (`GameSettings.AutoScale`, `AutoScale.next_step`), the glow switch, a saved
 ## Graphics quality pick following what the pick became, and the war mood
 ## leaving the sky alone while it holds still (`Look.WarMood`, whose every
-## sky write redraws the sky's light map).
+## sky write redraws the sky's light map), and the suit keeping its levels
+## of detail, so a far body draws few triangles.
 
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const LookScript := preload("res://core/visual/look.gd")
+const SuitShape := preload("res://core/visual/suit_shape.gd")
+const Human := preload("res://core/visual/human.gd")
 
 
 static func run(t: Node) -> void:
@@ -34,7 +37,7 @@ static func run(t: Node) -> void:
 	# (`set_value` leaves the view alone with no window: applied by hand.)
 	GameSettings.set_value("render_scale", GameSettings.RENDER_SCALE_AUTO)
 	GameSettings.apply_graphics()
-	await t.frames(1)
+	await t.frames(2)
 	var auto := root.get_node_or_null(GameSettings.AutoScale.NODE_NAME)
 	t.check(auto != null and is_equal_approx(root.scaling_3d_scale, GameSettings.AUTO_SCALES[start]),
 			"picking Auto starts the main view on its middle scale, with its timer running")
@@ -104,3 +107,13 @@ static func run(t: Node) -> void:
 			"a step too small to see is skipped, a real one or one that lands on full war is not")
 	map.queue_free()
 	await t.frames(1)
+
+	# The suit's baked parts keep levels of detail, as the bodies' import makes.
+	for build: String in Human.BUILDS:
+		for part: String in SuitShape.PARTS:
+			var path := SuitShape.baked_path(build, part)
+			var mesh := load(path) as ArrayMesh if ResourceLoader.exists(path) else null
+			var lods := 0
+			if mesh != null and mesh.get_surface_count() > 0:
+				lods = (RenderingServer.mesh_get_surface(mesh.get_rid(), 0).get("lods", []) as Array).size()
+			t.check(lods > 0, "the suit's %s for build %s has levels of detail for far away" % [part, build])

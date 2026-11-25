@@ -204,7 +204,11 @@ date in the same PR.
   own, off on Low and Lowest: about a seventh of a laptop-class frame.
   A world's war mood (`Look.WarMood`) writes the sky only when it moved a
   visible step (`mood_moved`): any write to a sky material, even of the
-  same value, has Godot redraw the sky's light map that frame. A window
+  same value, has Godot redraw the sky's light map that frame. Every
+  body part keeps levels of detail for far away (the bodies' import makes
+  them; `SuitShape` makes them again for the suit it reshapes, and
+  `laptop_frame_tests` checks the baked parts have them): without them a
+  far body draws all its triangles, about a fifth of Ashfront's at Low. A window
   bigger than the screen it opens on is shrunk to
   fit (`fit_window_to_screen`). These are view only: a server, the
   simulation and first or third person are untouched. Compare the picks by
