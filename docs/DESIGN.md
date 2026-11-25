@@ -2428,7 +2428,7 @@ blades is won is the next section.
 - **One-handed and two-handed.** Every melee weapon is one or the other (an
   item tag, which the hands' grip also reads). One-handers (swords, blades,
   knives, axes) move faster than empty hands, the knife fastest. Two-handers
-  (the hammer, the spear) move slower, and their heavies stagger and tear
+  (the hammer, the spear, the katana: Caleb's call) move slower, and their heavies stagger and tear
   armor off, which the next gun shots benefit from.
 - **Hands on the weapon.** A one-hander sits in the weapon hand, a two-hander
   takes the off hand on the handle, identical in first and third person. The

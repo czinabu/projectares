@@ -368,6 +368,7 @@ const MELEE_MODELS := [
 	["axe", "Axe.glb", 0.85, 0.12, "", "upright", Vector3(-1, 0, 0)],
 	["spear", "", 2.1, 0.75, "telescope", "upright", Vector3(1, 0, 0)],
 	["starter", "Sword.glb", 0.7, 0.085, "blade", "upright", Vector3(1, 0, 0)],
+	["hookblade", "Sword.glb", 0.9, 0.1, "blade", "upright", Vector3(1, 0, 0)],
 	["blade", "Katana.glb", 1.2, 0.14, "blade", "katana", Vector3(0, 0, 1)],
 ]
 const DEFAULT_MELEE := ["", "Sword.glb", 1.15, 0.13, "blade", "upright", Vector3(1, 0, 0)]
@@ -2764,9 +2765,16 @@ func _melee_model(weapon: Weapon) -> Node3D:
 	holder.position.y = -pick[3]
 	var key := "%s@%.2f" % [pick[1], pick[2]]
 	_fit_hands(holder, key, is_two_handed(weapon))
+	if is_two_handed(weapon) and not holder.has_meta("off_grip"):
+		# No handle read off the shape (the katana's runs into its blade with
+		# no guard to mark it): the off hand closes a hand's width under the
+		# table grip, which sits `pick[3]` above the pommel.
+		holder.set_meta("off_grip", -minf(HAND_WIDTH, pick[3] - HAND_WIDTH * 0.3))
 	var scrap := ItemDB.has_tag(weapon.item_id, "starter")
 	if scrap:
 		_scrap_bits(holder, _handles.get(key, {}), turn)
+	if ItemDB.has_tag(weapon.item_id, "hookblade"):
+		_hook_bits(holder, _handles.get(key, {}), turn, pick[2])
 	# Scrap runs dim and worn: a faint edge on beaten metal.
 	_tech_melee(holder, energy_color(weapon.item_id), energy_strength(weapon.item_id) * (scrap_energy if scrap else 1.0),
 			scrap_wear if scrap else (0.7 if weapon.item_id == "" else 0.3), {"mode": pick[4]},
@@ -2850,6 +2858,51 @@ func _scrap_bits(holder: Node3D, handle: Dictionary, turn := Basis.IDENTITY) -> 
 	nut.mesh = hex
 	nut.position = at.call(bottom - 0.004)
 	bits.add_child(nut)
+
+
+## The Marsh Hookblade is a one-handed sword whose point curls back over
+## the spine into a hook (what its trip catches an ankle with), built on the
+## plain sword model like the scrap blade's bits: after the hands are fitted
+## and before it is dressed, so it takes the blade's finish. `length` is the
+## model's length up from the pommel; `hook_radius` sizes the curl and
+## `hook_barb` how far its end hangs back down beside the blade.
+var hook_radius := 0.055
+var hook_barb := 0.05
+var hook_width := 0.02
+var hook_thick := 0.008
+
+func _hook_bits(holder: Node3D, handle: Dictionary, turn: Basis, length: float) -> void:
+	if handle.is_empty():
+		return
+	var bits := Node3D.new()
+	bits.name = "Hook"
+	holder.add_child(bits)
+	bits.basis = turn
+	var flat := turn.inverse() * Vector3(handle["centre"].x, 0.0, handle["centre"].y)
+	var tip: float = handle["bottom"] + length
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.6, 0.6, 0.62)
+	# The edge faces +X in the model's own space and the spine -X: from just
+	# under the point the steel arcs up and over to the spine side, then
+	# hangs down as a barb.
+	var centre := Vector2(flat.x - hook_radius * 0.6, tip - hook_radius * 0.6)
+	var steps := 7
+	var last := Vector2.ZERO
+	for i in steps + 1:
+		var angle := lerpf(-0.3, PI, float(i) / steps)
+		var at := centre + Vector2(cos(angle), sin(angle)) * hook_radius
+		if i > 0:
+			_hook_piece(bits, last, at, flat.z, steel)
+		last = at
+	_hook_piece(bits, last, last + Vector2(0.012, -hook_barb), flat.z, steel)
+
+
+## One straight piece of the hook from `a` to `b` (across, up) at depth `z`.
+func _hook_piece(parent: Node3D, a: Vector2, b: Vector2, z: float, mat: Material) -> void:
+	var span := b - a
+	var piece := _scrap_box(parent, Vector3(hook_width, span.length() + hook_width * 0.5, hook_thick),
+			Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, z), mat)
+	piece.rotation.z = atan2(-span.x, span.y)
 
 
 func _scrap_box(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
@@ -3325,6 +3378,14 @@ func _melee_pick(weapon: Weapon) -> Array:
 ## The one place a view asks; the grip and the sling follow it.
 func is_two_handed(weapon: Weapon) -> bool:
 	return weapon is MeleeWeapon and MeleeWeapon.is_two_handed_id(weapon.item_id)
+
+
+## True when a two-handed weapon is carried across the body (a hammer, a
+## spear, an axe in both hands): every two-hander but one held at the hilt
+## like a katana (`MELEE_MODELS` hold "katana"), which keeps its own ready
+## hold and cuts with the off hand under the weapon hand.
+func is_carried(weapon: Weapon) -> bool:
+	return is_two_handed(weapon) and ready_hold(weapon) != "katana"
 
 
 ## Fallback when a melee model is missing: greybox parts keep their shape and get metal and a hot edge.

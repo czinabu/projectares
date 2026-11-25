@@ -24,7 +24,8 @@ const NODE_NAME := "ActionPose"
 ## (`ready_off`) and whether the blade comes out of the little-finger side
 ## of the fist (a reverse grip, `ready_reversed`). A swing starts from the
 ## hold and eases back to it; a reverse grip turns over in the hand as it
-## goes. Two-handed weapons are carried across the body instead
+## goes. Two-handed weapons are carried across the body instead, all but
+## the katana (`Look.is_carried`)
 ## (`WeaponArm.carry_point`).
 var ready_holds := {
 	# A straight sword (or an axe): the elbow bent and the fist low in front
@@ -32,9 +33,11 @@ var ready_holds := {
 	# leaning in a little, the empty hand up as a guard (the old upright
 	# hold had the arm locked out at shoulder height, as if showing it off).
 	"upright": [Vector3(-0.04, -0.03, 0.06), Vector3(-0.15, 0.8, -0.6), "guard", false],
-	# A katana in both hands, the off hand under the weapon hand: the point
-	# forward and leaning in toward the middle of the view.
-	"katana": [Vector3(0.04, 0.08, -0.2), Vector3(-0.38, 1.0, -0.35), "hilt", false],
+	# A katana in both hands, the off hand under the weapon hand: the hilt
+	# in front of the body's middle (as far right as the off hand can still
+	# close on it), the point forward and leaning in toward the middle of
+	# the view.
+	"katana": [Vector3(-0.34, -0.07, -0.12), Vector3(-0.38, 1.0, -0.35), "hilt", false],
 	# A knife in a reverse grip: lying flat, the point out to the right and
 	# ahead, the pommel over the thumb, the empty hand up low as a guard.
 	"knife": [Vector3(-0.1, 0.18, -0.2), Vector3(0.85, -0.1, -0.5), "guard", true],
@@ -809,7 +812,7 @@ func advance(delta: float) -> void:
 	elbow_raise = lerpf(elbow_raise, elbow_wanted(melee) if holding else 0.0, follow)
 	var both := holding and both_hands(melee) and not melee.showing_back_strike()
 	cut_grip = move_toward(cut_grip, 1.0 if both else 0.0, delta * 8.0)
-	_two_hands = move_toward(_two_hands, 1.0 if holding and melee.is_two_handed() else 0.0, delta * 8.0)
+	_two_hands = move_toward(_two_hands, 1.0 if holding and Look.is_carried(melee) else 0.0, delta * 8.0)
 
 	var watch_wanted := actor.cmd != null and actor.cmd.watch_up and not actor.is_dead
 	_watch_raise = move_toward(_watch_raise, 1.0 if watch_wanted else 0.0, delta / maxf(watch_time, 0.001))
@@ -1359,7 +1362,7 @@ func _arm_reach(melee: MeleeWeapon) -> Variant:
 ## The ready hold `melee` is held in at rest (an entry of `ready_holds`), or
 ## an empty array for a two-handed weapon, which is carried instead.
 func ready_hold(melee: MeleeWeapon) -> Array:
-	if melee == null or melee.is_two_handed():
+	if melee == null or Look.is_carried(melee):
 		return []
 	return ready_holds.get(Look.ready_hold(melee), [])
 

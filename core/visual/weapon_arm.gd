@@ -460,7 +460,8 @@ func step(delta: float) -> void:
 	var reaching := holding and shared.reach_weight > 0.0
 	_weight = shared.reach_weight if holding else move_toward(_weight, 0.0, delta * 9.0)
 	_grip_weight = move_toward(_grip_weight, 1.0 if holding else 0.0, delta * 8.0)
-	var two_handed: bool = holding and look.is_two_handed(melee)
+	# A katana's two hands are its hilt grip below, not the carry.
+	var two_handed: bool = holding and look.is_carried(melee)
 	_off_weight = move_toward(_off_weight, 1.0 if two_handed else 0.0, delta * 8.0)
 	var off_hold := shared.ready_off(melee) if holding else ""
 	# An empty off hand stays up as a guard through attacks and guards too,
@@ -469,6 +470,9 @@ func step(delta: float) -> void:
 	# A katana's cuts keep the off hand on the handle all the way through
 	# (`ActionPose.cut_grip`); held ready it is there too.
 	var hilt_to := maxf(shared.held_ready if off_hold == "hilt" else 0.0, shared.cut_grip if holding else 0.0)
+	# A two-handed katana never lets go: the off hand stays on the hilt.
+	if holding and look.is_two_handed(melee):
+		hilt_to = 1.0
 	_hilt = hilt_to if not two_handed else move_toward(_hilt, 0.0, delta * 8.0)
 	_carry = move_toward(_carry, 1.0 if two_handed else 0.0, delta * 6.0)
 	if reaching:
