@@ -22,7 +22,10 @@ anything it covers, and keep it up to date in the same PR.
   faction "burrower", one in every other wreck field; it lies low, feels
   9 m round, and grows bolder in a sandstorm ("storm_bold",
   `BotBrain.storm_boost`). It stays wild (faction "burrower"), and
-  `can_damage` keeps it and the raiders from fighting each other. You keep what you wear
+  `can_damage` keeps it and the raiders from fighting each other. No army
+  roams: the raiders are encounter pockets (`pocket_wake` 180 m, a budget
+  of 12, `_raider_post`), three at each yard and two to four at each wreck
+  field, its burrower in the same pocket. You keep what you wear
   on death (`keep_gear_on_death`). The far ring past the walls
   (`Planet.horizon`) is built from that same ground (`far_land`), so it
   meets the sand at the map's edge, and drawn smoothed (`HORIZON_SMOOTH`);

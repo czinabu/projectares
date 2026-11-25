@@ -247,6 +247,13 @@ const BLOATER_DROPS := [
 ]
 
 
+## A forest's pack or a station's beasts stand when a player comes this
+## near (metres). The basin is small and its forests close, so it is short.
+const POCKET_WAKE := 90.0
+## The most enemies the marsh holds at once (`WorldDef.enemy_cap`).
+const ENEMY_CAP := 12
+
+
 func _init() -> void:
 	# The Spore Marsh planet (DESIGN.md "Planet kit"): its sky, moss and
 	# black water, mist and spores. Its rules are a start; the shot's carry
@@ -269,7 +276,13 @@ func _init() -> void:
 	warlord_blueprint_chance = WARLORD_BLUEPRINT
 	warlord_upgrade_data = 1
 	boss_party_scale = MATRIARCH_PARTY
-	bot_count = 12
+	# The wildlife keeps to its ground: packs in the forests, beasts at the
+	# stations and hummocks, lurkers in the pools, as encounter pockets
+	# (Caleb's call, DESIGN.md "Enemy layout") that stand while a player is
+	# near, at most `enemy_cap` at once.
+	bot_count = 0
+	pocket_wake = POCKET_WAKE
+	enemy_cap = ENEMY_CAP
 	depot_hold_time = 6.0
 	shot_carry = SHOT_CARRY
 	gun_fouling = FOULING

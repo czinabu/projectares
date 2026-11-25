@@ -289,19 +289,32 @@ func _build_sites() -> void:
 		_cover(at, radius, top)
 		_add_depot(centre + Vector3(radius * 0.45, 0.0, radius * 0.3))
 		_add_marker("spawn_cache", centre + Vector3(-3.0, 0.1, 3.0))
+		# The cult's post on the mesa: an encounter pocket
+		# (`WorldDef.pocket_wake`) by the site's name, and "spawn_bot"
+		# markers where a world event comes in.
+		# An outer stack's den shares the mesa's pocket, so two of the cult
+		# hold it with the pack (five in all, one fight); the Anvil has three.
+		var outer := at.x != 0.0
 		for i in 3:
 			var spot := at + Vector2.from_angle(i * TAU / 3.0 + 0.5) * radius * 0.4
 			_add_marker("spawn_bot", Vector3(spot.x, top, spot.y)).set_meta("faction", "rift")
+			if outer and i == 2:
+				continue
+			var post := _add_marker("spawn_guard", Vector3(spot.x, top, spot.y))
+			post.set_meta("faction", "rift")
+			post.set_meta("pocket", site["name"])
+			post.set_meta("radius", radius - 3.0)
 		# A den of Cinder Hounds on each outer stack (the world's
 		# `equip_bot` makes a guard of faction "hound" one): a pack of
 		# `HOUND_PACK` that keeps to its mesa and runs down whoever lands.
-		if at.x != 0.0:
+		if outer:
 			var den := at + Vector2.from_angle(-0.8) * radius * 0.5
 			for i in HOUND_PACK:
 				var spot := den + Vector2.from_angle(i * TAU / HOUND_PACK) * 1.8
 				var hound := _add_marker("spawn_guard", Vector3(spot.x, top, spot.y))
 				hound.set_meta("faction", "hound")
 				hound.set_meta("radius", radius * 0.6)
+				hound.set_meta("pocket", site["name"])
 
 
 ## The Crown: the highest mesa, the warlord's, with the best caches

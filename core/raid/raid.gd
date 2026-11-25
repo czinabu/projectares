@@ -1416,7 +1416,7 @@ func bot_target() -> int:
 	if army_size() <= 0:
 		return 0
 	var want := army_size() + roundi(maxi(world.war_reinforcements, 0) * war.intensity)
-	return want if enemy_cap <= 0 else mini(want, army_size())
+	return want if enemy_budget() <= 0 else mini(want, army_size())
 
 
 ## The world's own army: `WorldDef.bot_count`, or none with enemies off.
@@ -1425,11 +1425,12 @@ func bot_target() -> int:
 func army_size() -> int:
 	if not enemies:
 		return 0
-	if enemy_cap <= 0:
+	var cap := enemy_budget()
+	if cap <= 0:
 		return world.bot_count
 	# Pockets take room only while awake, so they hold none back.
 	var fixed := _map_nodes("spawn_boss").size() + (0 if pockets_on() else _map_nodes("spawn_guard").size())
-	return mini(world.bot_count, maxi(enemy_cap - fixed, ceili(enemy_cap * 0.5)))
+	return mini(world.bot_count, maxi(cap - fixed, ceili(cap * 0.5)))
 
 
 ## Whether the world's guards are encounter pockets (`WorldDef.pocket_wake`).
@@ -1443,11 +1444,21 @@ func _fields_enemies() -> bool:
 	return army_size() > 0 or pockets_on()
 
 
-## How many more enemies the budget (`enemy_cap`) lets in now.
+## This world's enemy budget: its own (`WorldDef.enemy_cap`) where it sets
+## one, else `enemy_cap`; none (0) while `enemy_cap` is off, as in the tests
+## and benches that build their own `Raid`.
+func enemy_budget() -> int:
+	if enemy_cap <= 0:
+		return 0
+	return world.enemy_cap if world.enemy_cap > 0 else enemy_cap
+
+
+## How many more enemies the budget (`enemy_budget`) lets in now.
 func enemy_room() -> int:
 	if not enemies:
 		return 0
-	return 1 << 30 if enemy_cap <= 0 else enemy_cap - bots.size()
+	var cap := enemy_budget()
+	return 1 << 30 if cap <= 0 else cap - bots.size()
 
 
 ## The enemy cap a program runs with: `--enemy-cap <n>`, then the
@@ -2610,7 +2621,7 @@ func _tick_pockets() -> bool:
 		# Short of room, awake pockets that nobody is fighting and every
 		# player is further from (by `POCKET_YIELD` metres) sleep for it,
 		# farthest first: the room goes where someone is.
-		var fits := enemy_cap - _bosses.size()
+		var fits := enemy_budget() - _bosses.size()
 		while _pocket_room() < mini(due, fits) and not spare.is_empty() \
 				and float(spare.back()[0]) > float(entry[0]) + POCKET_YIELD:
 			var far: Array = spare.pop_back()
@@ -2644,7 +2655,7 @@ func _stand_queued(count: int) -> bool:
 	return stood > 0
 
 
-## Room under `enemy_cap` for pockets, less what the queued guards keep.
+## Room under `enemy_budget` for pockets, less what the queued guards keep.
 func _pocket_room() -> int:
 	return enemy_room() - _pocket_queue.size()
 

@@ -295,6 +295,11 @@ const BOT_TABLE := [
 ]
 
 
+## The most enemies Ashfront holds at once under the project's cap
+## (`WorldDef.enemy_cap`), measured against the frame and battle benches.
+const ENEMY_CAP := 24
+
+
 func _init() -> void:
 	# The Ashland (DESIGN.md "Planet kit"): its sky, ground and horizon.
 	take_planet("ashland")
@@ -310,6 +315,10 @@ func _init() -> void:
 	war_reinforcements = 60
 	# Caleb's launch call (DESIGN.md "More worlds"): 24 players.
 	max_players = 24
+	# Ashfront keeps its war (Caleb's call, DESIGN.md "Enemy layout"): its
+	# armies roam, and under the project's enemy cap it holds more than a
+	# world of pockets, enough for a battle a player can see.
+	enemy_cap = ENEMY_CAP
 	bots_contest_sites = true
 	# Each army remembers who has been killing its soldiers, for one life.
 	grudge_factions.assign(["legion", "tide"])

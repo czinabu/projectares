@@ -7,6 +7,10 @@ date in the same PR.
 - The Spore Marsh (DESIGN.md "The Spore Marsh", `worlds/marsh/`): a co-op
   PvE world whose enemy is wildlife, each kind a faction of its own
   (stalker, shellback, bloater) that hunts the others and never its own.
+  It keeps to its ground as encounter pockets (`pocket_wake` 90 m, a
+  budget of 12; the map's `_bot_spot` names each one's pocket): a forest's
+  pack with its hive keeper, a station's pair, the den's stalkers, a
+  hummock's lone beast, a lurker's pool and each Rootway's gallery.
   Guns foul there (Caleb's call): with `WorldDef.gun_fouling` over 0 each
   shot adds to `Gun.fouling`, which widens the spread, clears once the
   trigger rests and at full jams the gun (`Gun.jammed`) until a reload; it

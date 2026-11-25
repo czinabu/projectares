@@ -28,7 +28,10 @@ date in the same PR.
   there take every second tick. `Main` reads `ares/stability/enemy_cap`
   (8, from the frame bench on an RTX 5070: Ashfront holds about 58 fps at 8 bots and 30 at 60) and `ares/stability/enemies_full_detail` (12), or `--enemy-cap <n>`
   / `ARES_ENEMY_CAP`; 0 is no cap, and with no enemy cap there is no near
-  cap either. The tests and benches run without a budget unless a bench is
+  cap either. A world may hold its own budget in place of the project's
+  (`WorldDef.enemy_cap`, read through `Raid.enemy_budget()`, only while
+  the project's cap is on): 24 on Ashfront, 12 in the Marsh, Dune Sea and
+  Rift. The tests and benches run without a budget unless a bench is
   given `--enemy-cap`. Raise the cap only with a frame bench showing the
   frame steady at the new count.
 - Bot armies. A "spawn_bot" marker may name a faction (meta "faction");

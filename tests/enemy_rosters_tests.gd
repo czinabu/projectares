@@ -150,6 +150,7 @@ static func _storm_bold(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(dunes, 5)
+	t.stand_pockets(raid)
 	await t.frames(2)
 	var burrower: Actor = null
 	for bot in raid.bots:
