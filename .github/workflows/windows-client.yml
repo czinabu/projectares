@@ -4,11 +4,19 @@ name: Windows client build
 #   That preset is the playtest build (feature tag "playtest"): only the worlds
 #   in ares/release/playtest_worlds (core/world/world_registry.gd). The
 #   "Windows Dev" preset, every world, is exported beside it as a workflow
-#   artifact only, never on the release the installed games update from.
+#   artifact only, never on a release: nothing of it is public. On every
+#   push to main the dev build's own update goes up as private artifacts
+#   too, "dev-update-manifest-<system>" (update-dev.json, or
+#   update-dev-linux.json) and "dev-update-pack-<system>" (its pack), which
+#   an installed dev game fetches through the GitHub API with a read-only
+#   token its owner gave it on the phone (Updater, channel "dev"). Every dev
+#   manifest says "channel": "dev", which a playtest game refuses, and a dev
+#   game refuses any other, so the two builds never swap.
 #   The "Linux Client" preset (the same playtest build, for Linux laptops) is
 #   exported beside it as ProjectAres-linux-<commit>.tar.gz on the same
-#   release. It does not update itself yet (update.json is the Windows
-#   build's): download the newest tarball to update.
+#   release, and updates itself the same way from its own pack and manifest
+#   (ProjectAres-linux.pck, update-linux.json): only the pack is replaced,
+#   so the executable keeps its name and its executable bit.
 #   Pull requests that touch the preset or this file: build only, so a broken
 #   export is caught before it matters.
 #   Every push to main: builds and replaces the zip on the rolling "latest"
@@ -139,6 +147,18 @@ jobs:
           echo "$name (commit $(git rev-parse HEAD))" > "dist-linux/$name/BUILD.txt"
           tar -C dist-linux -czf "dist/$name.tar.gz" "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Linux update manifest
+        # The Linux game's own update (Updater.LINUX_MANIFEST): its pack is
+        # exported for Linux, so it never shares the Windows one.
+        run: |
+          pck=build/linux/ProjectAres.pck
+          cp "$pck" dist/ProjectAres-linux.pck
+          cat > dist/update-linux.json <<EOF
+          {"build": $GITHUB_RUN_NUMBER, "commit": "$(git rev-parse --short HEAD)", "godot": "$GODOT_VERSION",
+           "platform": "linux", "pack": "ProjectAres-linux.pck",
+           "size": $(stat -c %s "$pck"), "sha256": "$(sha256sum "$pck" | cut -d ' ' -f 1)"}
+          EOF
+          python3 -c 'import json; print(json.load(open("dist/update-linux.json")))'
       - name: Export the dev build
         run: |
           mkdir -p build/windows-dev
@@ -149,10 +169,60 @@ jobs:
           cp build/windows-dev/ProjectAresDev.exe build/windows-dev/ProjectAresDev.pck "dist-dev/$name/"
           (cd dist-dev && zip -qr "$name.zip" "$name")
           echo "DEV_NAME=$name" >> "$GITHUB_ENV"
+      - name: Dev update manifests
+        # The dev build's own update (Updater.channel "dev"), never mixed with
+        # the playtest build's. The Linux dev pack only once its preset exists.
+        run: |
+          mkdir -p dist-dev-update
+          manifest() {  # pack, published name, platform, manifest file
+            cp "$1" "dist-dev-update/$2"
+            printf '{"build": %s, "commit": "%s", "godot": "%s", "platform": "%s", "channel": "dev", "pack": "%s", "size": %s, "sha256": "%s"}\n' \
+              "$GITHUB_RUN_NUMBER" "$(git rev-parse --short HEAD)" "$GODOT_VERSION" "$3" "$2" \
+              "$(stat -c %s "$1")" "$(sha256sum "$1" | cut -d ' ' -f 1)" > "dist-dev-update/$4"
+            python3 -c 'import json,sys; print(json.load(open(sys.argv[1])))' "dist-dev-update/$4"
+          }
+          manifest build/windows-dev/ProjectAresDev.pck ProjectAresDev.pck windows update-dev.json
+          if grep -q '^name="Linux Dev"' export_presets.cfg; then
+            if [ ! -s build/linux-dev/ProjectAresDev.pck ]; then
+              mkdir -p build/linux-dev
+              "$GODOT" --headless --path . --export-release "Linux Dev" build/linux-dev/ProjectAresDev.x86_64
+            fi
+            test -s build/linux-dev/ProjectAresDev.pck
+            manifest build/linux-dev/ProjectAresDev.pck ProjectAresDev-linux.pck linux update-dev-linux.json
+          fi
+          ls -l dist-dev-update
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DEV_NAME }}
           path: dist-dev/*.zip
+      # The dev build's private update (Updater.dev_artifact): fixed names, so
+      # the game asks for the newest by name; only builds of main.
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: dev-update-manifest-windows
+          path: dist-dev-update/update-dev.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: dev-update-pack-windows
+          path: dist-dev-update/ProjectAresDev.pck
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: dev-update-manifest-linux
+          path: dist-dev-update/update-dev-linux.json
+          retention-days: 30
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: dev-update-pack-linux
+          path: dist-dev-update/ProjectAresDev-linux.pck
+          retention-days: 30
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.zip.outputs.name }}
@@ -161,17 +231,18 @@ jobs:
             dist/*.tar.gz
             dist/ProjectAres-Setup.exe
             dist/update.json
+            dist/update-linux.json
       - name: Update the rolling latest release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           zip="dist/${{ steps.zip.outputs.name }}.zip"
-          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run ProjectAres-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip). On Linux: unpack ProjectAres-linux-*.tar.gz and run ProjectAres.x86_64 (no self-update yet: download the newest tarball)."
+          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run ProjectAres-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip). On Linux: unpack ProjectAres-linux-*.tar.gz somewhere you can write to and run ProjectAres.x86_64: it keeps itself up to date from here too (ProjectAres-linux.pck and update-linux.json)."
           # Recreate the release every time: editing it in place keeps the
           # original publish date, so the page would look hours out of date.
           gh release delete latest --cleanup-tag -y || true
-          gh release create latest dist/ProjectAres-Setup.exe "$zip" "dist/${{ steps.linux.outputs.name }}.tar.gz" dist/ProjectAres.pck dist/update.json --prerelease --target "$GITHUB_SHA" \
+          gh release create latest dist/ProjectAres-Setup.exe "$zip" "dist/${{ steps.linux.outputs.name }}.tar.gz" dist/ProjectAres.pck dist/update.json dist/ProjectAres-linux.pck dist/update-linux.json --prerelease --target "$GITHUB_SHA" \
             --title "Latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release
