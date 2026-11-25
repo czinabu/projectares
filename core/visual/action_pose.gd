@@ -53,8 +53,14 @@ var held_ready := 0.0
 ## blend between them by `elbow_raise`.
 var elbow_cocked := Vector3(0.9, 1.6, 0.35)
 var elbow_thrown := Vector3(0.6, 0.5, 0.2)
-## How long the follow-through is held after the swing lands, in seconds.
+## How long the follow-through is held after the swing lands, in seconds;
+## a two-hander holds it `two_hand_follow` times as long, its weight carried
+## through.
 var follow_hold := 0.2
+var two_hand_follow := 2.0
+## A two-hander's recovery keeps the follow-through for this share of it
+## before hauling the weapon back up, so a heavy swing ends in its weight.
+const TWO_HAND_RECOVER_HOLD := 0.35
 ## A windup keeps drawing back as it goes on, by up to this share of its
 ## reach and turn (`MeleeWeapon.windup_coil`), so it never freezes.
 var windup_coil := 0.18
@@ -779,7 +785,7 @@ func advance(delta: float) -> void:
 	var reel_wanted := clampf(actor.stagger_left / maxf(reel_ease, 0.01), 0.0, 1.0) if not actor.is_dead else 0.0
 	reel = move_toward(reel, reel_wanted, delta * reel_in) if reel_wanted > reel else reel_wanted
 	if holding and melee._swing_left > 0.0 and not melee.is_winding_up():
-		_follow_left = follow_hold
+		_follow_left = follow_hold * (two_hand_follow if melee.is_two_handed() else 1.0)
 		_follow_dir = melee.attack_dir
 	elif _follow_left > 0.0:
 		_follow_left -= delta
@@ -1691,7 +1697,8 @@ static func recover_left(melee: MeleeWeapon) -> float:
 	# flows straight into its windup, rather than going back to the guard.
 	if melee._queued:
 		return 1.0
-	return 1.0 - smoothstep(0.0, 1.0, done)
+	var hold := TWO_HAND_RECOVER_HOLD if melee.is_two_handed() else 0.0
+	return 1.0 - smoothstep(hold, 1.0, done)
 
 
 ## How far through the shown swing (0 to 1), or 0 when none is showing.

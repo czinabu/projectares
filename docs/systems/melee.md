@@ -77,7 +77,10 @@ date in the same PR.
   `SWING_LEAD` before the strike and speeds into it, half its arc at the
   hit, then eases out (`MeleeWeapon.swing_arc`; both views read it); a
   windup keeps coiling back (`windup_coil`); two-handers swing slower and
-  turn the body more. A new melee weapon picks a style; check it by eye with
+  turn the body more, hold their follow-through longer (`ActionPose.two_hand_follow`,
+  `TWO_HAND_RECOVER_HOLD`: the first part of the recovery stays down in the
+  swing's weight before hauling back up) and pause longer on a landed hit
+  (`MeleeWeapon.TWO_HAND_HITSTOP`; `melee_weight_tests.gd`). A new melee weapon picks a style; check it by eye with
   `visual_check.tscn -- <dir> --swing-only` (run with `--fixed-fps 60`),
   which films each move frame by frame, or quicker, one weapon's stance,
   swings and guards from the front, the side and the eyes at once with
