@@ -2407,6 +2407,7 @@ func _draw_settings() -> void:
 ## Draws a tab's settings from `GameSettings.SCHEMA`, a heading above each
 ## new section. A new setting is a row there, never code here.
 func _draw_setting_rows(tab: String) -> void:
+	_setting_controls.clear()
 	var section := ""
 	for row: Dictionary in GameSettings.rows_in(tab):
 		var key: String = row["key"]
@@ -2429,6 +2430,25 @@ func _draw_setting_rows(tab: String) -> void:
 				pick.select(int(value))
 				pick.item_selected.connect(func(index: int) -> void: change_setting(key, index))
 				_body.add_child(pick)
+				_setting_controls[key] = pick
+
+
+## The Settings rows' switches and lists now drawn, by key, so a setting that
+## changes others (Graphics quality) shows them at once without a redraw.
+var _setting_controls := {}
+
+
+## Shows every drawn switch and list at its setting's value now.
+func _sync_setting_controls() -> void:
+	for key: String in _setting_controls:
+		var control: Variant = _setting_controls[key]
+		if not is_instance_valid(control):
+			continue
+		if control is OptionButton:
+			if (control as OptionButton).selected != int(GameSettings.value_of(key)):
+				(control as OptionButton).select(int(GameSettings.value_of(key)))
+		elif control is CheckButton:
+			(control as CheckButton).set_pressed_no_signal(bool(GameSettings.value_of(key)))
 
 
 ## Skip or replay the tour, then redraw (deferred: the button that was
@@ -2519,10 +2539,12 @@ func _toggle(text: String, key: String, value: bool) -> void:
 	box.button_pressed = value
 	box.toggled.connect(func(on: bool) -> void: change_setting(key, on))
 	_body.add_child(box)
+	_setting_controls[key] = box
 
 
 func change_setting(key: String, value: Variant) -> void:
 	GameSettings.set_value(key, value)
+	_sync_setting_controls()
 	settings_changed.emit()
 
 

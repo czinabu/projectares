@@ -182,3 +182,19 @@ date in the same PR.
   own with a visibility range, which the setting scales too; compare by
   eye with `visual_check.tscn -- <dir> --sightlines-only [levels]`, which
   writes each shot's draw calls beside it.
+- Laptops and low-end machines: one pick, Graphics quality
+  (`GameSettings.GRAPHICS`: High, Medium, Low for laptops, Lowest), sets
+  every performance row and the edge smoothing at once; changing one of
+  them by hand reads Custom (`graphics_matching`), and the phone shows a
+  pick's rows at once (`Phone._sync_setting_controls`, no redraw). High is
+  the defaults. On the first launch on a graphics card
+  (`GameSettings.detect_graphics`, once per card, kept in `graphics_card`)
+  a laptop's built-in graphics starts on Low (the strongest of them on
+  Medium), a software renderer on Lowest and the OpenGL fallback on Low
+  (`graphics_for`); it only lowers untouched defaults, never settings the
+  player chose. A window bigger than the screen it opens on is shrunk to
+  fit (`fit_window_to_screen`). These are view only: a server, the
+  simulation and first or third person are untouched. Compare the picks by
+  eye and graphics card time with `visual_check.tscn -- <dir>
+  --graphics-presets-only [world ...]`. The "Linux Client" export preset
+  is the playtest build for Linux, built beside the Windows one.

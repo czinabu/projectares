@@ -5,6 +5,10 @@ name: Windows client build
 #   in ares/release/playtest_worlds (core/world/world_registry.gd). The
 #   "Windows Dev" preset, every world, is exported beside it as a workflow
 #   artifact only, never on the release the installed games update from.
+#   The "Linux Client" preset (the same playtest build, for Linux laptops) is
+#   exported beside it as ProjectAres-linux-<commit>.tar.gz on the same
+#   release. It does not update itself yet (update.json is the Windows
+#   build's): download the newest tarball to update.
 #   Pull requests that touch the preset or this file: build only, so a broken
 #   export is caught before it matters.
 #   Every push to main: builds and replaces the zip on the rolling "latest"
@@ -61,7 +65,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/share/godot/export_templates
-          key: godot-templates-windows-${{ env.GODOT_VERSION }}
+          key: godot-templates-windows-linux-${{ env.GODOT_VERSION }}
       - name: Download the Windows export template
         if: steps.templates.outputs.cache-hit != 'true'
         run: |
@@ -69,7 +73,8 @@ jobs:
           curl -sSL --retry 4 -o "$RUNNER_TEMP/templates.tpz" "${base}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
           dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
           mkdir -p "$dest"
-          unzip -q -j "$RUNNER_TEMP/templates.tpz" templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe templates/version.txt -d "$dest"
+          unzip -q -j "$RUNNER_TEMP/templates.tpz" templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe \
+            templates/linux_release.x86_64 templates/linux_debug.x86_64 templates/version.txt -d "$dest"
       - name: Stamp the build number
         # Read by the game's updater (Updater.BUILD_SETTING); never committed.
         # Builds of main also carry the bug report webhook
@@ -119,6 +124,21 @@ jobs:
            "size": $(stat -c %s "$pck"), "sha256": "$(sha256sum "$pck" | cut -d ' ' -f 1)"}
           EOF
           python3 -c 'import json; print(json.load(open("dist/update.json")))'
+      - name: Export the Linux client
+        id: linux
+        run: |
+          mkdir -p build/linux
+          "$GODOT" --headless --path . --export-release "Linux Client" build/linux/ProjectAres.x86_64
+          test -s build/linux/ProjectAres.x86_64
+          test -s build/linux/ProjectAres.pck
+          name="ProjectAres-linux-$(git rev-parse --short HEAD)"
+          mkdir -p "dist-linux/$name"
+          cp build/linux/ProjectAres.x86_64 build/linux/ProjectAres.pck "dist-linux/$name/"
+          chmod +x "dist-linux/$name/ProjectAres.x86_64"
+          cp .github/playtest/PLAYTEST-README-linux.txt "dist-linux/$name/PLAYTEST-README.txt"
+          echo "$name (commit $(git rev-parse HEAD))" > "dist-linux/$name/BUILD.txt"
+          tar -C dist-linux -czf "dist/$name.tar.gz" "$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
       - name: Export the dev build
         run: |
           mkdir -p build/windows-dev
@@ -138,6 +158,7 @@ jobs:
           name: ${{ steps.zip.outputs.name }}
           path: |
             dist/*.zip
+            dist/*.tar.gz
             dist/ProjectAres-Setup.exe
             dist/update.json
       - name: Update the rolling latest release
@@ -146,11 +167,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           zip="dist/${{ steps.zip.outputs.name }}.zip"
-          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run ProjectAres-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip)."
+          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run ProjectAres-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip). On Linux: unpack ProjectAres-linux-*.tar.gz and run ProjectAres.x86_64 (no self-update yet: download the newest tarball)."
           # Recreate the release every time: editing it in place keeps the
           # original publish date, so the page would look hours out of date.
           gh release delete latest --cleanup-tag -y || true
-          gh release create latest dist/ProjectAres-Setup.exe "$zip" dist/ProjectAres.pck dist/update.json --prerelease --target "$GITHUB_SHA" \
+          gh release create latest dist/ProjectAres-Setup.exe "$zip" "dist/${{ steps.linux.outputs.name }}.tar.gz" dist/ProjectAres.pck dist/update.json --prerelease --target "$GITHUB_SHA" \
             --title "Latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release
