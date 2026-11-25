@@ -164,6 +164,11 @@ background and restarts into it. The start screen's corner and the phone's
 Servers app say which build you run. Only a new Godot version needs a fresh
 download. Pass `-- --no-update` to stop it.
 
+The Linux build (`ProjectAres-linux-*.tar.gz` on the same release) updates itself
+the same way once unpacked somewhere you can write to: it reads its own
+`update-linux.json` and swaps in `ProjectAres-linux.pck` beside
+`ProjectAres.x86_64`, never the executable itself.
+
 ## Play online (early test)
 
 Walk out of your home base's **door** and you are in the plaza. The first time,

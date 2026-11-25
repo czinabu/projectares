@@ -60,6 +60,20 @@ static func _manifests(t: Node) -> void:
 			and UpdaterScript.decide(no_size, 19, "4.7", "Windows") == "bad",
 			"a manifest without a checksum, a size or a plain file name is refused")
 	t.check(UpdaterScript.pack_path(20) == "user://updates/build-20.pck", "a download waits under user://updates")
+	var linux := good.duplicate()
+	linux["platform"] = "linux"
+	linux["pack"] = "ProjectAres-linux.pck"
+	t.check(UpdaterScript.decide(linux, 19, "4.7", "Linux") == "download"
+			and UpdaterScript.decide(linux, 19, "4.7", "Windows") == "other",
+			"the Linux build downloads the Linux pack, and Windows never takes it")
+	t.check(UpdaterScript.manifest_name("Linux") == UpdaterScript.LINUX_MANIFEST
+			and UpdaterScript.manifest_name("Windows") == UpdaterScript.MANIFEST,
+			"each system reads its own manifest")
+	t.check(UpdaterScript.pack_candidates("/home/c/Games/ProjectAres.x86_64")
+			== PackedStringArray(["/home/c/Games/ProjectAres.pck", "/home/c/Games/ProjectAres.x86_64.pck"])
+			and UpdaterScript.pack_candidates("/home/c/Games/Verge")[0] == "/home/c/Games/Verge.pck"
+			and UpdaterScript.pack_candidates("D:/Games/Verge.exe")[0] == "D:/Games/Verge.pck",
+			"a renamed exe's pack is found where the engine finds it")
 
 
 static func _restarts(t: Node) -> void:
@@ -109,10 +123,19 @@ static func _wiring(t: Node) -> void:
 			client = section
 	t.check(client != "" and presets.get_value(client + ".options", "binary_format/embed_pck", true) == false,
 			"the Windows client keeps its pack beside the exe, so an update can replace it")
+	var linux_client := ""
+	for section in presets.get_sections():
+		if presets.get_value(section, "name", "") == "Linux Client":
+			linux_client = section
+	t.check(linux_client != "" and presets.get_value(linux_client + ".options", "binary_format/embed_pck", true) == false
+			and "playtest" in str(presets.get_value(linux_client, "custom_features", "")),
+			"the Linux client is the playtest build with its pack beside the exe, so it updates too")
 	var workflow := FileAccess.get_file_as_string("res://.github/workflows/windows-client.yml")
 	t.check(workflow == "" or (UpdaterScript.BUILD_SETTING.get_slice("/", 2) in workflow
-			and UpdaterScript.MANIFEST in workflow and "ProjectAres.pck" in workflow),
-			"the release workflow stamps the build and publishes the pack and its manifest")
+			and UpdaterScript.MANIFEST in workflow and "ProjectAres.pck" in workflow
+			and UpdaterScript.LINUX_MANIFEST in workflow and "ProjectAres-linux.pck" in workflow
+			and "\"platform\": \"linux\"" in workflow),
+			"the release workflow stamps the build and publishes each system's pack and manifest")
 	t.check(str(ProjectSettings.get_setting("application/config/icon", "")).begins_with("res://assets/branding/")
 			and str(ProjectSettings.get_setting("application/boot_splash/image", "")).begins_with("res://assets/branding/")
 			and str(presets.get_value(client + ".options", "application/icon", "")).ends_with(".ico")

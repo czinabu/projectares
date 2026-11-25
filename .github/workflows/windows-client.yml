@@ -7,8 +7,9 @@ name: Windows client build
 #   artifact only, never on the release the installed games update from.
 #   The "Linux Client" preset (the same playtest build, for Linux laptops) is
 #   exported beside it as ProjectAres-linux-<commit>.tar.gz on the same
-#   release. It does not update itself yet (update.json is the Windows
-#   build's): download the newest tarball to update.
+#   release, and updates itself the same way from its own pack and manifest
+#   (ProjectAres-linux.pck, update-linux.json): only the pack is replaced,
+#   so the executable keeps its name and its executable bit.
 #   Pull requests that touch the preset or this file: build only, so a broken
 #   export is caught before it matters.
 #   Every push to main: builds and replaces the zip on the rolling "latest"
@@ -139,6 +140,18 @@ jobs:
           echo "$name (commit $(git rev-parse HEAD))" > "dist-linux/$name/BUILD.txt"
           tar -C dist-linux -czf "dist/$name.tar.gz" "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Linux update manifest
+        # The Linux game's own update (Updater.LINUX_MANIFEST): its pack is
+        # exported for Linux, so it never shares the Windows one.
+        run: |
+          pck=build/linux/ProjectAres.pck
+          cp "$pck" dist/ProjectAres-linux.pck
+          cat > dist/update-linux.json <<EOF
+          {"build": $GITHUB_RUN_NUMBER, "commit": "$(git rev-parse --short HEAD)", "godot": "$GODOT_VERSION",
+           "platform": "linux", "pack": "ProjectAres-linux.pck",
+           "size": $(stat -c %s "$pck"), "sha256": "$(sha256sum "$pck" | cut -d ' ' -f 1)"}
+          EOF
+          python3 -c 'import json; print(json.load(open("dist/update-linux.json")))'
       - name: Export the dev build
         run: |
           mkdir -p build/windows-dev
@@ -161,17 +174,18 @@ jobs:
             dist/*.tar.gz
             dist/ProjectAres-Setup.exe
             dist/update.json
+            dist/update-linux.json
       - name: Update the rolling latest release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           zip="dist/${{ steps.zip.outputs.name }}.zip"
-          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run ProjectAres-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip). On Linux: unpack ProjectAres-linux-*.tar.gz and run ProjectAres.x86_64 (no self-update yet: download the newest tarball)."
+          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run ProjectAres-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip). On Linux: unpack ProjectAres-linux-*.tar.gz somewhere you can write to and run ProjectAres.x86_64: it keeps itself up to date from here too (ProjectAres-linux.pck and update-linux.json)."
           # Recreate the release every time: editing it in place keeps the
           # original publish date, so the page would look hours out of date.
           gh release delete latest --cleanup-tag -y || true
-          gh release create latest dist/ProjectAres-Setup.exe "$zip" "dist/${{ steps.linux.outputs.name }}.tar.gz" dist/ProjectAres.pck dist/update.json --prerelease --target "$GITHUB_SHA" \
+          gh release create latest dist/ProjectAres-Setup.exe "$zip" "dist/${{ steps.linux.outputs.name }}.tar.gz" dist/ProjectAres.pck dist/update.json dist/ProjectAres-linux.pck dist/update-linux.json --prerelease --target "$GITHUB_SHA" \
             --title "Latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release

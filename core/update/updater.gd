@@ -2,10 +2,13 @@ extends Node
 ## Keeps an installed game up to date by itself (the `Updater` autoload).
 ##
 ## The game is installed once: `ProjectAres.exe` (the engine) and
-## `ProjectAres.pck` (everything else) side by side. Every merge to main
-## publishes a new pack and a small manifest (`update.json`) on the rolling
-## "latest" GitHub release (`.github/workflows/windows-client.yml`). On launch
-## this asks for the manifest; a newer build is downloaded in the background,
+## `ProjectAres.pck` (everything else) side by side, or on Linux
+## `ProjectAres.x86_64` and its pack. Every merge to main publishes a new pack
+## and a small manifest for each system on the rolling "latest" GitHub
+## release (`.github/workflows/windows-client.yml`): `update.json` and
+## `ProjectAres.pck` for Windows, `update-linux.json` and
+## `ProjectAres-linux.pck` for Linux (`manifest_name`). On launch this asks
+## for its system's manifest; a newer build is downloaded in the background,
 ## checked against the manifest's size and SHA-256, and kept under
 ## `user://updates`. If it is ready while the start screen is still up the game
 ## restarts into it at once (`start.gd` tells us with `on_start_screen`);
@@ -19,7 +22,9 @@ extends Node
 ## will not take the pack is tried on `MAX_TRIES` launches, never in a loop,
 ## and then the game says so (state "stuck").
 ##
-## Only the engine cannot change this way. A manifest naming another Godot
+## Only the pack is ever replaced, never the engine beside it, so the exe
+## keeps its name (renamed or not, `pack_candidates`) and, on Linux, its
+## executable bit. Only the engine cannot change this way. A manifest naming another Godot
 ## version than the running exe (`engine_version`) asks for a fresh install
 ## (state "reinstall"), offered on the start screen and the Servers app.
 ##
@@ -34,6 +39,9 @@ signal changed
 ## (a test of the whole loop against a local server).
 const RELEASE_BASE := "https://github.com/czinabu/projectares/releases/download/latest/"
 const MANIFEST := "update.json"
+## Linux reads its own manifest: its pack is exported for Linux, and a
+## Windows game reading `MANIFEST` must never be handed it.
+const LINUX_MANIFEST := "update-linux.json"
 const DIR := "user://updates"
 const PENDING := "user://updates/pending.json"
 const PART := "user://updates/download.part"
@@ -110,6 +118,11 @@ static func enabled(exported: bool, build_number: int, user_args: PackedStringAr
 	return true
 
 
+## The manifest a game on `platform` (OS.get_name()) reads.
+static func manifest_name(platform: String) -> String:
+	return LINUX_MANIFEST if platform.to_lower() == "linux" else MANIFEST
+
+
 ## The running engine as the release workflow names it: "4.7", "4.7.1".
 static func engine_version() -> String:
 	var v := Engine.get_version_info()
@@ -182,7 +195,7 @@ func check() -> void:
 	_set_state("checking")
 	_http = _new_request(check_timeout)
 	_http.request_completed.connect(_on_manifest, CONNECT_ONE_SHOT)
-	if _http.request(_base + MANIFEST) != OK:
+	if _http.request(_base + manifest_name(OS.get_name())) != OK:
 		_fail()
 
 
@@ -359,7 +372,22 @@ func _install(number: int) -> void:
 
 ## The pack the exe loads: beside it, with its name.
 static func installed_pack() -> String:
-	return OS.get_executable_path().get_basename() + ".pck"
+	var candidates := pack_candidates(OS.get_executable_path())
+	for path in candidates:
+		if FileAccess.file_exists(path):
+			return path
+	return candidates[0]
+
+
+## Where the engine looks for its pack, in its order: the exe's name without
+## its extension, then the whole name ("Verge.x86_64" finds "Verge.pck",
+## then "Verge.x86_64.pck"; a Linux exe renamed to plain "Verge" finds
+## "Verge.pck"). An exe renamed with its pack still runs, and updates.
+static func pack_candidates(exe: String) -> PackedStringArray:
+	var out := PackedStringArray([exe.get_basename() + ".pck"])
+	if exe.get_extension() != "":
+		out.append(exe + ".pck")
+	return out
 
 
 ## The command line for the restart after an install: the same arguments

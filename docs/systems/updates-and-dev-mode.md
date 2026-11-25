@@ -19,10 +19,16 @@ date in the same PR.
   gate on the tag or the list.
 - The game updates itself (`core/update/updater.gd`, the `Updater`
   autoload, second after `Boot` and, like it, free of project classes). The
-  Windows client keeps its pack beside the exe (`embed_pck` off); the
-  release workflow stamps each build's number into `ares/build/number` and
-  publishes the pack and `update.json` (build, engine, size, SHA-256) on the
-  rolling "latest" release. An exported, stamped game reads it at launch,
+  Windows and Linux clients keep their pack beside the exe (`embed_pck`
+  off); the release workflow stamps each build's number into
+  `ares/build/number` and publishes each system's pack and manifest (build,
+  engine, platform, size, SHA-256) on the rolling "latest" release:
+  `ProjectAres.pck` and `update.json` for Windows, `ProjectAres-linux.pck`
+  and `update-linux.json` for Linux (`Updater.manifest_name`). A manifest
+  for another system is ignored, so a pack never crosses systems. Only the
+  pack is replaced, never the exe, so a renamed exe (its pack renamed to
+  match, found as the engine finds it, `Updater.pack_candidates`) and the
+  Linux executable bit survive an update. An exported, stamped game reads it at launch,
   downloads a newer pack to `user://updates`, checks it and swaps it in
   beside the exe (on Windows a batch script does it once the game has
   closed, since an open pack cannot be replaced; release builds refuse
