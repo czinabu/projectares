@@ -28,6 +28,9 @@ uniform float flash = 0.0;
 // the body as it moves. `surface_kind`: 0 anything else, 1 skin, 2 skin the
 // undersuit may cover (below the head), 3 eyes.
 uniform int surface_kind = 0;
+// How a person's bare skin is drawn, the same under every skin's tint.
+const float SKIN_SATURATION = 0.85;
+const float SKIN_BRIGHTNESS = 0.82;
 uniform float has_rest = 0.0;
 // The undersuit: a fitted tech layer over bare arms, legs and hands, worn
 // under an armor frame (`ActorSkin._update_frame`).
@@ -87,7 +90,11 @@ void fragment() {
 	float own = dot(c, vec3(0.299, 0.587, 0.114));
 	c = mix(c, recolor * mix(1.0, 0.45 + 1.1 * own, recolor_shading), recolor_amount);
 	float l = dot(c, vec3(0.299, 0.587, 0.114));
-	c = mix(vec3(l), c, saturation) * tint * brightness;
+	// The faction's tint, saturation and brightness dress the clothes and
+	// gear, never a person's skin: skin keeps its own tone in every army.
+	vec3 dressed = mix(vec3(l), c, saturation) * tint * brightness;
+	float bare_skin = has_rest > 0.5 ? (surface_kind == 1 ? 1.0 : (surface_kind == 2 ? 1.0 - suit : 0.0)) : 0.0;
+	c = mix(dressed, mix(vec3(l), c, SKIN_SATURATION) * SKIN_BRIGHTNESS, bare_skin);
 	// Darker in the creases the flat pack colors cannot show.
 	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
 	c *= mix(0.6, 1.0, facing);

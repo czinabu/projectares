@@ -1101,6 +1101,38 @@ after the trial: whether every world moves over, the per-world caps
 bosses sleep too (they stand all the time today and take 2 of
 Frostline's 8).
 
+### Enemy bodies (Caleb's call: no stock robots in every world)
+
+The three stock robot models stood in every world as heavies, bosses and
+Ferals. Caleb chose a mix instead:
+
+- **People** for the armies, raiders, brutes and bosses. A heavy is a big
+  fighter in full plate of its world's own: the Legion Vanguard in cobalt
+  gunmetal under a Warden helm, the Tide Brute in rusted crimson scrap,
+  the Dune Sea's Scrap Brute in sanded scrap, the Rift's Slag Brute in
+  plate that runs hot under an Ember helm.
+- **A body of its own for every boss**, never a heavy with more health:
+  Ashfront's Warlord in black and gold plate with a cloak and its army's
+  banner, the Wreck Baron in hazard-striped scrap with a torn cloak and an
+  engine on its back, the Lord of the Crown in crimson plate under a crown
+  of lava-lit basalt.
+- **Beasts** for the wild: Frostline's Feral Stalker is a furred pack
+  beast with a mane of ice spines and hooked ice spurs (the Rift's beasts
+  wait on its own roster, a decision still open with Caleb).
+- **Machines only where the story has machines**: Frostline's Wardens, the
+  Engine Sentinel and the Heart Warden are the station's automata, built
+  in code as sleek androids (pale ceramic shells, lit seams and visor),
+  their weapon built into the right forearm, a gun arm that comes up along
+  the aim or a blade. The colossus is broader, with a reactor and a
+  missile pod, and a lance for a forearm.
+- **Armies are told apart by uniform, never by people.** Both of
+  Ashfront's armies draw from every skin tone; the Legion wears navy and
+  grey, the Tide rust and tan, and a faction's tint dresses clothes and
+  gear but never skin.
+
+How it is built is in `docs/systems/bodies-and-animation.md` ("Enemy
+bodies").
+
 ### Enemy senses and squads (Caleb's call)
 
 Playtest: "sometimes it seems like every AI converges on me like I'm the

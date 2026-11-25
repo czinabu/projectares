@@ -621,7 +621,7 @@ func keeper_news(_bot: Actor, phase: int) -> String:
 func _make_feral(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.faction = "feral"
 	bot.display_name = "Feral Stalker"
-	bot.set_meta("look", "stalker")
+	bot.set_meta("look", "feral")
 	_paint(bot, Color(0.18, 0.2, 0.26))
 	var tier := clampi(int(bot.get_meta("zone", 1)), 0, 2)
 	bot.walk_speed = 6.0

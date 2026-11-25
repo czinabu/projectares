@@ -537,7 +537,8 @@ var _own_modes: Array[int] = [AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDL
 func _ready() -> void:
 	var skin_name: String = actor.get_meta("look", look.DEFAULT_SKIN)
 	var def: Dictionary = look.SKINS.get(skin_name, look.SKINS[look.DEFAULT_SKIN])
-	var built: Dictionary = look.character(skin_name, actor.get_meta("appearance", {}), String(actor.name))
+	var built: Dictionary = look.character(skin_name, actor.get_meta("appearance", {}), String(actor.name),
+			actor.get_meta("uniform", {}))
 	if built.is_empty():
 		return
 	var model: Node3D = built["model"]
@@ -577,6 +578,10 @@ func _ready() -> void:
 		_build_creature(str(def["creature"]))
 	if def.get("suit", false):
 		_build_exo_suit()
+	if def.get("chassis", "") == "android":
+		_build_android(def.get("heavy_chassis", false))
+	if def.get("regalia", "") != "":
+		_build_regalia(str(def["regalia"]))
 	# Before the arm, so the arm's hooks run after the legs have turned.
 	locomotion = Locomotion.new()
 	locomotion.name = "Locomotion"
@@ -603,6 +608,12 @@ func _ready() -> void:
 		locomotion.add_phone_hook()
 		# The emote's arms after it, so a wave takes the hand it needs.
 		locomotion.add_emote_hook()
+	if skeleton and def.get("chassis", "") == "android":
+		# The gun arm comes up along the aim, after the clip and the legs.
+		var aim := WeaponArm.Hook.new()
+		aim.name = "ArmAim"
+		aim.run = _aim_arm
+		skeleton.add_child(aim)
 	if skeleton:
 		_setup_glide_pose(skeleton, def)
 		skeleton.skeleton_updated.connect(_note_head)
@@ -887,6 +898,10 @@ func _update(delta: float) -> void:
 	var melee := weapon as MeleeWeapon
 	if weapon is Gun:
 		_hold_up(actor.cmd.primary, actor.cmd.secondary)
+	if not _android_parts.is_empty():
+		_update_arm_weapon()
+		var raised := weapon is Gun and not actor.is_dead and (_aim_left > 0.0 or actor.cmd.secondary)
+		_arm_raise = move_toward(_arm_raise, 1.0 if raised else 0.0, arm_raise_rate * delta)
 	if locomotion == null:
 		return
 	_update_ride()
@@ -1361,6 +1376,13 @@ func _dress_weapons() -> void:
 				if child is Node3D:
 					child.visible = false
 			continue
+		# A machine's is built into its forearm (`Look.arm_weapon_model`).
+		if _def.get("arm_weapons", false):
+			for child in weapon.visual.get_children():
+				if child is MeshInstance3D:
+					child.visible = false
+			weapon.visual.add_child(look.arm_weapon_model(weapon, float(_def.get("height", 2.2)) / 2.2))
+			continue
 		var model: Node3D = look.weapon_model(weapon)
 		if model:
 			for child in weapon.visual.get_children():
@@ -1656,10 +1678,12 @@ func _update_helmet() -> void:
 	if id == "":
 		return
 	var bone: String = "Head" if _skeleton and _skeleton.find_bone("Head") >= 0 else _def.get("neck", "")
-	var mode := actor.visor.mode if own == "" else own
+	# A skin's own "scrap" helmet is the Junker's bucket (mode "").
+	var mode := actor.visor.mode if own == "" else ("" if own == "scrap" else own)
 	var glass := actor.visor.glass_color if own == "" else actor.body_color.lightened(0.2)
 	var tier := actor.visor.tier if own == "" else 1
-	var colors := helmet_colors(mode, actor.frame_id if own == "" else "")
+	var own_frame: String = _def.get("frame", "")
+	var colors := helmet_colors(mode, actor.frame_id if own == "" else ("skin:" + own_frame if own_frame != "" else ""))
 	_helmet = _hang(build_helmet(mode, glass, helmet_size, helmet_shell_color, tier, colors),
 			"Helmet", bone, helmet_offset, Vector3(0.0, _def.get("height", 1.8) * 0.93, 0.0) + helmet_offset, true)
 	_helmet_model = _helmet.find_child("HelmetModel", true, false) as Node3D
@@ -1864,7 +1888,7 @@ static func build_helmet(mode: String, glass: Color, size: Vector3, shell_color:
 ## "plate2" and "fabric". {} with no frame, and always for the scrap visor
 ## (a patched pot of its own) and an exo's closed helm.
 func helmet_colors(mode: String, frame_id: String) -> Dictionary:
-	if frame_id == "" or mode == "" or mode == "slit" or not ItemDB.has_item(frame_id):
+	if frame_id == "" or mode == "" or mode == "slit" or not (frame_id.begins_with("skin:") or ItemDB.has_item(frame_id)):
 		return {}
 	var style := frame_style(frame_id, frame_paint(frame_id))
 	var out := {}
@@ -2143,6 +2167,8 @@ func _build_walker() -> void:
 
 ## The lit parts of a marsh beast: the planet's fungal glow.
 const CREATURE_GLOW := Color(0.5, 1.0, 0.65)
+## The lit parts of a beast of the ice: the cold's blue.
+const FROST_GLOW := Color(0.45, 0.85, 1.0)
 ## A shellback's soft rear: pale, fleshy hide lit faintly from inside.
 const SOFT_REAR := Color(0.95, 0.66, 0.55)
 
@@ -2178,11 +2204,16 @@ func _build_creature(kind: String) -> void:
 	if _skeleton == null:
 		return
 	var lit: float = CREATURE_FRECKLES.get(kind, 0.05)
-	var hide := _creature_hide(actor.body_color, lit, 0.6)
-	var dark := _creature_hide(actor.body_color.darkened(0.45), lit * 0.5, 0.4)
+	# A beast of the ice is dry fur, lit in the cold's blue.
+	var frost := kind == "feral"
+	var lit_color := FROST_GLOW if frost else CREATURE_GLOW
+	var hide := _creature_hide(actor.body_color, lit, 0.15 if frost else 0.6)
+	var dark := _creature_hide(actor.body_color.darkened(0.45), lit * 0.5, 0.1 if frost else 0.4)
+	for mat: ShaderMaterial in [hide, dark]:
+		mat.set_shader_parameter("glow", lit_color)
 	var bone := _solid(Color(0.78, 0.74, 0.62), 0.0)
 	bone.metallic = 0.0
-	var glow := _solid(CREATURE_GLOW, 2.6)
+	var glow := _solid(lit_color, 2.6)
 	# Egg sacs, gill fans and spore vents glow softly from inside, never as
 	# bright as the eyes.
 	var soft_glow := _solid(CREATURE_GLOW.lerp(Color(0.85, 0.95, 0.7), 0.4), 0.8)
@@ -2208,7 +2239,7 @@ func _build_creature(kind: String) -> void:
 	horn.radial_segments = 6
 	var h := actor.stand_height
 	match kind:
-		"stalker", "broodling":
+		"stalker", "broodling", "feral":
 			var low := body.y * 0.95
 			var trunk := Node3D.new()
 			_piece(trunk, "Torso", ball, hide, Vector3(0, low, 0.0), Vector3(0.46, 0.42, 1.15) * h / 1.6)
@@ -2250,7 +2281,7 @@ func _build_creature(kind: String) -> void:
 			# Gill fans flared behind the skull, lit along their ribs, and a
 			# row of short spines down the tail.
 			var frill := Node3D.new()
-			for side: float in [-1.0, 1.0]:
+			for side: float in ([] if frost else [-1.0, 1.0]):
 				for f in 3:
 					var vane := _piece(frill, "Gill", ball, fan, at + Vector3(side * (0.15 + f * 0.02), 0.04 + f * 0.05, 0.12 + f * 0.05) * h / 1.6,
 							Vector3(0.02, 0.2 - f * 0.03, 0.14) * h / 1.6)
@@ -2260,6 +2291,8 @@ func _build_creature(kind: String) -> void:
 				var barb := _piece(trunk, "TailSpine", horn, bone, Vector3(0, low + 0.12 * h / 1.6 - 0.025 * i * h / 1.6, (0.62 + i * 0.26) * h / 1.6),
 						Vector3(0.035, 0.11 - i * 0.015, 0.035) * h / 1.6)
 				barb.rotation.x = 0.9
+			if frost:
+				_feral(trunk, at, low, h / 1.6, ball, horn, hide, dark)
 			if kind == "broodling":
 				# Fresh from the egg: shards of shell still stuck to its back
 				# and eyes too big for its head.
@@ -2467,6 +2500,54 @@ func _build_creature(kind: String) -> void:
 			_creature_legs(dark, Vector2(0.14, 0.16), bone)
 
 
+## A Feral Stalker (the look "feral"): the stalker's body furred against the
+## cold. A shaggy ruff round the neck and shoulders, tufts down the flanks, a
+## mane of ice spines lit from inside down the back, frost on the brow, and
+## long hooked blades of ice-blue horn over the foreclaws (its weapon). Built
+## on the stalker's own pieces (`k` its scale, `at` its skull, `low` the line
+## of its back).
+func _feral(trunk: Node3D, at: Vector3, low: float, k: float, ball: SphereMesh, horn: CylinderMesh,
+		hide: Material, dark: Material) -> void:
+	var ice := _solid(FROST_GLOW, 1.4)
+	ice.roughness = 0.15
+	var pale := _creature_hide(actor.body_color.lerp(Color(0.82, 0.86, 0.9), 0.55), 0.0, 0.05)
+	pale.set_shader_parameter("glow", FROST_GLOW)
+	# The ruff: overlapping tufts of pale fur round the neck and shoulders.
+	for i in 7:
+		var a := (i - 3) * 0.42
+		var tuft := _piece(trunk, "Ruff", ball, pale, Vector3(sin(a) * 0.24, low + 0.1 + cos(a) * 0.05, -0.42) * Vector3(k, 1.0, k),
+				Vector3(0.2, 0.26, 0.24) * k)
+		tuft.rotation = Vector3(0.4, 0.0, -a * 0.6)
+	# Tufts down the flanks, the fur hanging long under the belly.
+	for side: float in [-1.0, 1.0]:
+		for i in 4:
+			var tuft := _piece(trunk, "Fur", horn, dark, Vector3(side * 0.2, low - 0.12, -0.25 + i * 0.2) * Vector3(k, 1.0, k),
+					Vector3(0.07, 0.2, 0.07) * k)
+			tuft.rotation = Vector3(PI, 0.0, side * 0.35)
+	# The mane: a double row of ice spines down the back, tallest at the
+	# shoulders.
+	for i in 7:
+		var tall := (0.26 - i * 0.025) * k
+		for side: float in [-1.0, 1.0]:
+			var spike := _piece(trunk, "IceSpine", horn, ice, Vector3(side * 0.06 * k, low + 0.2 * k + tall * 0.4, (-0.4 + i * 0.13) * k),
+					Vector3(0.05 * k, tall, 0.05 * k))
+			spike.rotation = Vector3(0.55, 0.0, side * 0.3)
+	# Frost on the brow and a pair of swept horns.
+	var crown := Node3D.new()
+	_piece(crown, "Brow", ball, pale, at + Vector3(0, 0.1, -0.04) * k, Vector3(0.3, 0.1, 0.3) * k)
+	for side: float in [-1.0, 1.0]:
+		var horn_piece := _piece(crown, "Horn", horn, ice, at + Vector3(side * 0.1, 0.16, 0.12) * k, Vector3(0.04, 0.24, 0.04) * k)
+		horn_piece.rotation = Vector3(1.1, 0.0, side * 0.35)
+	_hang_at(crown, "FeralBrow", "Head", Vector3.ZERO)
+	# Its blades: a long hooked spur of ice horn along each foreleg.
+	for side: float in [-1.0, 1.0]:
+		var spur := Node3D.new()
+		var shoulder := Vector3(side * 0.18 * k, low - 0.02, -0.38 * k)
+		var blade := _piece(spur, "Spur", horn, ice, shoulder + Vector3(side * 0.05, -0.2, -0.26) * k, Vector3(0.04, 0.42, 0.06) * k)
+		blade.rotation = Vector3(-2.3, 0.0, 0.0)
+		_hang_at(spur, "FeralSpur" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
+
+
 ## A brood mother (a keeper's body grown old and huge, `Look.SKINS`
 ## A lurker grown old in the deep (the look "drowned_lurker", creature
 ## "drowned"): a crown of three more lures on stalks over its skull, a
@@ -2666,7 +2747,7 @@ func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
 
 ## How many of a beast's hide cells carry a lit freckle, by kind.
 const CREATURE_FRECKLES := {
-	"stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "elder": 0.03, "drowned": 0.16, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
+	"feral": 0.03, "stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "elder": 0.03, "drowned": 0.16, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
 	"brood_mother": 0.12,
 }
 
@@ -2855,6 +2936,441 @@ func _build_exo_suit() -> void:
 	_hang_at(pack, "PowerPack", "Chest", Vector3(0, chest.y - 0.1, chest.z + back.z + 0.14))
 
 
+## The station automata's own body (Caleb's call: sleeker, more advanced
+## machines, with the weapon built into the arm), round the scene's walking
+## skeleton, whose own mesh is hidden: pale ceramic shells over a graphite
+## frame, a tapered carapace with a lit core in the chest, a segmented
+## waist, a narrow helm with a lit visor and a crest, shoulder shells with
+## a lit edge, armored thighs, knee guards and shin plates, and lit seams in
+## the body's colour. The right forearm is the weapon (`_update_arm_weapon`);
+## the left ends in a three-clawed hand. A colossus (`heavy`) is broader,
+## with layered shoulders, a reactor on its back and a missile pod over the
+## left shoulder. Everything hangs on the bone it moves with.
+func _build_android(heavy: bool) -> void:
+	if _skeleton == null:
+		return
+	var k := float(_def.get("height", 2.2)) / 2.2
+	var bulk := 1.25 if heavy else 1.0
+	var shell := _solid(Color(0.8, 0.82, 0.85), 0.0)
+	shell.metallic = 0.2
+	shell.roughness = 0.32
+	var frame := _solid(Color(0.1, 0.105, 0.12), 0.0)
+	frame.metallic = 0.6
+	frame.roughness = 0.45
+	var joint := _solid(Color(0.32, 0.33, 0.36), 0.0)
+	joint.metallic = 0.75
+	var paint := _solid(actor.body_color.darkened(0.35), 0.0)
+	var lit := _solid(actor.body_color.lightened(0.35), 3.0)
+	_android_parts = {"shell": shell, "frame": frame, "joint": joint, "lit": lit, "k": k, "bulk": bulk, "heavy": heavy}
+	var tube := CylinderMesh.new()
+	tube.top_radius = 0.5
+	tube.bottom_radius = 0.5
+	tube.height = 1.0
+	tube.radial_segments = 10
+	var hips := _rest_at("Body")
+	var chest := _rest_at("Chest")
+	var neck := _rest_at("Neck")
+	var head := _rest_at("Head")
+	var w := k * bulk
+	# The pelvis: a graphite block with ceramic plates over the hips and a
+	# lit seam across the front.
+	var pelvis := Node3D.new()
+	_block(pelvis, "Pelvis", frame, hips.y - 0.13 * k, [-0.17 * w, 0.17 * w, -0.12 * w, 0.12 * w],
+			hips.y + 0.07 * k, [-0.19 * w, 0.19 * w, -0.13 * w, 0.13 * w])
+	_block(pelvis, "Fauld", shell, hips.y - 0.08 * k, [-0.1 * w, 0.1 * w, -0.16 * w, -0.12 * w],
+			hips.y + 0.06 * k, [-0.13 * w, 0.13 * w, -0.15 * w, -0.12 * w])
+	for side: float in [-1.0, 1.0]:
+		var plate := _piece(pelvis, "HipPlate", BoxMesh.new(), shell, Vector3(side * 0.2 * w, hips.y - 0.04 * k, 0),
+				Vector3(0.05, 0.2, 0.22) * w)
+		plate.rotation.z = side * 0.18
+	_piece(pelvis, "Seam", BoxMesh.new(), lit, Vector3(0, hips.y + 0.04 * k, -0.135 * w), Vector3(0.22, 0.015, 0.01) * w)
+	_hang_at(pelvis, "AndroidPelvis", "Body", Vector3.ZERO)
+	# The waist: graphite rings stacked up to the chest, a spine behind.
+	var waist := Node3D.new()
+	var waist_lo := hips.y + 0.07 * k
+	var waist_hi := chest.y - 0.12 * k
+	for i in 3:
+		var y := lerpf(waist_lo, waist_hi, (i + 0.5) / 3.0)
+		_piece(waist, "Ring", tube, frame if i != 1 else joint, Vector3(0, y, 0),
+				Vector3(0.27 - i * 0.015, (waist_hi - waist_lo) / 3.4, 0.2) * w)
+	_piece(waist, "Spine", BoxMesh.new(), joint, Vector3(0, (waist_lo + waist_hi) * 0.5, 0.11 * w),
+			Vector3(0.06 * w, waist_hi - waist_lo, 0.05 * w))
+	_hang_at(waist, "AndroidWaist", "Torso", Vector3.ZERO)
+	# The carapace: a ceramic shell tapering from broad shoulders to the
+	# waist, a graphite inset down its front with the lit core in it, lit
+	# seams down its sides, a collar, and a pack on its back.
+	var torso := Node3D.new()
+	var lo := chest.y - 0.16 * k
+	var hi := neck.y + 0.02 * k
+	# Broad enough at the top to meet the shoulder joints.
+	var span := maxf(0.27 * w, absf(_rest_at("UpperArm.L").x) - 0.05 * w)
+	_block(torso, "Carapace", shell, lo, [-0.18 * w, 0.18 * w, -0.15 * w, 0.13 * w],
+			hi, [-span, span, -0.16 * w, 0.15 * w])
+	_block(torso, "Inset", frame, lo + 0.04 * k, [-0.08 * w, 0.08 * w, -0.153 * w, -0.1 * w],
+			hi - 0.06 * k, [-0.12 * w, 0.12 * w, -0.163 * w, -0.1 * w])
+	var core_y := lerpf(lo, hi, 0.6)
+	var core := _piece(torso, "Core", tube, lit, Vector3(0, core_y, -0.17 * w), Vector3(0.09, 0.02, 0.09) * w)
+	core.rotation.x = PI * 0.5
+	var rim := _piece(torso, "CoreRim", tube, joint, Vector3(0, core_y, -0.163 * w), Vector3(0.13, 0.02, 0.13) * w)
+	rim.rotation.x = PI * 0.5
+	for side: float in [-1.0, 1.0]:
+		var seam := _piece(torso, "Seam", BoxMesh.new(), lit, Vector3(side * 0.2 * w, lerpf(lo, hi, 0.5), -0.135 * w),
+				Vector3(0.012 * w, (hi - lo) * 0.8, 0.012 * w))
+		seam.rotation.z = -side * 0.22
+		_piece(torso, "ChestPlate", BoxMesh.new(), paint, Vector3(side * 0.17 * w, hi - 0.06 * k, -0.15 * w),
+				Vector3(0.1, 0.05, 0.02) * w)
+	_piece(torso, "Collar", tube, frame, Vector3(0, hi + 0.015 * k, 0), Vector3(0.24, 0.05, 0.2) * w)
+	_block(torso, "BackPack", frame, lo + 0.05 * k, [-0.13 * w, 0.13 * w, 0.12 * w, 0.2 * w],
+			hi - 0.03 * k, [-0.15 * w, 0.15 * w, 0.13 * w, 0.22 * w])
+	for side: float in [-1.0, 1.0]:
+		_piece(torso, "Vent", BoxMesh.new(), lit, Vector3(side * 0.07 * w, lerpf(lo, hi, 0.45), 0.215 * w),
+				Vector3(0.04, (hi - lo) * 0.45, 0.01) * w)
+	if heavy:
+		# A reactor drum on the back, lit through its grille, and a pod of
+		# missiles over the left shoulder.
+		var drum := _piece(torso, "Reactor", tube, joint, Vector3(0, lerpf(lo, hi, 0.55), 0.3 * w), Vector3(0.26, 0.3, 0.26) * w)
+		drum.rotation.x = PI * 0.5
+		_piece(torso, "ReactorGlow", tube, lit, Vector3(0, lerpf(lo, hi, 0.55), 0.45 * w), Vector3(0.18, 0.01, 0.18) * w).rotation.x = PI * 0.5
+		var pod_side := signf(_rest_at("UpperArm.L").x)
+		var pod_at := Vector3(pod_side * 0.2 * w, hi + 0.12 * k, 0.06 * w)
+		_piece(torso, "Pod", BoxMesh.new(), shell, pod_at, Vector3(0.2, 0.15, 0.24) * w)
+		_piece(torso, "PodFace", BoxMesh.new(), frame, pod_at + Vector3(0, 0, -0.121 * w), Vector3(0.17, 0.12, 0.01) * w)
+		for i in 4:
+			_piece(torso, "PodTube", tube, lit, pod_at + Vector3((i % 2 - 0.5) * 0.07 * w, (floorf(i / 2.0) - 0.5) * 0.055 * w, -0.125 * w),
+					Vector3(0.035, 0.008, 0.035) * w).rotation.x = PI * 0.5
+	_hang_at(torso, "AndroidTorso", "Chest", Vector3.ZERO)
+	# The helm: narrow and long, tapered to the brow, a lit visor across the
+	# front, a dark faceplate under it, a crest and lit sensors either side.
+	var helm := Node3D.new()
+	var h0 := head.y - 0.04 * k
+	var h1 := head.y + 0.24 * k
+	_piece(helm, "Neck", tube, joint, Vector3(0, (hi + h0) * 0.5, 0.01 * k), Vector3(0.1, maxf(h0 - hi, 0.04 * k) + 0.04 * k, 0.1) * k)
+	_block(helm, "Helm", shell, h0, [-0.125 * k, 0.125 * k, -0.15 * k, 0.15 * k], h1, [-0.09 * k, 0.09 * k, -0.1 * k, 0.14 * k])
+	_block(helm, "Face", frame, h0 + 0.005 * k, [-0.1 * k, 0.1 * k, -0.165 * k, -0.07 * k],
+			h0 + 0.12 * k, [-0.095 * k, 0.095 * k, -0.15 * k, -0.07 * k])
+	_piece(helm, "Visor", BoxMesh.new(), lit, Vector3(0, h0 + 0.16 * k, -0.135 * k), Vector3(0.19, 0.035, 0.03) * k)
+	_piece(helm, "Crest", BoxMesh.new(), paint, Vector3(0, h1 + 0.02 * k, 0.03 * k), Vector3(0.03, 0.06, 0.24) * k)
+	for side: float in [-1.0, 1.0]:
+		var ear := _piece(helm, "Ear", tube, joint, Vector3(side * 0.12 * k, h0 + 0.12 * k, 0.02 * k), Vector3(0.08, 0.035, 0.08) * k)
+		ear.rotation.z = PI * 0.5
+		var eye := _piece(helm, "Sensor", tube, lit, Vector3(side * 0.14 * k, h0 + 0.12 * k, 0.02 * k), Vector3(0.04, 0.01, 0.04) * k)
+		eye.rotation.z = PI * 0.5
+	_hang_at(helm, "AndroidHelm", "Head", Vector3.ZERO)
+	# Arms and legs.
+	for side: String in ["L", "R"]:
+		var shoulder := _rest_at("UpperArm." + side)
+		var elbow := _rest_at("LowerArm." + side)
+		var out := Vector3(signf(shoulder.x), 0.0, 0.0)
+		_disc("UpperArm." + side, shoulder, 0.1 * w, joint)
+		var guard := Node3D.new()
+		var size := Vector3(0.22, 0.1, 0.26) * w * (1.25 if heavy else 1.0)
+		var cap := _piece(guard, "Shoulder", BoxMesh.new(), shell, Vector3.ZERO, size)
+		cap.rotation.z = out.x * -0.3
+		var edge := _piece(guard, "ShoulderEdge", BoxMesh.new(), lit, Vector3(out.x * size.x * 0.45, -size.y * 0.55, 0),
+				Vector3(0.012 * w, 0.012 * w, size.z * 0.9))
+		edge.rotation.z = out.x * -0.3
+		_piece(guard, "ShoulderStripe", BoxMesh.new(), paint, Vector3(0, size.y * 0.52, 0), Vector3(size.x * 0.6, 0.01 * w, size.z * 0.3))
+		if heavy:
+			var under := _piece(guard, "ShoulderLower", BoxMesh.new(), shell, Vector3(out.x * 0.05 * w, -0.1 * w, 0),
+					Vector3(0.2, 0.08, 0.24) * w)
+			under.rotation.z = out.x * -0.55
+		_hang_at(guard, "AndroidShoulder" + side, "UpperArm." + side, shoulder + out * 0.04 * w + Vector3(0, 0.08 * w, 0))
+		_limb("UpperArm." + side, "LowerArm." + side, Vector3.ZERO, Vector2(0.08, 0.08) * w, frame, 0.0, 1.0, true)
+		_limb("UpperArm." + side, "LowerArm." + side, Vector3.ZERO, Vector2(0.15, 0.15) * w, shell, 0.15, 0.8)
+		_disc("LowerArm." + side, elbow, 0.075 * w, joint)
+		var hand_bone := "PalmI." + side
+		_limb("LowerArm." + side, hand_bone, Vector3.ZERO, Vector2(0.075, 0.075) * w, frame, 0.0, 1.0, true)
+		if side == "L":
+			_limb("LowerArm." + side, hand_bone, Vector3.ZERO, Vector2(0.16, 0.16) * w, shell, 0.12, 0.88)
+			# Three claws and a thumb at the wrist.
+			var wrist := _rest_at(hand_bone)
+			var along := (wrist - elbow).normalized()
+			var hand := Node3D.new()
+			_piece(hand, "Palm", BoxMesh.new(), frame, wrist + along * 0.03 * w, Vector3(0.09, 0.09, 0.09) * w)
+			for c in 3:
+				var tip := wrist + along * 0.12 * w + Vector3(0, 0, (c - 1) * 0.03 * w)
+				_strand(hand, "Claw", tube, joint, wrist + along * 0.06 * w + Vector3(0, 0, (c - 1) * 0.03 * w), tip, 0.022 * w)
+			_hang_at(hand, "AndroidHand" + side, hand_bone, Vector3.ZERO)
+		var hip := _rest_at("UpperLeg." + side)
+		var knee := _rest_at("LowerLeg." + side)
+		var foot := _rest_at("Foot." + side)
+		var leg_out := Vector3(signf(hip.x), 0.0, 0.0)
+		_disc("UpperLeg." + side, hip + leg_out * 0.06 * w, 0.1 * w, joint)
+		_limb("UpperLeg." + side, "LowerLeg." + side, Vector3.ZERO, Vector2(0.13, 0.13) * w, frame, 0.0, 1.0, true)
+		_limb("UpperLeg." + side, "LowerLeg." + side, Vector3.ZERO, Vector2(0.19, 0.17) * w, shell, 0.08, 0.82)
+		_limb("UpperLeg." + side, "LowerLeg." + side, leg_out * 0.097 * w, Vector2(0.012, 0.012) * w, lit, 0.2, 0.72)
+		var knee_guard := Node3D.new()
+		_piece(knee_guard, "KneeGuard", BoxMesh.new(), shell, Vector3.ZERO, Vector3(0.14, 0.14, 0.06) * w)
+		_piece(knee_guard, "KneeLight", BoxMesh.new(), lit, Vector3(0, 0.02 * w, -0.032 * w), Vector3(0.05, 0.015, 0.01) * w)
+		_hang_at(knee_guard, "AndroidKnee" + side, "LowerLeg." + side, knee + Vector3(0, 0, -0.08 * w))
+		_limb("LowerLeg." + side, "Foot." + side, Vector3.ZERO, Vector2(0.11, 0.11) * w, frame, 0.0, 0.92, true)
+		_limb("LowerLeg." + side, "Foot." + side, Vector3.ZERO, Vector2(0.16, 0.14) * w, shell, 0.1, 0.72, false,
+				Vector3(0, 0, -0.015 * w))
+		var boot := Node3D.new()
+		_block(boot, "Boot", frame, foot.y, [-0.075 * w, 0.075 * w, -0.2 * w, 0.08 * w],
+				foot.y + 0.09 * k, [-0.065 * w, 0.065 * w, -0.08 * w, 0.07 * w])
+		_piece(boot, "Toe", BoxMesh.new(), shell, Vector3(0, foot.y + 0.035 * k, -0.16 * w), Vector3(0.13, 0.06, 0.1) * w)
+		var heel_side := Vector3(foot.x, 0.0, foot.z)
+		for piece in boot.get_children():
+			(piece as Node3D).position += heel_side
+		_hang_at(boot, "AndroidBoot" + side, "Foot." + side, Vector3.ZERO)
+
+
+## The parts the android was built of, for its arm weapon.
+var _android_parts := {}
+## The weapon its arm is built as, and the node that holds it.
+var _arm_weapon_of: Weapon
+var _arm_weapon_node: Node3D
+## The end of the barrel of an arm gun (`_on_fired` flashes there).
+var _arm_muzzle: Node3D
+## How far the gun arm is raised along the aim (0 to 1), and how fast.
+var _arm_raise := 0.0
+var arm_raise_rate := 5.0
+
+
+## Builds the android's right forearm as the weapon in its hand: a gun is
+## an armored housing over the forearm with a barrel out past the wrist,
+## lit coils round it and a lit muzzle (a colossus's lance is longer, with
+## more coils and prongs at its end); a blade is a guard over the wrist and
+## a long blade out of it, lit along the edge. Rebuilt when the weapon
+## changes. View only: what the weapon does is its own stats.
+func _update_arm_weapon() -> void:
+	var weapon := actor.get_active_weapon()
+	if weapon == null and not actor.weapons.is_empty():
+		weapon = actor.weapons[0]
+	if weapon == _arm_weapon_of and (weapon == null or is_instance_valid(_arm_weapon_node)):
+		return
+	_arm_weapon_of = weapon
+	if is_instance_valid(_arm_weapon_node):
+		_arm_weapon_node.queue_free()
+	_arm_weapon_node = null
+	_arm_muzzle = null
+	if weapon == null or _android_parts.is_empty():
+		return
+	var k: float = _android_parts["k"]
+	var w: float = k * float(_android_parts["bulk"])
+	var heavy: bool = _android_parts["heavy"]
+	var shell: Material = _android_parts["shell"]
+	var frame: Material = _android_parts["frame"]
+	var joint: Material = _android_parts["joint"]
+	var lit: Material = _android_parts["lit"]
+	var elbow := _rest_at("LowerArm.R")
+	var wrist := _rest_at("PalmI.R")
+	var y := (wrist - elbow).normalized()
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.UP).normalized()
+	var z := x.cross(y).normalized()
+	# The weapon's own frame: +y out along the forearm, origin at the wrist.
+	var at := Transform3D(Basis(x, y, z), wrist)
+	var root := Node3D.new()
+	var tube := CylinderMesh.new()
+	tube.top_radius = 0.5
+	tube.bottom_radius = 0.5
+	tube.height = 1.0
+	tube.radial_segments = 10
+	var put := func(piece_name: String, mesh: PrimitiveMesh, mat: Material, local: Vector3, size: Vector3) -> void:
+		var part := _piece(root, piece_name, mesh, mat, Vector3.ZERO, Vector3.ONE)
+		part.transform = at * Transform3D(Basis.from_scale(size), local)
+	var forearm := (wrist - elbow).length()
+	if weapon is Gun:
+		var reach := (0.75 if heavy else 0.36) * w
+		put.call("Housing", BoxMesh.new(), shell, Vector3(0, -forearm * 0.4, 0), Vector3(0.17 * w, forearm * 0.9, 0.17 * w))
+		put.call("Breech", BoxMesh.new(), frame, Vector3(0, 0.03 * w, 0), Vector3(0.14 * w, 0.12 * w, 0.14 * w))
+		put.call("Rail", BoxMesh.new(), frame, Vector3(0, -forearm * 0.35, -0.095 * w), Vector3(0.05 * w, forearm * 0.7, 0.03 * w))
+		put.call("Seam", BoxMesh.new(), lit, Vector3(0.087 * w, -forearm * 0.4, 0), Vector3(0.01 * w, forearm * 0.7, 0.01 * w))
+		put.call("Barrel", tube, joint, Vector3(0, 0.09 * w + reach * 0.5, 0), Vector3(0.06 * w, reach, 0.06 * w))
+		var coils := 4 if heavy else 2
+		for i in coils:
+			put.call("Coil", tube, lit, Vector3(0, 0.12 * w + reach * (i + 0.5) / float(coils + 1), 0), Vector3(0.09 * w, 0.02 * w, 0.09 * w))
+		put.call("Muzzle", tube, frame, Vector3(0, 0.09 * w + reach, 0), Vector3(0.1 * w, 0.05 * w, 0.1 * w))
+		put.call("Bore", tube, lit, Vector3(0, 0.09 * w + reach + 0.026 * w, 0), Vector3(0.05 * w, 0.005 * w, 0.05 * w))
+		if heavy:
+			for side: float in [-1.0, 1.0]:
+				put.call("Prong", BoxMesh.new(), shell, Vector3(side * 0.07 * w, 0.09 * w + reach * 0.85, 0),
+						Vector3(0.025 * w, reach * 0.35, 0.05 * w))
+		_arm_muzzle = Node3D.new()
+		_arm_muzzle.name = "ArmMuzzle"
+		_arm_muzzle.transform = at * Transform3D(Basis.IDENTITY, Vector3(0, 0.12 * w + reach, 0))
+		root.add_child(_arm_muzzle)
+	else:
+		var blade := (1.2 if heavy else 0.8) * w
+		put.call("Guard", BoxMesh.new(), shell, Vector3(0, -forearm * 0.3, 0), Vector3(0.16 * w, forearm * 0.75, 0.16 * w))
+		put.call("Hilt", BoxMesh.new(), frame, Vector3(0, 0.04 * w, 0), Vector3(0.12 * w, 0.1 * w, 0.18 * w))
+		put.call("Blade", BoxMesh.new(), joint, Vector3(0, 0.08 * w + blade * 0.5, 0.02 * w), Vector3(0.03 * w, blade, 0.13 * w))
+		put.call("Edge", BoxMesh.new(), lit, Vector3(0, 0.08 * w + blade * 0.5, -0.05 * w), Vector3(0.034 * w, blade * 0.95, 0.015 * w))
+	_arm_weapon_node = _hang_at(root, "ArmWeapon", "LowerArm.R", Vector3.ZERO)
+	if _detail_every > 1:
+		_gear_shadows(false)
+
+
+## Raises an android's gun arm along the aim while it fights: the elbow
+## straightened and the arm swung from the shoulder so the barrel in the
+## forearm points where it shoots. Blended in and out (`_arm_raise`). A
+## hook in the skeleton's modifier order, after the clip; view only.
+func _aim_arm() -> void:
+	if _arm_raise <= 0.0 or _skeleton == null or actor == null:
+		return
+	var upper := _skeleton.find_bone("UpperArm.R")
+	var lower := _skeleton.find_bone("LowerArm.R")
+	var hand := _skeleton.find_bone("PalmI.R")
+	if upper < 0 or lower < 0 or hand < 0:
+		return
+	var wgt := smoothstep(0.0, 1.0, _arm_raise)
+	var dir := actor.cmd.aim_dir if actor.cmd.aim_dir.length() > 0.5 \
+			else Basis.from_euler(Vector3(actor.cmd.pitch, actor.cmd.yaw, 0.0)) * Vector3.FORWARD
+	var want := (_skeleton.global_transform.affine_inverse().basis * dir).normalized()
+	# Each bone in turn swung so the next joint lies along the aim, from
+	# the bones' own offsets (the poses below are not refreshed mid-hook).
+	var upper_pose := _skeleton.get_bone_global_pose(upper)
+	upper_pose.basis = _swung(upper_pose.basis, upper_pose.basis * _skeleton.get_bone_pose_position(lower), want, wgt)
+	_skeleton.set_bone_global_pose(upper, upper_pose)
+	var local := Transform3D(Basis(_skeleton.get_bone_pose_rotation(lower)).scaled(_skeleton.get_bone_pose_scale(lower)),
+			_skeleton.get_bone_pose_position(lower))
+	var lower_pose := upper_pose * local
+	lower_pose.basis = _swung(lower_pose.basis, lower_pose.basis * _skeleton.get_bone_pose_position(hand), want, wgt)
+	_skeleton.set_bone_global_pose(lower, lower_pose)
+
+
+## `basis` turned by `weight` of the arc that takes `along` onto `want`.
+static func _swung(basis: Basis, along: Vector3, want: Vector3, weight: float) -> Basis:
+	if along.length() < 0.0001:
+		return basis
+	var turn := Quaternion(along.normalized(), want)
+	return Basis(Quaternion.IDENTITY.slerp(turn, weight)) * basis
+
+
+## A boss's regalia (a skin's "regalia"), over its own plate, so a boss
+## reads as the one person on the field who leads: a cloak from the
+## shoulders and what it carries on its back or brow. "warlord" (Ashfront):
+## a long black cloak hemmed in gold and a banner on a pole over its
+## shoulders in its army's colour. "baron" (the Dune Sea): a sand-torn cloak
+## in strips and a salvaged engine block on its back, two exhaust stacks
+## glowing over its shoulders. "crown" (the Basalt Rift): a crown of basalt
+## spikes lit with lava, and a black cloak with a burning hem. The cloak is
+## in two panels, the upper on the chest and the lower on the hips, so it
+## follows the body as it moves. View only.
+func _build_regalia(kind: String) -> void:
+	if _skeleton == null or _skeleton.find_bone("Chest") < 0:
+		return
+	var s := float(_def.get("height", 1.8)) / 1.8
+	var chest := _rest_at("Chest")
+	var hips := _rest_at("Hips")
+	var head := _rest_at("Head")
+	var knee := _rest_at("LowerLeg.L")
+	var cloth_color := Color(0.09, 0.085, 0.08)
+	var trim_color := Color(0.75, 0.58, 0.25)
+	var trim_glow := 0.0
+	match kind:
+		"baron":
+			cloth_color = Color(0.46, 0.38, 0.27)
+			trim_color = Color(0.3, 0.24, 0.17)
+		"crown":
+			cloth_color = Color(0.07, 0.06, 0.06)
+			trim_color = Color(1.0, 0.42, 0.1)
+			trim_glow = 2.2
+	var cloth := _solid(cloth_color, 0.0)
+	cloth.metallic = 0.0
+	cloth.roughness = 0.95
+	cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var trim := _solid(trim_color, trim_glow)
+	if trim_glow <= 0.0:
+		trim.metallic = 0.7
+		trim.roughness = 0.35
+	var back := 0.17 * s
+	var top := chest.y + 0.16 * s
+	var mid := hips.y + 0.02 * s
+	var hem := knee.y - (0.05 if kind == "baron" else 0.12) * s
+	# The upper cloak, from the shoulders to the waist, flaring a little.
+	var upper := Node3D.new()
+	var panel := _piece(upper, "Cloak", BoxMesh.new(), cloth, Vector3(0, (top + mid) * 0.5, chest.z + back),
+			Vector3(0.5 * s, top - mid, 0.02 * s))
+	panel.rotation.x = 0.08
+	for side: float in [-1.0, 1.0]:
+		_piece(upper, "Clasp", BoxMesh.new(), trim, Vector3(side * 0.17 * s, top - 0.02 * s, chest.z - 0.05 * s),
+				Vector3(0.07, 0.07, 0.03) * s)
+		var drape := _piece(upper, "Drape", BoxMesh.new(), cloth, Vector3(side * 0.2 * s, top - 0.03 * s, chest.z + 0.04 * s),
+				Vector3(0.16 * s, 0.05 * s, 0.26 * s))
+		drape.rotation.z = side * -0.35
+	_hang_at(upper, "CloakUpper", "Chest", Vector3.ZERO)
+	# The lower cloak, from the waist to below the knee, wider at its hem.
+	var lower := Node3D.new()
+	if kind == "baron":
+		# Torn into strips of different lengths.
+		for i in 6:
+			var x := (i - 2.5) * 0.095 * s
+			var drop := (mid - hem) * (0.75 + 0.25 * sin(i * 2.7))
+			var strip := _piece(lower, "CloakStrip", BoxMesh.new(), cloth, Vector3(x, mid - drop * 0.5, chest.z + back + 0.03 * s),
+					Vector3(0.09 * s, drop, 0.02 * s))
+			strip.rotation = Vector3(0.12, 0.0, x * 0.25)
+	else:
+		var skirt := _piece(lower, "Cloak", BoxMesh.new(), cloth, Vector3(0, (mid + hem) * 0.5, chest.z + back + 0.04 * s),
+				Vector3(0.6 * s, mid - hem, 0.02 * s))
+		skirt.rotation.x = 0.14
+		var band := _piece(lower, "Hem", BoxMesh.new(), trim, Vector3(0, hem + 0.025 * s, chest.z + back + 0.04 * s + (mid - hem) * 0.5 * sin(0.14)),
+				Vector3(0.61 * s, 0.045 * s, 0.025 * s))
+		band.rotation.x = 0.14
+	_hang_at(lower, "CloakLower", "Hips", Vector3.ZERO)
+	var tube := CylinderMesh.new()
+	tube.top_radius = 0.5
+	tube.bottom_radius = 0.5
+	tube.height = 1.0
+	tube.radial_segments = 8
+	var horn := CylinderMesh.new()
+	horn.top_radius = 0.0
+	horn.bottom_radius = 0.5
+	horn.height = 1.0
+	horn.radial_segments = 6
+	match kind:
+		"warlord":
+			# A banner pole over the right shoulder, a crossbar and the
+			# army's colour hanging from it, a gold finial on top.
+			var flag := Node3D.new()
+			var pole_x := 0.14 * s
+			var pole_z := chest.z + back + 0.06 * s
+			var foot := chest.y - 0.2 * s
+			var tip := head.y + 0.75 * s
+			_strand(flag, "Pole", tube, _solid(Color(0.16, 0.14, 0.12), 0.0), Vector3(pole_x, foot, pole_z), Vector3(pole_x, tip, pole_z), 0.025 * s)
+			_piece(flag, "Finial", horn, trim, Vector3(pole_x, tip + 0.06 * s, pole_z), Vector3(0.05, 0.12, 0.05) * s)
+			_piece(flag, "Crossbar", BoxMesh.new(), trim, Vector3(pole_x - 0.12 * s, tip - 0.04 * s, pole_z), Vector3(0.28, 0.025, 0.025) * s)
+			var banner := _solid(actor.body_color.darkened(0.15), 0.0)
+			banner.metallic = 0.0
+			banner.roughness = 0.9
+			banner.cull_mode = BaseMaterial3D.CULL_DISABLED
+			_piece(flag, "Banner", BoxMesh.new(), banner, Vector3(pole_x - 0.12 * s, tip - 0.28 * s, pole_z), Vector3(0.26, 0.44, 0.012) * s)
+			_piece(flag, "BannerMark", BoxMesh.new(), trim, Vector3(pole_x - 0.12 * s, tip - 0.24 * s, pole_z - 0.008 * s), Vector3(0.1, 0.1, 0.01) * s)
+			_hang_at(flag, "Banner", "Chest", Vector3.ZERO)
+		"baron":
+			# An engine block strapped to the back, two exhaust stacks up
+			# over the shoulders, their mouths glowing.
+			var engine := Node3D.new()
+			var block_z := chest.z + back + 0.1 * s
+			_piece(engine, "Block", BoxMesh.new(), _solid(Color(0.3, 0.27, 0.24), 0.0), Vector3(0, chest.y - 0.02 * s, block_z),
+					Vector3(0.34, 0.3, 0.18) * s)
+			_piece(engine, "Stripe", BoxMesh.new(), _solid(Color(0.75, 0.6, 0.15), 0.0), Vector3(0, chest.y + 0.08 * s, block_z + 0.092 * s),
+					Vector3(0.3, 0.05, 0.01) * s)
+			var heat := _solid(Color(1.0, 0.5, 0.15), 2.4)
+			for side: float in [-1.0, 1.0]:
+				var from := Vector3(side * 0.12 * s, chest.y + 0.1 * s, block_z)
+				var to := from + Vector3(side * 0.05, 0.5, 0.05) * s
+				_strand(engine, "Stack", tube, _solid(Color(0.22, 0.2, 0.19), 0.0), from, to, 0.055 * s)
+				_piece(engine, "StackGlow", tube, heat, to + Vector3(0, 0.005 * s, 0), Vector3(0.045, 0.01, 0.045) * s)
+			_hang_at(engine, "Engine", "Chest", Vector3.ZERO)
+		"crown":
+			# A ring of basalt spikes over the brow, lit at their tips.
+			var crown := Node3D.new()
+			var basalt := _solid(Color(0.12, 0.11, 0.11), 0.0)
+			var lava := _solid(Color(1.0, 0.42, 0.1), 2.8)
+			var ring_y := head.y + 0.07 * s
+			for i in 7:
+				var a := (i - 3) * 0.42
+				var at := Vector3(sin(a) * 0.12 * s, ring_y, head.z - cos(a) * 0.1 * s + 0.02 * s)
+				var tall := (0.26 - absf(i - 3) * 0.04) * s
+				var spike := _piece(crown, "CrownSpike", horn, basalt, at + Vector3(0, tall * 0.5, 0), Vector3(0.04 * s, tall, 0.04 * s))
+				spike.rotation = Vector3(-0.2, 0.0, -sin(a) * 0.35)
+				_piece(crown, "CrownGlow", BoxMesh.new(), lava, at + Vector3(0, tall * 0.25, -0.02 * s), Vector3(0.012, tall * 0.4 / s, 0.01) * s)
+			_piece(crown, "CrownBand", tube, basalt, Vector3(0, ring_y, head.z + 0.02 * s), Vector3(0.26, 0.04, 0.24) * s)
+			_hang_at(crown, "Crown", "Head", Vector3.ZERO)
+
+
 ## A bar along a bone, from the bone at `from` of the way to its `child` up
 ## to `to`, set off by `aside` (actor space, at rest) and `thick` across. A
 ## `round` one is a piston.
@@ -3019,7 +3535,7 @@ const WEIGHT_LOOKS := {"light": "runner", "medium": "trooper", "heavy": "bulwark
 ## How heavy a frame looks: "light", "medium" or "heavy", from its tags. A
 ## weight itself ("heavy") or a skin's own plates ("skin:light") answer as is.
 static func frame_weight(id: String) -> String:
-	var bare := id.trim_prefix("skin:")
+	var bare := id.trim_prefix("skin:").get_slice(":", 0)
 	if FRAME_BULK.has(bare):
 		return bare
 	if ItemDB.has_tag(id, "frame_heavy"):
@@ -3029,6 +3545,9 @@ static func frame_weight(id: String) -> String:
 
 ## The look a frame wears (a `FRAME_STYLES` key).
 static func frame_look(id: String) -> String:
+	# A skin's own plates may name their look: "skin:<weight>:<look>".
+	if id.begins_with("skin:") and FRAME_STYLES.has(id.get_slice(":", 2)):
+		return id.get_slice(":", 2)
 	return FRAME_LOOKS.get(id, WEIGHT_LOOKS[frame_weight(id)])
 
 
@@ -3040,10 +3559,12 @@ static func frame_style(id: String, paint := "") -> Dictionary:
 
 
 ## The armor paint this body wears on the frame `id`: the one its
-## appearance picked for the frame's look ("" for none, and always none on
-## a skin's own plates).
+## appearance picked for the frame's look ("" for none). A skin's own
+## plates wear the skin's "paint".
 func frame_paint(id: String) -> String:
-	if id == "" or id.begins_with("skin:"):
+	if id.begins_with("skin:"):
+		return str(_def.get("paint", ""))
+	if id == "":
 		return ""
 	var paints: Variant = _appearance.get("paints", {})
 	return str(paints.get(frame_look(id), "")) if typeof(paints) == TYPE_DICTIONARY else ""
@@ -4073,6 +4594,9 @@ static func is_sidearm(weapon: Weapon) -> bool:
 ## Builds the worn copy of a holstered weapon. Purely a view: the weapon's own
 ## node stays on the actor's hand, hidden.
 func _stow(weapon: Weapon) -> Node3D:
+	# A beast's or a machine's weapons are its body: nothing is worn.
+	if _def.get("bare", false) or _def.get("arm_weapons", false):
+		return null
 	var model: Node3D = look.weapon_model(weapon)
 	if model == null:
 		return null
@@ -4154,6 +4678,10 @@ func _on_fired(from: Vector3, to: Vector3, gun: Gun) -> void:
 	var muzzle := gun.muzzle_point(fallback)
 	var along := -gun.visual.global_basis.z.normalized() if gun.visual and gun.visual.is_inside_tree() \
 			else (to - from).normalized()
+	if is_instance_valid(_arm_muzzle) and _arm_muzzle.is_inside_tree():
+		# An android's gun is its forearm (`_update_arm_weapon`).
+		muzzle = _arm_muzzle.global_position
+		along = (to - muzzle).normalized()
 	if not gun.quiet:
 		Vfx.muzzle_flash(parent, muzzle, along)
 	if from.distance_to(to) < gun.max_range - 0.5:
