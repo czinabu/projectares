@@ -1856,6 +1856,10 @@ func dress_surfaces(mesh_node: MeshInstance3D, def: Dictionary, chosen: Dictiona
 				mat.set_shader_parameter("recolor", pick["color"])
 				mat.set_shader_parameter("recolor_amount", 1.0)
 				mat.set_shader_parameter("recolor_shading", 1.0 if pick["keep_shading"] else 0.0)
+			var iris: Variant = Human.iris_for(chosen)
+			if kind == 3 and iris != null:
+				mat.set_shader_parameter("iris_color", iris)
+				mat.set_shader_parameter("iris_amount", 1.0)
 			var suit := Human.suit_for(chosen, slot)
 			if kind == 2 and not suit.is_empty():
 				# The tactical suit: `ActorSkin._wear_undersuit` recolours it

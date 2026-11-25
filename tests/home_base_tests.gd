@@ -253,8 +253,8 @@ static func run(t: Node) -> void:
 	t.check(main.hub.equipped("primary") == "dmr_longshot", "the locker shows the loadout chosen in the base")
 	# Every station opens its screen over the room, and Esc steps away.
 	for id: String in HomeBase.STATIONS:
-		if id == "arena":
-			continue  # A way out, not a screen: the arena tests use it.
+		if id == "arena" or id == "wardrobe":
+			continue  # A way out and a mirror, not screens: checked on their own.
 		var console: HomeBase.Station = main.base.station(id)
 		t._face_display(main.base.player, console)
 		main.controller.yaw = main.base.player.cmd.yaw
@@ -302,12 +302,29 @@ static func run(t: Node) -> void:
 	await t.frames(2)
 	t.check(not main.hub.visible and main.station_screen == null and not main.controller.input_blocked,
 			"clicking a button on the screen in the world presses it")
-	main.open_station("wardrobe")
+	# The wardrobe is a mirror: the phone's Mirror app comes up with its
+	# glass as the mirror, no screen and no flat customizer.
+	if main.controller.is_third_person():
+		main.controller.toggle_view()
+	var wardrobe: HomeBase.Station = main.base.station("wardrobe")
+	t.check(wardrobe != null and wardrobe.screen == null and main.base.wardrobe_mirror != null
+			and main.base.wardrobe_mirror.get_parent() == wardrobe, "the wardrobe is a standing mirror, not a console")
+	t._face_display(main.base.player, wardrobe)
+	main.controller.yaw = main.base.player.cmd.yaw
+	main.controller.pitch = main.base.player.cmd.pitch
 	await t.frames(2)
-	t.check(main.hub.character.is_customizing(), "the wardrobe opens the customizer")
-	main.hub.character.hide_customizer()
+	t.check(main.base.player.find_interactable() == wardrobe and wardrobe.get_prompt().begins_with("[F] Wardrobe"),
+			"the wardrobe can be walked up to and used")
+	wardrobe.interact(main.base.player)
+	await t.frames(3)
+	t.check(main.phone.mirror_open() and not main.hub.visible and main.station_screen == null,
+			"the wardrobe brings the phone up on its Mirror app")
+	t.check(main.controller.phone_mirror == main.base.wardrobe_mirror and main.mirror == null,
+			"in first person you look into the wardrobe's own glass, with no mirror of its own")
+	main.phone.close()
 	await t.frames(2)
-	t.check(not main.hub.visible and not main.controller.input_blocked, "finishing in the customizer steps away")
+	t.check(main.controller.phone_mirror == null and main._wardrobe_glass == null
+			and is_instance_valid(main.base.wardrobe_mirror), "putting the phone away leaves the wardrobe's glass standing")
 	main.open_station("mastery")
 	t.check(main.hub._sections["mastery"].visible and not main.hub._sections["loadout"].visible,
 			"a station shows only its own part of the old menu")

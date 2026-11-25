@@ -16,6 +16,7 @@ extends Node
 ## is its mirror. Each distance is the furthest the skin reaches that way.
 
 const Human := preload("res://core/visual/human.gd")
+const SuitShape := preload("res://core/visual/suit_shape.gd")
 const OUT := "res://core/visual/body_fit_data.gd"
 const TRUNK_LOW := 0.76
 const TRUNK_HIGH := 1.64
@@ -56,6 +57,8 @@ func _ready() -> void:
 func _measure(build: String) -> String:
 	print(build, " start ", Time.get_ticks_msec())
 	var rig: Node3D = (load(Human.rig_path(build)) as PackedScene).instantiate()
+	# Measured in the suit, as it is worn: armor goes over the cloth.
+	SuitShape.apply(rig, build)
 	add_child(rig)
 	# Pack models face +Z; actors face -Z (`ActorSkin._ready`).
 	rig.rotation.y = PI

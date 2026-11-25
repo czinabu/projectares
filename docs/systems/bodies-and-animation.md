@@ -222,8 +222,26 @@ date in the same PR.
   how much longer it is. A foot is placed relative to how it stands in the
   old idle (the old feet are IK bones that lie differently), and a finger
   takes only how far the old one curls, about its own curl axis from the
-  pack's closed hand (turned over whole, the fingers splay into a claw). An outfit no longer swaps meshes: it picks the
-  hair (`Human.HAIR`) and the suit's colours (`Human.SUITS`), and the
+  pack's closed hand (turned over whole, the fingers splay into a claw). The hair is its own choice on either body: a
+  hairstyle (`Human.STYLES`, "shaved" for none) and facial hair
+  (`Human.FACIAL`), all free, picked apart from any outfit; a look saved
+  before that keeps its head outfit's old hair (`Human.HAIR`,
+  `_legacy_hair`). The eyes take a chosen iris colour (`Human.iris_for`:
+  `character.gdshader` tints only the disc in the middle of the eye's UVs,
+  `iris_centre`, `iris_radius`). The suit is cloth, not paint on the bare
+  body (Caleb's call: it hugged every curve): `SuitShape`
+  (`core/visual/suit_shape.gd`) reshapes the torso and legs meshes at rest
+  into cloth hung over the body (each slice filled to its hull, draped from
+  the chest and seat, what stands out at the front and back eased back,
+  `SLACK` off the skin; shoulders, arms and below the knee left alone),
+  baked offline into `suit_<build>_<part>.res` by `tools/suit_shape` and
+  swapped in by `Human.build`. Re-bake whenever the bodies or `suit_shape.gd`
+  change, then re-measure with `tools/body_fit` (which measures the suited
+  body) and run `tools/armor_fit/clip_check.tscn`. The shader draws a
+  fatigue kit on it (`suit_kit`: a belt at `belt_y`, cargo pockets down the
+  outer thighs, knee pads, a shoulder yoke) and keeps only a little of the
+  body's normal map. An outfit no longer swaps meshes: it picks
+  the suit's colours (`Human.SUITS`), and the
   shader draws every surface below the head as a fitted tactical suit
   (`suit`, `suit_color`, `suit_trim`, gloves and a lit cuff;
   `Human.surface_kind` says which surfaces it covers) over the body's own
@@ -234,6 +252,12 @@ date in the same PR.
   Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
+  Looks are changed only in front of a mirror, never on a flat screen
+  (Caleb's immersion rule): the phone's Mirror app anywhere, or the base's
+  Wardrobe, a standing mirror (`HomeBase._dress_wardrobe`) whose glass the
+  app uses in first person (`Main._use_wardrobe`). Its rows are
+  `CharacterPanel.PICKS`: body, hairstyle, facial hair, hair colour, eyes,
+  skin, then the suit.
   A look changed while in a world (the phone's Mirror app) is checked by the
   server in `_request_look` and passed to everyone there with `_look_changed`.
   The mirror itself (`core/visual/mirror.gd`) is a client-side view: no

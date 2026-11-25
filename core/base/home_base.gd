@@ -188,8 +188,9 @@ const CRAFT_AT := Vector3(2.7, 0.0, 0.9)
 const CRAFT_YAW := -PI / 2.0
 const CRAFT_COLOR := Color(0.3, 0.9, 1.0)
 ## Until the ops consoles are bought, each of these stations also shows the
-## station named beside it, which has no console of its own yet.
-const MERGED := {"trader": "mastery", "wardrobe": "records"}
+## stations named beside it, which have no console of their own yet. The
+## wardrobe is a mirror with no screen, so it shows nothing else.
+const MERGED := {"trader": ["mastery", "records"]}
 
 ## The wall mirror (Caleb's call: every base has one): on the hub's front
 ## wall in the deploy area by the door, its glass facing into the room
@@ -285,6 +286,9 @@ var stations: Array[Station] = []
 ## The mirror on the wall (`core/visual/mirror.gd`, view only). Whoever
 ## drives the player tells it who looks into it (`Mirror.setup`).
 var wall_mirror: Node3D
+## The wardrobe: a standing mirror in the ops room (`_dress_wardrobe`).
+## Using it opens the phone's Mirror app in front of this glass.
+var wardrobe_mirror: Node3D
 ## True while the player wears the owner's loadout (`suited_kit`). In your
 ## own base that is always: gear you equip goes straight on (Caleb's call).
 var suited := false
@@ -768,7 +772,12 @@ func bulkhead(id: String) -> Bulkhead:
 func has_station(id: String) -> bool:
 	if id == CRAFT_ID:
 		return true
-	return STATIONS.has(id) and (owns("ops_consoles") or id not in MERGED.values())
+	if not STATIONS.has(id) or owns("ops_consoles"):
+		return STATIONS.has(id)
+	for shared: Array in MERGED.values():
+		if id in shared:
+			return false
+	return true
 
 
 ## The other stations this station's console shows as well, for now.
@@ -777,16 +786,19 @@ func also_shows(id: String) -> Array[String]:
 	if id == CRAFT_ID:
 		return out
 	if MERGED.has(id) and not owns("ops_consoles"):
-		out.append(MERGED[id])
+		for other: String in MERGED[id]:
+			out.append(other)
 	return out
 
 
 ## The name on a station's console.
 func station_title(id: String) -> String:
-	var title: String = STATIONS[id]["title"]
+	var names: Array[String] = [str(STATIONS[id]["title"])]
 	for other in also_shows(id):
-		title += " and " + str(STATIONS[other]["title"]).to_lower()
-	return title
+		names.append(str(STATIONS[other]["title"]).to_lower())
+	if names.size() == 1:
+		return names[0]
+	return ", ".join(names.slice(0, names.size() - 1)) + " and " + names[-1]
 
 
 ## Where the gunsmith bench stands in the base and which way it faces: at the
@@ -3099,7 +3111,10 @@ func _build_stations() -> void:
 		console.base = self
 		console.id = id
 		console.transform = station_transform(id)
-		_dress_console(console, info["color"], str(info["prompt"]), station_title(id))
+		if id == "wardrobe":
+			_dress_wardrobe(console, info["color"])
+		else:
+			_dress_console(console, info["color"], str(info["prompt"]), station_title(id))
 		add_child(console)
 		_gated.append(console)
 		stations.append(console)
@@ -3144,6 +3159,30 @@ func _dress_console(console: Station, color: Color, prompt: String, title: Strin
 	name_plate.name = "Title"
 	name_plate.outline_size = 0
 	name_plate.position = Vector3(0, 0.72, 0.26)
+	console.add_child(name_plate)
+
+
+## The wardrobe: a tall standing mirror instead of a console (Caleb's
+## immersion rule: you change how you look in front of a mirror, seeing your
+## own body, not on a screen). Using it opens the phone's Mirror app with
+## this glass as the mirror (`Main.open_station`). Its name is on a plate
+## at its foot.
+func _dress_wardrobe(console: Station, color: Color) -> void:
+	_add_collision(console, Vector3(1.3, 2.2, 0.4), Vector3(0, 1.1, -0.1))
+	var glass := MirrorScript.new()
+	glass.name = "Glass"
+	glass.wall_mounted = true
+	glass.stands = true
+	glass.eye_from_view = true
+	glass.width = 1.1
+	glass.height = 1.9
+	glass.draw_range = 7.0
+	console.add_child(glass)
+	wardrobe_mirror = glass
+	var name_plate := _label(str(STATIONS["wardrobe"]["title"]).to_upper(), color, 0.09)
+	name_plate.name = "Title"
+	name_plate.outline_size = 0
+	name_plate.position = Vector3(0, 0.07, 0.06)
 	console.add_child(name_plate)
 
 
