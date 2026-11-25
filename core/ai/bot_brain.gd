@@ -291,6 +291,12 @@ var leash := 35.0
 ## goes back to its post and lies there crouched and still, never patrols,
 ## so it is where it was left when someone comes close.
 var lies_low := false
+## A kind a storm makes bolder ("storm_bold", the Dune Sea's burrowers, who
+## hunt by the tremor of feet through the sand): where everyone else's
+## sight shrinks in a storm, its sight and its leash grow by this share of
+## the storm's strength where it stands (`storm_boost`).
+var storm_bold := 0.0
+var storm_boost := 1.0
 ## A keeper that dives is held under the water by the `Raid` (`_tick_dive`):
 ## it crouches and does nothing else until let up, then stands still
 ## (`held_still`) while it rises.
@@ -444,6 +450,7 @@ func _ready() -> void:
 	shuns_warmth = bool(actor.get_meta("shuns_warmth", false))
 	edge_guard = bool(actor.get_meta("edge_guard", false))
 	lies_low = bool(actor.get_meta("lies_low", false))
+	storm_bold = float(actor.get_meta("storm_bold", 0.0))
 	# How far past its ground a kind follows ("leash"): an ambusher that
 	# never leaves its pool.
 	if actor.has_meta("leash"):
@@ -817,7 +824,7 @@ func _aim_gun(cmd: ActorCommand, eye: Vector3, chest: Vector3, dist: float, delt
 		_seen_time = 0.0
 		_lock = 0.0
 		_reaction = reaction_time * _rng.randf_range(0.8, 1.3) * (1.4 - 0.8 * sharp) \
-				* notice_mult(dist, sight_range, target.crouched, far_notice_mult, crouch_notice_mult) \
+				* notice_mult(dist, sight_range * storm_boost, target.crouched, far_notice_mult, crouch_notice_mult) \
 				* ground_notice
 		if _hit_by == target and _since_hit() < return_fire_time:
 			_reaction *= 0.5
@@ -1109,7 +1116,7 @@ func _within_leash(point: Vector3) -> bool:
 		return true
 	var off := point - _home
 	off.y = 0.0
-	return off.length() <= patrol_radius + leash
+	return off.length() <= patrol_radius + leash * storm_boost
 
 
 ## Lost sight of its contact: the bot whose turn it was pins the cover they
@@ -1567,8 +1574,11 @@ func _find_target() -> Actor:
 	# what it hears.
 	var raid := Raid.of(actor)
 	var weather: Weather = raid.weather if raid != null and raid.weather.kind != "" else null
+	storm_boost = 1.0 + storm_bold * weather.strength_at(actor.global_position) \
+			if weather != null and storm_bold > 0.0 else 1.0
+	var sight := sight_range * storm_boost
 	var listening := state != State.ATTACK
-	var reach := maxf(sight_range, ENGINE_HEARD) if listening else sight_range
+	var reach := maxf(sight, ENGINE_HEARD) if listening else sight
 	var heard_dist := INF
 	_heard_at = Vector3.INF
 	_heard_from = null
@@ -1598,9 +1608,9 @@ func _find_target() -> Actor:
 		var score := dist * (person_bias if person else 1.0) * (0.85 if other == target else 1.0)
 		if preys_on_cold and other.shivering:
 			score *= 0.6
-		if dist >= sight_range or score >= best_score:
+		if dist >= sight or score >= best_score:
 			continue
-		if weather != null and dist >= sight_range * weather.sight_between(eye, chest):
+		if weather != null and storm_bold <= 0.0 and dist >= sight_range * weather.sight_between(eye, chest):
 			continue
 		# Close air (a forest's mist) shuts the eyes in as it does a player's.
 		if world and dist >= minf(world.sight_at(eye), world.sight_at(chest)):

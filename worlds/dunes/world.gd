@@ -17,6 +17,10 @@ const MapScript := preload("map.gd")
 ## `look` is a skin from `Look.SKINS`, `weapon` "gun" or "blade". Add a kind
 ## by adding a row; give a kind its own senses or way of fighting with the
 ## metas in docs/systems/bots.md ("sight", "fov", "reach", "burst", ...).
+## The Dune Sea's own enemy (Caleb's call: "own rosters"): the raiders of
+## the wreck fields, with a Salvage Runner who closes in fast with a knife,
+## and the Dune Burrower under the sand (`BURROWER`, built for the map's
+## "spawn_guard" markers of faction "burrower").
 const ROSTER := {
 	"grunt": {"name": "Sand Raider", "look": "scavenger", "chance": 6.0, "health": 100.0, "armor": 0.0,
 			"walk": 4.8, "sprint": 7.4, "weapon": "gun", "gun": "Worn Rifle", "damage": 11.0, "spread": 3.2,
@@ -27,7 +31,22 @@ const ROSTER := {
 	"brute": {"name": "Scrap Brute", "look": "scrap_brute", "chance": 1.5, "health": 260.0, "armor": 40.0,
 			"walk": 5.0, "sprint": 8.6, "weapon": "blade", "blade": "Cleaver", "damage": 30.0, "windup": 0.55,
 			"reach": 2.6},
+	# Light and quick: it runs in on a flank, dodging, while the rifles
+	# keep you down, and guts you with a knife.
+	"runner": {"name": "Salvage Runner", "look": "salvage_runner", "chance": 2.0, "health": 80.0, "armor": 0.0,
+			"walk": 5.6, "sprint": 9.2, "weapon": "blade", "blade": "Salvage Knife", "damage": 16.0, "windup": 0.3,
+			"reach": 2.0, "item": "knife_gutter", "metas": {"dash": 0.5, "hunters": 2, "flankers": 2, "feint_chance": 0.3}},
 }
+## A Dune Burrower: an ambusher that lies under the sand at its post, sees
+## (feels) only what comes close, comes up with a lunge and a heavy bite,
+## and keeps near its post, except in a sandstorm, when it feels further
+## and follows further ("storm_bold": `BotBrain.storm_boost`). It and the
+## raiders leave each other be (`can_damage`).
+const BURROWER := {"name": "Dune Burrower", "look": "dune_burrower", "health": 200.0, "armor": 30.0,
+		"walk": 3.5, "sprint": 7.8, "weapon": "blade", "blade": "Burrower's Jaws", "damage": 28.0, "windup": 0.4,
+		"reach": 2.8, "height": 1.4, "color": Color(0.6, 0.48, 0.32),
+		"metas": {"lies_low": true, "sight": 9.0, "fov": 360.0, "leash": 14.0, "dash": 0.6, "storm_bold": 1.5}}
+const BURROWER_FACTION := "burrower"
 ## The faction every roster kind fights for. A second army is a second
 ## faction on some "spawn_bot" markers (their meta "faction").
 const FACTION := "dunes"
@@ -205,8 +224,10 @@ func contract_jobs() -> Dictionary:
 ## Builds a bot from its roster row. Only from `rng` and the bot's metas,
 ## so a client building the same seed gets the same bot.
 func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
-	var kind := _roll_kind(rng)
-	var row: Dictionary = ROSTER[kind]
+	# A lair's guard (the map's "spawn_guard" of faction "burrower") is a
+	# Dune Burrower, wild.
+	var kind := "burrower" if bot.faction == BURROWER_FACTION else _roll_kind(rng)
+	var row: Dictionary = BURROWER if kind == "burrower" else ROSTER[kind]
 	if bot.faction == "":
 		bot.faction = FACTION
 	bot.set_meta("kind", kind)
@@ -214,6 +235,10 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.set_meta("look", row["look"])
 	bot.walk_speed = row["walk"]
 	bot.sprint_speed = row["sprint"]
+	if row.has("height"):
+		bot.set_stand_height(row["height"], 0.4)
+	if row.has("color"):
+		bot.body_color = row["color"]
 	# Further in is tougher (the Raid sets "zone" before this).
 	var tier := clampi(int(bot.get_meta("zone", 0)), 0, 2)
 	var tough := 1.0 + tier * 0.25
@@ -233,6 +258,8 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		blade.heavy_damage = float(row["damage"]) * 1.6
 		blade.light_stamina = 0.0
 		blade.reach = row["reach"]
+		# Held as the item it is ("item"), so it looks like one.
+		blade.item_id = row.get("item", "")
 		bot.equip_weapon(blade)
 	else:
 		var gun := Gun.new()
@@ -243,6 +270,18 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		gun.reserve_ammo = 600
 		gun.headshot_mult = 1.0
 		bot.equip_weapon(gun)
+
+
+## The burrowers and the raiders leave each other be: the raiders know the
+## sand's ways, and the burrowers hunt the strangers who do not.
+func can_damage(attacker: Node, target: Node, info: DamageInfo) -> bool:
+	if not super.can_damage(attacker, target, info):
+		return false
+	var a := attacker as Actor
+	var t := target as Actor
+	if a == null or t == null:
+		return true
+	return not ([a.faction, t.faction] in [[FACTION, BURROWER_FACTION], [BURROWER_FACTION, FACTION]])
 
 
 func _roll_kind(rng: RandomNumberGenerator) -> String:

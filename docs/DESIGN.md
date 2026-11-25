@@ -1103,6 +1103,36 @@ after the trial: whether every world moves over, the per-world caps
 bosses sleep too (they stand all the time today and take 2 of
 Frostline's 8).
 
+### Own rosters for the Dune Sea and the Rift (Caleb's call)
+
+The Dune Sea and the Rift fielded the same three raiders under different
+names. Caleb chose a roster of their own for each:
+
+- **The Rift is the Crown's cult**, the Lord of the Crown's own: Crown
+  Zealots (light crimson plate under Ember helms, a fast carbine, and they
+  close in), Crown Sharpshooters (the long rifles, 90 m of sight) and the
+  Slag Brutes. The cult keeps lava beasts:
+  - **Cinder Hounds**: lean beasts under basalt plates with lava in the
+    cracks, run in packs of three from a den on each outer stack. Fast and
+    fragile (80 health), they feint and dart in to bite, and keep to their
+    mesa.
+  - **Magma Crawlers**: slow, armored shell beasts (320 health, 60 armor)
+    with a soft, white-hot rear; a heavy bash from the front, and the
+    ground they cross burns the other side for six seconds.
+- **The Dune Sea keeps its raiders** (Sand Raiders, Dune Marksmen, Scrap
+  Brutes) and adds:
+  - **Salvage Runners**: light, quick raiders who come in on a flank with
+    a knife while the rifles keep you down.
+  - **Dune Burrowers**: ambushers under the sand in every other wreck
+    field. Each lies low at its lair, feels only what comes within 9 m,
+    and comes up with a lunge and a heavy bite. In a sandstorm it feels
+    and follows further (up to two and a half times), where everyone
+    else sees less. Burrowers and raiders leave each other be.
+
+First duel bench numbers (20 duels, 12 and 25 m) put every new kind on the
+easy side of its band, as the brutes already were; tuning waits for the
+guide's balance step.
+
 ### Enemy bodies (Caleb's call: no stock robots in every world)
 
 The three stock robot models stood in every world as heavies, bosses and
@@ -1119,8 +1149,8 @@ Ferals. Caleb chose a mix instead:
   engine on its back, the Lord of the Crown in crimson plate under a crown
   of lava-lit basalt.
 - **Beasts** for the wild: Frostline's Feral Stalker is a furred pack
-  beast with a mane of ice spines and hooked ice spurs (the Rift's beasts
-  wait on its own roster, a decision still open with Caleb).
+  beast with a mane of ice spines and hooked ice spurs; the Rift's lava
+  beasts and the Dune Sea's burrower are below ("Own rosters").
 - **Machines only where the story has machines**: Frostline's Wardens, the
   Engine Sentinel and the Heart Warden are the station's automata, built
   in code as sleek androids (pale ceramic shells, lit seams and visor),
@@ -1741,8 +1771,9 @@ and a row of parked vehicles, rovers mostly. Across the sand lie eight
 wreck fields, buried haulers half sunk in the dunes, richer and more
 crowded further north; four salvage yards (strongpoints, each with a
 depot) are where a haul is banked out in the field; the Wreck Baron holds
-the deep sea in the north. Its raiders (Sand Raiders, Dune Marksmen and
-Scrap Brutes) pick over the wrecks and hold the yards.
+the deep sea in the north. Its raiders (Sand Raiders, Dune Marksmen,
+Salvage Runners and Scrap Brutes) pick over the wrecks and hold the
+yards, and Dune Burrowers lie under the sand of every other wreck field.
 
 - **Salvage crates** (Caleb's call: carried by hand, hauled by vehicle).
   A crate stands at each of the wreck fields' spots, too big for a pack:

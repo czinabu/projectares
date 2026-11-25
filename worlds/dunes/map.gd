@@ -297,6 +297,13 @@ func _build_wrecks() -> void:
 		_add_marker("spawn_cache", _ground(at + Vector2.from_angle(lie + PI) * 3.0) + Vector3(0, 0.1, 0))
 		for i in 2 + index / 3:
 			_add_marker("spawn_bot", _ground(at + Vector2.from_angle(lie + i * 2.1 + 1.0) * 18.0)).set_meta("faction", "dunes")
+		# Every other field has a Dune Burrower under its sand (the world's
+		# `equip_bot` makes a guard of faction "burrower" one), posted
+		# between the hulks where the crates are carried out.
+		if index % 2 == 1:
+			var lair := _add_marker("spawn_guard", _ground(at + Vector2.from_angle(lie + PI * 1.5) * WRECK_RADIUS * 0.4))
+			lair.set_meta("faction", "burrower")
+			lair.set_meta("radius", 6.0)
 		if index % 2 == 0:
 			var parked := _add_marker("spawn_vehicle", _ground(at + Vector2.from_angle(lie + PI * 0.5) * (WRECK_RADIUS + 6.0))
 					+ Vector3(0, 0.5, 0))

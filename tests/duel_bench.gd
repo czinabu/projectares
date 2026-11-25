@@ -7,8 +7,7 @@ extends Node
 ##
 ##   godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn
 ##   ... -- --duels 40 --ranges 12,25 --only raider,warlord --world ashfront --seed 1
-##   (--world ashfront, frostline, marsh, dunes or rift; the Rift uses the
-##   Dune Sea's rows, since it fields the same roster)
+##   (--world ashfront, frostline, marsh, dunes or rift)
 ##   ... -- --melee blade_scrap   (the melee bench: the reference fights with
 ##   that blade only, against each type; DESIGN.md "Melee bots")
 ##
@@ -77,6 +76,22 @@ const WORLD_TARGETS := {
 		"brute_outer": {"kind": "brute", "zone": 0, "win": Vector2(0.75, 0.95), "role": "parry practice"},
 		"brute_core": {"kind": "brute", "zone": 2, "win": Vector2(0.55, 0.8), "role": "punishes panic"},
 		"warlord": {"kind": "warlord", "zone": 2, "win": Vector2(0.1, 0.35), "role": "a squad fight"},
+		"runner_outer": {"kind": "runner", "zone": 0, "win": Vector2(0.85, 0.97), "role": "a knife on the flank"},
+		"runner_core": {"kind": "runner", "zone": 2, "win": Vector2(0.65, 0.85), "role": "a knife on the flank"},
+		"burrower": {"kind": "burrower", "faction": "burrower", "zone": 1, "win": Vector2(0.65, 0.85), "role": "an ambusher you can read"},
+	},
+	# The Rift's own roster (Caleb's call): the Crown's cult and its beasts.
+	"rift": {
+		"grunt_outer": {"kind": "grunt", "zone": 0, "win": Vector2(0.85, 0.97), "role": "fodder that closes in"},
+		"grunt_core": {"kind": "grunt", "zone": 2, "win": Vector2(0.65, 0.85), "role": "pressure, deadly in numbers"},
+		"marksman_outer": {"kind": "marksman", "zone": 0, "win": Vector2(0.85, 1.0), "role": "a long eye, easy up close"},
+		"marksman_core": {"kind": "marksman", "zone": 2, "win": Vector2(0.75, 1.0), "role": "a long eye, easy up close"},
+		"brute_outer": {"kind": "brute", "zone": 0, "win": Vector2(0.75, 0.95), "role": "parry practice"},
+		"brute_core": {"kind": "brute", "zone": 2, "win": Vector2(0.55, 0.8), "role": "punishes panic"},
+		"crawler_outer": {"kind": "crawler", "zone": 0, "win": Vector2(0.6, 0.85), "role": "the tank, get behind it"},
+		"crawler_core": {"kind": "crawler", "zone": 2, "win": Vector2(0.5, 0.75), "role": "the tank, get behind it"},
+		"hound": {"kind": "hound", "faction": "hound", "zone": 1, "win": Vector2(0.9, 1.0), "role": "a stray from a pack of three"},
+		"warlord": {"kind": "warlord", "zone": 2, "win": Vector2(0.1, 0.35), "role": "a squad fight"},
 	},
 }
 
@@ -86,7 +101,7 @@ const GROUP_TYPES := {
 	"frostline": ["feral_mouth", "feral_head", "warden_head"],
 	"marsh": ["stalker", "broodling"],
 	"dunes": ["grunt_outer", "grunt_core"],
-	"rift": ["grunt_outer", "grunt_core"],
+	"rift": ["grunt_outer", "grunt_core", "hound"],
 }
 ## Seconds before an unfinished duel counts as a draw.
 const TIME_LIMIT := 45.0
@@ -113,8 +128,7 @@ func _ready() -> void:
 	var only: PackedStringArray = _arg(args, "--only", "").split(",", false)
 	var seed_base := int(_arg(args, "--seed", "1"))
 	_world = Worlds.get_world(_arg(args, "--world", "ashfront"))
-	# The Rift fields the Dune Sea's roster under its own names.
-	_targets = WORLD_TARGETS.get("dunes" if _world.id == "rift" else _world.id, TARGETS)
+	_targets = WORLD_TARGETS.get(_world.id, TARGETS)
 	var blade := _arg(args, "--melee", "")
 	if blade != "":
 		_melee = true
