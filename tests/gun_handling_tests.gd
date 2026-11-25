@@ -58,7 +58,7 @@ static func run(t: Node) -> void:
 	var horizontal := Vector2(p.velocity.x, p.velocity.z).length()
 	t.check(gun.ammo_in_mag < before and waited >= 8 and waited <= 16,
 			"the gun fires about %.2f s after the pull (%d ticks)" % [p.sprint_out_time, waited + 2])
-	t.check(horizontal <= p.walk_speed * 1.05, "pulling the trigger ended the sprint (%.1f m/s)" % horizontal)
+	t.check(horizontal <= p.walk_speed * p.carry_speed * 1.05, "pulling the trigger ended the sprint (%.1f m/s)" % horizontal)
 	p.cmd.primary = false
 	p.cmd.sprint = false
 	p.cmd.move = Vector2.ZERO

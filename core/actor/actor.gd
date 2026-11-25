@@ -35,6 +35,8 @@ signal weapon_stored(item_id: String, mag: int, reserve: int)
 ## Online `NetSession._looted` repeats it to the owner. Drives the visor's
 ## pickup feed; nothing in the simulation reads it.
 signal looted(ids: Array[String])
+## What this body carries weighs a new amount (`carry_kg`, `CarryLoad`).
+signal carry_changed(kg: float)
 
 const LAYER_WORLD := 1
 const LAYER_ACTORS := 2
@@ -211,8 +213,22 @@ var frame_name := "No armor"
 ## The armor frame worn (an item id), "" for none. Set by `Loadout.wear_frame`.
 var frame_id := ""
 ## The backpack worn (an item id), "" for the field pack. It sets the
-## pack's capacity and slows the sprint (`Loadout.wear_pack`).
+## pack's capacity (`Loadout.wear_pack`); it and its contents count toward
+## the carry weight.
 var pack_id := ""
+## Carry weight (`CarryLoad`): what the body carries, in kg, and what it
+## does to moving, worked out again whenever what it carries changes
+## (`mark_carry`). On a client the server's number is used (`carry_sent`,
+## set by `NetSession`), since a client never sees anyone else's pack.
+var carry_sent := -1.0
+var _carry_kg := 0.0
+var _carry_dirty := true
+var _carry_known := false
+## Ground speed, sprint and slide; acceleration and turning; jump take-off;
+## all as multiples from the load (`CarryLoad`).
+var carry_speed := 1.0
+var carry_accel := 1.0
+var carry_jump := 1.0
 ## Armor left on frames taken off into the pack (item id -> armor), so one
 ## put back on is no fresher than it was. A frame found comes whole.
 var stowed_armor := {}
@@ -424,6 +440,7 @@ func _ready() -> void:
 	_build_body()
 	health.died.connect(_on_health_died)
 	health.damaged.connect(_on_health_damaged)
+	inventory.changed.connect(mark_carry)
 
 
 func _build_body() -> void:
@@ -658,6 +675,7 @@ func _simulate_movement(delta: float) -> void:
 	if wish.length() > 1.0:
 		wish = wish.normalized()
 
+	refresh_carry()
 	var speed := sprint_speed if (cmd.sprint and cmd.move.y > 0.0) else walk_speed
 	if crate != null:
 		# A crate in both hands: a slow walk, and no rig takes the weight.
@@ -680,6 +698,7 @@ func _simulate_movement(delta: float) -> void:
 		speed *= held.move_speed_mult()
 	if flight.enabled:
 		speed *= flight.ground_speed_mult
+	speed *= carry_speed
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
@@ -716,7 +735,7 @@ func _simulate_movement(delta: float) -> void:
 	if flight.is_skating:
 		horizontal = _skate_velocity(horizontal, wish, yaw_basis, delta)
 	elif on_floor:
-		horizontal = horizontal.move_toward(wish * speed, ground_accel * delta)
+		horizontal = horizontal.move_toward(wish * speed, ground_accel * carry_accel * delta)
 	elif flight.is_skimming:
 		horizontal = horizontal.move_toward(wish * flight.skim_speed, flight.skim_accel * delta)
 	elif flight.is_gliding:
@@ -727,7 +746,7 @@ func _simulate_movement(delta: float) -> void:
 		horizontal = _cruise_velocity(horizontal, wish, delta)
 	elif wish.length() > 0.01:
 		# In the air you can steer but you keep your momentum if you let go.
-		horizontal = horizontal.move_toward(wish * speed, air_accel * delta)
+		horizontal = horizontal.move_toward(wish * speed, air_accel * carry_accel * delta)
 
 	_dash_cd = maxf(0.0, _dash_cd - delta)
 	evade_left = maxf(0.0, evade_left - delta)
@@ -758,7 +777,7 @@ func _simulate_movement(delta: float) -> void:
 	velocity.z = horizontal.z
 
 	if on_floor and cmd.jump_pressed and not staggered:
-		velocity.y = jump_velocity
+		velocity.y = jump_velocity * carry_jump
 	elif cmd.jump_pressed and not staggered and flight.is_gliding and flight.pulse_velocity > 0.0:
 		# A wing pulse: up, keeping the airspeed.
 		var pulse := flight.try_pulse(flight.lift_cap(gravity))
@@ -1085,14 +1104,14 @@ func _cruise_velocity(horizontal: Vector3, wish: Vector3, delta: float) -> Vecto
 	var speed := horizontal.length()
 	var fly_speed := flight.fly_speed * flight.indoor_factor()
 	if wish.length() < 0.1 or speed < fly_speed * 0.6:
-		return horizontal.move_toward(wish * fly_speed, flight.fly_accel * delta)
+		return horizontal.move_toward(wish * fly_speed, flight.fly_accel * carry_accel * delta)
 	var heading := horizontal / speed
 	var angle := heading.signed_angle_to(wish.normalized(), Vector3.UP)
 	if absf(angle) > 2.0:
-		return horizontal.move_toward(Vector3.ZERO, flight.fly_accel * delta)
-	var step := flight.cruise_turn_rate * delta
+		return horizontal.move_toward(Vector3.ZERO, flight.fly_accel * carry_accel * delta)
+	var step := flight.cruise_turn_rate * carry_accel * delta
 	heading = heading.rotated(Vector3.UP, clampf(angle, -step, step))
-	return heading * move_toward(speed, wish.length() * fly_speed, flight.fly_accel * delta)
+	return heading * move_toward(speed, wish.length() * fly_speed, flight.fly_accel * carry_accel * delta)
 
 
 ## Every rig: sprint pressed in the air dashes the way the move keys point,
@@ -1289,7 +1308,7 @@ func _simulate_slide(horizontal: Vector3, on_floor: bool, staggered: bool, delta
 	if cmd.slide and on_floor and slide_left <= 0.0 and _slide_cd <= 0.0 and _dash_left <= 0.0 \
 			and not staggered and horizontal.length() >= slide_min_speed and spend_stamina(slide_stamina):
 		_slide_dir = horizontal.normalized()
-		_slide_from = maxf(horizontal.length(), slide_speed * (flight.ground_speed_mult if flight.enabled else 1.0))
+		_slide_from = maxf(horizontal.length(), slide_speed * carry_speed * (flight.ground_speed_mult if flight.enabled else 1.0))
 		slide_left = slide_time
 		_slide_cd = slide_time + slide_cooldown
 	if slide_left > 0.0:
@@ -1608,6 +1627,7 @@ func equip_weapon(weapon: Weapon) -> void:
 	if weapon.visual:
 		hand.add_child(weapon.visual)
 	_refresh_weapon_visuals()
+	mark_carry()
 
 
 ## Shots and swings break a cloak (`Artifact.on_attack`).
@@ -1646,6 +1666,7 @@ func replace_weapon(index: int, weapon: Weapon) -> void:
 	if weapon.visual:
 		hand.add_child(weapon.visual)
 	_refresh_weapon_visuals()
+	mark_carry()
 
 
 ## Takes out the weapon at `index` (the power slot uses this when a power
@@ -1676,6 +1697,7 @@ func remove_weapon(index: int) -> void:
 		old.visual.queue_free()
 	old.queue_free()
 	_refresh_weapon_visuals()
+	mark_carry()
 
 
 func _refresh_weapon_visuals() -> void:
@@ -1771,6 +1793,36 @@ func _pulse_sign_out_beacon(delta: float) -> void:
 	add_child(tone)
 	tone.finished.connect(tone.queue_free)
 	tone.play()
+
+
+## What this body carries, in kg (`CarryLoad`), up to date.
+func carry_kg() -> float:
+	refresh_carry()
+	return _carry_kg
+
+
+## What it carries changed (gear worn or taken off, the pack), so the load is
+## worked out again before it next moves.
+func mark_carry() -> void:
+	_carry_dirty = true
+
+
+## Works the load and what it does out again if what is carried changed.
+## The flight rig's heat follows too (`FlightRig.load_heat`).
+func refresh_carry() -> void:
+	if not _carry_dirty:
+		return
+	_carry_dirty = false
+	var kg := carry_sent if carry_sent >= 0.0 else CarryLoad.of_actor(self)
+	carry_speed = CarryLoad.speed_mult(kg)
+	carry_accel = CarryLoad.accel_mult(kg)
+	carry_jump = CarryLoad.jump_mult(kg)
+	flight.load_heat = CarryLoad.heat_mult(kg, flight.heavy_lift)
+	if _carry_known and kg == _carry_kg:
+		return
+	_carry_known = true
+	_carry_kg = kg
+	carry_changed.emit(kg)
 
 
 ## Everything this actor would drop on death.

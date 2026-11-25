@@ -44,15 +44,17 @@ static func run(t: Node) -> void:
 	t.check(gun.display_name == "Ashfront Carbine" and is_equal_approx(gun.damage, 24.0), "weapon stats come from the item")
 	t.check(hammer.display_name == "Breaker Hammer" and is_equal_approx(hammer.heavy_damage, ItemDB.item_stats("hammer_breaker").heavy_damage), "melee stats come from the item")
 	t.check(is_equal_approx(p.health.armor, float(ItemDB.item_stats("frame_bulwark").armor)), "the frame sets armor")
-	var base := Actor.new()
-	t.check(p.walk_speed < base.walk_speed and is_equal_approx(p.flight.heat_per_sec, FlightRig.new().heat_per_sec),
-			"a heavy frame is slower, and a jetpack carries it without running hotter")
+	p.refresh_carry()
+	var jet_heat := p.flight.load_heat
+	t.check(CarryLoad.tier(p.carry_kg()) == "heavy" and p.carry_speed < 1.0 and jet_heat > 1.0,
+			"a heavy frame and hammer make a heavy load (%.1f kg): slower, and the jetpack runs a little hotter"
+			% p.carry_kg())
 	var wings := Actor.new()
-	Loadout.equip(wings, ["wings_glide", "frame_bulwark"])
-	t.check(wings.flight.glide_heat > ItemDB.item_stats("wings_glide")["glide_heat"],
-			"a heavy frame runs other rigs hotter: the wings' glide stamina drains faster")
+	Loadout.equip(wings, ["rifle_carbine", "hammer_breaker", "medkit", "medkit", "wings_glide", "frame_bulwark"])
+	wings.refresh_carry()
+	t.check(wings.flight.load_heat > jet_heat,
+			"other rigs carry the same load hotter than a jetpack: the wings' glide stamina drains faster")
 	wings.free()
-	base.free()
 	var results: Array[Dictionary] = []
 	raid.player_finished.connect(func(_a: Actor, r: Dictionary) -> void: results.append(r))
 	raid.begin_sign_out(p)
