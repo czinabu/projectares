@@ -34,7 +34,8 @@ const MOVE_WEIGHT := 0.5 # per step of move speed past a one-hander's
 const LUNGE_WEIGHT := 0.01 # per m/s of heavy lunge past 9
 const SLAM_WEIGHT := 0.0015 # per point of slam damage x radius / 4.5 past the reference
 ## Weapon abilities (`MeleeWeapon.ability`), each a share of the score.
-const ABILITY_WEIGHTS := {"ground_pound": 0.04}
+const ABILITY_WEIGHTS := {"ground_pound": 0.04, "shadow_step": 0.04, "counter_stance": 0.04, "guard_hook": 0.04,
+		"vault": 0.04, "trip": 0.04}
 
 
 static func run(t: Node) -> void:

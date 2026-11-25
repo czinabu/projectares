@@ -1106,6 +1106,10 @@ func _physics_process(delta: float) -> void:
 		cmd.emote = 0
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if not is_nan(actor.turn_request):
+		# Turned by the game (a shadow step): the view turns with the body.
+		yaw = actor.turn_request
+		actor.turn_request = NAN
 	cmd.yaw = yaw
 	cmd.pitch = pitch
 	cmd.move = Vector2(

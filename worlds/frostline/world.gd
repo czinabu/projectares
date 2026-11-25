@@ -348,7 +348,9 @@ func register_items() -> void:
 	ItemDB.register("frost_ice_axe", "Ice Axe", ItemDB.Rarity.RARE, 750, ["weapon", "melee", "one_handed", "axe"],
 			{"light_damage": 32.0, "heavy_damage": 82.0, "heavy_lunge": 12.0, "slam_damage": 70.0,
 			"reach": 2.9, "light_windup": 0.15, "light_recover": 0.34, "heavy_windup": 0.46,
-			"light_stamina": 12.0, "heavy_stamina": 30.0, "swing_style": "chop", "swing_scale": 0.9},
+			"light_stamina": 12.0, "heavy_stamina": 30.0, "swing_style": "chop", "swing_scale": 0.9,
+			"ability": "guard_hook", "ability_windup": 0.45, "ability_recover": 0.35, "ability_radius": 3.0,
+			"ability_damage": 8.0, "ability_knock": 8.0, "ability_cooldown": 12.0, "ability_stamina": 18.0},
 			"Long heavy lunge and a hard dive slam. Built for closing distance on open ice.")
 
 

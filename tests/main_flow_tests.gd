@@ -27,7 +27,7 @@ static func run(t: Node) -> void:
 	t.check(main.raid != null and not main.hub.visible, "deploying starts a raid")
 	t.check(main.controller.camera.current and main.hud != null, "raid has a camera and HUD")
 	t.check(main.nameplates != null and main.scoreboard != null and not main.scoreboard.visible,
-			"raid has nameplates and a scoreboard, closed until Q is held")
+			"raid has nameplates and a scoreboard, closed until O is held")
 	var controller: PlayerController = main.controller
 	t.check(controller.view_mode == PlayerController.ViewMode.FIRST and not controller.is_third_person(),
 			"camera starts in first-person")

@@ -25,11 +25,19 @@ static func _data(t: Node) -> void:
 	t.check(hammer.ability_cooldown >= 8.0, "and it is spent for a while after (%.0f s)" % hammer.ability_cooldown)
 	t.check(hammer.ability_damage < hammer.light_damage, "it knocks people down more than it hurts them")
 	hammer.free()
-	var others := []
+	var unknown := []
 	for id: String in ItemDB.all_ids():
-		if ItemDB.has_tag(id, "melee") and id != HAMMER and str(ItemDB.item_stats(id).get("ability", "")) != "":
-			others.append(id)
-	t.check(others.is_empty(), "no other weapon has an ability yet (%s)" % [others])
+		var picked := str(ItemDB.item_stats(id).get("ability", ""))
+		if ItemDB.has_tag(id, "melee") and picked != "" and not MeleeWeapon.ABILITY_NAMES.has(picked):
+			unknown.append(id)
+	t.check(unknown.is_empty(), "every melee ability an item names is one the weapon knows (%s)" % [unknown])
+	var knife := Arsenal._make("knife_gutter")
+	var sword := Arsenal._make("blade_scrap")
+	t.check(knife.ability == "shadow_step" and sword.ability == "counter_stance",
+			"the knife has the shadow step and the sword the counter stance")
+	t.check(knife.ability_windup >= 0.25, "the step crouches first, a tell you can see (%.2f s)" % knife.ability_windup)
+	knife.free()
+	sword.free()
 	t.check(InputMap.has_action("weapon_ability"), "the weapon ability has a key of its own")
 
 
@@ -177,3 +185,149 @@ static func _in_raid(t: Node) -> void:
 	bot_hammer.ability_left = 0.0
 	Arsenal._place(p, foe, bot_hammer.ability_radius + 1.0)
 	t.check(not brain._wants_pound(bot_hammer), "nor with the foe outside the ring")
+	# Each other ability has its moment.
+	var bot_axe := await Arsenal._arm(t, foe, "axe_splitter")
+	Arsenal._place(p, foe, 2.0)
+	t.check(brain._wants_ability(bot_axe, true) and not brain._wants_ability(bot_axe, false),
+			"a bot hooks a raised guard, and only a raised guard")
+	var bot_sword := await Arsenal._arm(t, foe, "blade_scrap")
+	var mine := await Arsenal._arm(t, p, "")
+	Arsenal._place(p, foe, 2.0)
+	t.check(not brain._wants_ability(bot_sword, false), "a bot keeps its counter stance until a swing comes")
+	mine._begin_windup("heavy", 1.0, 0.5)
+	t.check(brain._wants_ability(bot_sword, false), "and takes it into a swing coming")
+	await t.frames(40)
+
+	await _shadow_step(t, raid, p, foe)
+	await _counter_stance(t, p, foe)
+	await _guard_hook(t, p, foe)
+	await _trip(t, p, foe)
+	await _vault(t, p)
+
+
+## The knife steps through behind the foe in front, facing their back.
+static func _shadow_step(t: Node, raid: Raid, p: Actor, foe: Actor) -> void:
+	print("Weapon ability: the knife's shadow step")
+	var foe_blade := await Arsenal._arm(t, foe, "")
+	var knife := await Arsenal._arm(t, p, "knife_gutter")
+	Arsenal._reset(foe)
+	Arsenal._place(p, foe, 6.5)
+	await t.frames(2)
+	var stamina := p.stamina
+	await _press(t, p)
+	t.check(not knife.is_winding_up() and p.stamina >= stamina and knife.ability_left <= 0.0,
+			"with no foe in reach the step does nothing and costs nothing")
+	Arsenal._place(p, foe, 3.5)
+	await t.frames(2)
+	var start := p.global_position
+	await _press(t, p)
+	t.check(knife.is_winding_up(), "in reach, it crouches first")
+	t.check(p.global_position.distance_to(start) < 0.3, "and has not moved yet")
+	await t.frames(int(knife.ability_windup * 60.0) + 3)
+	var foe_back := foe.global_position - foe.get_aim_dir() * Vector3(1, 0, 1)
+	t.check(p.global_position.distance_to(foe_back) < 1.0,
+			"then it is behind the foe (%.1f m from its back)" % p.global_position.distance_to(foe_back))
+	t.check(not is_nan(p.turn_request) or MeleeWeapon.is_behind(foe, p.global_position, 180.0),
+			"facing their back")
+	p.turn_request = NAN
+	t.check(MeleeWeapon.is_behind(foe, p.global_position, knife.backstab_arc_deg), "where the knife's cut is a backstab")
+	t.check(knife.ability_left > knife.ability_cooldown - 1.0, "then it cools down")
+	foe_blade.light_stamina = 0.0
+
+
+## A sword in counter stance turns a cut aside and answers with a riposte.
+static func _counter_stance(t: Node, p: Actor, foe: Actor) -> void:
+	print("Weapon ability: the sword's counter stance")
+	var foe_blade := await Arsenal._arm(t, foe, "")
+	foe_blade.light_windup = 0.3
+	foe_blade.light_tell = 0.0
+	var sword := await Arsenal._arm(t, p, "blade_scrap")
+	Arsenal._reset(foe)
+	Arsenal._place(p, foe, 2.0)
+	p.cmd.yaw = 0.0
+	p.cmd.aim_dir = Vector3.FORWARD
+	await t.frames(30)
+	Arsenal._place(p, foe, 2.0)
+	p.health.health = p.health.max_health
+	await _press(t, p)
+	t.check(sword.is_countering() and sword.is_guard_shown(), "the sword takes its counter stance, the guard shown")
+	var foe_health := foe.health.health
+	var health := p.health.health
+	foe_blade._strike(foe_blade.light_damage, "light")
+	t.check(p.health.health == health, "a cut into it does nothing")
+	t.check(foe.stagger_left > 0.0 and not sword.is_countering(), "the cutter is staggered and the stance is spent")
+	await t.frames(12)
+	t.check(foe.health.health < foe_health, "and the riposte answers at once (%.0f)" % (foe_health - foe.health.health))
+	# Held out, the stance ends by itself and leaves the sword free.
+	await t.frames(int(sword.ability_recover * 60.0) + 30)
+	sword.ability_left = 0.0
+	await _press(t, p)
+	await t.frames(int(sword.ability_windup * 60.0) + 2)
+	t.check(not sword.is_countering(), "a stance nobody cuts into ends by itself")
+
+
+## The axe hooks a held guard open and pulls its owner a step in.
+static func _guard_hook(t: Node, p: Actor, foe: Actor) -> void:
+	print("Weapon ability: the axe's guard hook")
+	var foe_blade := await Arsenal._arm(t, foe, "")
+	var axe := await Arsenal._arm(t, p, "axe_splitter")
+	Arsenal._reset(foe)
+	Arsenal._place(p, foe, 2.6)
+	foe.cmd.secondary = true
+	await t.frames(30)
+	Arsenal._place(p, foe, 2.6)
+	var start := foe.global_position
+	var health := foe.health.health
+	await _press(t, p)
+	t.check(axe.is_winding_up(), "the hook winds up first")
+	await t.frames(int(axe.ability_windup * 60.0) + 2)
+	t.check(not foe_blade.is_blocking() and foe.stagger_left > 0.0, "and tears a held guard open")
+	t.check(foe.health.health < health, "through it, for a little damage (%.0f)" % (health - foe.health.health))
+	foe.cmd.secondary = false
+	await t.frames(12)
+	t.check(foe.global_position.distance_to(p.global_position) < start.distance_to(p.global_position) - 0.3,
+			"and pulls the foe a step in")
+	await t.frames(int(axe.ability_recover * 60.0) + 10)
+
+
+## The hook blade trips the foe in front off its feet; a guard stops it.
+static func _trip(t: Node, p: Actor, foe: Actor) -> void:
+	print("Weapon ability: the hook blade's trip")
+	var foe_blade := await Arsenal._arm(t, foe, "")
+	var hook := await Arsenal._arm(t, p, "blade_hook")
+	Arsenal._reset(foe)
+	Arsenal._place(p, foe, 2.0)
+	await t.frames(30)
+	Arsenal._place(p, foe, 2.0)
+	await _press(t, p)
+	await t.frames(int(hook.ability_windup * 60.0) + 2)
+	t.check(foe.knocked_left > 0.5, "the trip knocks the foe down (%.2f s)" % foe.knocked_left)
+	await t.frames(int(foe.knocked_left * 60.0) + 30)
+	hook.ability_left = 0.0
+	Arsenal._reset(foe)
+	Arsenal._place(p, foe, 2.0)
+	foe.cmd.secondary = true
+	await t.frames(30)
+	Arsenal._place(p, foe, 2.0)
+	await _press(t, p)
+	await t.frames(int(hook.ability_windup * 60.0) + 2)
+	t.check(foe.knocked_left <= 0.0 and foe_blade.is_blocking(), "a raised guard stops it")
+	foe.cmd.secondary = false
+	await t.frames(int(hook.ability_recover * 60.0) + 10)
+
+
+## The spear vaults up and ahead off its planted point.
+static func _vault(t: Node, p: Actor) -> void:
+	print("Weapon ability: the spear's vault")
+	var spear := await Arsenal._arm(t, p, "spear_lancer")
+	await t.frames(30)
+	var start := p.global_position
+	await _press(t, p)
+	t.check(spear.is_winding_up() and p.is_on_floor(), "the spear is planted first")
+	var top := start.y
+	for i in int(spear.ability_windup * 60.0) + 40:
+		await t.frames(1)
+		top = maxf(top, p.global_position.y)
+	var ahead := Vector2(p.global_position.x - start.x, p.global_position.z - start.z)
+	t.check(top - start.y > 2.0, "then the body vaults up (%.1f m)" % (top - start.y))
+	t.check(ahead.length() > 2.0 and ahead.y < 0.0, "and ahead, the way it faces (%.1f m)" % ahead.length())

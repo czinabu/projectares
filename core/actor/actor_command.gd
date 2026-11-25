@@ -44,9 +44,8 @@ var secondary_pressed := false
 var tertiary_pressed := false
 ## A kick (V, `MeleeWeapon.kick`): breaks a held guard, loses to a swing.
 var kick_pressed := false
-## Pressed this tick: the weapon in hand's own ability (its own key, O or
-## the mouse's thumb button; `MeleeWeapon.weapon_ability`, the hammer's
-## ground pound).
+## Pressed this tick: the weapon in hand's own ability (its own key, Q or
+## the mouse's thumb button; `MeleeWeapon.weapon_ability`).
 var weapon_ability_pressed := false
 var reload_pressed := false
 ## Unused since melee became timing based (the blade picks its own sides,

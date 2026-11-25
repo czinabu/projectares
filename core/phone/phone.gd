@@ -168,7 +168,7 @@ const CONTROLS := [
 		["Hold the guard (drains stamina)", "Hold {alt_fire}"],
 		["Feint a heavy (cancel it into a guard)", "{alt_fire} early in its windup"],
 		["Kick: breaks a held guard, loses to a swing", "{kick}"],
-		["The weapon's ability (the hammer's ground pound), then a cooldown", "{weapon_ability}"],
+		["The weapon's ability (pound, shadow step, counter, hook, vault, trip), then a cooldown", "{weapon_ability}"],
 		["Dodge: a roll, or your rig's own dodge; swings pass through", "{dash}"],
 	]],
 	["WATCH", [

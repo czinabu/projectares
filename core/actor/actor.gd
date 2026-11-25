@@ -310,6 +310,10 @@ var stagger_left := 0.0
 ## `knocked_time` in all.
 var knocked_left := 0.0
 var knocked_time := 0.0
+## A yaw something asked this body to turn to (a shadow step lands facing
+## the foe's back), or NAN. Whoever steers the body takes it: the player's
+## controller turns the view to it; a bot's aim already follows its target.
+var turn_request := NAN
 ## Seconds left of the current slide; above zero while sliding.
 var slide_left := 0.0
 ## How far down into a slide the actor is, 0 standing to 1 down.
@@ -649,7 +653,7 @@ func dodging() -> bool:
 
 ## Gives the weapon in hand a chance to block or parry a hit.
 func modify_incoming(info: DamageInfo) -> void:
-	if evade_left > 0.0 and info.kind in ["melee", "slam"] and not is_dead:
+	if evade_left > 0.0 and info.kind in ["melee", "slam", "hook"] and not is_dead:
 		# Mid-dodge, a swing passes through.
 		info.amount = 0.0
 		notice.emit("Evaded")

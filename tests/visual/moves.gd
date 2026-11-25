@@ -12,9 +12,10 @@ extends RefCounted
 ## instead saves every other tick of each move, from three sides, as
 ## `moves/<move>_<view>_NN.png`, to be strung into a clip (30 a second plays
 ## them at the game's speed). `weapon=axe_splitter` swings another melee
-## weapon than the scrap blade. `pound` (with `weapon=hammer_breaker`) is
-## the weapon ability, with three bots stood round to be knocked back,
-## seen from higher up so the ring shows.
+## weapon than the scrap blade. `ability` (`pound` too) is the weapon's
+## ability, seen from higher up, with bots stood where it needs them: three
+## round a hammer's pound, one in front of the rest (guarding against an
+## axe's hook, swinging into a sword's counter stance), none for a vault.
 static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 	var names: PackedStringArray = []
 	var frames := args.has("frames")
@@ -61,9 +62,11 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 	cam.fov = 40.0
 	# [name, frames between shots]
 	var rows := [["slide", 6], ["light_right", 3], ["light_left", 3], ["overhead", 3], ["heavy", 5], ["kick", 4], ["guard", 8],
-			["start", 4], ["stop", 4], ["jump", 5], ["run_jump", 5], ["pound", 5]]
+			["start", 4], ["stop", 4], ["jump", 5], ["run_jump", 5], ["ability", 5]]
 	if blade.ability == "":
-		rows = rows.filter(func(row: Array) -> bool: return row[0] != "pound")
+		rows = rows.filter(func(row: Array) -> bool: return row[0] != "ability")
+	if "pound" in names:
+		names.append("ability")
 	if not names.is_empty():
 		rows = rows.filter(func(row: Array) -> bool: return String(row[0]) in names)
 	var shots := 42 if frames else 14
@@ -95,10 +98,20 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 			pass
 		elif move == "kick":
 			p.cmd.kick_pressed = true
-		elif move == "pound":
+		elif move == "ability":
 			blade.ability_left = 0.0
+			blade.ability_stamina = 0.0
 			# Three to knock back: in front, front left and to the right.
 			var spots := [Vector3(0, 0, -2.6), Vector3(-2.4, 0, -1.6), Vector3(3.2, 0, 0.4)]
+			match blade.ability:
+				"shadow_step":
+					spots = [Vector3(0, 0, -3.5)]
+				"vault":
+					spots = []
+				"ground_pound":
+					pass
+				_:
+					spots = [Vector3(0, 0, -2.2)]
 			for k in spots.size():
 				var bot := raid.spawn_bot("Pounded%d" % k, p.global_position + p.global_basis * spots[k], 300 + k,
 						false, "", -2, ["blade_scrap", "frame_trooper"])
@@ -117,8 +130,18 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 				var to := p.global_position - bot.global_position
 				bot.cmd.yaw = atan2(-to.x, -to.z)
 				bot.cmd.aim_dir = to.normalized()
+				if blade.ability == "guard_hook":
+					bot.cmd.secondary = true
 			await v._settle(20)
 			p.cmd.weapon_ability_pressed = true
+			if blade.ability == "counter_stance" and not pounded.is_empty():
+				# A cut into the stance, seen coming.
+				var foe_blade := pounded[0].get_active_weapon() as MeleeWeapon
+				if foe_blade:
+					foe_blade.light_windup = 0.3
+					foe_blade.light_tell = 0.0
+					foe_blade.light_stamina = 0.0
+					pounded[0].cmd.primary_pressed = true
 		elif move != "guard":
 			blade.combo_step = {"light_right": 0, "light_left": 1, "overhead": 2, "heavy": 0}[move]
 			blade._combo_timer = 1.0 if blade.combo_step > 0 else 0.0
@@ -147,6 +170,13 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 				p.cmd.tertiary_pressed = false
 				p.cmd.kick_pressed = false
 				p.cmd.weapon_ability_pressed = false
+				if not is_nan(p.turn_request):
+					# No controller here: turn as the player's view would.
+					p.cmd.yaw = p.turn_request
+					p.cmd.aim_dir = Vector3(-sin(p.turn_request), 0.0, -cos(p.turn_request))
+					p.turn_request = NAN
+				for bot: Actor in pounded:
+					bot.cmd.primary_pressed = false
 				p.cmd.jump_pressed = false
 				p.cmd.jump = false
 				if move == "slide" and p.slide_left > 0.0:
@@ -159,7 +189,7 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 				var off := p.global_basis.x if view == "side" else -p.global_basis.z
 				if view == "quarter":
 					off = (p.global_basis.x - p.global_basis.z).normalized()
-				if move == "pound":
+				if move == "ability":
 					# Up and back, so the ring and the bots knocked back show.
 					cam.look_at_from_position(at + off * 10.0 + Vector3.UP * 5.5, at + Vector3.DOWN * 0.4)
 				else:
@@ -168,7 +198,7 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 				var frame := v.get_viewport().get_texture().get_image()
 				var h := frame.get_height()
 				# The pound's frames are wide, so the bots knocked back stay in.
-				var shown := Vector2i(1120, 630) if frames and move == "pound" else cell
+				var shown := Vector2i(1120, 630) if frames and move == "ability" else cell
 				var size := Vector2i(shown.x * h / 720, shown.y * h / 720)
 				var cut := frame.get_region(Rect2i(frame.get_width() / 2 - size.x / 2, h / 2 - size.y / 2, size.x, size.y))
 				cut.resize(shown.x, shown.y)

@@ -58,10 +58,14 @@ const RING_KICK := [0.0, 0.25, 0.4]
 const RING_HEAVY_FEINT := [0.0, 0.15, 0.3]
 const RING_DODGE := [0.0, 0.15, 0.3]
 var kick_chance := 0.25
-## A weapon ability (`MeleeWeapon.weapon_ability`, the hammer's ground
-## pound) is used when it is ready and two foes stand in its ring; with one,
-## now and then (`pound_alone_chance`).
+## A weapon ability (`MeleeWeapon.weapon_ability`) is used when it is ready
+## and the fight calls for it (`_wants_ability`): the hammer's pound when two
+## foes stand in its ring, with one now and then (`pound_alone_chance`); the
+## knife's shadow step and the hook blade's trip now and then
+## (`ability_chance`); the sword's counter stance into a swing coming; the
+## axe's hook into a raised guard. Bots do not vault.
 var pound_alone_chance := 0.15
+var ability_chance := 0.35
 var heavy_feint_chance := 0.15
 var melee_dodge_chance := 0.15
 ## A blade in reach beats a rifle (Caleb's call): an army bot cut by a
@@ -958,7 +962,7 @@ func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
 	if foe_blade != null:
 		guarded = foe_blade.is_blocking()
-	if _wants_pound(blade):
+	if _wants_ability(blade, guarded):
 		cmd.weapon_ability_pressed = true
 		_melee_wait = blade.ability_windup + blade.ability_recover
 		return
@@ -984,6 +988,28 @@ func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void
 		cmd.primary = true
 		return
 	cmd.primary_pressed = true
+
+
+## True when the weapon's ability is ready and the moment fits it.
+func _wants_ability(blade: MeleeWeapon, guarded: bool) -> bool:
+	if not blade.ability_ready() or not actor.is_on_floor() or actor.stamina < blade.ability_stamina:
+		return false
+	var dist := target.global_position.distance_to(actor.global_position)
+	var foe_blade := target.get_active_weapon() as MeleeWeapon
+	match blade.ability:
+		"ground_pound":
+			return _wants_pound(blade)
+		"shadow_step":
+			return dist <= blade.ability_radius and not MeleeWeapon.is_behind(target, actor.global_position, 180.0) \
+					and _rng.randf() < ability_chance
+		"trip":
+			return dist <= blade.ability_radius and _rng.randf() < ability_chance
+		"counter_stance":
+			return foe_blade != null and (foe_blade.is_winding_up() or foe_blade.is_charging()) \
+					and dist <= foe_blade.reach + 1.0
+		"guard_hook":
+			return guarded and dist <= blade.ability_radius
+	return false
 
 
 ## True when the ground pound is ready and worth it: the target in its
