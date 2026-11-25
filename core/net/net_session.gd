@@ -201,7 +201,7 @@ const MAX_INPUTS_PER_PACKET := 16
 ## Bytes one input takes in a packet (`pack_inputs`). A full packet must fit
 ## in one datagram: split in two, it is lost when either half is, which
 ## makes loss worse just when it is bad.
-const INPUT_BYTES := 42
+const INPUT_BYTES := 43
 ## The server holds at most this many unplayed inputs per player. More means
 ## the player's packets arrived in a burst, and the oldest are folded together.
 const MAX_QUEUED_INPUTS := 6
@@ -2164,7 +2164,7 @@ func _send_input(packet: PackedByteArray) -> void:
 
 
 ## Raise it when the bytes of a packed input change (`NetManifest`).
-const WIRE_INPUTS := 1
+const WIRE_INPUTS := 2
 
 
 ## Inputs ([number, command array, view tick], see `ActorCommand.to_array`)
@@ -2180,9 +2180,12 @@ static func pack_inputs(inputs: Array) -> PackedByteArray:
 		packet.encode_u32(at + 4, int(input[2]))
 		for i in ActorCommand.FLAGS_INDEX:
 			packet.encode_float(at + 8 + i * 4, cmd[i])
-		packet.encode_u32(at + 36, int(cmd[ActorCommand.FLAGS_INDEX]))
+		# The flags take 40 bits: the low 32, then the byte above them.
+		var flags := int(cmd[ActorCommand.FLAGS_INDEX])
+		packet.encode_u32(at + 36, flags & 0xFFFFFFFF)
 		packet.encode_s8(at + 40, int(cmd[ActorCommand.STANCE_INDEX]))
 		packet.encode_s8(at + 41, int(cmd[ActorCommand.SWITCH_INDEX]))
+		packet.encode_u8(at + 42, (flags >> 32) & 0xFF)
 		at += INPUT_BYTES
 	return packet
 
@@ -2196,7 +2199,7 @@ static func unpack_inputs(packet: PackedByteArray) -> Array:
 		var cmd: Array = []
 		for i in ActorCommand.FLAGS_INDEX:
 			cmd.append(packet.decode_float(at + 8 + i * 4))
-		cmd.append(packet.decode_u32(at + 36))
+		cmd.append(packet.decode_u32(at + 36) | (packet.decode_u8(at + 42) << 32))
 		cmd.append(packet.decode_s8(at + 40))
 		cmd.append(packet.decode_s8(at + 41))
 		inputs.append([packet.decode_u32(at), cmd, packet.decode_u32(at + 4)])
@@ -2435,7 +2438,8 @@ func _state_entry(id: int, tier: int) -> Array:
 			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0) \
 			| (ActorCommand.STATE_SHELTERED if actor.weapons_locked else 0) \
 			| (ActorCommand.STATE_SIGN_OUT_BEACON if actor.sign_out_beacon else 0) \
-			| (ActorCommand.STATE_CHILLED if actor.shivering else 0)
+			| (ActorCommand.STATE_CHILLED if actor.shivering else 0) \
+			| (ActorCommand.STATE_KNOCKED_DOWN if actor.knocked_left > 0.0 else 0)
 	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
 	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
 			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
@@ -4212,6 +4216,15 @@ func _apply_state(actor: Actor, entry: Array, mine: bool, tick: int = 0) -> void
 	# So is the cold (`Raid._tick_cold`): everyone sees who shivers.
 	actor.shivering = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
 			and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_CHILLED != 0
+	# And a knockdown (`Actor.knock_down`): down for what is left of the
+	# stagger it came with.
+	var down: bool = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
+			and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_KNOCKED_DOWN != 0
+	if down and actor.knocked_left <= 0.0 and actor.stagger_left > 0.0:
+		actor.knocked_left = actor.stagger_left
+		actor.knocked_time = actor.stagger_left
+	elif not down:
+		actor.knocked_left = 0.0
 	var id: int = entry[0]
 	if actor.vehicle != null:
 		# A rider goes where their vehicle goes.

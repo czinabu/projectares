@@ -174,8 +174,8 @@ func _ready() -> void:
 	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "two_handed", "hammer", "vendor"],
 			{"light_damage": 46.0, "heavy_damage": 98.0, "light_windup": 0.22, "light_recover": 0.45,
 			"heavy_windup": 0.6, "heavy_recover": 0.6, "light_stamina": 18.0, "heavy_stamina": 40.0, "reach": 3.2,
-			"arc_deg": 140.0, "swing_style": "chop", "slam_damage": 95.0, "slam_radius": 6.5},
-			"Slow and brutal, the hardest hits of any weapon. Its wide swings catch a crowd and its dive slam hits a wide area.")
+			"arc_deg": 140.0, "swing_style": "chop", "slam_damage": 95.0, "slam_radius": 6.5, "ability": "ground_pound"},
+			"Slow and brutal, the hardest hits of any weapon. Its wide swings catch a crowd and its dive slam hits a wide area. Its ground pound knocks everyone near off their feet.")
 	register("knife_gutter", "Gutter Knife", Rarity.COMMON, 250, ["weapon", "melee", "one_handed", "knife", "vendor"],
 			{"light_damage": 19.0, "heavy_damage": 40.0, "reach": 2.1, "arc_deg": 90.0,
 			"light_windup": 0.08, "light_recover": 0.15, "heavy_windup": 0.25, "heavy_recover": 0.35,

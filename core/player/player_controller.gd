@@ -1135,6 +1135,7 @@ func _physics_process(delta: float) -> void:
 	cmd.jump_pressed = Input.is_action_just_pressed("jump")
 	cmd.dash = Input.is_action_just_pressed("dash")
 	cmd.kick_pressed = Input.is_action_just_pressed("kick")
+	cmd.weapon_ability_pressed = Input.is_action_just_pressed("weapon_ability")
 	cmd.descend = Input.is_action_pressed("crouch")
 	crouch_key(Input.is_action_just_pressed("crouch"))
 	cmd.free_look = Input.is_action_pressed("free_look")
@@ -1197,7 +1198,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			start_inspect()
 	elif busy_hands or cmd.reload_pressed or cmd.heal_pressed or cmd.ability_pressed \
-			or cmd.interact_pressed or cmd.switch_weapon != -1:
+			or cmd.weapon_ability_pressed or cmd.interact_pressed or cmd.switch_weapon != -1:
 		stop_inspect()
 	_tick_inspect(cmd, delta)
 	_tick_emote(cmd, delta)
@@ -1282,8 +1283,8 @@ func _tick_emote(cmd: ActorCommand, delta: float) -> void:
 		var switched := cmd.switch_weapon != -1 and not (_emote_fresh and cmd.switch_weapon == ActorCommand.HOLSTER)
 		if cmd.move.length() > 0.1 or cmd.jump_pressed or cmd.jump or cmd.sprint or cmd.dash or cmd.slide \
 				or cmd.crouch or cmd.primary_pressed or cmd.secondary_pressed or cmd.reload_pressed \
-				or cmd.heal_pressed or cmd.ability_pressed or cmd.kick_pressed or cmd.interact_pressed \
-				or switched or wrist_raised or phone_out or is_riding() or actor.is_dead \
+				or cmd.heal_pressed or cmd.ability_pressed or cmd.kick_pressed or cmd.weapon_ability_pressed \
+				or cmd.interact_pressed or switched or wrist_raised or phone_out or is_riding() or actor.is_dead \
 				or actor.airborne_time > 0.15 or held_toy != "":
 			stop_emote()
 		elif emote_left > 0.0:

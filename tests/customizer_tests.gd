@@ -101,6 +101,13 @@ static func run(t: Node) -> void:
 					complete = complete and body.find_child(hair, true, false) is MeshInstance3D
 		body.free()
 	t.check(complete, "each build's body has a head, body, legs, feet and every hairstyle, bound to bones by name")
+	# The suit hangs as cloth: each build's torso and legs come baked in its shape.
+	var SuitShape := preload("res://core/visual/suit_shape.gd")
+	var baked := true
+	for build in Human.BUILDS:
+		for part: String in SuitShape.PARTS:
+			baked = baked and ResourceLoader.exists(SuitShape.baked_path(build, part))
+	t.check(baked, "each build's suit shape is baked for its torso and legs")
 
 	# A look builds into one animated model wearing the chosen parts.
 	Look.enabled = true

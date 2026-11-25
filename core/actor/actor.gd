@@ -306,6 +306,10 @@ var sign_out_beacon := false
 var _beacon_hum := 0.0
 ## While staggered the actor cannot attack, block, dash or jump.
 var stagger_left := 0.0
+## Seconds left on the ground after a knockdown (`knock_down`), of
+## `knocked_time` in all.
+var knocked_left := 0.0
+var knocked_time := 0.0
 ## Seconds left of the current slide; above zero while sliding.
 var slide_left := 0.0
 ## How far down into a slide the actor is, 0 standing to 1 down.
@@ -578,6 +582,7 @@ func _below_world() -> bool:
 
 func _simulate_timers(delta: float) -> void:
 	stagger_left = maxf(0.0, stagger_left - delta)
+	knocked_left = maxf(0.0, knocked_left - delta)
 	riposte_left = maxf(0.0, riposte_left - delta)
 	protected_left = maxf(0.0, protected_left - delta)
 	flight.jam_left = maxf(0.0, flight.jam_left - delta)
@@ -609,6 +614,19 @@ func pause_stamina_regen() -> void:
 func stagger(duration: float) -> void:
 	stagger_left = maxf(stagger_left, duration)
 	notice.emit("Staggered")
+
+
+## Knocks this body off its feet for `duration` (the hammer's ground
+## pound): down on the ground and up again, staggered all the while and
+## unable to walk. The server's call; clients see it through
+## `ActorCommand.STATE_KNOCKED_DOWN`, and `ActorSkin` shows the fall.
+func knock_down(duration: float) -> void:
+	stagger_left = maxf(stagger_left, duration)
+	if knocked_left <= 0.0:
+		knocked_time = duration
+	knocked_left = maxf(knocked_left, duration)
+	knocked_time = maxf(knocked_time, knocked_left)
+	notice.emit("Knocked down")
 
 
 ## How this body dodges now: "roll" on the ground with no working rig,
@@ -702,6 +720,9 @@ func _simulate_movement(delta: float) -> void:
 	var staggered := stagger_left > 0.0
 	if staggered:
 		speed *= stagger_speed_mult
+	if knocked_left > 0.0:
+		# Down on the ground: no walking until back up.
+		speed = 0.0
 	# Take last tick's air dash back off, as far as it is still there (a wall
 	# may have stopped it), so the rig's own flight carries on underneath.
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
