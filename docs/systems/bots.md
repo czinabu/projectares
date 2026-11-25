@@ -118,7 +118,20 @@ date in the same PR.
   (`Strongpoint.hot_at`) keeps every team off it until the war is that
   hot, then sends only `WorldDef.elite_kinds` (`WarCommander.plan`). A
   bot on foot that gets nowhere jumps and steps aside
-  (`BotBrain._climb_out`).
+  (`BotBrain._climb_out`). Once a walking bot's path has run out it
+  heads for the path's real end and stops within `ARRIVE_STOP`, never
+  straight on at a goal past a drop. A bot with the meta "edge_guard" (a
+  world with deadly drops sets it) also has its goal and patrol points
+  moved onto the navmesh (`_onto_nav`), and checks each step stays on
+  it (`_keep_on_ground`, one closest-point query a step), sliding along
+  the edge instead. Godot's path and closest-point queries cost in
+  proportion to the whole navmesh, not the distance (about 4 ms each on
+  the Dune Sea's 84,000 polygons, 1-2 ms on Ashfront's 25,000), so only
+  edge-guarded bots pay for `_onto_nav`, only a world with a small
+  navmesh may set "edge_guard", and every bot in the process shares
+  `PATHS_PER_TICK` new paths a physics tick (`_path_allowed`): one over
+  the budget asks again next tick and walks straight meanwhile. A bigger
+  map's navmesh should be baked as coarse as its ground allows.
   Only a few act on it, through `SquadBoard` claims (static, with an
   expiry, like the slots): `noise_lookers` go to look at one person's
   noise, `RING_HUNTERS` army bots may leave their ground to hunt one person
