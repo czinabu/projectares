@@ -1466,8 +1466,15 @@ built in this order, cheapest and most connected first:
    "(part two, built: the Sky Leviathan)" and "(part three, built: the rig
    rewards)").
 
-The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
-Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
+The Early Access launch is narrower (Caleb's call, 25 November 2026): the
+home base, the Concourse, Ashfront and Frostline, with Ashfront capped at 24
+players a copy and Frostline at 8, on official servers in one US region. It
+ships what is built for those places and holds back the player market, the
+rover, mech and jet, artifacts, the trophy shelf, the base lounge and squad
+base visits until each has a real purpose; the hub's arena door and race
+feed are shuttered. The Spore Marsh and the Pit come first after launch,
+then the Dune Sea, the Basalt Rift and Meridian. The full plan is in the
+pitch doc (https://claude.ai/artifact/GBtminDmWRUmERSaecvihH). When the Marsh
 goes in, artifacts mostly come from it; a carried artifact still drops as
 itself under Ashfront's scrip-pile rule, so they keep changing hands in
 the war.
