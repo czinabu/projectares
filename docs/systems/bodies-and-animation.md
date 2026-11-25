@@ -318,6 +318,21 @@ date in the same PR.
   "crown") is built in code: a cloak in two panels, the upper on the chest
   and the lower on the hips, and a banner, an engine with exhaust stacks or
   a crown. Plain pieces, merged as they hang.
+- A plain fighter wears a touch of its own, a skin's "gear"
+  (`ActorSkin._build_gear`), so a marksman or a runner reads apart from
+  the rifleman beside it: "hood" (a hood framing the face and a short
+  cape, in the army's colour, darkened: "legion_marksman"), "scarf" (a
+  scarf wound twice round the neck, tails flying: "tide_runner"), "nomad"
+  (a wrap round the crown, a gaiter over the mouth and nose, goggles on a
+  strap and a sash: the Dune Sea's "sand_raider", over light scrap plate
+  in "desert") and "duster" (the gaiter and goggles under a hood, a cape
+  and a long coat open at the front: "dune_marksman"). Rounded pieces
+  (spheres, rings, cones) fitted round the head's middle, about 0.1 above
+  the "Head" bone, hung on the head, chest and hips; `--plain-fighters-only`
+  in `visual_check` shoots them close. No world's fighter wears the players'
+  "raider" or the civilians' "scavenger". A Legion Marksman's rifle shows
+  a long scope (`Gun.attachments` set without `fit`, so its stats leave
+  the tuning alone). View only.
 - Frostline's automata ("sentinel", "colossus") are a body built in code
   round Stan's walking skeleton, its mesh hidden ("chassis": "android",
   `ActorSkin._build_android`, "heavy_chassis" for the colossus). The

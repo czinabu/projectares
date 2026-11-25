@@ -22,10 +22,10 @@ const MapScript := preload("map.gd")
 ## and the Dune Burrower under the sand (`BURROWER`, built for the map's
 ## "spawn_guard" markers of faction "burrower").
 const ROSTER := {
-	"grunt": {"name": "Sand Raider", "look": "scavenger", "chance": 6.0, "health": 115.0, "armor": 0.0,
+	"grunt": {"name": "Sand Raider", "look": "sand_raider", "chance": 6.0, "health": 115.0, "armor": 0.0,
 			"walk": 4.8, "sprint": 7.4, "weapon": "gun", "gun": "Worn Rifle", "damage": 28.0, "spread": 1.32,
 			"interval": 0.12},
-	"marksman": {"name": "Dune Marksman", "look": "raider", "chance": 2.0, "health": 115.0, "armor": 0.0,
+	"marksman": {"name": "Dune Marksman", "look": "dune_marksman", "chance": 2.0, "health": 115.0, "armor": 0.0,
 			"walk": 4.3, "sprint": 6.8, "weapon": "gun", "gun": "Long Rifle", "damage": 50.0, "spread": 0.35,
 			"interval": 0.75, "metas": {"sight": 70.0, "reach": 70.0, "range": 45.0, "burst": Vector2(0.12, 0.9)}},
 	"brute": {"name": "Scrap Brute", "look": "scrap_brute", "chance": 1.5, "health": 225.0, "armor": 0.0,

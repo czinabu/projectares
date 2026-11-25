@@ -4,6 +4,8 @@ extends RefCounted
 ## body of its own; Frostline's Ferals are beasts; robots are left only to
 ## Frostline's station automata, built in code with the weapon in the arm.
 ## Ashfront's two armies are told apart by uniform, never by skin tone.
+## The plain fighters have looks of their own too: a marksman or a runner
+## is not its army's rifleman, and the Dune Sea's raiders are desert nomads.
 
 const Human := preload("res://core/visual/human.gd")
 const SkinScript := preload("res://core/visual/actor_skin.gd")
@@ -18,6 +20,7 @@ static func run(t: Node) -> void:
 	t.add_child(holder)
 	_ashfront(t, holder)
 	_worlds(t, holder)
+	_plain(t, holder)
 	holder.queue_free()
 	await t.frames(1)
 
@@ -128,3 +131,48 @@ static func _worlds(t: Node, holder: Node3D) -> void:
 		looks[faction] = bot.get_meta("look", "")
 		bot.free()
 	t.check(looks == {"warden": "sentinel", "feral": "feral"}, "Frostline: Wardens are automata, Ferals beasts (%s)" % str(looks))
+
+
+## No world's fighter wears a player's or a civilian's clothes, and each
+## marksman and runner has a touch of its own ("gear").
+static func _plain(t: Node, holder: Node3D) -> void:
+	var generic := ["raider", "scavenger"]
+	var ash: Dictionary = Worlds.get_world("ashfront").get_script().get_script_constant_map()["ARMIES"]
+	var gear := {}
+	for army: String in ash:
+		for kind: String in ash[army]:
+			if not ash[army][kind] is Dictionary or not ash[army][kind].has("look"):
+				continue
+			var look: String = ash[army][kind]["look"]
+			t.check(not look in generic, "Ashfront's %s %s has its own look (%s)" % [army, kind, look])
+			if kind in ["marksman", "runner"]:
+				gear[look] = Look.SKINS[look].get("gear", "")
+	t.check(gear == {"legion_marksman": "hood", "tide_runner": "scarf"}, "a marksman wears a hood, a runner a scarf (%s)" % str(gear))
+	for id: String in ["dunes", "rift"]:
+		var roster: Dictionary = Worlds.get_world(id).get_script().get_script_constant_map()["ROSTER"]
+		for kind: String in roster:
+			t.check(not roster[kind]["look"] in generic, "the %s's %s has its own look (%s)" % [id, kind, roster[kind]["look"]])
+	var dunes: Dictionary = Worlds.get_world("dunes").get_script().get_script_constant_map()["ROSTER"]
+	var raider: Dictionary = Look.SKINS[dunes["grunt"]["look"]]
+	t.check(raider.get("gear", "") == "nomad" and raider.get("paint", "") == "desert"
+			and Look.SKINS[dunes["marksman"]["look"]].get("gear", "") == "duster",
+			"the Dune Sea's raiders are desert nomads, its marksmen in dusters")
+	var world := Worlds.get_world("ashfront")
+	var gun: Gun = null
+	for i in 300:
+		var bot := Actor.new()
+		bot.faction = "legion"
+		bot.set_meta("zone", 1)
+		holder.add_child(bot)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = i
+		world.equip_bot(bot, rng)
+		var marksman: bool = bot.get_meta("kind", "") == "marksman" and not bot.weapons.is_empty()
+		if marksman:
+			gun = bot.weapons[0] as Gun
+			t.check(gun != null and "optic_longscope" in gun.attachments and is_equal_approx(gun.ads_zoom, 1.0),
+					"a Legion Marksman's rifle carries a long scope, shown only")
+		bot.free()
+		if marksman:
+			return
+	t.check(false, "a Legion Marksman to look at")

@@ -128,6 +128,45 @@ const SKINS := {
 		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
 	},
+	# Plain fighters with touches of their own ("gear", `ActorSkin._build_gear`),
+	# so a marksman or a runner reads apart from the rifleman beside it. A
+	# Legion Marksman: the Legion's kit under a hood and mantle.
+	"legion_marksman": {
+		"people": {"m": ["Swat", "Spacesuit"], "f": ["Soldier", "SciFi"]},
+		"height": 1.8, "tint": Color(0.62, 0.68, 0.8), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.55, "brightness": 0.78, "metal": 0.0, "rough": 0.85,
+		"anims": HUMAN_ANIMS, "gear": "hood",
+	},
+	# A Tide Runner: the militia's clothes stripped light, a scarf flying.
+	"tide_runner": {
+		"people": {"m": ["Adventurer", "Punk"], "f": ["Adventurer", "Punk"]},
+		"height": 1.76, "tint": Color(0.86, 0.72, 0.6), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "gear": "scarf",
+	},
+	# The Dune Sea's raiders are desert nomads (Caleb's call): a Sand Raider
+	# in light scrap plate sanded to the desert, a wrap, a scarf mask and
+	# goggles; a Dune Marksman in a long duster and a hood.
+	"sand_raider": {
+		"people": {"m": ["Punk", "Casual_Hoodie", "Farmer"], "f": ["Punk", "Worker", "Medieval"]},
+		"height": 1.76, "tint": Color(0.88, 0.78, 0.66), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "light:scrap", "paint": "desert", "gear": "nomad",
+	},
+	"dune_marksman": {
+		"people": {"m": ["Adventurer", "Farmer"], "f": ["Adventurer", "Medieval"]},
+		"height": 1.78, "tint": Color(0.88, 0.78, 0.66), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "gear": "duster",
+	},
 	# Heavies and bosses are people too (Caleb's call): big fighters in
 	# full plate, each army's or world's own. A skin's own armor ("frame")
 	# names its weight and, after a colon, the frame look it is built in
