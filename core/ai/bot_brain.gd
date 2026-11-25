@@ -157,6 +157,14 @@ var _path_to := Vector3.ZERO
 var _nav_goal := Vector3.ZERO
 ## How near the walkable end of its path a walking bot stops (metres).
 const ARRIVE_STOP := 0.6
+## New paths asked for in one physics tick, by every bot in the process. A
+## path costs in proportion to the whole navigation mesh, not the path's
+## length (the Dune Sea's: about 4 ms each), so several in one tick were a
+## hitch; a bot over the budget asks again next tick and walks straight
+## meanwhile.
+const PATHS_PER_TICK := 2
+static var _path_tick := -1
+static var _paths_this_tick := 0
 var _has_path := false
 var _wait_left := 0.0
 var _seen_time := 0.0
@@ -1383,7 +1391,8 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 	if _repath_left <= 0.0:
 		var moved := dest.distance_to(_path_to)
 		var short := _nav.is_navigation_finished() and _flat_dist(dest) > 3.0
-		if not _has_path or short or moved > maxf(repath_distance, dir.length() * 0.15):
+		if (not _has_path or short or moved > maxf(repath_distance, dir.length() * 0.15)) \
+				and _path_allowed():
 			_has_path = true
 			_path_to = dest
 			_nav_goal = _onto_nav(dest)
@@ -1419,11 +1428,25 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 			_keep_on_ground(cmd, map_rid)
 
 
+## Takes one of this tick's new paths (`PATHS_PER_TICK`), or says none is left.
+func _path_allowed() -> bool:
+	var tick := Engine.get_physics_frames()
+	if tick != _path_tick:
+		_path_tick = tick
+		_paths_this_tick = 0
+	if _paths_this_tick >= PATHS_PER_TICK:
+		return false
+	_paths_this_tick += 1
+	return true
+
+
 ## `dest` moved onto the nearest walkable ground, once the navigation map is
-## ready; a flier's goal (it may be in the air) is left alone.
+## ready, for a bot that keeps off edges (`edge_guard`: the Rift's mesas).
+## Elsewhere the goal is left alone: the lookup costs as much as a path. A
+## flier's goal (it may be in the air) is left alone too.
 func _onto_nav(dest: Vector3) -> Vector3:
 	var map_rid := _nav.get_navigation_map()
-	if flies or NavigationServer3D.map_get_iteration_id(map_rid) <= 0:
+	if flies or not edge_guard or NavigationServer3D.map_get_iteration_id(map_rid) <= 0:
 		return dest
 	var on := NavigationServer3D.map_get_closest_point(map_rid, dest)
 	return dest if on == Vector3.ZERO else on
