@@ -82,8 +82,17 @@ date in the same PR.
   the knife slashes short in a forward grip and stabs for its heavy, the
   hammer is hauled over in both hands, the spear thrusts from the hip, and
   the katana keeps its kenjutsu cuts (kesa-giri, gyaku-kesa, shomen and a
-  tsuki, both hands on the handle; view only, so the katana keeps its
-  one-handed stats). `swing_scale` draws a small weapon's keys in toward
+  tsuki, both hands on the handle). The katana (the Arc Blade) is a
+  two-hander in play too (Caleb's call): tagged "two_handed", it walks at
+  the two-hand speed and its heavies stagger and break armor. It is the one
+  two-hander not carried across the body (`Look.is_carried`): it keeps its
+  ready hold, the hilt in front of the body's middle where the off hand
+  can close on it, and the off hand never leaves the hilt. With no handle
+  read off its shape, its off hand's place is a hand's width under the
+  table grip (`Look._melee_model`). The Marsh
+  Hookblade is a one-hander with a look of its own ("hookblade" tag, its
+  `Look.MELEE_MODELS` row): the plain sword with its point curled back over
+  the spine into a hook (`Look._hook_bits`), held and swung like a sword. `swing_scale` draws a small weapon's keys in toward
   the middle (`swing_centre`). A new melee weapon picks a style, or a new
   technique gets a table; `view_match_tests.gd` (`_check_techniques`)
   checks that every weapon's strikes are in view and its guards show their

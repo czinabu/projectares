@@ -169,7 +169,7 @@ func _ready() -> void:
 	# Melee. Every melee item is tagged "one_handed" or "two_handed": light
 	# one-handers move faster, two-handers slower but stagger and break armor
 	# (`MeleeWeapon`), and the hands hold it that way (`Look.is_two_handed`).
-	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "one_handed", "blade"],
+	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "two_handed", "blade"],
 			{"light_damage": 26.0, "heavy_damage": 66.0, "light_recover": 0.26, "parry_window": 0.26,
 			"swing_style": "cut", "ability": "counter_stance", "ability_windup": 0.8, "ability_recover": 0.2,
 			"ability_cooldown": 10.0, "ability_stamina": 15.0},
@@ -205,7 +205,7 @@ func _ready() -> void:
 			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, weaker up close, and a heavy thrust staggers.")
 	# The Spore Marsh's melee options (DESIGN.md "Spore Marsh"), crafted from
 	# its blueprints: sidegrades, never a higher Mk.
-	register("blade_hook", "Marsh Hookblade", Rarity.UNCOMMON, 600, ["weapon", "melee", "one_handed", "blade"],
+	register("blade_hook", "Marsh Hookblade", Rarity.UNCOMMON, 600, ["weapon", "melee", "one_handed", "blade", "hookblade"],
 			{"light_damage": 25.0, "heavy_damage": 56.0, "reach": 2.5, "light_windup": 0.12, "light_recover": 0.2,
 			"backstab_mult": 1.6, "backstab_arc_deg": 140.0, "swing_style": "slash",
 			"ability": "trip", "ability_windup": 0.35, "ability_recover": 0.4, "ability_radius": 2.6,
