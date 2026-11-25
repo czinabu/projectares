@@ -471,9 +471,22 @@ static func run(t: Node) -> void:
 			back_lean = maxf(back_lean, (skin as Node3D).transform.basis.y.z)
 		t.check(skin._run_out and skin._land_depth <= skin.run_out_squat + 0.001 and back_lean > 0.1,
 				"landing out of a glide at speed runs it out, leaning back (%.2f)" % back_lean)
+		# Braced in a skid: the lead foot planted out ahead along the travel,
+		# the trailing one under the body, not running.
+		var loco: Node = skin.locomotion
+		var bones: Skeleton3D = loco.skeleton
+		loco._skid_pose()
+		var ahead := -p.global_basis.z
+		var hips := bones.global_transform * bones.get_bone_global_pose(bones.find_bone("Hips")).origin
+		var lead := bones.global_transform * bones.get_bone_global_pose(bones.find_bone("Foot.L")).origin
+		var trail := bones.global_transform * bones.get_bone_global_pose(bones.find_bone("Foot.R")).origin
+		t.check(loco.skid_weight > 0.9 and (lead - hips).dot(ahead) > 0.3 and (lead - trail).dot(ahead) > 0.3,
+				"the run-out braces the legs in a skid, the lead foot out ahead (%.2f, %.2f m)"
+				% [(lead - hips).dot(ahead), (trail - hips).dot(ahead)])
 		p.velocity = Vector3.ZERO
 		await t.get_tree().create_timer(0.5).timeout
 		t.check(not skin._run_out, "stopped, the run-out is over")
+		t.check(skin.locomotion.skid_weight < 0.01, "and the legs come out of the skid")
 		t.check(absf(p.to_local(wing_tip.global_position).x) < 0.2, "the wings retract after gliding")
 		t.check((skin as Node3D).transform.basis.y.y > 0.99, "the body stands up again after gliding")
 

@@ -22,6 +22,9 @@ const MOVES := {
 	# (`as`: whose controls; `side`: the camera off the right hand).
 	"wings_soar_side": {"rig": "wings_glide", "lift": 20.0, "ticks": 300, "as": "wings_soar", "side": true},
 	"wings_glide_side": {"rig": "wings_glide", "lift": 9.0, "ticks": 330, "as": "wings_glide", "side": true},
+	# A jetpack cruise set down on the ground: it runs out on its feet,
+	# braced in a skid (the wings' run-out is in `wings_glide_side`).
+	"jetpack_land_side": {"rig": "jetpack_mk1", "lift": 0.0, "ticks": 300, "side": true},
 }
 
 
@@ -69,6 +72,8 @@ static func _fly(v: Node, out_dir: String, move: String) -> void:
 					p.height_above_ground(50.0), p.flight.heat, p.flight.is_skating, p.flight.is_soaring,
 					p.flight.is_boosting, p.flight.is_gliding])
 		p.cmd.aim_dir = -p.global_basis.z
+		if move == "jetpack_land_side" and tick == 138:
+			p.global_position.y -= p.height_above_ground(50.0) - 0.2
 		await v.get_tree().physics_frame
 		# The signal comes before the tick's step: wait the step out, or the
 		# next tick's controls would land on it and lose this one's presses.
@@ -102,6 +107,7 @@ static func _controls(cmd: ActorCommand, move: String, tick: int) -> void:
 	cmd.jump = false
 	cmd.sprint = false
 	cmd.secondary = false
+	cmd.slide = false
 	cmd.move = Vector2.ZERO
 	match move:
 		"jetpack_takeoff":
@@ -150,6 +156,15 @@ static func _controls(cmd: ActorCommand, move: String, tick: int) -> void:
 			cmd.sprint_pressed = tick == 45
 			if tick >= 120 and tick < 240:
 				cmd.move = Vector2(0, -0.6)
+		"jetpack_land_side":
+			# A hop and the rocket cruise, set down onto the ground while it
+			# still cruises (`_fly`), as a cruise skimming into a rise does.
+			cmd.jump_pressed = tick == 10
+			cmd.jump = tick >= 10 and tick < 30
+			cmd.sprint = tick >= 30 and tick < 140
+			cmd.sprint_pressed = tick == 30
+			if cmd.sprint:
+				cmd.move = Vector2(0, 1.0)
 		"wings_glide":
 			# Off a height: the fall, the glide held, a dive straight into
 			# the ground at speed (the run-out), then a step back.

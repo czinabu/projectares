@@ -19,6 +19,8 @@ date in the same PR.
   travel, so it slides the way the body moves); the shoulders, arms and
   head stay the stand's, so a weapon keeps its hold. A body without a
   slide clip is bent into a slide pose instead (`_slide_pose`).
+  A skid (`Locomotion.skid`, a flight landing's run-out) stands in for the
+  slide while it shows (`slide_shown`) and braces the legs on the feet.
   The crouch key (C) slides from a sprint and otherwise toggles the crouch
   (`PlayerController.crouch_key`), sent as the held `ActorCommand.crouch` so
   it predicts and every view sees it. `Actor.crouched` follows it but stays
