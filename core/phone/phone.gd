@@ -2209,7 +2209,28 @@ func _draw_game_updates() -> void:
 			box.add_child(_button("Get the new version", Updater.open_downloads))
 		"current", "failed", "idle":
 			box.add_child(_button("Check now", Updater.check))
+	if Updater.wants_token():
+		_draw_dev_token(box)
 	_body.add_child(card)
+
+
+## The dev build's token for its private updates (`Updater.set_dev_token`):
+## a read-only GitHub token kept on this computer only. Typed hidden, never
+## shown again once kept.
+func _draw_dev_token(box: VBoxContainer) -> void:
+	if Updater.has_token() and Updater.state != "token_refused":
+		box.add_child(_label("Dev updates use the GitHub token kept on this computer.", 13, DIM_INK))
+		box.add_child(_button("Forget the token", func() -> void: Updater.set_dev_token("")))
+		return
+	box.add_child(_label("Dev builds update privately from GitHub. Paste a read-only token "
+			+ "(fine-grained, this repository, Actions: read). It stays on this computer.", 13, DIM_INK))
+	var edit := LineEdit.new()
+	edit.name = "DevTokenEdit"
+	edit.secret = true
+	edit.placeholder_text = "GitHub token"
+	edit.text_submitted.connect(func(text: String) -> void: Updater.set_dev_token(text))
+	box.add_child(edit)
+	box.add_child(_button("Keep the token", func() -> void: Updater.set_dev_token(edit.text)))
 
 
 ## Each choice of the look as a row to scroll through: arrows, the mouse

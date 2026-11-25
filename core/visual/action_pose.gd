@@ -37,7 +37,7 @@ var ready_holds := {
 	# in front of the body's middle (as far right as the off hand can still
 	# close on it), the point forward and leaning in toward the middle of
 	# the view.
-	"katana": [Vector3(-0.34, -0.07, -0.12), Vector3(-0.38, 1.0, -0.35), "hilt", false],
+	"katana": [Vector3(-0.34, -0.03, -0.2), Vector3(-0.38, 1.0, -0.35), "hilt", false],
 	# A knife in a reverse grip: lying flat, the point out to the right and
 	# ahead, the pommel over the thumb, the empty hand up low as a guard.
 	"knife": [Vector3(-0.1, 0.18, -0.2), Vector3(0.85, -0.1, -0.5), "guard", true],

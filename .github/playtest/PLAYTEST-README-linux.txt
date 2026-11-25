@@ -6,8 +6,11 @@ VERGE - playtest build for Linux
    It needs Vulkan graphics drivers (Mesa on Intel and AMD, the NVIDIA
    driver on NVIDIA). Without Vulkan it falls back to OpenGL, which draws a
    plainer picture.
-   This build does not update itself yet: download the newest
-   ProjectAres-linux-*.tar.gz from the "latest" release to update.
+   It keeps itself up to date: at launch it checks for a newer build,
+   downloads it in the background and restarts into it (your phone tells
+   you when one is waiting). Keep the folder somewhere you can write to.
+   If you rename ProjectAres.x86_64, rename ProjectAres.pck to match.
+   Only a new Godot version needs a fresh download.
 2. On a laptop the game picks lighter graphics on its first launch. Change
    it on the phone (P): Settings, View tab, Graphics quality.
 3. Open your phone (P) and go to the Servers app. Pick your own player name

@@ -13,8 +13,21 @@ date in the same PR.
   presets have no tag and offer every world; CI exports them as workflow
   artifacts only (`ProjectAresDev-windows-<commit>`,
   `ProjectAresDev-linux-<commit>`).
-  Only the playtest build updates itself (`Updater`), so the dev build is
-  never swapped for the release. `--playtest` on the command line tries
+  Both update themselves (`Updater`), each only from its own channel
+  (`Updater.channel`: "release" for the playtest build, "dev" for any
+  other exported build), and a manifest of the other channel is refused
+  (`Updater.decide`), so the dev build is never swapped for the release,
+  nor the release for the dev build. Nothing of the dev build is public
+  (Caleb's call): it is never put on a release. Builds of main leave its
+  manifest and pack as workflow artifacts with fixed names
+  (`dev-update-manifest-<system>`, `dev-update-pack-<system>`,
+  `Updater.dev_artifact`), and a dev game fetches the newest one built
+  from main through the GitHub API with a read-only token its owner pastes
+  into the phone's Servers app (`Updater.set_dev_token`). The token stays
+  in `Updater.TOKEN_FILE` on that computer, never in the pack, the
+  settings or a bug snapshot, and is sent only to api.github.com: the
+  archive's redirect to GitHub's storage is followed without it. Its
+  downloads sit apart from the playtest build's (`Updater.DEV_DIR`). `--playtest` on the command line tries
   the playtest build from the editor. A world joins the list once it runs
   smoothly (the frame bench, `--world <id>`) and its core loop works;
   changing the list is Caleb's call. Never branch the code for a build:
@@ -23,10 +36,16 @@ date in the same PR.
   instead of this list; the dev builds never apply it.
 - The game updates itself (`core/update/updater.gd`, the `Updater`
   autoload, second after `Boot` and, like it, free of project classes). The
-  Windows client keeps its pack beside the exe (`embed_pck` off); the
-  release workflow stamps each build's number into `ares/build/number` and
-  publishes the pack and `update.json` (build, engine, size, SHA-256) on the
-  rolling "latest" release. An exported, stamped game reads it at launch,
+  Windows and Linux clients keep their pack beside the exe (`embed_pck`
+  off); the release workflow stamps each build's number into
+  `ares/build/number` and publishes each system's pack and manifest (build,
+  engine, platform, size, SHA-256) on the rolling "latest" release:
+  `ProjectAres.pck` and `update.json` for Windows, `ProjectAres-linux.pck`
+  and `update-linux.json` for Linux (`Updater.manifest_name`). A manifest
+  for another system is ignored, so a pack never crosses systems. Only the
+  pack is replaced, never the exe, so a renamed exe (its pack renamed to
+  match, found as the engine finds it, `Updater.pack_candidates`) and the
+  Linux executable bit survive an update. An exported, stamped game reads it at launch,
   downloads a newer pack to `user://updates`, checks it and swaps it in
   beside the exe (on Windows a batch script does it once the game has
   closed, since an open pack cannot be replaced; release builds refuse
