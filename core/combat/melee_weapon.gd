@@ -78,8 +78,10 @@ const SIDE_SWING_TO := -1.0
 const THRUST_COCKED := -1.35
 const THRUST_OUT := -1.6
 const CHOP_RAISED := 1.45
-## How long a landed strike holds the swing still (view only).
+## How long a landed strike holds the swing still (view only); a
+## two-hander's lands with `TWO_HAND_HITSTOP` times the pause, its weight.
 const HITSTOP := 0.06
+const TWO_HAND_HITSTOP := 1.8
 ## How long a strike met by a guard holds still, while the two blades meet
 ## at one point (`ActionPose.bind`; view only).
 const BIND_HOLD := 0.12
@@ -1392,7 +1394,7 @@ func _strike(amount: float, kind: String) -> void:
 ## the views answer now rather than after the server's word.
 func _contact(other: Actor, at: Vector3) -> void:
 	var outcome := guess_outcome(other)
-	_hitstop_left = HITSTOP if outcome == "hit" else BIND_HOLD
+	_hitstop_left = HITSTOP * (TWO_HAND_HITSTOP if is_two_handed() else 1.0) if outcome == "hit" else BIND_HOLD
 	if _air_lunge and _lunge_left > 0.0:
 		# Arrived: the lunge has done its job.
 		_lunge_left = minf(_lunge_left, 0.0001)
