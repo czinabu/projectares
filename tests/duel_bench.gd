@@ -7,6 +7,8 @@ extends Node
 ##
 ##   godot --headless --fixed-fps 60 --path . res://tests/duel_bench.tscn
 ##   ... -- --duels 40 --ranges 12,25 --only raider,warlord --world ashfront --seed 1
+##   (--world ashfront, frostline, marsh, dunes or rift; the Rift uses the
+##   Dune Sea's rows, since it fields the same roster)
 ##   ... -- --melee blade_scrap   (the melee bench: the reference fights with
 ##   that blade only, against each type; DESIGN.md "Melee bots")
 ##
@@ -48,12 +50,43 @@ const WORLD_TARGETS := {
 		"warden_head": {"kind": "warden", "faction": "warden", "zone": 2, "win": Vector2(0.8, 1.0), "role": "one post of the grid at the glacier head"},
 		"feral_mouth": {"kind": "feral", "faction": "feral", "zone": 0, "win": Vector2(0.9, 1.0), "role": "a stray from a small pack"},
 		"feral_head": {"kind": "feral", "faction": "feral", "zone": 2, "win": Vector2(0.85, 1.0), "role": "a stray from a big pack"},
+		# A "boss" row is built as its "spawn_boss" marker would build it.
+		"engine_sentinel": {"kind": "boss", "faction": "warden", "boss": "sentinel", "zone": 2, "win": Vector2(0.1, 0.35), "role": "a squad fight"},
+		"heart_warden": {"kind": "boss", "faction": "warden", "boss": "heart_warden", "zone": 2, "win": Vector2(0.05, 0.3), "role": "the Engine's last fight, a squad"},
+	},
+	# The bands below are proposed (the layout plan, 25 Nov), by role as on
+	# Ashfront: fodder 85-100%, standard 65-85%, tough 55-80%, a hive guard or
+	# elite 35-65%, a boss 5-35%. A pack's danger is read from `--group`.
+	"marsh": {
+		"stalker": {"kind": "stalker", "faction": "stalker", "zone": 1, "win": Vector2(0.85, 1.0), "role": "a stray from a pack"},
+		"bloater": {"kind": "bloater", "faction": "bloater", "zone": 1, "win": Vector2(0.85, 1.0), "role": "area denial, shoot it first"},
+		"broodling": {"kind": "broodling", "faction": "broodling", "zone": 1, "win": Vector2(0.95, 1.0), "role": "a keeper's swarm"},
+		"lurker": {"kind": "lurker", "faction": "lurker", "zone": 1, "win": Vector2(0.65, 0.85), "role": "an ambusher you can read"},
+		"shellback": {"kind": "shellback", "faction": "shellback", "zone": 1, "win": Vector2(0.55, 0.8), "role": "the tank"},
+		"keeper": {"kind": "keeper", "faction": "keeper", "zone": 1, "win": Vector2(0.35, 0.65), "role": "a hive guard"},
+		"matriarch": {"kind": "boss", "faction": "stalker", "boss": "matriarch", "zone": 2, "win": Vector2(0.1, 0.35), "role": "a squad fight"},
+		"rootmother": {"kind": "boss", "faction": "keeper", "boss": "rootmother", "zone": 2, "win": Vector2(0.1, 0.35), "role": "a squad fight"},
+		"elder": {"kind": "boss", "faction": "shellback", "boss": "elder", "zone": 2, "win": Vector2(0.05, 0.3), "role": "a squad fight"},
+		"drowned": {"kind": "boss", "faction": "lurker", "boss": "drowned", "zone": 2, "win": Vector2(0.05, 0.3), "role": "a squad fight"},
+	},
+	"dunes": {
+		"grunt_outer": {"kind": "grunt", "zone": 0, "win": Vector2(0.85, 0.97), "role": "fodder"},
+		"grunt_core": {"kind": "grunt", "zone": 2, "win": Vector2(0.65, 0.85), "role": "pressure, deadly in numbers"},
+		"marksman_outer": {"kind": "marksman", "zone": 0, "win": Vector2(0.85, 1.0), "role": "a long eye, easy up close"},
+		"marksman_core": {"kind": "marksman", "zone": 2, "win": Vector2(0.75, 1.0), "role": "a long eye, easy up close"},
+		"brute_outer": {"kind": "brute", "zone": 0, "win": Vector2(0.75, 0.95), "role": "parry practice"},
+		"brute_core": {"kind": "brute", "zone": 2, "win": Vector2(0.55, 0.8), "role": "punishes panic"},
+		"warlord": {"kind": "warlord", "zone": 2, "win": Vector2(0.1, 0.35), "role": "a squad fight"},
 	},
 }
+
 ## The rows a group fight (`--group`) runs, by world.
 const GROUP_TYPES := {
 	"ashfront": ["soldier_outer", "soldier_core"],
 	"frostline": ["feral_mouth", "feral_head", "warden_head"],
+	"marsh": ["stalker", "broodling"],
+	"dunes": ["grunt_outer", "grunt_core"],
+	"rift": ["grunt_outer", "grunt_core"],
 }
 ## Seconds before an unfinished duel counts as a draw.
 const TIME_LIMIT := 45.0
@@ -80,13 +113,15 @@ func _ready() -> void:
 	var only: PackedStringArray = _arg(args, "--only", "").split(",", false)
 	var seed_base := int(_arg(args, "--seed", "1"))
 	_world = Worlds.get_world(_arg(args, "--world", "ashfront"))
-	_targets = WORLD_TARGETS.get(_world.id, TARGETS)
+	# The Rift fields the Dune Sea's roster under its own names.
+	_targets = WORLD_TARGETS.get("dunes" if _world.id == "rift" else _world.id, TARGETS)
 	var blade := _arg(args, "--melee", "")
 	if blade != "":
 		_melee = true
 		_ref_kit.assign([blade, "frame_trooper", "medkit"])
 	var field := Field.new()
 	field.source = _world
+	field.gun_fouling = _world.gun_fouling
 	field.rows = duels
 	_raid = Raid.new()
 	add_child(_raid)
@@ -216,6 +251,11 @@ func _make_ref(at: Vector3, equip_seed: int) -> Actor:
 func _make_enemy(type: String, at: Vector3, equip_seed: int) -> Actor:
 	var def: Dictionary = _targets[type]
 	var bot: Actor
+	if def.has("boss"):
+		bot = _raid.spawn_bot("Foe%d" % equip_seed, at, equip_seed, true, def.faction, def.zone, [], def.boss)
+		_brain(bot, equip_seed, _world.bot_skill_range(bot, true), false)
+		_seed_guns(bot, equip_seed)
+		return bot
 	if def.has("faction"):
 		# Built as the faction's own marker would build it.
 		bot = _raid.spawn_bot("Foe%d" % equip_seed, at, equip_seed, false, def.faction, def.zone)

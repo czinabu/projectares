@@ -151,6 +151,20 @@ var _lost_time := 0.0
 var _think_left := 0.0
 var _repath_left := 0.0
 var _path_to := Vector3.ZERO
+## Where the path really ends: `_path_to` moved onto the walkable ground
+## (`_onto_nav`), so a goal over a drop (a patrol point past a mesa's edge)
+## is walked to the edge's nearest walkable point, not off it.
+var _nav_goal := Vector3.ZERO
+## How near the walkable end of its path a walking bot stops (metres).
+const ARRIVE_STOP := 0.6
+## New paths asked for in one physics tick, by every bot in the process. A
+## path costs in proportion to the whole navigation mesh, not the path's
+## length (the Dune Sea's: about 4 ms each), so several in one tick were a
+## hitch; a bot over the budget asks again next tick and walks straight
+## meanwhile.
+const PATHS_PER_TICK := 2
+static var _path_tick := -1
+static var _paths_this_tick := 0
 var _has_path := false
 var _wait_left := 0.0
 var _seen_time := 0.0
@@ -208,6 +222,14 @@ var lock_time := 0.0
 var tracker_range := 0.0
 var preys_on_cold := false
 var shuns_warmth := false
+## Checks each step stays on walkable ground (its world's meta "edge_guard":
+## the Rift's mesas over lava). A step that would leave the navmesh slides
+## along its edge instead.
+var edge_guard := false
+## How far ahead a guarded step looks, and how far off the navmesh counts
+## as stepping off.
+const EDGE_LOOK := 0.9
+const EDGE_OFF := 0.35
 ## Seconds a track stays fresh enough to follow, and how often a tracker
 ## looks at the ground.
 var track_fresh := 40.0
@@ -412,6 +434,7 @@ func _ready() -> void:
 	tracker_range = float(actor.get_meta("tracker", 0.0))
 	preys_on_cold = bool(actor.get_meta("preys_on_cold", false))
 	shuns_warmth = bool(actor.get_meta("shuns_warmth", false))
+	edge_guard = bool(actor.get_meta("edge_guard", false))
 	lies_low = bool(actor.get_meta("lies_low", false))
 	# How far past its ground a kind follows ("leash"): an ambusher that
 	# never leaves its pool.
@@ -1268,6 +1291,31 @@ func _dodge(cmd: ActorCommand, delta: float) -> void:
 		_unstick(cmd, delta)
 	else:
 		_climb_out(cmd, delta)
+		if edge_guard:
+			_keep_on_ground(cmd, _nav.get_navigation_map())
+
+
+## A guarded bot's step (`edge_guard`), the side-step out of a jam
+## included, that would leave the navmesh slides along its edge instead, or
+## stops if there is no way along.
+func _keep_on_ground(cmd: ActorCommand, map_rid: RID) -> void:
+	if cmd.move.length() < 0.05 or NavigationServer3D.map_get_iteration_id(map_rid) <= 0:
+		return
+	var dir := Basis(Vector3.UP, cmd.yaw) * Vector3(cmd.move.x, 0.0, -cmd.move.y)
+	dir.y = 0.0
+	dir = dir.normalized()
+	var ahead := actor.global_position + dir * EDGE_LOOK
+	var on := NavigationServer3D.map_get_closest_point(map_rid, ahead)
+	if Vector2(on.x - ahead.x, on.z - ahead.z).length() <= EDGE_OFF:
+		return
+	var slide := on - actor.global_position
+	slide.y = 0.0
+	if slide.length() < 0.3:
+		cmd.move = Vector2.ZERO
+		_side_left = 0.0
+		return
+	var local := Basis(Vector3.UP, cmd.yaw).inverse() * slide.normalized()
+	cmd.move = Vector2(local.x, -local.z)
 
 
 ## A bot on foot pressing on and getting nowhere (a crater's lip, a wall
@@ -1312,6 +1360,8 @@ func _patrol(cmd: ActorCommand, delta: float) -> void:
 	if not _has_dest:
 		var angle := _rng.randf_range(0, TAU)
 		_dest = _home + Vector3(cos(angle), 0, sin(angle)) * _rng.randf_range(5.0, patrol_radius)
+		# A point past a drop is walked to its edge: patrol to the edge.
+		_dest = _onto_nav(_dest)
 		_has_dest = true
 		_repath_left = 0.0
 	if _flat_dist(_dest) < 2.0:
@@ -1341,13 +1391,22 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 	if _repath_left <= 0.0:
 		var moved := dest.distance_to(_path_to)
 		var short := _nav.is_navigation_finished() and _flat_dist(dest) > 3.0
-		if not _has_path or short or moved > maxf(repath_distance, dir.length() * 0.15):
+		if (not _has_path or short or moved > maxf(repath_distance, dir.length() * 0.15)) \
+				and _path_allowed():
 			_has_path = true
 			_path_to = dest
-			_nav.target_position = dest
+			_nav_goal = _onto_nav(dest)
+			_nav.target_position = _nav_goal
 			_repath_left = 0.4
 	var map_rid := _nav.get_navigation_map()
 	if NavigationServer3D.map_get_iteration_id(map_rid) > 0:
+		if _has_path and not flies and _nav.is_navigation_finished():
+			# The path ran out: head for where it really ends (a goal on
+			# another mesa ends at this one's edge), and stop on arriving.
+			# Walking on at full pace overshoots, and at an edge that is a fall.
+			dir = _nav.get_final_position() - actor.global_position
+			if Vector2(dir.x, dir.z).length() < ARRIVE_STOP:
+				return
 		var next := _nav.get_next_path_position()
 		var step := next - actor.global_position
 		step.y = 0.0
@@ -1365,6 +1424,32 @@ func _move_toward(cmd: ActorCommand, dest: Vector3, delta: float, face_travel: b
 		_unstick(cmd, delta)
 	else:
 		_climb_out(cmd, delta)
+		if edge_guard:
+			_keep_on_ground(cmd, map_rid)
+
+
+## Takes one of this tick's new paths (`PATHS_PER_TICK`), or says none is left.
+func _path_allowed() -> bool:
+	var tick := Engine.get_physics_frames()
+	if tick != _path_tick:
+		_path_tick = tick
+		_paths_this_tick = 0
+	if _paths_this_tick >= PATHS_PER_TICK:
+		return false
+	_paths_this_tick += 1
+	return true
+
+
+## `dest` moved onto the nearest walkable ground, once the navigation map is
+## ready, for a bot that keeps off edges (`edge_guard`: the Rift's mesas).
+## Elsewhere the goal is left alone: the lookup costs as much as a path. A
+## flier's goal (it may be in the air) is left alone too.
+func _onto_nav(dest: Vector3) -> Vector3:
+	var map_rid := _nav.get_navigation_map()
+	if flies or not edge_guard or NavigationServer3D.map_get_iteration_id(map_rid) <= 0:
+		return dest
+	var on := NavigationServer3D.map_get_closest_point(map_rid, dest)
+	return dest if on == Vector3.ZERO else on
 
 
 ## A flier pushing against something it cannot walk over lifts off: a jump

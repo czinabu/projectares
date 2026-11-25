@@ -994,6 +994,41 @@ decide it.
 | Outer soldier | 93% | 95% | 84% | 86% |
 | Outer heavy | 70% (seed 1) | 81% | 83% (seed 1) | 87% |
 
+**The other worlds, first measurement (25 Nov, 30 duels a row, seed 1).**
+The duel bench now covers the Spore Marsh, the Dune Sea, the Basalt Rift
+(which fields the Dune Sea's roster, so it shares its rows) and Frostline's
+two bosses: `--world marsh|dunes|rift`. A boss row is built as its
+"spawn_boss" marker builds it. The bands are proposed (for Caleb to
+confirm), by role as on Ashfront: fodder 85-100%, standard 65-85%, tough
+55-80%, a hive guard 35-65%, a boss 5-35%. Nothing is tuned yet.
+
+| Enemy | 12 m | 25 m | Band | Verdict |
+| --- | --- | --- | --- | --- |
+| Marsh stalker | 97% | 100% | 85-100% | ok |
+| Bloater | 100% | 100% | 85-100% | ok |
+| Broodling | 100% | 87% | 95-100% | edge |
+| Lurker | 100% | 100% | 65-85% | too easy (the bench starts it standing, not lying low) |
+| Shellback | 93% | 90% | 55-80% | too easy |
+| Brood keeper | 43% | 50% | 35-65% | ok |
+| Grey Matriarch | 7% | 17% | 10-35% | edge |
+| Rootmother | 20% | 27% | 10-35% | ok |
+| Shellback Elder | 37% | 30% | 5-30% | edge |
+| Drowned Lurker | 17% | 40% | 5-30% | edge |
+| Dune/Rift grunt, outer | 100% | 100% | 85-97% | too easy |
+| Dune/Rift grunt, core | 100% | 100% | 65-85% | too easy (11 a hit, the pre-pass army number) |
+| Dune/Rift marksman | 97-100% | 90-100% | 75-100% | ok |
+| Dune/Rift brute, outer | 83% | 93% | 75-95% | ok |
+| Dune/Rift brute, core | 43% | 27% | 55-80% | too hard |
+| Wreck Baron / Lord of the Crown | 3-7% | 10% | 10-35% | too hard |
+| Engine Sentinel | 0% | 0% | 10-35% | too hard |
+| Heart Warden | 0% | 0% | 5-30% | too hard |
+
+Groups at 20 m (`--group 2,3,5`): Dune grunts lose every outer pair and
+win 17% of outer threes and 83% of outer fives, against Ashfront's
+outer pair at about a third; a Marsh stalker pack of five loses 70% of
+the time, so a pack is not yet the danger it is meant to be; broodlings
+win 37% of pairs and 77% of fives.
+
 ### Group fights (Caleb's call)
 
 One soldier is a fair fight; five that all open up at once is a wall of

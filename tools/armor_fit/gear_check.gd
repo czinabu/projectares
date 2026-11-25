@@ -105,6 +105,8 @@ func _bodies(raid: Raid, builds: Array) -> Dictionary:
 		if skin and build in builds and not out.has(build) and skin._def.get("frame", "") == "" \
 				and (actor == raid.player or skin._def.has("people")):
 			out[build] = actor
+			# Nothing (a shell landing near) ends it partway through.
+			actor.protected_left = 1.0e9
 			actor.cmd.yaw = actor.rotation.y
 			actor.cmd.pitch = 0.0
 			actor.cmd.aim_dir = -actor.global_basis.z
@@ -148,7 +150,7 @@ func _check(actor: Actor, kit: Array, label: String) -> int:
 				_clip._add(found, "%s/%s x %s/%s" % [a, near_a[1][h[2]], b, near_b[1][h[1]]], h[0])
 			for pair: String in found:
 				var f: Array = found[pair]
-				if "skin:held/" in pair or "armor:BracerModel/" in pair or _clip._arm(pair):
+				if "skin:held/" in pair or "armor:UpperArm" in pair or "armor:LowerArm" in pair or _clip._arm(pair):
 					arm_contacts += 1
 					if not show_arms:
 						continue
@@ -164,7 +166,8 @@ func _kind(group: String) -> String:
 
 ## The triangles of everything worn, in the actor's frame, by group:
 ## "skin" (the posed body, each triangle named by its bone), "armor:<piece>",
-## "rig:<part>", "stowed:<weapon>", "pack", "helmet".
+## "rig:<part>", "stowed:<weapon>", "pack", "helmet"; an armor piece on a
+## limb by its bone ("armor:LowerArm.L").
 func _groups(actor: Actor, skin: Node) -> Dictionary:
 	var to_actor := actor.global_transform.affine_inverse()
 	var out := {}
@@ -172,7 +175,10 @@ func _groups(actor: Actor, skin: Node) -> Dictionary:
 	out["skin"] = _skin(sk, to_actor)
 	for part: Variant in skin._frame_parts:
 		if is_instance_valid(part):
-			out["armor:" + str((part as Node).name)] = _meshes(part, to_actor)
+			# A limb piece by the bone it rides (an arm's is the stance's).
+			var attach := part as BoneAttachment3D
+			var piece := (attach.bone_name + ":" if attach != null else "") + str((part as Node).name)
+			out["armor:" + piece] = _meshes(part, to_actor)
 	for part: Variant in skin._rig_holders:
 		if is_instance_valid(part):
 			out["rig:" + str((part as Node).name)] = _meshes(part, to_actor)
