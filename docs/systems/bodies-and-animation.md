@@ -209,7 +209,28 @@ date in the same PR.
   gets room: `Locomotion.arm_clear` (meters, 0 bare; set by whoever
   dresses the body in a frame) swings each upper arm out so the elbow
   clears the plates and pouches by that much, before the weapon arm
-  reaches for its grip (`_clear_arms`). The cleft between the
+  reaches for its grip (`_clear_arms`). With a melee weapon out the arms
+  are kept out of the trunk and its armor through every swing (Caleb's
+  call: no arm through the armor in any swing, held naturally), in
+  `WeaponArm`: the skin teaches it the trunk's outline whenever what is
+  worn changes (`ActorSkin._teach_arm`, `WeaponArm.learn_trunk`: radii
+  round the chest bone, slice by slice, from the trunk's skin and every
+  piece hung off the arms, pulled in where the arms at rest lie). Before
+  each arm reaches (`_keep_clear`) the weapon hand rides the chest's lunge
+  (`_ride`: a step in leans the chest into where the hand was), a free off
+  hand rides its turn too (`_ride_off`), a hand in front is held out by
+  how far the armor stands off the chest (`_bulk`), and then a step a
+  frame toward the least that clears it: the elbow's pole turned, the hand
+  out, the shoulder forward round its collarbone (as anyone holding
+  something in both hands does), each eased back once not needed. Both
+  hands on a handle never move off it (the off arm could not follow).
+  Once both arms have reached, an elbow still inside is swung round its
+  shoulder-to-wrist line out of it (`_swivel_clear`), the wrist kept as it
+  was. Measure the real meshes with `--swing-clip-only` (every melee
+  weapon, frame and swing, frame by frame; the skin is read in the
+  skeleton's modified pose, inside `skeleton_updated`); compare with the
+  arms left alone through `--moves-only armor=frame_bulwark noclear`;
+  `tests/arm_clear_tests.gd` keeps it. The cleft between the
   glutes is filled most of the way out in the mesh (`_fill_cleft`, Caleb's
   call), so the armor is fitted to the filled body. A
   body is sized in its relaxed stand (`stand_legs`), never in an idle that

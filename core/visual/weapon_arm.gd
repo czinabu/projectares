@@ -221,6 +221,71 @@ var _wall_steps := 0
 ## The actor's shared pose: what both views show the weapon hand doing.
 var pose: ActionPose
 
+## Keeping the arms out of the body and the armor on it (Caleb's call: no
+## arm through the armor in any swing, held naturally; `--swing-clip-only`
+## measures the real meshes). The trunk is learned as an outline
+## (`learn_trunk`): in the chest bone's own frame, cut into `clear_band`
+## slices up it from `clear_low` to `clear_high`, each slice the furthest
+## the body or its armor reaches at `clear_bins` turns round it. An arm is
+## a few points down it, each as thick as `upper_radius`, `fore_radius` or
+## `hand_radius` plus a pad or bracer worn on it; one closer to the chest's
+## middle than the outline there is in it. With a melee weapon out, before
+## each arm reaches (`_keep_clear`) its hand rides the chest (`_ride`,
+## `_ride_off`) and is held out by the armor's thickness (`_bulk`), then
+## it takes a step a frame toward the least that clears it (`_clear_cost`):
+## the elbow's pole turned, the hand out, the shoulder forward round its
+## collarbone; once both have reached, an elbow still in is swung round
+## its shoulder-to-wrist line (`_swivel_clear`). All eased in and out
+## (`clear_turn_rate`, `clear_push_rate`, `clear_forth_rate`,
+## `clear_swivel_rate`), so nothing pops. `keep_clear` off leaves the arms
+## alone, to compare.
+var keep_clear := true
+var clear_bins := 24
+var clear_band := 0.06
+var clear_low := -0.62
+var clear_high := 0.3
+var upper_radius := 0.045
+var fore_radius := 0.045
+var hand_radius := 0.05
+var clear_turn_rate := 10.0
+var clear_push_rate := 1.6
+var clear_forth_rate := 3.0
+## The steps the arm is moved in, and how many there are at most: the
+## elbow's pole turned (radians either way), the hand out (m), the
+## shoulder forward round the collar bone (radians).
+var clear_turn_step := 0.2
+var clear_push_step := 0.05
+var clear_forth_step := 0.1
+const CLEAR_TURN_STEPS := 8
+const CLEAR_PUSH_STEPS := 6
+const CLEAR_FORTH_STEPS := 4
+## Steps taken a frame at most.
+const CLEAR_ROUNDS := 2
+const CLEAR_STEPS: Array[Vector3i] = [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0),
+		Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
+## The outline: `clear_bins` radii per slice, 0 where nothing reaches.
+var _trunk := PackedFloat32Array()
+var _chest := -1
+## What a worn pad and bracer add to the upper arm's and forearm's thickness.
+var _arm_extra := Vector2.ZERO
+## Per arm (weapon, off): the steps it is going toward and where it is
+## eased to (turn, out, forward), and how long the last pose step was.
+var _clear_want: Array[Vector3i] = [Vector3i.ZERO, Vector3i.ZERO]
+var _clear_now: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+var _clear_dt := 0.0
+var _clear_reach := 0.0
+## How far (m) the armor worn stands off the chest (`learn_trunk`).
+var _bulk := 0.0
+## Per arm: the elbow's swing round its shoulder-to-wrist line
+## (`_swivel_clear`), radians.
+var _swivel: Array[float] = [0.0, 0.0]
+var clear_swivel_step := 0.15
+var clear_swivel_max := 1.5
+var clear_swivel_rate := 25.0
+## Where the chest stands at the ready, for `_ride`.
+var _ride_base := Transform3D.IDENTITY
+var _ride_set := false
+
 
 ## `def` is the skin's entry in `Look.SKINS`. `fist_animation` is one where
 ## the weapon hand is closed around a handle; its finger pose is borrowed.
@@ -239,6 +304,8 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 		if skeleton.find_bone(bone) >= 0:
 			_spine.append(skeleton.find_bone(bone))
 	_neck = skeleton.find_bone(def.get("neck", ""))
+	var spine: Array = def.get("spine", [])
+	_chest = skeleton.find_bone(spine[-1]) if not spine.is_empty() else -1
 	for node: Node3D in [_target, _pole, _off_target, _off_pole]:
 		add_child(node)
 		node.top_level = true
@@ -251,6 +318,10 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 	gun_reach.name = "GunReach"
 	gun_reach.run = _reach_gun
 	skeleton.add_child(gun_reach)
+	var clear := Hook.new()
+	clear.name = "ClearReach"
+	clear.run = _keep_clear.bind(0)
+	skeleton.add_child(clear)
 	reach_ik = _two_bone("ArmReach", arm, _target, _pole)
 	var place := Hook.new()
 	place.name = "PlaceWeapon"
@@ -258,6 +329,10 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 	skeleton.add_child(place)
 	var off_arm: Array = def.get("off_arm", [])
 	if off_arm.size() == 3 and off_arm.all(func(bone: String) -> bool: return skeleton.find_bone(bone) >= 0):
+		var clear_off := Hook.new()
+		clear_off.name = "ClearOffReach"
+		clear_off.run = _keep_clear.bind(1)
+		skeleton.add_child(clear_off)
 		off_ik = _two_bone("OffArmReach", off_arm, _off_target, _off_pole)
 		_off_forearm = skeleton.find_bone(off_arm[1])
 		_off_wrist = skeleton.find_bone(off_arm[2])
@@ -270,6 +345,12 @@ func setup(def: Dictionary, fist_animation: Animation) -> void:
 		face.name = "WatchFace"
 		face.run = _face_watch
 		skeleton.add_child(face)
+	# Once both arms have reached: each elbow swung round its shoulder-to-
+	# wrist line out of the trunk, wherever the reach (or the clip) left it.
+	var swivel := Hook.new()
+	swivel.name = "ClearSwivel"
+	swivel.run = _swivel_clear
+	skeleton.add_child(swivel)
 	var grip := Hook.new()
 	grip.name = "Grip"
 	grip.run = _close_grip
@@ -454,6 +535,7 @@ func step(delta: float) -> void:
 	var shared := _pose()
 	shared.advance(delta)
 	_steady_dt += delta
+	_clear_dt = delta
 	_hip_dt += delta
 	var melee := actor.get_active_weapon() as MeleeWeapon
 	var holding := melee != null and melee.visual != null and not _let_go()
@@ -1403,3 +1485,418 @@ func hold_weapon() -> void:
 	# The same, kept from the actor, for a view that follows it the next
 	# frame after the actor has moved on (`ActionPose.sight_shown`).
 	actor.hand.set_meta("shown_local", actor.global_transform.affine_inverse() * actor.hand.global_transform)
+
+
+## Learns the trunk's outline (see `clear_bins`): the body's own skin on the
+## trunk's bones, and every worn piece in `parts` hung on a bone that is
+## not an arm's, taken as they sit at rest. `arm_extra` is how much thicker
+## a pad makes the upper arm and a bracer the forearm. Called by the skin
+## whenever what is worn changes.
+func learn_trunk(parts: Array, arm_extra := Vector2.ZERO) -> void:
+	_arm_extra = arm_extra
+	_trunk = PackedFloat32Array()
+	if skeleton == null or _chest < 0:
+		return
+	var slices := int(ceil((clear_high - clear_low) / clear_band))
+	_trunk.resize(slices * clear_bins)
+	_trunk.fill(0.0)
+	var chest_rest := skeleton.get_bone_global_rest(_chest).affine_inverse()
+	var to_skeleton := skeleton.global_transform.affine_inverse()
+	var trunk_bones := ["Chest", "Torso", "Abdomen", "Hips", "Neck"]
+	for node in skeleton.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.skin == null or mi.mesh == null or not String(mi.name) in ["PartBody", "PartLegs"]:
+			continue
+		var at := to_skeleton * mi.global_transform
+		var owners := {}
+		for i in mi.skin.get_bind_count():
+			var bone := skeleton.find_bone(mi.skin.get_bind_name(i)) if mi.skin.get_bind_name(i) != "" else mi.skin.get_bind_bone(i)
+			owners[i] = skeleton.get_bone_name(bone) if bone >= 0 else ""
+		for surface in mi.mesh.get_surface_count():
+			var arr := mi.mesh.surface_get_arrays(surface)
+			if arr[Mesh.ARRAY_BONES] == null:
+				continue
+			var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var bones: PackedInt32Array = arr[Mesh.ARRAY_BONES]
+			var weights: PackedFloat32Array = arr[Mesh.ARRAY_WEIGHTS]
+			var per := bones.size() / maxi(1, verts.size())
+			for k in verts.size():
+				var best := 0
+				for j in per:
+					if weights[k * per + j] > weights[k * per + best]:
+						best = j
+				if String(owners.get(bones[k * per + best], "")) in trunk_bones:
+					_widen(chest_rest * (at * verts[k]))
+	var bare := _trunk.duplicate()
+	for part: Variant in parts:
+		if not is_instance_valid(part) or not part is BoneAttachment3D:
+			continue
+		var bone := skeleton.find_bone((part as BoneAttachment3D).bone_name)
+		if bone < 0 or _is_arm_bone(skeleton.get_bone_name(bone)):
+			continue
+		# Where the piece sits on its bone, carried to that bone at rest.
+		var onto := chest_rest * skeleton.get_bone_global_rest(bone) * (part as Node3D).global_transform.affine_inverse()
+		for node in (part as Node).find_children("*", "MeshInstance3D", true, false):
+			var mi := node as MeshInstance3D
+			if mi.mesh == null or not mi.is_inside_tree():
+				continue
+			var at := onto * mi.global_transform
+			for surface in mi.mesh.get_surface_count():
+				for v: Vector3 in mi.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]:
+					_widen(at * v)
+	# How much the armor stands off the body round the chest, on average
+	# where it covers it: the hands are held that much further out.
+	var added := 0.0
+	var covered := 0
+	for i in _trunk.size():
+		var slice := clear_low + (i / clear_bins + 0.5) * clear_band
+		if slice > -0.3 and slice < 0.1 and bare[i] > 0.0 and _trunk[i] > bare[i]:
+			added += _trunk[i] - bare[i]
+			covered += 1
+	_bulk = added / covered / _unit() if covered > 0 else 0.0
+	# Round the shoulders the arms at rest are clear: what the outline took
+	# in from a shoulder's own bulk (an armpit, a collar's edge) is no
+	# body for the arm beside it to keep out of.
+	var unit := _unit()
+	for bones: Array in [[_upper, _forearm, _wrist], [_off_upper, _off_forearm, _off_wrist]]:
+		if bones.has(-1):
+			continue
+		var at: Array[Vector3] = []
+		for b: int in bones:
+			at.append(chest_rest * skeleton.get_bone_global_rest(b).origin)
+		for t: float in [0.4, 0.55, 0.7, 0.85, 1.0]:
+			_carve(at[0].lerp(at[1], t), (upper_radius + _arm_extra.x) * unit)
+		for t: float in [0.35, 0.7, 1.0]:
+			_carve(at[1].lerp(at[2], t), (fore_radius + _arm_extra.y) * unit)
+
+
+## Pulls the outline in so `at` (the chest's rest frame), `radius` thick,
+## is just clear of it.
+func _carve(at: Vector3, radius: float) -> void:
+	var slice := int(floor((at.y - clear_low) / clear_band))
+	if slice < 0 or slice * clear_bins >= _trunk.size():
+		return
+	var b := _bin(at)
+	var room := maxf(Vector2(at.x, at.z).length() - radius - 0.002, 0.0)
+	for k in [-1, 0, 1]:
+		var i := slice * clear_bins + posmod(b + k, clear_bins)
+		_trunk[i] = minf(_trunk[i], room)
+
+
+func _is_arm_bone(bone: String) -> bool:
+	for arm: String in ["Shoulder", "UpperArm", "LowerArm", "Wrist", "Thumb", "Index", "Middle", "Ring", "Pinky"]:
+		if bone.begins_with(arm):
+			return true
+	return false
+
+
+## Takes a point (the chest's rest frame) into the outline.
+func _widen(at: Vector3) -> void:
+	var slice := int(floor((at.y - clear_low) / clear_band))
+	if slice < 0 or slice * clear_bins >= _trunk.size():
+		return
+	var i := slice * clear_bins + _bin(at)
+	_trunk[i] = maxf(_trunk[i], Vector2(at.x, at.z).length())
+
+
+func _bin(at: Vector3) -> int:
+	return posmod(int(floor((atan2(at.z, at.x) + PI) / TAU * clear_bins)), clear_bins)
+
+
+## How far `at` (the skeleton's space) is inside the trunk's outline, with
+## `radius` of its own; 0 or less is clear.
+func _depth(at: Vector3, radius: float, chest: Transform3D) -> float:
+	var c := chest * at
+	var slice := int(floor((c.y - clear_low) / clear_band))
+	if slice < 0 or slice * clear_bins >= _trunk.size():
+		return 0.0
+	var b := _bin(c)
+	var reach := 0.0
+	for k in [-1, 0, 1]:
+		reach = maxf(reach, _trunk[slice * clear_bins + posmod(b + k, clear_bins)])
+	if reach <= 0.0:
+		return 0.0
+	return reach + radius - Vector2(c.x, c.z).length()
+
+
+## The deepest any point down the arm goes into the trunk, with the elbow
+## where a two-bone reach from `shoulder` to `hand` bent toward `pole` puts
+## it. The top of the upper arm is in the shoulder, so it starts halfway.
+func _arm_depth(shoulder: Vector3, hand: Vector3, pole: Vector3, upper: float, fore: float, chest: Transform3D) -> float:
+	var elbow := _elbow(shoulder, hand, pole, upper, fore)
+	var worst := -INF
+	var unit := _unit()
+	for t: float in [0.75, 1.0]:
+		worst = maxf(worst, _depth(shoulder.lerp(elbow, t), (upper_radius + _arm_extra.x) * unit, chest))
+	for t: float in [0.35, 0.7]:
+		worst = maxf(worst, _depth(elbow.lerp(hand, t), (fore_radius + _arm_extra.y) * unit, chest))
+	worst = maxf(worst, _depth(hand, hand_radius * unit, chest))
+	return worst
+
+
+## The deepest any point of an arm posed shoulder, elbow, wrist goes in.
+func _posed_depth(shoulder: Vector3, elbow: Vector3, hand: Vector3, chest: Transform3D) -> float:
+	var worst := -INF
+	var unit := _unit()
+	for t: float in [0.75, 1.0]:
+		worst = maxf(worst, _depth(shoulder.lerp(elbow, t), (upper_radius + _arm_extra.x) * unit, chest))
+	for t: float in [0.35, 0.7]:
+		worst = maxf(worst, _depth(elbow.lerp(hand, t), (fore_radius + _arm_extra.y) * unit, chest))
+	return worst
+
+
+## After both arms have reached (`_keep_clear` steers them as they do, from
+## where it reckons they will be): any arm still in the trunk has its elbow
+## swung round the line from its shoulder to its wrist, the fewest degrees
+## that clear it (`clear_swivel_step` at a time, to `clear_swivel_max`),
+## eased (`clear_swivel_rate`, quick: the arm can sweep into the trunk in a
+## few frames). The wrist keeps its place and its turn, so
+## the weapon stays where it was put and the hand where it holds.
+func _swivel_clear() -> void:
+	var dt := maxf(_clear_dt, 1.0 / 240.0)
+	var on := keep_clear and not _trunk.is_empty() and _chest >= 0 and actor != null \
+			and actor.get_active_weapon() is MeleeWeapon and not actor.is_dead
+	var chest := skeleton.get_bone_global_pose(_chest).affine_inverse() if on else Transform3D.IDENTITY
+	for which in 2:
+		var upper := _upper if which == 0 else _off_upper
+		var fore := _forearm if which == 0 else _off_forearm
+		var wrist := _wrist if which == 0 else _off_wrist
+		var want := 0.0
+		if on and upper >= 0 and fore >= 0 and wrist >= 0:
+			var s := skeleton.get_bone_global_pose(upper).origin
+			var e := skeleton.get_bone_global_pose(fore).origin
+			var w := skeleton.get_bone_global_pose(wrist).origin
+			var line := (w - s).normalized() if w.distance_to(s) > 0.001 else Vector3.DOWN
+			var now: float = _swivel[which]
+			var turned := s + (e - s).rotated(line, now)
+			want = now
+			var here := _posed_depth(s, turned, w, chest)
+			if here > 0.0:
+				# The nearest turn from where it is that clears it, the way
+				# it turned last first, as far as it can swing in a frame;
+				# else the clearest of those.
+				var side := signf(now) if now != 0.0 else 1.0
+				var best := here
+				var reach := mini(ceili(clear_swivel_rate * dt / clear_swivel_step), 10)
+				for k in range(1, reach + 1):
+					var found := false
+					for sign: float in [side, -side]:
+						var turn := clampf(now + sign * k * clear_swivel_step, -clear_swivel_max, clear_swivel_max)
+						var depth := _posed_depth(s, s + (e - s).rotated(line, turn), w, chest)
+						if depth < best:
+							best = depth
+							want = turn
+						if depth <= 0.0:
+							found = true
+							break
+					if found:
+						break
+			elif now != 0.0:
+				# Clear: back toward none a step at a time while it stays so.
+				var back := move_toward(now, 0.0, clear_swivel_step)
+				if _posed_depth(s, s + (e - s).rotated(line, back), w, chest) <= 0.0:
+					want = back
+		var eased := move_toward(_swivel[which], want, clear_swivel_rate * dt)
+		_swivel[which] = eased
+		if absf(eased) < 0.0001 or upper < 0 or wrist < 0:
+			continue
+		var s := skeleton.get_bone_global_pose(upper).origin
+		var keep := skeleton.get_bone_global_pose(wrist)
+		var line := (keep.origin - s).normalized() if keep.origin.distance_to(s) > 0.001 else Vector3.DOWN
+		var turn := Basis(line, eased)
+		var arm := skeleton.get_bone_global_pose(upper)
+		skeleton.set_bone_global_pose(upper, Transform3D(turn * arm.basis, arm.origin))
+		skeleton.set_bone_global_pose(wrist, keep)
+
+
+static func _elbow(shoulder: Vector3, hand: Vector3, pole: Vector3, upper: float, fore: float) -> Vector3:
+	var line := hand - shoulder
+	var d := clampf(line.length(), 0.001, upper + fore - 0.001)
+	var n := line.normalized() if line.length() > 0.0001 else Vector3.DOWN
+	var along := (upper * upper - fore * fore + d * d) / (2.0 * d)
+	var out := sqrt(maxf(upper * upper - along * along, 0.0))
+	var bend := (pole - shoulder) - n * n.dot(pole - shoulder)
+	bend = bend.normalized() if bend.length() > 0.0001 else n.cross(Vector3.RIGHT).normalized()
+	return shoulder + n * along + bend * out
+
+
+## Before arm `which` (0 the weapon arm, 1 the off arm) reaches: steers its
+## elbow, and if need be its hand, out of the trunk (see `clear_bins`).
+func _keep_clear(which: int) -> void:
+	var ik := reach_ik if which == 0 else off_ik
+	var target := _target if which == 0 else _off_target
+	var pole_node := _pole if which == 0 else _off_pole
+	var upper := _upper if which == 0 else _off_upper
+	var fore := _forearm if which == 0 else _off_forearm
+	var wrist := _wrist if which == 0 else _off_wrist
+	var collar := skeleton.get_bone_parent(upper) if skeleton != null and upper >= 0 else -1
+	var on := keep_clear and ik != null and not _trunk.is_empty() and upper >= 0 and fore >= 0 and wrist >= 0 \
+			and collar >= 0 and actor != null and actor.get_active_weapon() is MeleeWeapon and not actor.is_dead
+	var want: Vector3i = _clear_want[which]
+	if not on:
+		want = Vector3i.ZERO
+	var held := ik.influence if ik != null else 0.0
+	var dt := maxf(_clear_dt, 1.0 / 240.0)
+	var to_skeleton := skeleton.global_transform.affine_inverse()
+	var shoulder := Vector3.ZERO
+	var hand := Vector3.ZERO
+	var pole := Vector3.ZERO
+	var out := Vector3.ZERO
+	var up := Vector3.UP
+	var forth := 0.0
+	# This frame's placing of the weapon put the off hand on its handle.
+	var on_handle := which == 1 and _off_spot != Vector3.INF and maxf(_off_weight, _hilt) > 0.05
+	var unit := _unit()
+	if on:
+		shoulder = skeleton.get_bone_global_pose(upper).origin
+		# Where the arm will be: the clip's arm, taken toward the reach as
+		# far as the reach holds it (an arm the clip alone moves, the off
+		# arm beside a one-handed weapon, is kept clear the same way).
+		var clip_elbow := skeleton.get_bone_global_pose(fore).origin
+		var clip_hand := skeleton.get_bone_global_pose(wrist).origin
+		var bent := clip_elbow - Geometry3D.get_closest_point_to_segment_uncapped(clip_elbow, shoulder, clip_hand)
+		var clip_pole := clip_elbow + bent.normalized() * 0.3 if bent.length() > 0.001 else to_skeleton * pole_node.global_position
+		var reach_to := to_skeleton * target.global_position
+		# (Not a weapon in both hands: its head's path is the cut, and a
+		# heavy head carried along the lunge would lead flat on.)
+		var two_hands: bool = look != null and look.is_two_handed(actor.get_active_weapon())
+		if which == 0 and not two_hands:
+			reach_to += _ride(held)
+		elif which == 0:
+			_ride(0.0)
+		elif not on_handle:
+			reach_to = _ride_off(reach_to, held)
+		hand = clip_hand.lerp(reach_to, held)
+		# Armor stands off the chest: a hand in front of it is held out as
+		# much further (not a weapon in both hands: the off hand could not
+		# follow it).
+		var chest_now := skeleton.get_bone_global_pose(_chest)
+		var flat := chest_now.affine_inverse() * hand
+		var from_middle := chest_now.basis * Vector3(flat.x, 0.0, flat.z)
+		var both: bool = look != null and look.is_two_handed(actor.get_active_weapon())
+		if not both and _bulk > 0.0 and from_middle.length() > 0.0001:
+			hand += from_middle.normalized() * _bulk * unit * held
+		pole = clip_pole.lerp(to_skeleton * pole_node.global_position, held)
+		var upper_len := clip_elbow.distance_to(shoulder)
+		var fore_len := clip_hand.distance_to(clip_elbow)
+		var chest_pose := skeleton.get_bone_global_pose(_chest)
+		var chest := chest_pose.affine_inverse()
+		_clear_reach = (upper_len + fore_len) * 0.97
+		# Out of the trunk for a hand: ahead of the chest (which leans and
+		# turns through a swing) and away from its middle.
+		var ahead := (chest_pose.basis * skeleton.get_bone_global_rest(_chest).basis.inverse() \
+				* (to_skeleton.basis * -actor.global_basis.z)).normalized()
+		var c := chest * hand
+		var away := chest_pose.basis * Vector3(c.x, 0.0, c.z)
+		out = (ahead + (away.normalized() if away.length() > 0.0001 else ahead)).normalized()
+		# The shoulder comes forward round the collar bone (the body's up).
+		up = (to_skeleton.basis * actor.global_basis.y).normalized()
+		var root := skeleton.get_bone_global_pose(collar).origin
+		forth = signf(up.cross(shoulder - root).dot(ahead))
+		# Both hands on the handle stay where they hold it (the off hand
+		# could not follow the weapon hand further out); a free off hand
+		# moves out only a little.
+		var pushes := 0 if on_handle else (CLEAR_PUSH_STEPS if which == 0 else CLEAR_PUSH_STEPS / 2)
+		if which == 0 and both:
+			pushes = 0
+		# Both hands on a handle round the shoulders further forward.
+		var forths := CLEAR_FORTH_STEPS * 3 / 2 if both else CLEAR_FORTH_STEPS
+		# A step a frame toward the least that clears it (`_clear_cost`):
+		# the elbow turned, the hand moved out, the shoulder brought forward,
+		# each eased back off once it is not needed.
+		var args := [shoulder, root, hand, pole, out, up, forth, upper_len, fore_len, chest]
+		var best := _clear_cost(want, args)
+		for round in CLEAR_ROUNDS:
+			if best <= _clear_quiet(want) and want == Vector3i.ZERO:
+				break
+			var from_want := want
+			for step: Vector3i in CLEAR_STEPS:
+				var next := from_want + step
+				if absi(next.x) > CLEAR_TURN_STEPS or next.y < 0 or next.y > pushes or next.z < 0 or next.z > forths:
+					continue
+				var cost := _clear_cost(next, args)
+				if cost < best - 0.0001:
+					best = cost
+					want = next
+			if want == from_want:
+				break
+		_clear_want[which] = want
+	var eased: Vector3 = _clear_now[which]
+	var goal := Vector3(want.x * clear_turn_step, want.y * clear_push_step, want.z * clear_forth_step)
+	eased = Vector3(move_toward(eased.x, goal.x, clear_turn_rate * dt), move_toward(eased.y, goal.y, clear_push_rate * dt),
+			move_toward(eased.z, goal.z, clear_forth_rate * dt))
+	_clear_now[which] = eased
+	if not on or eased.is_zero_approx():
+		return
+	# The reach takes the whole arm over, from where it would have been.
+	if eased.z > 0.0:
+		var collar_pose := skeleton.get_bone_global_pose(collar)
+		var turn := Basis(up, forth * eased.z)
+		skeleton.set_bone_global_pose(collar, Transform3D(turn * collar_pose.basis, collar_pose.origin))
+		shoulder = collar_pose.origin + turn * (shoulder - collar_pose.origin)
+	var to_hand: Vector3 = hand + out * eased.y * unit
+	if to_hand.distance_to(shoulder) > _clear_reach:
+		to_hand = shoulder + (to_hand - shoulder).normalized() * _clear_reach
+	var line := (to_hand - shoulder).normalized() if to_hand.distance_to(shoulder) > 0.0001 else Vector3.DOWN
+	var from := skeleton.global_transform
+	pole_node.global_position = from * (shoulder + (pole - shoulder).rotated(line, eased.x))
+	if not on_handle:
+		target.global_position = from * to_hand
+	ik.influence = 1.0
+
+
+## What arm pose `want` (steps of pole turn, hand out, shoulder forward)
+## costs: mostly how deep it is in the trunk, then how far it is from the
+## arm as it was asked for, so it eases back once it is clear.
+func _clear_cost(want: Vector3i, args: Array) -> float:
+	var shoulder: Vector3 = args[0]
+	var root: Vector3 = args[1]
+	var hand: Vector3 = args[2]
+	var pole: Vector3 = args[3]
+	var unit := _unit()
+	if want.z > 0:
+		shoulder = root + (shoulder - root).rotated(args[5], float(args[6]) * want.z * clear_forth_step)
+	var to: Vector3 = hand + (args[4] as Vector3) * want.y * clear_push_step * unit
+	if to.distance_to(shoulder) > _clear_reach:
+		to = shoulder + (to - shoulder).normalized() * _clear_reach
+	var line := (to - shoulder).normalized() if to.distance_to(shoulder) > 0.0001 else Vector3.DOWN
+	var turned := shoulder + (pole - shoulder).rotated(line, want.x * clear_turn_step)
+	var depth := _arm_depth(shoulder, to, turned, args[7], args[8], args[9]) / unit
+	return maxf(depth, 0.0) * 10.0 + _clear_quiet(want)
+
+
+## What `want` costs for moving the arm at all.
+func _clear_quiet(want: Vector3i) -> float:
+	return absi(want.x) * clear_turn_step * 0.01 + want.y * clear_push_step * 0.1 + want.z * clear_forth_step * 0.02
+
+
+## How far (the skeleton's space) the chest has gone from where it stands
+## at the ready: a step in drops the hips and leans the chest into the cut
+## (`Locomotion._sink`), and a hand reached for in the actor's frame would
+## be left behind in it. The weapon hand rides it while it reaches.
+func _ride(held: float) -> Vector3:
+	var now := skeleton.get_bone_global_pose(_chest)
+	var dt := maxf(_clear_dt, 1.0 / 240.0)
+	var ready := _weight <= 0.05 and absf(_pose().footwork) < 0.01
+	if not _ride_set:
+		_ride_base = now
+		_ride_set = true
+	elif ready:
+		_ride_base = _ride_base.interpolate_with(now, 1.0 - exp(-8.0 * dt))
+	return (now.origin - _ride_base.origin) * held
+
+
+## A free off hand (its guard) rides the chest whole, turn and all, from
+## the weapon hand's reckoning this frame: `at` carried with it.
+func _ride_off(at: Vector3, held: float) -> Vector3:
+	if not _ride_set:
+		return at
+	var moved := skeleton.get_bone_global_pose(_chest) * _ride_base.affine_inverse()
+	return at.lerp(moved * at, held)
+
+
+## Metres in the skeleton's own space (the model is scaled to the body).
+func _unit() -> float:
+	var scale := skeleton.global_basis.get_scale().y if skeleton != null else 1.0
+	return 1.0 / scale if scale > 0.0001 else 1.0
+

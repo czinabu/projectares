@@ -16,18 +16,23 @@ extends RefCounted
 ## ability, seen from higher up, with bots stood where it needs them: three
 ## round a hammer's pound, one in front of the rest (guarding against an
 ## axe's hook, swinging into a sword's counter stance), none for a vault.
+## `armor=frame_bulwark` wears another frame; `noclear` leaves the arms to
+## go through it (`WeaponArm.keep_clear`), to compare.
 static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 	var names: PackedStringArray = []
 	var frames := args.has("frames")
 	var weapon := "blade_scrap"
+	var armor := "frame_trooper"
 	for arg in args:
 		if arg.begins_with("only="):
 			names = arg.substr(5).split(",")
 		elif arg.begins_with("weapon="):
 			weapon = arg.substr(7)
+		elif arg.begins_with("armor="):
+			armor = arg.substr(6)
 	var raid := Raid.new()
 	v.add_child(raid)
-	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", weapon, "frame_trooper"])
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", weapon, armor])
 	v._armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
@@ -41,6 +46,10 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 			blade = p.weapons[i]
 			p._draw_weapon(i)
 	await v._settle(40)
+	# `noclear`: the arms left to go through the armor, to compare.
+	var skin := p.get_node_or_null("Skin")
+	if args.has("noclear") and skin != null and skin.arm != null:
+		skin.arm.keep_clear = false
 	# A flat floor high above the map, nothing to run into.
 	var floor := StaticBody3D.new()
 	var shape := CollisionShape3D.new()
