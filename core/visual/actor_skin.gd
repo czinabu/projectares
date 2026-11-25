@@ -4279,6 +4279,8 @@ func _update_glide(delta: float) -> void:
 			# A running jump leans into it, and rights itself for the landing.
 			tilt = dir * leap_lean * clampf(speed / leap_lean_speed, 0.0, 1.0) * (1.0 - _air_fall)
 	_run_out = _run_out and alive and speed > run_out_speed * 0.5 and actor.is_on_floor()
+	if locomotion != null:
+		locomotion.skid = _run_out
 	# The actor turns with the view, and this model is its child. While the
 	# body is laid out in flight, a look round must not drag it round with
 	# the camera and then let it swing back: undo the view's turn first, so

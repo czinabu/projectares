@@ -159,6 +159,22 @@ var slide_lead_thigh := Vector3(0.05, -0.45, -0.9)
 var slide_lead_shin := Vector3(0.0, -0.3, -0.95)
 var slide_trail_thigh := Vector3(-0.1, -0.85, -0.5)
 var slide_trail_shin := Vector3(0.0, -0.4, 0.9)
+## A skid on the feet (`skid`, the run-out of a fast flight landing, set
+## by `ActorSkin`): the hips sink `skid_drop` m, the lead leg is braced out
+## ahead nearly straight, the trailing leg bends under the body, and the
+## feet stay planted instead of running. It stands in for the slide while
+## it shows. Directions are along the travel, as for the slide.
+var skid := false
+var skid_weight := 0.0
+var skid_rate := 9.0
+var skid_drop := 0.2
+var skid_lead_thigh := Vector3(-0.04, -0.62, -0.78)
+var skid_lead_shin := Vector3(0.0, -0.86, -0.51)
+var skid_trail_thigh := Vector3(0.06, -0.98, 0.05)
+var skid_trail_shin := Vector3(0.0, -0.55, 0.84)
+## The back straightens up out of the run against the skid, by this many
+## radians at the base of the spine.
+var skid_spine_lean := 0.35
 
 ## Riding a vehicle the body sits on it: hips on the seat, leaning forward,
 ## hands on the grips and feet on the pegs (the vehicle's `seat_point`,
@@ -465,6 +481,12 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	land.name = "SquatPose"
 	land.run = _squat_pose
 	skeleton.add_child(land)
+	# After the squat, whose legs reach for planted feet: a skid's feet go
+	# where its legs point.
+	var skidding := WeaponArm.Hook.new()
+	skidding.name = "SkidPose"
+	skidding.run = _skid_pose
+	skeleton.add_child(skidding)
 	var seated := WeaponArm.Hook.new()
 	seated.name = "RidePose"
 	seated.run = _ride_pose
@@ -674,6 +696,7 @@ func update(delta: float) -> void:
 	if _air_anim and _air_anim.length > 0.0:
 		_air_time = fposmod(_air_time + delta, _air_anim.length) if air_legs_weight > 0.0 else 0.0
 	shiver = move_toward(shiver, 1.0 if actor.shivering and not actor.is_dead else 0.0, shiver_ease * delta)
+	skid_weight = move_toward(skid_weight, 1.0 if skid and not actor.is_dead else 0.0, skid_rate * delta)
 	_update_look(delta)
 	_shiver_time += delta
 	_update_wind(delta)
@@ -805,7 +828,7 @@ func slide_weight() -> float:
 ## Lays the slide's clips over the hips, legs and spine,
 ## before the legs turn to travel, so the slide goes the way the body moves.
 func _slide_clip() -> void:
-	var weight := slide_weight()
+	var weight := slide_weight() * (1.0 - skid_weight)
 	if weight <= 0.001:
 		return
 	var clip: Array = _slide_clips[1]
@@ -859,7 +882,7 @@ func _stretch_stride() -> void:
 ## back, the lead leg reaches forward along the slide, the trailing leg folds
 ## under, and each foot is put back on the end of its shin.
 func _slide_pose() -> void:
-	var weight := actor.slide_low if actor else 0.0
+	var weight := slide_shown() if actor else 0.0
 	if weight <= 0.001 or _slide_anim != null:
 		return
 	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
@@ -881,6 +904,41 @@ func _slide_pose() -> void:
 		var foot := skeleton.get_bone_global_pose(leg[2])
 		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
 		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, weight))
+
+
+## How far the slide shows: the actor's, less what a skid stands in for.
+func slide_shown() -> float:
+	return actor.slide_low * (1.0 - skid_weight) if actor != null else 0.0
+
+
+## Braces the legs in a skid (`skid`): the hips sink, the lead leg reaches
+## out ahead nearly straight, the trailing leg folds under, and each foot is
+## put back on the end of its shin, so the feet plant instead of running.
+func _skid_pose() -> void:
+	var weight := smoothstep(0.0, 1.0, skid_weight)
+	if weight <= 0.001 or actor == null:
+		return
+	var to_skeleton := skeleton.global_basis.orthonormalized().inverse() * actor.global_basis.orthonormalized()
+	var along := to_skeleton * Basis(Vector3.UP, twist)
+	var up := (to_skeleton * Vector3.UP).normalized()
+	var meter := 1.0 / skeleton.global_basis.get_scale().y
+	var sink := Transform3D(Basis.IDENTITY, -up * skid_drop * meter * weight)
+	for bone in _roots:
+		skeleton.set_bone_global_pose(bone, sink * skeleton.get_bone_global_pose(bone))
+	for pair in [[_lead, skid_lead_thigh, skid_lead_shin], [_trail, skid_trail_thigh, skid_trail_shin]]:
+		var leg: Array[int] = pair[0]
+		if leg.size() != 3:
+			continue
+		_point_bone(leg[0], (along * pair[1]).normalized(), weight, skeleton.get_bone_rest(leg[1]).origin.normalized())
+		_point_bone(leg[1], (along * pair[2]).normalized(), weight, (_foot_on_shin[leg[2]].origin as Vector3).normalized())
+		var foot := skeleton.get_bone_global_pose(leg[2])
+		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
+		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, weight))
+	if not _spine.is_empty():
+		var right := (along * Vector3.RIGHT).normalized()
+		var pose := skeleton.get_bone_global_pose(_spine[0])
+		pose.basis = Basis(right, skid_spine_lean * weight) * pose.basis
+		skeleton.set_bone_global_pose(_spine[0], pose)
 
 
 ## Cold: the chest hunches in and trembles, a fast uneven shake, and the neck
@@ -1035,7 +1093,7 @@ func _squat_pose() -> void:
 ## The crouch, over the stand or the walk: see `_sink`. Not while sliding,
 ## which has its own pose, nor under the rise out of a slide.
 func _crouch_pose() -> void:
-	if actor == null or actor.slide_low > 0.001:
+	if actor == null or slide_shown() > 0.001 or skid_weight > 0.001:
 		return
 	var weight := smoothstep(0.0, 1.0, actor.crouch) * (1.0 - slide_weight())
 	if weight <= 0.001:

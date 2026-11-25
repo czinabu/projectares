@@ -48,9 +48,13 @@ date in the same PR.
   boost poses for the other two. Touching down out of a glide or a boost
   at speed is a run-out (`ActorSkin._run_out`): the body leans back
   against the skid (`run_out_lean`) with a shallow squat (`run_out_squat`)
-  until it slows, never pitched forward onto the ground. Check by eye with
+  until it slows, never pitched forward onto the ground, and the legs brace
+  in a skid on the feet (`Locomotion.skid`, `_skid_pose`: the lead leg out
+  ahead nearly straight, the trailing leg bent under, the back straightened),
+  shown in place of the slide when a wings landing slides. Check by eye with
   `--flight-only` (run with `--fixed-fps 60`; it waits out each tick's step
-  so a press on any tick lands). Each rig has one job and one weakness
+  so a press on any tick lands; `wings_glide_side` and `jetpack_land_side`
+  see the run-outs square from the side). Each rig has one job and one weakness
   (Caleb's balance pass, DESIGN.md section 5; the Mk1 numbers are
   `ItemDB.JETPACK_MK1`, `BOOTS_MK1` and `WINGS_MK1`, measured by
   `tests/rig_balance_tests.gd`): the jetpack is height and hover (8 s on a
