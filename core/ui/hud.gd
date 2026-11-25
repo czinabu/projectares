@@ -357,10 +357,10 @@ static func artifact_entries(p: Actor) -> Array[String]:
 	return entries
 
 
-## The pack's line under the Summon tab: how full, what it is worth, heals
-## and scrip.
+## The pack's line under the Summon tab: how full, what everything carried
+## weighs and its tier (`CarryLoad`), what the pack is worth, heals and scrip.
 static func pack_text(p: Actor) -> String:
-	var pack := "Pack %d/%d" % [p.inventory.items.size(), p.inventory.capacity]
+	var pack := "Pack %d/%d · %s" % [p.inventory.items.size(), p.inventory.capacity, CarryLoad.label(p.carry_kg())]
 	if not p.inventory.items.is_empty():
 		pack += " · worth %d" % p.inventory.total_value()
 	var heals := p.inventory.count_with_tag("heal")

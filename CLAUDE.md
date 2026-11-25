@@ -144,6 +144,7 @@ A new system gets a new file and a line here.
 - `docs/systems/melee.md`: Melee types, techniques, the one button, timing, guards, feints, the kick and the dodge.
 - `docs/systems/guns-and-feel.md`: Loadout slots and keys, attachments, power weapons, recoil, handling, feel benches and feedback.
 - `docs/systems/gear.md`: Flight rigs and thruster trails, artifacts, visors and helmets, armor frames and paints.
+- `docs/systems/carry-weight.md`: What items weigh, the light, medium and heavy load, what it does to moving and flying, and how the load reaches clients and the watch.
 - `docs/systems/vehicles.md`: Vehicles, riding, seats, aircraft, drifting and toy vehicles on the watch.
 - `docs/systems/economy-and-progression.md`: Bounties, mastery, the scrap kit, safety nets, crafting, money, scrip, contracts, the market and cosmetics.
 - `docs/systems/online.md`: Sign-in, encryption, input and movement netcode, lag compensation, the account service, server stashes, several sessions in one process, one program per world and travel.

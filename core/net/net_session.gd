@@ -1104,6 +1104,12 @@ func _on_server_actor_spawned(actor: Actor) -> void:
 	actor.ability_changed.connect(func(item_id: String) -> void:
 		for peer in _joined_peers:
 			_worn_changed.rpc_id(peer, id, "ability", item_id))
+	# What a body carries weighs on how it moves (`CarryLoad`), and a client
+	# never sees anyone else's pack, so the load itself is sent: only when it
+	# changes, which is when gear or the pack does.
+	actor.carry_changed.connect(func(kg: float) -> void:
+		for peer in _joined_peers:
+			_carry.rpc_id(peer, id, kg))
 	# A weapon summoned from the watch is shown to all.
 	actor.weapon_swapped.connect(func(item_id: String, mag: int, reserve: int) -> void:
 		for peer in _joined_peers:
@@ -1765,6 +1771,7 @@ func _send_spawn(peer: int, actor: Actor) -> void:
 				data["look"] = actor.get_meta("appearance")
 	_spawn.rpc_id(peer, _ids[actor], "player" if state != null else "bot", actor.display_name,
 			String(actor.name), actor.global_position, actor.cmd.yaw, data)
+	_carry.rpc_id(peer, _ids[actor], actor.carry_kg())
 
 
 ## Drop into the running world with the account's loadout: from the lobby,
@@ -3221,6 +3228,17 @@ func _worn_changed(id: int, kind: String, item_id: String) -> void:
 			Loadout.wear_ability(actor, item_id)
 	elif item_id != actor.frame_id:
 		Loadout.wear_frame(actor, item_id)
+
+
+## Client: what someone carries now weighs `kg` (`CarryLoad`). The server
+## worked it out from their gear and pack; the body here moves by it, so its
+## prediction matches the server's.
+@rpc("authority", "call_remote", "reliable")
+func _carry(id: int, kg: float) -> void:
+	var actor: Actor = _actors.get(id)
+	if actor != null and is_instance_valid(actor) and kg >= 0.0 and kg < 10000.0:
+		actor.carry_sent = kg
+		actor.mark_carry()
 
 
 ## Client: someone materialized a weapon out of their pack in place of the

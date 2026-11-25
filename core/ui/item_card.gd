@@ -274,9 +274,6 @@ static func facts(id: String) -> Array[String]:
 		out.append_array(_melee_facts(id, stats))
 	elif ItemDB.has_tag(id, "armor"):
 		out.append("Armor: %d" % int(stats.get("armor", 0.0)))
-		var speed := float(stats.get("speed_mult", 1.0))
-		if not is_equal_approx(speed, 1.0):
-			out.append("You move %d%% %s" % [roundi(absf(speed - 1.0) * 100.0), "faster" if speed > 1.0 else "slower"])
 		if stats.has("insulation"):
 			out.append("Keeps out %d%% of the cold" % roundi(float(stats.insulation) * 100.0))
 		var heat := float(stats.get("heat_signature", 1.0))
@@ -315,7 +312,6 @@ static func facts(id: String) -> Array[String]:
 		out.append("%d weak spots; break them all and it comes down with its hold" % parts.size())
 	elif ItemDB.has_tag(id, "backpack"):
 		out.append("Pack room: %d slots, against %d with none" % [int(stats.get("capacity", Loadout.FIELD_PACK)), Loadout.FIELD_PACK])
-		out.append("Sprint %d%% slower" % roundi((1.0 - float(stats.get("sprint_mult", 1.0))) * 100.0))
 		out.append("Worn on your back: it drops with you")
 	elif ItemDB.has_tag(id, "ability"):
 		out.append("Cooldown %d s" % roundi(float(stats.get("cooldown", 0.0))))
@@ -357,6 +353,10 @@ static func facts(id: String) -> Array[String]:
 		out.append("Goes on show in your home base")
 	elif ItemDB.has_tag(id, "trophy"):
 		out.append("A keepsake: never traded or sold")
+	# What it weighs to carry (`CarryLoad`), for anything that is carried.
+	var kg := CarryLoad.weight_of(id)
+	if kg > 0.0:
+		out.append("Weighs %s kg" % str(snappedf(kg, 0.1)).trim_suffix(".0"))
 	var used := _used_in(id)
 	if not used.is_empty():
 		var shown := used.slice(0, 3)

@@ -776,7 +776,6 @@ static func _pack_equips(t: Node) -> void:
 	var raid: Raid = await t._kit_raid(331, kit)
 	var p := raid.player
 	var walk := p.walk_speed
-	var bulwark_heat: float = ItemDB.item_stats("frame_bulwark").get("heat_mult", 1.0)
 	var rigs: Array[String] = []
 	var chips: Array[String] = []
 	p.rig_changed.connect(func(id: String) -> void: rigs.append(id))
@@ -810,10 +809,12 @@ static func _pack_equips(t: Node) -> void:
 			"the wings go on and the jetpack goes into the pack in their place")
 	t.check(is_equal_approx(p.flight.heat, 30.0) and p.flight.charges == p.flight.max_charges,
 			"the new rig takes over the old one's heat, so a swap is no free cool-down")
+	p.refresh_carry()
 	t.check(is_equal_approx(p.walk_speed, walk) and is_equal_approx(p.flight.glide_heat,
-			float(ItemDB.item_stats("wings_glide").glide_heat) * bulwark_heat)
+			float(ItemDB.item_stats("wings_glide").glide_heat))
+			and is_equal_approx(p.flight.load_heat, CarryLoad.heat_mult(p.carry_kg(), false))
 			and p.frame_id == "frame_bulwark" and is_equal_approx(p.health.armor, p.health.max_armor),
-			"the frame stays on, its scaling put back round the new rig")
+			"the frame stays on, and the load's heat follows the new rig (%.2f, no jetpack lift)" % p.flight.load_heat)
 	t.check("wings_glide" in raid.state_for(p).kit and "jetpack_mk1" not in raid.state_for(p).kit,
 			"the kit others are told about follows")
 	t.check(raid.summon_wait(p) > 0.0 and raid.summon(p, "jetpack_mk1") != "",

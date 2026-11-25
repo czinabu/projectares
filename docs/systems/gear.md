@@ -272,8 +272,9 @@ date in the same PR.
   same glass and fitting on a strap, no shell. Check by eye with
   `visual_check.tscn -- <dir> --helmets-only` (helmet_closeups.png).
   Armor frames are worn gear the same way: `Loadout.wear_frame` puts one on
-  or off (`Actor.frame_id`), undoing the old frame's speed and heat scaling
-  before applying the new one, and emits `Actor.frame_changed`. One frame is
+  or off (`Actor.frame_id`), undoing the old frame's thermal signature
+  before applying the new one (how a frame slows you and heats your rig is
+  its weight, `docs/systems/carry-weight.md`), and emits `Actor.frame_changed`. One frame is
   worn; another in a kit is carried. A frame in the pack is put on from the
   pack list too and goes through `Raid.swap_worn`. Both go on at once and
   then the watch rests (`Loadout.SUMMON_TIMES` "helmet", short, and
@@ -367,11 +368,11 @@ date in the same PR.
   `trail_requested`, `show_trail`), whose nozzles glow in it. Check with
   `tests/rig_trail_tests.gd` and by eye with `--trails-only`.
 - Backpacks (DESIGN.md "Backpacks") are data: items tagged "backpack" in the
-  optional `pack` loadout slot, with `capacity`, `sprint_mult` and
-  `pack_size` stats. `Loadout.wear_pack` sets `Actor.pack_id`, the
-  inventory's capacity (`Loadout.FIELD_PACK`, 12, with none) and scales only
-  `sprint_speed`, taking the old pack's scaling back off first, so it
-  stacks with a frame's `speed_mult`. `equip` wears the first and only
+  optional `pack` loadout slot, with `capacity`, `weight` and
+  `pack_size` stats. `Loadout.wear_pack` sets `Actor.pack_id` and the
+  inventory's capacity (`Loadout.FIELD_PACK`, 12, with none); it scales no
+  speed of its own: the pack and what is in it count toward the carry
+  weight (`docs/systems/carry-weight.md`). `equip` wears the first and only
   carries a second; `refit` follows the kit at home. A smaller pack never
   throws items out: a pack over its capacity just takes no more. The pack
   is gear (`gear_items`), so it drops with you. It is not put on from the

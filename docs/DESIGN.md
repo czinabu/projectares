@@ -2091,10 +2091,11 @@ filled in the field.
 
 **Backpacks (Caleb's call).** A backpack is a progression item in its own
 optional slot. With none worn you carry the 12-slot field pack. The
-Outfitter sells three bigger ones for scrip: the Rucksack (16 slots, sprint
-3% slower), the Hauler Pack (20, 6%) and the Mule Frame (24, 10%). A bigger
-pack carries more home and puts more at stake when you die, and the pack
-itself is gear that drops with you. Each size looks bigger on your back,
+Outfitter sells three bigger ones for scrip: the Rucksack (16 slots), the
+Hauler Pack (20) and the Mule Frame (24). A bigger pack carries more home
+and puts more at stake when you die, and the pack itself is gear that drops
+with you. A pack costs only its own weight (1.5, 2.5 and 4 kg); what slows
+you is what you fill it with (section 4, "Weight"). Each size looks bigger on your back,
 and at home they hang on hooks in the gear room.
 
 ### Gun roles
@@ -2284,24 +2285,39 @@ trail colours" the hub sells for scrip (section 10, "Currency: scrip").
 ### Weight
 
 A loadout has one of three weight tiers: **light, medium or heavy**. It is
-worked out from the headgear (goggles or helmet), the armor frame and a heavy
-weapon carried in the chamber or the hands. It changes how you move, never
-a rig's top flight speed (section 5).
+worked out from everything you carry, in kilograms: the headgear (goggles or
+helmet), the armor frame, the rig, the weapons worn, a heavy weapon carried
+in the chamber or the hands, the backpack, and what is in the pack (Caleb's
+call: keep it light, no hard limits). Nothing is ever refused for being
+heavy and there is no menu juggling: a heavier load just moves a little
+worse, more the heavier it gets, so a big haul home is a real choice. It
+changes how you move, never a rig's top flight speed (section 5).
 
 | Weight changes | Lighter | Heavier |
 | --- | --- | --- |
 | Acceleration and turning, on foot and in the air | Quicker, nimble | Slower, planted |
 | Flight heat | Less heat for the same flying | More heat, so heavy loadouts cool off more often |
 | Ground speed, sprint and slide | A little faster, a little longer | A little slower, a little shorter |
+| Jump | Unchanged (about 1.2 m) | Lower, never under about 1 m |
 | Top flight speed | Unchanged | Unchanged |
 
-- The tier shows on the watch's pack page and on the base locker's screen, next to the
-  loadout it comes from.
+- A medium load moves exactly as the game is tuned. Light is under 14 kg (a
+  runner's frame, boots, an SMG and a knife), and its bonus grows the
+  lighter you go, to about 6% faster at 8 kg. Heavy is 32 kg and up (a
+  Bulwark with a rifle and rig, or a trooper's kit with a full pack), and
+  each kilogram over slows you a little more, to a floor of 80% speed.
+- What things weigh, roughly: a sidearm 1.2 kg, a rifle 4, a marksman rifle
+  6, the Breaker Hammer 9 (the heaviest melee weapon), heavy weapons 13 to
+  20; frames 4 to 22 (Runner 5, Trooper 11, Bulwark 22); a helmet 1.5; a
+  jetpack 6, wings 4, boots 2; loot about 1 kg apiece.
+- The tier and weight show on the watch's pack line, under the Summon tab
+  ("Medium 24 kg"), and every item card says what the item weighs. The base
+  locker's screen will show it next to the loadout it comes from.
 - The jetpack's existing allowance for heavy armor (it ignores the armor
   heat penalty, per the aerial proposal) folds into this: the jetpack takes
-  less of the heavy tier's heat cost than the other rigs.
-- Weight is data: each headgear, frame and heavy weapon item has a weight
-  stat, and the tier thresholds are tuning values.
+  half of the heavy tier's extra heat, the other rigs all of it.
+- Weight is data: an item's `weight` stat, or a weight for its kind, and the
+  tier thresholds are tuning values (`CarryLoad`).
 
 ### Melee air-lunge
 

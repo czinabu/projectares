@@ -999,6 +999,7 @@ func _update_carry(weapon: Weapon, gait: Dictionary, airborne: bool) -> void:
 	var pace := actor.walk_speed * gun.move_speed_mult() if gun != null else actor.walk_speed
 	if actor.flight.enabled:
 		pace *= actor.flight.ground_speed_mult
+	pace *= actor.carry_speed
 	var ratio := flat.length() / maxf(pace, 0.1)
 	# Forward only: a strafe or a backpedal keeps the low ready.
 	var ahead := clampf(-flat.z / maxf(flat.length(), 0.001), 0.0, 1.0)

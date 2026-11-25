@@ -3800,6 +3800,7 @@ func _add_bot(marker: Node3D, warlord := false, p_faction := "", p_boss := "") -
 	if warlord and marker.get_meta("keeper", false):
 		# A keeper carries nothing: its vault pays everyone who fought it.
 		bot.inventory.items.clear()
+		bot.mark_carry()
 	elif warlord:
 		# What a warlord carries is worth the fight.
 		for id in world.roll_war_loot("bot", rng, 1.0) + world.roll_war_loot("cache", rng, 1.0):

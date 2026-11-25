@@ -39,7 +39,9 @@ static func _arena(t: Node, at: Vector3, step := 0.0, step_z := -60.0) -> Node3D
 static func _actor(arena: Node3D, kit: Array) -> Actor:
 	var actor := Actor.new()
 	arena.add_child(actor)
-	Loadout.equip(actor, ["pistol_service"] + kit)
+	# A medium load (`CarryLoad`): the rigs are tuned for one, and a lighter
+	# kit would fly a little cooler.
+	Loadout.equip(actor, ["pistol_service", "frame_trooper"] + kit)
 	actor.position = Vector3(0, 0.05, 0)
 	actor.ground_map = arena
 	return actor
