@@ -178,6 +178,29 @@ date in the same PR.
   (view only, added by the `Raid` only where `Look` is on), timed from what
   it was told; the jolt is `PlayerController.feel_blast`. Check by eye with
   `visual_check.tscn -- <dir> --shells-only` (with `--fixed-fps 60`).
+- Encounter pockets (DESIGN.md "Enemy layout"): a world with
+  `WorldDef.pocket_wake` keeps its "spawn_guard" markers asleep until a
+  living player comes within range of a marker of the same "pocket"
+  (marker meta "wake" overrides the range), checked every `POCKET_EVERY`
+  by `Raid._tick_pockets`. A waking pocket stands whole or waits for room
+  under `enemy_cap`, nearest first; its guards queue
+  (`_pocket_queue`, their room kept by `_pocket_room`) and stand one a
+  tick (`_stand_queued`), because a body's first dressed frame is dear on
+  a machine that draws it (three in one frame were a 50 ms hitch on
+  Caleb's PC). At the start, everyone near stands at once. Short of room,
+  awake pockets nobody is fighting that every player is `POCKET_YIELD`
+  further from sleep for a waking one, farthest first. A pocket nobody
+  has been within range plus `POCKET_SLEEP_MARGIN` of for
+  `POCKET_SLEEP_AFTER`, and none of whose guards has a target, sleeps
+  (`_sleep_pocket`): its guards and their brood leave through
+  `_remove_actor`, with no body, loot or respawn timer, and stand again
+  whole. A fallen guard counts down `guard_respawn_time` asleep or awake,
+  and in an awake pocket comes back only with nobody within
+  `POCKET_REFILL_CLEAR` of its post. Pockets hold no room back from the
+  army (`army_size`), and a world of pockets may have no army
+  (`_fields_enemies`); `--bots 0` turns pockets off too
+  (`NetSession`). Everything stays on the authority: clients see guards
+  come and go as actors spawned and removed.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary

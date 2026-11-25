@@ -76,6 +76,7 @@ static func _inside(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(frost, 4242)
+	_wake_engine(raid)
 	await t.frames(2)
 	var frame := MapScript.engine_frame()
 	var f := MapScript.HALL_FLOOR
@@ -111,7 +112,7 @@ static func _inside(t: Node) -> void:
 	t.check(path.size() > 1 and path[path.size() - 1].distance_to(goal) < 2.0,
 			"a path runs from the hatch, through the hall and down the Shaft (%d points)" % path.size())
 	# The garrison.
-	var guards: Array = raid._guards
+	var guards: Array = _engine_guards(raid)
 	var in_hall := guards.filter(func(g: Dictionary) -> bool:
 		return MapScript.inside_engine((g.marker as Node3D).global_position))
 	t.check(guards.size() >= 18 and in_hall.size() == guards.size(),
@@ -120,12 +121,13 @@ static func _inside(t: Node) -> void:
 	t.check(first != null and first.faction == "warden" and raid.is_guard(first) and raid._is_extra(first),
 			"a guard is a Warden outside the armies")
 	var army := raid.bots.filter(func(b: Actor) -> bool: return not raid._is_extra(b))
-	t.check(army.size() == frost.bot_count, "and the valley keeps its own army besides (%d)" % army.size())
+	t.check(army.is_empty() and frost.bot_count == 0, "and no army walks the valley: its enemies are pockets too (%d)" % army.size())
 	first.health.apply_damage(DamageInfo.make(99999.0, null, "test"))
 	await t.frames(2)
 	raid._tick_guards(0.1)
 	t.check(guards[0].bot == null and guards[0].back_in > 0.0, "a guard brought down comes back in time")
 	raid._tick_guards(frost.guard_respawn_time + 1.0)
+	raid._tick_guards(0.1)
 	t.check(guards[0].bot != null and is_instance_valid(guards[0].bot) and not (guards[0].bot as Actor).is_dead,
 			"and stands at its post again")
 	var engine_caches := raid._caches.filter(func(c: Dictionary) -> bool: return c.source == "engine")
@@ -170,6 +172,7 @@ static func _deeper(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(frost, 4243)
+	_wake_engine(raid)
 	await t.frames(2)
 	var frame := MapScript.engine_frame()
 	var g := MapScript.GALLERY_FLOOR
@@ -205,7 +208,7 @@ static func _deeper(t: Node) -> void:
 	var up_path := NavigationServer3D.map_get_path(nav, NavigationServer3D.map_get_closest_point(nav, frame * Vector3(12.0, g, 60.0)), deck, true)
 	t.check(up_path.size() > 1 and up_path[up_path.size() - 1].distance_to(deck) < 1.5,
 			"the walkway can be walked up to from the gallery floor")
-	var guards: Array = raid._guards
+	var guards: Array = _engine_guards(raid)
 	var switch_at := frame * Vector3(MapScript.LIFT_SWITCH.x, bottom, MapScript.LIFT_SWITCH.y)
 	var keepers := guards.filter(func(guard: Dictionary) -> bool:
 		return (guard.marker as Node3D).global_position.distance_to(switch_at) < 6.0)
@@ -535,3 +538,22 @@ static func _only_regions_of(nav: RID, raid: Node) -> bool:
 		if owner == null or not is_instance_valid(owner) or not raid.is_ancestor_of(owner):
 			return false
 	return true
+
+
+## The Engine's garrison: its guards by their pockets ("engine ...").
+static func _engine_guards(raid: Raid) -> Array:
+	return raid._guards.filter(func(g: Dictionary) -> bool:
+		return str((g.marker as Node3D).get_meta("pocket", "")).begins_with("engine"))
+
+
+## Nobody is inside to wake the garrison's pockets: wake them all, as a
+## player walking through would.
+static func _wake_engine(raid: Raid) -> void:
+	for key: Variant in raid._pockets:
+		if not str(key).begins_with("engine"):
+			continue
+		var pocket: Dictionary = raid._pockets[key]
+		pocket.awake = true
+		for i: int in pocket.guards:
+			if raid._guards[i].bot == null:
+				raid._guards[i].bot = raid._add_guard(raid._guards[i].marker)

@@ -21,7 +21,7 @@ static func run(t: Node) -> void:
 		raid.start(world, 99)
 		await t.frames(3)
 		t.check(raid.player != null and not raid.player.is_dead, "%s: player spawns" % world.id)
-		t.check(raid.bots.size() == world.bot_count + raid._bosses.size() + raid._guards.size(), "%s: all bots spawn" % world.id)
+		t.check(raid.bots.size() == world.bot_count + raid._bosses.size() + raid._guards.filter(func(g: Dictionary) -> bool: return g.bot != null).size(), "%s: all bots spawn" % world.id)
 		var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 		if world.gear_at_risk:
 			# Only where gear is at stake is there loot to find and bank (a
@@ -43,6 +43,7 @@ static func run(t: Node) -> void:
 					"%s: %s is armed and hostile" % [world.id, bot.display_name])
 			break
 		await t.frames(120)
-		t.check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count + raid._bosses.size() + raid._guards.size(),
+		t.check(raid.clock > 1.0 and raid.bots.size() + raid._bot_respawns.size() == world.bot_count + raid._bosses.size()
+				+ raid._guards.filter(func(g: Dictionary) -> bool: return g.bot != null).size(),
 				"%s: the world runs with bots thinking" % world.id)
 		await t._end_raid(raid)

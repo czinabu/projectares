@@ -341,6 +341,28 @@ var _bosses: Array[Dictionary] = []
 ## { marker, bot, back_in, brood (what it has spilled), brood_in }, outside
 ## the armies like the bosses.
 var _guards: Array[Dictionary] = []
+## Encounter pockets (`WorldDef.pocket_wake`) by key (a marker's "pocket"
+## meta, or the marker itself): { guards (indices into `_guards`), awake,
+## idle (seconds nobody has been near while awake) }.
+var _pockets := {}
+var _pocket_in := 0.0
+## Guards of pockets just woken, waiting their turn to stand: one a tick
+## (`_tick_pocket_guards`), since a body's first frame dressed is dear on
+## the machines that draw it (three at once were a 50 ms hitch). Their room
+## is kept for them (`_pocket_room`).
+var _pocket_queue: Array[Dictionary] = []
+## How often pockets are woken and put to sleep (seconds).
+const POCKET_EVERY := 0.5
+## Past its wake range by this much, for `POCKET_SLEEP_AFTER` seconds with
+## none of its guards fighting, a pocket sleeps.
+const POCKET_SLEEP_MARGIN := 40.0
+const POCKET_SLEEP_AFTER := 15.0
+## A fallen guard of an awake pocket comes back only with no player this
+## near its marker (out of sight).
+const POCKET_REFILL_CLEAR := 60.0
+## Short of room, an awake pocket sleeps for a waking one only when every
+## player is at least this much further from it (metres).
+const POCKET_YIELD := 30.0
 ## The map's lifts by id: { stops (its two "lift_stop" markers), power (its
 ## "lift_power" marker or null), left (seconds it runs on for), charge (how
 ## long someone has stood at its switch), wait and arrived (by rider's
@@ -1397,8 +1419,20 @@ func army_size() -> int:
 		return 0
 	if enemy_cap <= 0:
 		return world.bot_count
-	var fixed := _map_nodes("spawn_boss").size() + _map_nodes("spawn_guard").size()
+	# Pockets take room only while awake, so they hold none back.
+	var fixed := _map_nodes("spawn_boss").size() + (0 if pockets_on() else _map_nodes("spawn_guard").size())
 	return mini(world.bot_count, maxi(enemy_cap - fixed, ceili(enemy_cap * 0.5)))
+
+
+## Whether the world's guards are encounter pockets (`WorldDef.pocket_wake`).
+func pockets_on() -> bool:
+	return enemies and world.pocket_wake > 0.0
+
+
+## Whether the world fields enemies at all: an army, or pockets (a world of
+## pockets may have no army). A run without bots (`--bots 0`) has neither.
+func _fields_enemies() -> bool:
+	return army_size() > 0 or pockets_on()
 
 
 ## How many more enemies the budget (`enemy_cap`) lets in now.
@@ -2405,7 +2439,7 @@ func _spawn_bots() -> void:
 ## Risk zones: a boss stands guard at each of the map's "spawn_boss" markers.
 func _spawn_bosses() -> void:
 	# A world run without bots (`--bots 0`) has no bosses either.
-	if army_size() <= 0:
+	if not _fields_enemies():
 		return
 	for marker in _map_nodes("spawn_boss"):
 		if enemy_room() <= 0:
@@ -2431,7 +2465,21 @@ func _add_boss(marker: Node3D, boss: Dictionary) -> Actor:
 ## `WorldDef.guard_respawn_time` after it dies. Guards are ordinary bots of
 ## their marker's faction, outside the armies (`_is_extra`).
 func _spawn_guards() -> void:
-	if army_size() <= 0:
+	if not _fields_enemies():
+		return
+	if pockets_on():
+		# Every pocket starts asleep; those near a player wake at once.
+		for marker in _map_nodes("spawn_guard"):
+			var key: Variant = marker.get_meta("pocket", marker.get_instance_id())
+			if not _pockets.has(key):
+				_pockets[key] = {"guards": [], "awake": false, "idle": 0.0}
+			(_pockets[key].guards as Array).append(_guards.size())
+			_guards.append({"marker": marker, "bot": null, "back_in": 0.0, "brood": [],
+					"brood_in": float(marker.get_meta("brood_every", 0.0)) * 0.5, "pocket": _pockets[key]})
+		# At the start everyone near stands at once: the world is loading.
+		_tick_pockets()
+		_stand_queued(_pocket_queue.size())
+		_seal_hives()
 		return
 	for marker in _map_nodes("spawn_guard"):
 		if enemy_room() <= 0:
@@ -2450,6 +2498,9 @@ func _add_guard(marker: Node3D) -> Actor:
 
 
 func _tick_guards(delta: float) -> void:
+	if not _pockets.is_empty():
+		_tick_pocket_guards(delta)
+		return
 	var changed := false
 	for guard in _guards:
 		var bot: Variant = guard.bot
@@ -2470,6 +2521,162 @@ func _tick_guards(delta: float) -> void:
 			changed = true
 	if changed:
 		_seal_hives()
+
+
+## The guards of a world of pockets (`WorldDef.pocket_wake`): a fallen one
+## counts down `guard_respawn_time` whether its pocket is awake or not, and
+## once it is due stands again when its pocket wakes, or, while it is
+## awake, as soon as no player is within `POCKET_REFILL_CLEAR` of its post.
+func _tick_pocket_guards(delta: float) -> void:
+	var changed := _stand_queued(1)
+	for guard in _guards:
+		var bot: Variant = guard.bot
+		if bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
+			_tick_brood(guard, delta)
+			continue
+		if bot != null:
+			guard.bot = null
+			guard.back_in = world.guard_respawn_time
+			changed = true
+			continue
+		if guard.back_in > 0.0:
+			guard.back_in -= delta
+			continue
+		var pocket: Dictionary = guard.pocket
+		if pocket.awake and not guard.get("queued", false) and _pocket_room() > 0 \
+				and _nearest_player(guard.marker.global_position) > POCKET_REFILL_CLEAR:
+			guard.bot = _add_guard(guard.marker)
+			changed = true
+	_pocket_in -= delta
+	if _pocket_in <= 0.0:
+		_pocket_in = POCKET_EVERY
+		changed = _tick_pockets() or changed
+	if changed:
+		_seal_hives()
+
+
+## Wakes the pockets players have come near, nearest first while the
+## budget has room, and puts to sleep those nobody has been near for
+## `POCKET_SLEEP_AFTER` seconds. Says whether any guard came or went.
+func _tick_pockets() -> bool:
+	var changed := false
+	var waking: Array = []
+	var spare: Array = []
+	for key: Variant in _pockets:
+		var pocket: Dictionary = _pockets[key]
+		# How far inside its wake range the nearest player is (under 0 is
+		# inside), by each marker's own range.
+		var reach := INF
+		for i: int in pocket.guards:
+			var marker := _guards[i].marker as Node3D
+			reach = minf(reach, _nearest_player(marker.global_position)
+					- float(marker.get_meta("wake", world.pocket_wake)))
+		if not pocket.awake:
+			pocket.idle = 0.0
+			if reach <= 0.0:
+				waking.append([reach, pocket])
+			continue
+		if _pocket_fighting(pocket):
+			pocket.idle = 0.0
+			continue
+		# Its room can go to a pocket a player is nearer to.
+		spare.append([reach, pocket])
+		if reach <= POCKET_SLEEP_MARGIN:
+			pocket.idle = 0.0
+			continue
+		pocket.idle += POCKET_EVERY
+		if pocket.idle >= POCKET_SLEEP_AFTER:
+			_sleep_pocket(pocket)
+			changed = true
+	waking.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	spare.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for entry: Array in waking:
+		var pocket: Dictionary = entry[1]
+		# A pocket wakes whole or waits for room (one bigger than the whole
+		# budget takes what there is).
+		var due := 0
+		for i: int in pocket.guards:
+			if _guards[i].bot == null and _guards[i].back_in <= 0.0:
+				due += 1
+		# Short of room, awake pockets that nobody is fighting and every
+		# player is further from (by `POCKET_YIELD` metres) sleep for it,
+		# farthest first: the room goes where someone is.
+		var fits := enemy_cap - _bosses.size()
+		while _pocket_room() < mini(due, fits) and not spare.is_empty() \
+				and float(spare.back()[0]) > float(entry[0]) + POCKET_YIELD:
+			var far: Array = spare.pop_back()
+			if far[1].awake:
+				_sleep_pocket(far[1])
+				changed = true
+		var room := _pocket_room()
+		if room <= 0 or (due > room and due <= fits):
+			continue
+		pocket.awake = true
+		for i: int in pocket.guards:
+			var guard: Dictionary = _guards[i]
+			if guard.bot == null and guard.back_in <= 0.0 and not guard.get("queued", false) \
+					and _pocket_room() > 0:
+				guard.queued = true
+				_pocket_queue.append(guard)
+	return changed
+
+
+## Stands up to `count` of the woken pockets' guards waiting their turn
+## (a pocket that fell asleep again drops its own). Says whether any stood.
+func _stand_queued(count: int) -> bool:
+	var stood := 0
+	while stood < count and not _pocket_queue.is_empty():
+		var guard: Dictionary = _pocket_queue.pop_front()
+		guard.queued = false
+		if not guard.pocket.awake or guard.bot != null or guard.back_in > 0.0 or enemy_room() <= 0:
+			continue
+		guard.bot = _add_guard(guard.marker)
+		stood += 1
+	return stood > 0
+
+
+## Room under `enemy_cap` for pockets, less what the queued guards keep.
+func _pocket_room() -> int:
+	return enemy_room() - _pocket_queue.size()
+
+
+func _pocket_fighting(pocket: Dictionary) -> bool:
+	for i: int in pocket.guards:
+		var bot: Variant = _guards[i].bot
+		if bot == null or not is_instance_valid(bot):
+			continue
+		var brain := (bot as Node).get_node_or_null("Brain") as BotBrain
+		if brain != null and brain.target != null:
+			return true
+	return false
+
+
+## A pocket goes to sleep: its standing guards and their brood leave
+## quietly (no body, no loot), and stand again whole when it wakes.
+func _sleep_pocket(pocket: Dictionary) -> void:
+	pocket.awake = false
+	pocket.idle = 0.0
+	for i: int in pocket.guards:
+		var guard: Dictionary = _guards[i]
+		for one: Variant in guard.brood:
+			if one != null and is_instance_valid(one):
+				_remove_actor(one)
+		(guard.brood as Array).clear()
+		var bot: Variant = guard.bot
+		if bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
+			_remove_actor(bot)
+			guard.bot = null
+
+
+## How far the nearest living player is from `at` (INF with nobody here).
+func _nearest_player(at: Vector3) -> float:
+	var best := INF
+	for state in players:
+		var actor := state.actor
+		if state.finished or not is_instance_valid(actor) or actor.is_dead:
+			continue
+		best = minf(best, actor.global_position.distance_to(at))
+	return best
 
 
 ## A guard whose marker names a "brood" (a faction, its kin) spills one of
@@ -2518,6 +2725,9 @@ func _seal_hives() -> void:
 		var bot: Variant = guard.bot
 		if key != "" and bot != null and is_instance_valid(bot) and not (bot as Actor).is_dead:
 			standing[key] = str((bot as Actor).display_name)
+		elif key != "" and not _pockets.is_empty() and bot == null and guard.back_in <= 0.0:
+			# Asleep in its pocket, not fallen.
+			standing[key] = str((guard.marker as Node3D).get_meta("name", "keeper"))
 	for cache in _caches:
 		var container: Variant = cache.container
 		if str(cache.get("hive", "")) == "" or container == null or not is_instance_valid(container):

@@ -114,7 +114,10 @@ static func _smoke_hides(t: Node) -> void:
 	t.check(bool(warden.get_meta("holds_turn", false)), "a Warden post opens up in turn even when shot at")
 	t.check(feral.has_meta("tracker") and feral.has_meta("shuns_warmth"), "a Feral hunts by tracks and keeps out of the warm")
 	var ws := Worlds.get_world("frostline")
-	t.check(ws.bot_count >= 18, "the valley holds packs, not a handful of bots")
+	var valley := frost._map_nodes("spawn_guard").filter(func(m: Node3D) -> bool:
+		return not str(m.get_meta("pocket", "")).begins_with("engine"))
+	t.check(ws.pocket_wake > 0.0 and valley.size() >= 18,
+			"the valley holds packs, not a handful of bots (%d in its pockets)" % valley.size())
 	# A Feral keeps out of the warm: nobody in a heater's ring is its target.
 	var heat: Node3D = null
 	for source in frost.warmth:

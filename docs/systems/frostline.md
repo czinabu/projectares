@@ -71,7 +71,15 @@ date in the same PR.
   material (`_part`, `_flush_parts`). A dungeon's garrison is "spawn_guard"
   markers: the `Raid` keeps a bot of the marker's faction posted there
   (`_spawn_guards`, `_tick_guards`, `is_guard`), outside the armies like a
-  boss, back after `WorldDef.guard_respawn_time`. Inside is sheltered
+  boss, back after `WorldDef.guard_respawn_time`. Frostline is a world of
+  encounter pockets (`WorldDef.pocket_wake`, DESIGN.md "Enemy layout"):
+  `bot_count` is 0, and every enemy but its two bosses is a guard. The
+  valley's spots (`_bot_spot`: posts, rim lookouts, dens, the core) are
+  each a "spawn_guard" with a "pocket" name and also a "spawn_bot" (where
+  a world event comes in), waking at `POCKET_WAKE`; the Engine's garrison
+  is pocketed by section ("engine hall", "engine shaft", ...) and wakes at
+  `ENGINE_WAKE`. Keep a new den or post at least 85 m from every other
+  pocket. Inside is sheltered
   (`WorldDef.sheltered_at`): `Weather.strength_at` is 0 there, so nothing
   a storm changes reaches in, and `Raid._track_mark` lays no trail; the
   world's own `cold_at` sets its cold. Squads need room (Caleb's ask): no
