@@ -403,7 +403,7 @@ static func detect_graphics() -> void:
 	var card := RenderingServer.get_video_adapter_name()
 	if card == "" or card == graphics_card:
 		return
-	var full := RenderingServer.get_rendering_device() != null
+	var full := RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	var pick := graphics_for(RenderingServer.get_video_adapter_type(), card, full)
 	_values["graphics_card"] = card
 	if graphics_matching() == GRAPHICS_HIGH and pick != GRAPHICS_HIGH:
@@ -484,10 +484,13 @@ static func apply_graphics() -> void:
 	if tree == null or tree.root == null:
 		return
 	var mode: Array = ANTI_ALIASING[anti_aliasing]
+	# The OpenGL fallback (a card with no Vulkan) has neither the screen-space
+	# smoothing nor FSR: it keeps MSAA and scales plainly.
+	var full := RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	tree.root.msaa_3d = mode[1]
-	tree.root.screen_space_aa = mode[2]
+	tree.root.screen_space_aa = mode[2] if full else Viewport.SCREEN_SPACE_AA_DISABLED
 	var scale: float = RENDER_SCALE[render_scale][1]
-	tree.root.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
+	tree.root.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 1.0 and full else Viewport.SCALING_3D_MODE_BILINEAR
 	tree.root.scaling_3d_scale = scale
 	for ink: Node in tree.get_nodes_in_group("edge_ink"):
 		(ink as Node3D).visible = ink_shown()
