@@ -24,7 +24,27 @@ date in the same PR.
   of the scrap blade; no heavy kills an unarmored person in one blow. A swing
   hits everyone in its arc and reach at full damage, so the arc is the area
   stat. A new or retuned weapon must fit the band; how a bot fights with each
-  one: `duel_bench.tscn -- --melee <id>`.
+  one: `duel_bench.tscn -- --melee <id>`. A weapon ability counts in the
+  traits too (`ABILITY_WEIGHTS`).
+- Weapon abilities are data: the item's `ability` stat picks one on
+  `MeleeWeapon`, fired by its own press (`ActorCommand.weapon_ability_pressed`,
+  O or the mouse's thumb button, `MeleeWeapon.weapon_ability`) and spent for
+  `ability_cooldown` from the press. The first is the Breaker Hammer's
+  "ground_pound": a windup longer than its heavy, the hammer driven into the
+  ground (`swing_arc` reaches the ground at the hit), and a ring
+  (`ability_radius`) through everyone on the ground near: a little damage
+  through `Combat.deal` as a melee hit, so a guard stops it and a parry
+  staggers the pounder, then a knockdown and a shove out and up
+  (`ability_knockdown`, `ability_knock`, `ability_lift`). Anyone more than
+  `POUND_HEIGHT` above rides over it. A knockdown (`Actor.knock_down`) is a
+  stagger that also stops walking; the server sends it in the state
+  (`ActorCommand.STATE_KNOCKED_DOWN`, past bit 31, so states only) and
+  `ActorSkin._show_knocked_down` plays the death clip's fall, holds it and
+  plays it back up, timed by what is left. A bot pounds when the pound is
+  ready and a second foe stands in its ring, now and then on one alone
+  (`BotBrain._wants_pound`, asked only as a hammer bot picks a swing). Check with
+  `visual_check.tscn -- <dir> --moves-only weapon=hammer_breaker only=pound`
+  (three bots stand round to be knocked back; `frames` for a clip).
   Melee is made to answer guns (DESIGN.md "Melee against guns"): blades go
   past armor (`DamageInfo.armor_pierce`), a heavy started sprinting is a
   dash-strike (`dash_range`; with `dash_through`, a charge that runs its
@@ -77,7 +97,10 @@ date in the same PR.
   `SWING_LEAD` before the strike and speeds into it, half its arc at the
   hit, then eases out (`MeleeWeapon.swing_arc`; both views read it); a
   windup keeps coiling back (`windup_coil`); two-handers swing slower and
-  turn the body more. A new melee weapon picks a style; check it by eye with
+  turn the body more, hold their follow-through longer (`ActionPose.two_hand_follow`,
+  `TWO_HAND_RECOVER_HOLD`: the first part of the recovery stays down in the
+  swing's weight before hauling back up) and pause longer on a landed hit
+  (`MeleeWeapon.TWO_HAND_HITSTOP`; `melee_weight_tests.gd`). A new melee weapon picks a style; check it by eye with
   `visual_check.tscn -- <dir> --swing-only` (run with `--fixed-fps 60`),
   which films each move frame by frame, or quicker, one weapon's stance,
   swings and guards from the front, the side and the eyes at once with

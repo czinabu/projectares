@@ -58,6 +58,10 @@ const RING_KICK := [0.0, 0.25, 0.4]
 const RING_HEAVY_FEINT := [0.0, 0.15, 0.3]
 const RING_DODGE := [0.0, 0.15, 0.3]
 var kick_chance := 0.25
+## A weapon ability (`MeleeWeapon.weapon_ability`, the hammer's ground
+## pound) is used when it is ready and two foes stand in its ring; with one,
+## now and then (`pound_alone_chance`).
+var pound_alone_chance := 0.15
 var heavy_feint_chance := 0.15
 var melee_dodge_chance := 0.15
 ## A blade in reach beats a rifle (Caleb's call): an army bot cut by a
@@ -954,6 +958,10 @@ func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void
 	var foe_blade := target.get_active_weapon() as MeleeWeapon
 	if foe_blade != null:
 		guarded = foe_blade.is_blocking()
+	if _wants_pound(blade):
+		cmd.weapon_ability_pressed = true
+		_melee_wait = blade.ability_windup + blade.ability_recover
+		return
 	if guarded and actor.stamina >= blade.kick_stamina and _rng.randf() < kick_chance:
 		# A guard held up gets kicked open.
 		cmd.kick_pressed = true
@@ -976,6 +984,26 @@ func _start_attack(cmd: ActorCommand, blade: MeleeWeapon, opening: bool) -> void
 		cmd.primary = true
 		return
 	cmd.primary_pressed = true
+
+
+## True when the ground pound is ready and worth it: the target in its
+## ring and another foe too, or now and then the target alone. Looked at
+## only when a hammer bot picks a swing with the pound ready, so the scan
+## of the field is rare.
+func _wants_pound(blade: MeleeWeapon) -> bool:
+	if blade.ability != "ground_pound" or not blade.ability_ready() or not actor.is_on_floor() \
+			or actor.stamina < blade.ability_stamina:
+		return false
+	var ring := blade.ability_radius * 0.8
+	if target.global_position.distance_to(actor.global_position) > ring:
+		return false
+	for node in get_tree().get_nodes_in_group("actors"):
+		var other := node as Actor
+		if other == null or other == actor or other == target or other.is_dead or other.faction == actor.faction:
+			continue
+		if other.global_position.distance_to(actor.global_position) <= ring:
+			return true
+	return _rng.randf() < pound_alone_chance
 
 
 ## Keeps a charge held until it is let go.

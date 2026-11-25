@@ -51,7 +51,9 @@ date in the same PR.
 - Online movement: a client numbers every input and each packet repeats
   every input the server has not received yet (up to
   `NetSession.MAX_INPUTS_PER_PACKET`, packed small by `pack_inputs` so a
-  full packet fits in one datagram), so a press survives a run of lost
+  full packet fits in one datagram; the command's flags take 40 bits, the
+  low 32 and then a byte of their own, so a new press past bit 31 needs no
+  new layout), so a press survives a run of lost
   packets. The server plays them in order, one per tick, as soon as it has
   them (`NetSession.InputBuffer`): nothing is held back to smooth a bad
   connection, because a held input is input delay. A tick with nothing to
