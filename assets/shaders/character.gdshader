@@ -50,6 +50,10 @@ uniform float suit_cell = 0.022;
 // yoke over the shoulders, so it reads as
 // clothing, not a skin. 0 leaves the plain suit.
 uniform float suit_kit = 1.0;
+// A pattern printed on the suit in shades of its own colour
+// (`Human.PATTERNS`): 0 plain, 1 woodland, 2 digital, 3 tiger stripe,
+// 4 splinter. Drawn on the rest body, so it stays put as the body moves.
+uniform int suit_pattern = 0;
 uniform float belt_y = 1.0;
 varying vec4 rest;
 // Storm readability. Godot drops its own fog once FOG is written, so this
@@ -83,6 +87,56 @@ float hex_edge(vec2 p) {
 	vec4 h = vec4(p - hc.xy * s, p - (hc.zw + 0.5) * s);
 	vec2 q = dot(h.xy, h.xy) < dot(h.zw, h.zw) ? abs(h.xy) : abs(h.zw);
 	return 0.5 - max(dot(q, s * 0.5), q.x);
+}
+
+float hash3(vec3 p) {
+	p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+	p += dot(p, p.yxz + 33.33);
+	return fract((p.x + p.y) * p.z);
+}
+
+// Smooth noise, 0 to 1.
+float noise3(vec3 p) {
+	vec3 i = floor(p);
+	vec3 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(hash3(i), hash3(i + vec3(1, 0, 0)), f.x),
+			mix(hash3(i + vec3(0, 1, 0)), hash3(i + vec3(1, 1, 0)), f.x), f.y),
+			mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x),
+			mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+
+// The suit's pattern at rest point `p`: how much lighter or darker the
+// cloth is there (1 leaves it).
+float suit_print(int kind, vec3 p) {
+	if (kind == 1) {
+		// Woodland: soft blots in three shades.
+		float a = noise3(p * 9.0) * 0.65 + noise3(p * 23.0) * 0.35;
+		float b = noise3(p * 11.0 + 17.0) * 0.65 + noise3(p * 27.0 + 5.0) * 0.35;
+		return a > 0.56 ? 0.55 : (b > 0.58 ? 1.35 : 1.0);
+	}
+	if (kind == 2) {
+		// Digital: the same blots made of square pixels.
+		vec3 q = floor(p / 0.012) * 0.012;
+		float a = noise3(q * 10.0) * 0.7 + noise3(q * 30.0) * 0.3;
+		float b = noise3(q * 12.0 + 9.0) * 0.7 + noise3(q * 33.0 + 3.0) * 0.3;
+		return a > 0.57 ? 0.6 : (b > 0.57 ? 1.3 : 1.0);
+	}
+	if (kind == 3) {
+		// Tiger stripe: broken dark bands across the body.
+		float wave = p.y * 38.0 + noise3(p * 7.0) * 5.0 + p.x * 6.0;
+		float band = abs(fract(wave / 6.2832) - 0.5);
+		float broken = noise3(p * 14.0 + 3.0);
+		return band < 0.13 && broken > 0.35 ? 0.5 : 1.0;
+	}
+	if (kind == 4) {
+		// Splinter: sharp-edged shards in three shades.
+		float a = floor(dot(p, vec3(9.0, 13.0, 4.0)) + noise3(floor(p * 7.0)) * 3.0);
+		float b = floor(dot(p, vec3(-12.0, 7.0, 9.0)));
+		float h = hash3(vec3(a, b, 1.0));
+		return h < 0.3 ? 0.58 : (h > 0.75 ? 1.3 : 1.0);
+	}
+	return 1.0;
 }
 
 // Bends `n` (view space) as if the surface rose by `h` (meters), from the
@@ -155,6 +209,9 @@ void fragment() {
 		// A fine hex weave, faint, gloves left smooth.
 		float seam = 1.0 - smoothstep(0.03, 0.12, edge);
 		cloth *= mix(1.0, 0.86, seam * (1.0 - glove) * near);
+		if (suit_pattern > 0) {
+			cloth *= mix(1.0, suit_print(suit_pattern, p), 1.0 - glove);
+		}
 		float kit_rough = 0.0;
 		float buckle_m = 0.0;
 		if (suit_kit > 0.0) {
