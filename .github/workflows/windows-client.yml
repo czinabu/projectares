@@ -157,8 +157,11 @@ jobs:
         # Every world and everything held back from a release, for working
         # on a Linux laptop. A workflow artifact only, like the Windows one.
         run: |
+          # Another step (the dev update manifests) may have exported it.
           mkdir -p build/linux-dev
-          "$GODOT" --headless --path . --export-release "Linux Dev" build/linux-dev/ProjectAresDev.x86_64
+          if [ ! -s build/linux-dev/ProjectAresDev.pck ]; then
+            "$GODOT" --headless --path . --export-release "Linux Dev" build/linux-dev/ProjectAresDev.x86_64
+          fi
           test -s build/linux-dev/ProjectAresDev.x86_64
           test -s build/linux-dev/ProjectAresDev.pck
           name="ProjectAresDev-linux-$(git rev-parse --short HEAD)"
