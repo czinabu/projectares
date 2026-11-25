@@ -56,7 +56,9 @@ when a PR closes a row.
   few ticks, so anything that drives an actor tick by tick must ask
   `Actor.ticks_now()` first, and a press set from outside can be missed
   unless the actor is at `thin(1)`. A bot asks for a new path only when its
-  goal has moved or its path ran out (`BotBrain._move_toward`); never set
+  goal has moved or its path ran out (`BotBrain._move_toward`), and all
+  bots share `PATHS_PER_TICK` new paths a tick (a query costs in
+  proportion to the whole navmesh); never set
   `NavigationAgent3D.target_position` on a timer. Interest: `NetSession`
   sends a player every state update only for actors within `NEAR_RANGE`,
   the rest in turn (`detail_tier`, `detail_due`), and keeps presses per tier

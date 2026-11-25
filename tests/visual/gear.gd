@@ -7,7 +7,8 @@ extends RefCounted
 ## back three-quarter, the side and the front, one row a combination, into
 ## `gear.png`. `GEAR_FRAMES`, `GEAR_RIGS` (ids, "none" for none) and
 ## `GEAR_KIT` (item ids) pick them; `GEAR_BUILD=f` wears them on a body of
-## that build.
+## that build; `GEAR_TURN=<n>` also saves n frames of a turn round each
+## row (`gear_turn_<row>_<frame>.png`).
 
 
 static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
@@ -35,6 +36,8 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 	await v._settle(60)
 	player.set_physics_process(false)
 	player.velocity = Vector3.ZERO
+	# Up in the open sky, where no wall or crate stands in the shot.
+	player.global_position += Vector3(0, 40, 0)
 	var cam := Camera3D.new()
 	raid.add_child(cam)
 	cam.current = true
@@ -75,6 +78,21 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 			cut.resize(size, size)
 			cut.convert(Image.FORMAT_RGBA8)
 			sheet.blit_rect(cut, Rect2i(0, 0, size, size), Vector2i(i * size, row * size))
+		# `GEAR_TURN=<n>`: n frames of a slow turn round it too, one file
+		# each, to string into a clip.
+		var turn := int(OS.get_environment("GEAR_TURN"))
+		for i in turn:
+			var mid := player.global_position + Vector3(0, 1.05, 0)
+			var dir := player.global_basis * Vector3(sin(TAU * i / turn), 0.0, cos(TAU * i / turn))
+			cam.global_position = mid + dir * 3.6 + Vector3(0, 0.35, 0)
+			cam.look_at(mid)
+			await RenderingServer.frame_post_draw
+			var frame := v.get_viewport().get_texture().get_image()
+			var h := frame.get_height()
+			var w := frame.get_width()
+			var cut := frame.get_region(Rect2i(w / 2 - h * 3 / 8, h / 8, h * 3 / 4, h * 3 / 4))
+			cut.resize(size, size)
+			cut.save_png(out_dir.path_join("gear_turn_%d_%03d.png" % [row, i]))
 	sheet.save_png(out_dir.path_join("gear.png"))
 	print("saved gear.png")
 	raid.queue_free()

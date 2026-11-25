@@ -13,6 +13,13 @@ Leviathan)", "(part three, built: the rig rewards)"). Check it with
   (`FLOOR_Y`) lies under the lava (`LAVA_Y`), and the cliffs climb past
   `FIELD`. The floor and cliffs are a `Terrain` outside the navigation
   region: solid, so a body falls onto them, but never walked by a bot.
+  A bot whose goal lies past an edge or on another mesa walks to its
+  path's walkable end and stops there (`BotBrain._onto_nav`,
+  `ARRIVE_STOP`), and every Rift bot carries the meta "edge_guard"
+  (`equip_bot`), so a step, a side-step out of a jam included, that would
+  leave the navmesh slides along its edge instead (`_keep_on_ground`).
+  Bots stay on their mesa (`tests/rift_bots_tests.gd`; before, most walked
+  off and burned within a minute; a rare one still slips off a lip rock).
   Walls stand `EDGE` past the field, at the cliffs' foot, so nobody lands
   on a cliff top (a rig's ceiling counts from the ground under it, and
   there that is the cliff).
