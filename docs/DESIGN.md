@@ -1,4 +1,4 @@
-# Project Ares: game design
+# Verge: game design
 
 This is the plan every thread builds against. It describes the game we are
 aiming for, not only what exists today. What is built and what is still
@@ -21,10 +21,12 @@ balance" (https://claude.ai/artifact/5oqEMAXpKisXTojV9w47pv).
 
 ## 1. The pitch
 
-A full-loot PvPvE war game in the spirit of Planet Doom: you drop into an
-endless warzone with gear you are willing to lose, fly, ride and fight
-through it, and get your loot home. Worlds are plug-ins, so new planets can
-be added later without touching the core.
+A full-loot PvPvE war game across the Verge, a ring of war-torn worlds:
+you drop into an endless warzone with gear you are willing to lose, fly,
+ride and fight through it, and get your loot home. Every world is hand-built by the team,
+and new ones are added over time without touching the core (each is a
+`WorldDef` plug-in in the code). The game is not a platform for
+player-made worlds, and it is never marketed as one (Caleb's call).
 
 Two standing rules shape every feature:
 
@@ -652,8 +654,8 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   clumps from the rim inward, darkest in the corners, the middle always
   clear, more the deeper in the storm, and it blows off slowly after.
 - **The battle around you (Caleb's go-ahead, concepts in `ares/epic-battle/`
-  in the project files).** The war should happen *to* you, as in Helldivers
-  or Planet Doom, not only behind you. Three parts, built in this order:
+  in the project files).** The war should happen *to* you, as in Helldivers,
+  not only behind you. Three parts, built in this order:
   shelling (below), a scenery army fighting in the mid distance, and a busy
   low sky (gunships strafing, return fire, a dropship going down burning).
   The scenery army is view only and cannot be shot (Caleb's call), so it
@@ -1101,6 +1103,38 @@ after the trial: whether every world moves over, the per-world caps
 bosses sleep too (they stand all the time today and take 2 of
 Frostline's 8).
 
+### Enemy bodies (Caleb's call: no stock robots in every world)
+
+The three stock robot models stood in every world as heavies, bosses and
+Ferals. Caleb chose a mix instead:
+
+- **People** for the armies, raiders, brutes and bosses. A heavy is a big
+  fighter in full plate of its world's own: the Legion Vanguard in cobalt
+  gunmetal under a Warden helm, the Tide Brute in rusted crimson scrap,
+  the Dune Sea's Scrap Brute in sanded scrap, the Rift's Slag Brute in
+  plate that runs hot under an Ember helm.
+- **A body of its own for every boss**, never a heavy with more health:
+  Ashfront's Warlord in black and gold plate with a cloak and its army's
+  banner, the Wreck Baron in hazard-striped scrap with a torn cloak and an
+  engine on its back, the Lord of the Crown in crimson plate under a crown
+  of lava-lit basalt.
+- **Beasts** for the wild: Frostline's Feral Stalker is a furred pack
+  beast with a mane of ice spines and hooked ice spurs (the Rift's beasts
+  wait on its own roster, a decision still open with Caleb).
+- **Machines only where the story has machines**: Frostline's Wardens, the
+  Engine Sentinel and the Heart Warden are the station's automata, built
+  in code as sleek androids (pale ceramic shells, lit seams and visor),
+  their weapon built into the right forearm, a gun arm that comes up along
+  the aim or a blade. The colossus is broader, with a reactor and a
+  missile pod, and a lance for a forearm.
+- **Armies are told apart by uniform, never by people.** Both of
+  Ashfront's armies draw from every skin tone; the Legion wears navy and
+  grey, the Tide rust and tan, and a faction's tint dresses clothes and
+  gear but never skin.
+
+How it is built is in `docs/systems/bodies-and-animation.md` ("Enemy
+bodies").
+
 ### Enemy senses and squads (Caleb's call)
 
 Playtest: "sometimes it seems like every AI converges on me like I'm the
@@ -1464,8 +1498,15 @@ built in this order, cheapest and most connected first:
    "(part two, built: the Sky Leviathan)" and "(part three, built: the rig
    rewards)").
 
-The launch set is Frostline, the Spore Marsh, Ashfront, Meridian and the
-Pit (Caleb's call); the Dune Sea comes first after launch. When the Marsh
+The Early Access launch is narrower (Caleb's call, 25 November 2026): the
+home base, the Concourse, Ashfront and Frostline, with Ashfront capped at 24
+players a copy and Frostline at 8, on official servers in one US region. It
+ships what is built for those places and holds back the player market, the
+rover, mech and jet, artifacts, the trophy shelf, the base lounge and squad
+base visits until each has a real purpose; the hub's arena door and race
+feed are shuttered. The Spore Marsh and the Pit come first after launch,
+then the Dune Sea, the Basalt Rift and Meridian. The full plan is in the
+pitch doc (https://claude.ai/artifact/GBtminDmWRUmERSaecvihH). When the Marsh
 goes in, artifacts mostly come from it; a carried artifact still drops as
 itself under Ashfront's scrip-pile rule, so they keep changing hands in
 the war.

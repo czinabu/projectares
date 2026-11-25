@@ -32,6 +32,9 @@ extends RefCounted
 const Self := preload("res://core/visual/rig_model.gd")
 
 const DARK := Color(0.13, 0.13, 0.14)
+## The harness plate against the back: lighter than the pack's dark trim,
+## so in a side view it reads as part of the pack, not as a gap.
+const HARNESS := Color(0.3, 0.31, 0.32)
 const STEEL := Color(0.42, 0.42, 0.44)
 const STRAP := Color(0.09, 0.085, 0.08)
 const EMBER := Color(1.0, 0.55, 0.2)
@@ -258,7 +261,7 @@ func _weapon_rail(root: Node3D, side: float, at: Vector3, radius: float, glow: C
 
 ## Back plate and shoulder straps, shared by every back-worn rig.
 func _harness(root: Node3D, width: float, height: float) -> void:
-	_pillow(root, Vector2(width, height), 0.03, 0.05, Vector3(0, -0.06, 0.018), _mat(DARK))
+	_pillow(root, Vector2(width, height), 0.03, 0.05, Vector3(0, -0.06, 0.018), _mat(HARNESS))
 	# Straps for a wearer of no particular shape, in "Straps": a body
 	# wearing it lays its own over its shoulders and armor
 	# (`ActorSkin._fit_straps`) and hides these.

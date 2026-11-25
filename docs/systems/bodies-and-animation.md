@@ -267,3 +267,42 @@ date in the same PR.
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never
   added to the starter list. Bots use `Human.sanitize` and can wear anything.
+
+## Enemy bodies
+
+- No stock robot model stands in any world (`tests/enemy_bodies_tests.gd`).
+  A heavy or a boss is a person (`Look.SKINS` "vanguard", "tide_brute",
+  "scrap_brute", "slag_brute", "warlord", "baron", "crown_lord") in plates
+  of its own: a skin's "frame" names the weight and, after a colon, the
+  frame look (`ActorSkin.FRAME_STYLES`), worn in the skin's "paint"
+  (`"heavy:scrap"` with "desert"); `ActorSkin.frame_weight`/`frame_look`
+  read `"skin:<weight>:<look>"`, and the skin's own helmet ("helmet", where
+  "scrap" is the Junker's bucket) takes the plates' colours. A world picks
+  the skin: the roster's "look", or `make_warlord` setting the boss's
+  (an Ashfront walker warlord stays a walker).
+- A boss's "regalia" (`ActorSkin._build_regalia`: "warlord", "baron",
+  "crown") is built in code: a cloak in two panels, the upper on the chest
+  and the lower on the hips, and a banner, an engine with exhaust stacks or
+  a crown. Plain pieces, merged as they hang.
+- Frostline's automata ("sentinel", "colossus") are a body built in code
+  round Stan's walking skeleton, its mesh hidden ("chassis": "android",
+  `ActorSkin._build_android`, "heavy_chassis" for the colossus). The
+  weapon is the right forearm (`_update_arm_weapon`, rebuilt when the
+  weapon changes): a gun housing with a barrel, lit coils and an
+  "ArmMuzzle" (set on the gun's visual as "drawn_muzzle", so
+  `Gun.muzzle_point` draws every tracer and beam shot leaving it, and the
+  lock beam and flash start there too), or a blade. A gun
+  arm is swung up along the aim while it fights (`_aim_arm`, a hook after
+  the clip: the upper arm and then the forearm turned so the next joint
+  lies along the aim, blended by `_arm_raise`). The shot itself still
+  starts at the eyes. View only.
+- The Feral Stalker is a creature ("feral", `_build_creature` with
+  `_feral`): the marsh stalker's body furred, its glow the cold's blue
+  (`FROST_GLOW`).
+- People are never told apart by skin. `Human.for_name` draws the skin
+  tone from the name alone, the same whatever the outfits on offer, and
+  the character shader keeps skin out of the skin's tint, saturation and
+  brightness (`bare_skin`, `SKIN_SATURATION`, `SKIN_BRIGHTNESS`). An army
+  is dressed in its uniform instead: the bot's "uniform" meta ("top" and
+  "bottom" `Human.CLOTH_COLORS`, Ashfront's `ARMIES`), merged into the
+  appearance `Look.character` makes for anyone who has not chosen one.

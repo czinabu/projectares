@@ -789,7 +789,7 @@ func advance(delta: float) -> void:
 		_follow_dir = melee.attack_dir
 	elif _follow_left > 0.0:
 		_follow_left -= delta
-		if not holding or melee.is_winding_up() or melee.is_blocking():
+		if not holding or melee.is_winding_up() or melee.is_guard_shown():
 			_follow_left = 0.0
 
 	var steps: Array = _steps_of(melee) if holding else [1.0, 1.0, 1.0]
@@ -842,7 +842,7 @@ func footwork_wanted(melee: MeleeWeapon) -> float:
 		return 0.0
 	if reel > 0.0:
 		return step_reel * reel
-	if melee.is_blocking():
+	if melee.is_guard_shown():
 		return step_guard
 	var steps := _steps_of(melee)
 	var strike := (step_heavy if melee._shown_kind in ["heavy", "pound"] or melee._dashing else step_light) * float(steps[1])
@@ -1337,7 +1337,7 @@ func _arm_reach(melee: MeleeWeapon) -> Variant:
 		return windup_reach(melee, melee.attack_dir) * (1.0 + windup_coil * melee.windup_coil())
 	if _follow_left > 0.0:
 		return follow_reach(melee, _follow_dir)
-	if melee.is_blocking():
+	if melee.is_guard_shown():
 		return guard_keys(melee, melee.guard_dir)[0]
 	var hold: Variant = ready_reach(melee)
 	var rest: Vector3 = hold if hold != null else Vector3.ZERO
@@ -1405,7 +1405,7 @@ func ready_amount(melee: MeleeWeapon) -> float:
 		return 0.0
 	if melee.is_kicking():
 		return 1.0
-	if melee.is_winding_up() or _follow_left > 0.0 or melee.is_blocking():
+	if melee.is_winding_up() or _follow_left > 0.0 or melee.is_guard_shown():
 		return 0.0
 	var charge := charge_amount(melee)
 	if charge > 0.0:
@@ -1443,7 +1443,7 @@ func _body_turn(melee: MeleeWeapon) -> Vector2:
 		return windup_turn(melee, melee.attack_dir) * (1.0 + windup_coil * melee.windup_coil())
 	if _follow_left > 0.0:
 		return follow_turn(melee, _follow_dir)
-	if melee.is_blocking():
+	if melee.is_guard_shown():
 		# Squared up behind the guard, the guarded side's shoulder a little
 		# forward.
 		return Vector2(-MeleeWeapon._side(melee.guard_dir) * guard_turn, -0.04)
@@ -1499,7 +1499,7 @@ func elbow_wanted(melee: MeleeWeapon) -> float:
 		return 1.0 - arc
 	if melee._slamming or melee.is_winding_up():
 		return 1.0
-	if melee.is_blocking():
+	if melee.is_guard_shown():
 		return 0.6
 	return maxf(charge_amount(melee), 0.0)
 
@@ -1602,7 +1602,7 @@ func technique_blade(melee: MeleeWeapon) -> Variant:
 		return _blade_at(melee, technique_key(melee, melee.attack_dir), 0.0)
 	if _follow_left > 0.0:
 		return _blade_at(melee, technique_key(melee, _follow_dir), 1.0)
-	if melee.is_blocking():
+	if melee.is_guard_shown():
 		var guard := guard_keys(melee, melee.guard_dir)
 		return blade_basis(guard[1], guard[2])
 	var hold := ready_hold(melee)

@@ -827,7 +827,7 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 		return
 	var hello: Variant = bytes_to_var(data) if data.size() <= MAX_AUTH_BYTES else null
 	if typeof(hello) != TYPE_DICTIONARY:
-		_refuse(peer, "That is not a Project Ares game.")
+		_refuse(peer, "That is not a Verge game.")
 		return
 	var protocol := _protocol_in(hello)
 	if protocol != PROTOCOL:
@@ -2534,7 +2534,7 @@ func _client_auth(id: int, data: PackedByteArray) -> void:
 		return
 	var answer: Variant = bytes_to_var(data) if data.size() <= MAX_ANSWER_BYTES else null
 	if typeof(answer) != TYPE_DICTIONARY:
-		_give_up("That server is not a Project Ares server.")
+		_give_up("That server is not a Verge server.")
 		return
 	var protocol := _protocol_in(answer)
 	var certificate := str(answer.get("certificate", "")).left(MAX_AUTH_BYTES)

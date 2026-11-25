@@ -11,7 +11,7 @@ static func run(t: Node) -> void:
 	t.add_child(screen)
 	await t.frames(2)
 	t.check(screen.start_button != null and screen.start_button.text == "START", "it offers Start")
-	t.check(screen.title_text == "PROJECT ARES", "it shows the game title")
+	t.check(screen.title_text == "VERGE", "it shows the game title")
 	var count := [0]
 	screen.start_pressed.connect(func() -> void: count[0] += 1)
 	screen.start_button.pressed.emit()

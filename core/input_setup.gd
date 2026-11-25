@@ -12,7 +12,7 @@ const KEY_ACTIONS := {
 	"dash": KEY_ALT,
 	"crouch": KEY_C,
 	"kick": KEY_V,
-	"weapon_ability": KEY_O,
+	"weapon_ability": KEY_Q,
 	"interact": KEY_F,
 	"reload": KEY_R,
 	"heal": KEY_H,
@@ -24,7 +24,7 @@ const KEY_ACTIONS := {
 	"weapon_3": KEY_3,
 	"weapon_4": KEY_4,
 	"holster": KEY_Z,
-	"scoreboard": KEY_Q,
+	"scoreboard": KEY_O,
 	"sign_out": KEY_L,
 	"redeploy": KEY_ENTER,
 	"phone": KEY_P,
@@ -45,7 +45,7 @@ const MOUSE_ACTIONS := {
 	"fire": MOUSE_BUTTON_LEFT,
 	"alt_fire": MOUSE_BUTTON_RIGHT,
 	"ping": MOUSE_BUTTON_MIDDLE,
-	# The thumb button, nearer to hand than O mid-fight.
+	# The thumb button too, for a mouse that has one.
 	"weapon_ability": MOUSE_BUTTON_XBUTTON1,
 }
 

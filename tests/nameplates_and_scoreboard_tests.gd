@@ -10,8 +10,8 @@ const ScoreboardScript := preload("res://core/ui/scoreboard.gd")
 static func run(t: Node) -> void:
 	print("Nameplates and scoreboard")
 	t.check(InputMap.has_action("scoreboard") and InputMap.action_get_events("scoreboard").any(
-			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_Q),
-			"Q is bound to the scoreboard")
+			func(e: InputEvent) -> bool: return e is InputEventKey and e.physical_keycode == KEY_O),
+			"O is bound to the scoreboard (Q is the weapon ability)")
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(Worlds.get_world("ashfront"), 71)

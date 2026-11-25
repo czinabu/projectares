@@ -28,7 +28,7 @@ date in the same PR.
   traits too (`ABILITY_WEIGHTS`).
 - Weapon abilities are data: the item's `ability` stat picks one on
   `MeleeWeapon`, fired by its own press (`ActorCommand.weapon_ability_pressed`,
-  O or the mouse's thumb button, `MeleeWeapon.weapon_ability`) and spent for
+  Q or the mouse's thumb button, `MeleeWeapon.weapon_ability`) and spent for
   `ability_cooldown` from the press. The first is the Breaker Hammer's
   "ground_pound": a windup longer than its heavy, the hammer driven into the
   ground (`swing_arc` reaches the ground at the hit), and a ring
@@ -43,8 +43,21 @@ date in the same PR.
   plays it back up, timed by what is left. A bot pounds when the pound is
   ready and a second foe stands in its ring, now and then on one alone
   (`BotBrain._wants_pound`, asked only as a hammer bot picks a swing). Check with
-  `visual_check.tscn -- <dir> --moves-only weapon=hammer_breaker only=pound`
-  (three bots stand round to be knocked back; `frames` for a clip).
+  `visual_check.tscn -- <dir> --moves-only weapon=<id> only=ability`
+  (bots stand where the ability needs them; `frames` for a clip).
+  Every melee type has one (`MeleeWeapon.ABILITY_NAMES`), each weighted
+  alike in the budget so none buys power with it: the knife's
+  "shadow_step" (a crouch, then through to just behind the foe in front,
+  turned to their back through `Actor.turn_request`, which the player's
+  controller takes as the view's yaw; nothing in front, no cost), the
+  swords' "counter_stance" (the guard shown for `ability_windup`; a melee
+  hit from the front is parried there and answered by a quick riposte,
+  `_counter`, ahead of the plain guard in `modify_incoming`; a kick still
+  goes through), the axes' "guard_hook" (kind "hook": through any guard,
+  tearing a held one open, a pull a step in; a dodge slips it), the
+  spears' "vault" (planted, then up and ahead, the heavy from the top a dive
+  slam or air-lunge) and the hook blade's "trip" (a blockable low cut that
+  knocks down). Bots use all but the vault (`BotBrain._wants_ability`).
   Melee is made to answer guns (DESIGN.md "Melee against guns"): blades go
   past armor (`DamageInfo.armor_pierce`), a heavy started sprinting is a
   dash-strike (`dash_range`; with `dash_through`, a charge that runs its

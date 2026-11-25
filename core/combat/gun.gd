@@ -714,6 +714,11 @@ func noise_reach() -> float:
 ## `fallback` when there is none (headless, greybox). View only: the shot
 ## itself always leaves the eyes, and nothing here changes the simulation.
 func muzzle_point(fallback: Vector3) -> Vector3:
+	# A body whose gun is built into it (an android's arm, `ActorSkin`)
+	# names the barrel's end it draws: shots are drawn leaving there.
+	var drawn: Variant = visual.get_meta("drawn_muzzle") if visual != null and visual.has_meta("drawn_muzzle") else null
+	if drawn is Node3D and is_instance_valid(drawn) and (drawn as Node3D).is_inside_tree():
+		return (drawn as Node3D).global_position
 	var marker := visual.get_node_or_null("Muzzle") as Node3D if visual != null else null
 	if marker == null or not marker.is_inside_tree():
 		return fallback

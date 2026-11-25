@@ -32,6 +32,11 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.global_position += Vector3(0, -200, 0)
 	player.set_physics_process(false)
+	# Standing still, hands empty: a bot taken over may have been running.
+	player.velocity = Vector3.ZERO
+	Loadout.arrive_unarmed(player)
+	# Up in the open sky, where no wall or crate stands in the shot.
+	player.global_position += Vector3(0, 40, 0)
 	player.cmd.yaw = player.rotation.y
 	player.cmd.pitch = 0.0
 	player.cmd.aim_dir = -player.global_basis.z

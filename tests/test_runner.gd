@@ -1855,8 +1855,8 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 
 func _test_phone_escape() -> void:
 	print("Phone: Tab and Esc")
-	check(PhoneScript.key_name("toggle_view") == "Tab" and PhoneScript.key_name("scoreboard") == "Q",
-			"Tab switches the camera and Q holds the scoreboard")
+	check(PhoneScript.key_name("toggle_view") == "Tab" and PhoneScript.key_name("scoreboard") == "O",
+			"Tab switches the camera and O holds the scoreboard")
 	var phone: CanvasLayer = PhoneScript.new()
 	add_child(phone)
 	await frames(1)
