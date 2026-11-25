@@ -339,8 +339,9 @@ func register_items() -> void:
 	ItemDB.register("frost_signal_core", "Signal Core", ItemDB.Rarity.EPIC, 1200, ["material"], {},
 			"The heart of the relay mast. Hums when you hold it.")
 	ItemDB.register("frost_ice_axe", "Ice Axe", ItemDB.Rarity.RARE, 750, ["weapon", "melee", "one_handed", "axe"],
-			{"light_damage": 30.0, "heavy_damage": 80.0, "heavy_lunge": 12.0, "slam_damage": 70.0,
-			"reach": 2.9, "swing_style": "chop", "swing_scale": 0.9},
+			{"light_damage": 32.0, "heavy_damage": 82.0, "heavy_lunge": 12.0, "slam_damage": 70.0,
+			"reach": 2.9, "light_windup": 0.15, "light_recover": 0.34, "heavy_windup": 0.46,
+			"light_stamina": 12.0, "heavy_stamina": 30.0, "swing_style": "chop", "swing_scale": 0.9},
 			"Long heavy lunge and a hard dive slam. Built for closing distance on open ice.")
 
 

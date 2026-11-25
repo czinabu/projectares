@@ -168,16 +168,16 @@ func _ready() -> void:
 	# one-handers move faster, two-handers slower but stagger and break armor
 	# (`MeleeWeapon`), and the hands hold it that way (`Look.is_two_handed`).
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "one_handed", "blade"],
-			{"light_damage": 34.0, "heavy_damage": 72.0, "light_recover": 0.22, "parry_window": 0.26,
+			{"light_damage": 26.0, "heavy_damage": 66.0, "light_recover": 0.26, "parry_window": 0.26,
 			"swing_style": "cut"},
-			"Faster swings and a more forgiving parry.")
+			"Quick to recover and the most forgiving parry of any blade, for lighter cuts.")
 	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "two_handed", "hammer", "vendor"],
-			{"light_damage": 42.0, "heavy_damage": 95.0, "light_windup": 0.22, "light_recover": 0.45,
-			"heavy_windup": 0.55, "light_stamina": 16.0, "heavy_stamina": 36.0, "reach": 3.1, "swing_style": "chop",
-			"slam_damage": 85.0, "slam_radius": 5.5},
-			"Slow and brutal. Its dive slam hits a wide area.")
+			{"light_damage": 46.0, "heavy_damage": 98.0, "light_windup": 0.22, "light_recover": 0.45,
+			"heavy_windup": 0.6, "heavy_recover": 0.6, "light_stamina": 18.0, "heavy_stamina": 40.0, "reach": 3.2,
+			"arc_deg": 140.0, "swing_style": "chop", "slam_damage": 95.0, "slam_radius": 6.5},
+			"Slow and brutal, the hardest hits of any weapon. Its wide swings catch a crowd and its dive slam hits a wide area.")
 	register("knife_gutter", "Gutter Knife", Rarity.COMMON, 250, ["weapon", "melee", "one_handed", "knife", "vendor"],
-			{"light_damage": 17.0, "heavy_damage": 40.0, "reach": 2.1, "arc_deg": 90.0,
+			{"light_damage": 19.0, "heavy_damage": 40.0, "reach": 2.1, "arc_deg": 90.0,
 			"light_windup": 0.08, "light_recover": 0.15, "heavy_windup": 0.25, "heavy_recover": 0.35,
 			"heavy_lunge": 12.0, "light_stamina": 6.0, "heavy_stamina": 18.0, "parry_window": 0.16,
 			"slam_damage": 35.0, "slam_radius": 3.0, "backstab_mult": 2.2, "backstab_arc_deg": 180.0,
@@ -189,11 +189,11 @@ func _ready() -> void:
 			"guard_crush": 2.5, "swing_style": "chop", "swing_scale": 0.9},
 			"Chops through guards. Blocking it costs two and a half times the stamina, so a few hits break a guard.")
 	register("spear_lancer", "Lancer Spear", Rarity.RARE, 900, ["weapon", "melee", "two_handed", "spear"],
-			{"light_damage": 27.0, "heavy_damage": 62.0, "reach": 4.1, "arc_deg": 40.0,
-			"vertical_reach": 3.8, "close_range": 1.5, "close_mult": 0.5, "light_windup": 0.14,
+			{"light_damage": 29.0, "heavy_damage": 66.0, "reach": 4.1, "arc_deg": 40.0,
+			"vertical_reach": 3.8, "close_range": 1.5, "close_mult": 0.6, "light_windup": 0.14,
 			"light_recover": 0.3, "heavy_windup": 0.42, "heavy_lunge": 6.0, "heavy_stagger": 0.6,
 			"slam_damage": 40.0, "slam_radius": 3.5, "swing_style": "thrust"},
-			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, half damage up close, and a heavy thrust staggers.")
+			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, weaker up close, and a heavy thrust staggers.")
 	# The Spore Marsh's melee options (DESIGN.md "Spore Marsh"), crafted from
 	# its blueprints: sidegrades, never a higher Mk.
 	register("blade_hook", "Marsh Hookblade", Rarity.UNCOMMON, 600, ["weapon", "melee", "one_handed", "blade"],
@@ -201,8 +201,8 @@ func _ready() -> void:
 			"backstab_mult": 1.6, "backstab_arc_deg": 140.0, "swing_style": "slash"},
 			"A hooked marsh blade. Quick cuts that bite harder from behind, but a lighter heavy.")
 	register("spear_reed", "Reed Spear", Rarity.UNCOMMON, 650, ["weapon", "melee", "two_handed", "spear"],
-			{"light_damage": 22.0, "heavy_damage": 50.0, "reach": 3.8, "arc_deg": 45.0,
-			"vertical_reach": 3.4, "close_range": 1.4, "close_mult": 0.6, "light_windup": 0.12,
+			{"light_damage": 25.0, "heavy_damage": 56.0, "reach": 3.8, "arc_deg": 45.0,
+			"vertical_reach": 3.4, "close_range": 1.4, "close_mult": 0.7, "light_windup": 0.12,
 			"light_recover": 0.25, "heavy_windup": 0.38, "heavy_lunge": 8.0, "heavy_stagger": 0.4,
 			"slam_damage": 32.0, "slam_radius": 3.0, "move_mult": 1.05, "swing_style": "thrust"},
 			"A light spear of marsh reed and chitin. Long reach and quick to move with, but it hits softer.")
