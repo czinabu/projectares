@@ -20,7 +20,8 @@ extends RefCounted
 ##     app, the player market, the trophy shelf and artifact case, the base
 ##     lounge and base visits): each place that offers one asks `holds`
 ##   - the items in `held_item` (the rover, mech and jet, their blueprints,
-##     and artifacts): never sold, rolled as loot, paid by a job, crafted or
+##     artifacts, and the Marsh's wildlife parts with the blades and
+##     blueprints made from them): never sold, rolled as loot, paid by a job, crafted or
 ##     offered on the watch
 
 ## The switch, and the worlds it ships.
@@ -37,9 +38,10 @@ const WORLDS_SETTING := "ares/release/launch_worlds"
 ##   base_visits  calling on a friend's base
 const HELD: Array[String] = ["arena", "races", "market", "trophies", "lounge", "base_visits"]
 
-## Items with one of these tags are held back: the rover, the mech, the jet
-## and every artifact. A blueprint whose recipe makes one is held too.
-const HELD_TAGS: Array[String] = ["rover", "walker", "aircraft", "artifact"]
+## Items with one of these tags are held back: the rover, the mech, the jet,
+## every artifact, and the wildlife's parts (nothing at launch drops them).
+## Whatever is crafted from a held part is held, and so is its blueprint.
+const HELD_TAGS: Array[String] = ["rover", "walker", "aircraft", "artifact", "wildlife"]
 
 const Crafting := preload("res://core/progression/crafting.gd")
 
@@ -73,11 +75,16 @@ static func holds_item(id: String) -> bool:
 
 
 ## Whether an item is one the launch holds back, switch or not: tagged with
-## one of `HELD_TAGS`, or a blueprint whose recipe makes such an item.
+## one of `HELD_TAGS`, crafted from a part that is, or a blueprint whose
+## recipe makes such an item.
 static func held_item(id: String) -> bool:
 	for tag in HELD_TAGS:
 		if ItemDB.has_tag(id, tag):
 			return true
+	if Crafting.RECIPES.has(id):
+		for part: String in Crafting.RECIPES[id].get("parts", {}):
+			if held_item(part):
+				return true
 	if ItemDB.has_tag(id, Crafting.BLUEPRINT_TAG):
 		for made: String in Crafting.RECIPES:
 			if str(Crafting.RECIPES[made].get("blueprint", "")) == id and held_item(made):

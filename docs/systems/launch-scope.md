@@ -36,7 +36,10 @@ anything it covers, and keep it up to date in the same PR.
   "base_visits" (no "Invite to base" on the phone, `SocialService.invite`
   refuses one, Wren drops her line about visitors).
 - Items (`LaunchScope.holds_item`): anything tagged "rover", "walker",
-  "aircraft" or "artifact", and a blueprint whose recipe makes one. Never
+  "aircraft", "artifact" or "wildlife" (the Marsh's parts, which nothing at
+  launch drops), anything crafted from a held part (the Marsh's blades), and
+  a blueprint whose recipe makes a held item (Caleb's call: the Marsh's
+  blade blueprints stay out of Frostline's weekly jobs too). Never
   sold (`Economy.is_shop_item`, the back room), rolled as loot
   (`ItemDB.roll` gives the rest of a table its weight; `roll_artifact`,
   `roll_crafting_loot`), paid by a job (`Contracts.reward_for`), crafted

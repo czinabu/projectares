@@ -15,8 +15,9 @@ const BaseUpgrades := preload("res://core/base/base_upgrades.gd")
 const StashRules := preload("res://core/account/stash_rules.gd")
 
 const HELD_ITEMS: Array[String] = ["rover_warden", "mech_bulwark", "jet_kestrel", "bp_mech_bulwark", "bp_jet_kestrel",
-		"artifact_rewind", "artifact_cloak"]
-const KEPT_ITEMS: Array[String] = ["bike_scrapper", "bike_raider", "bp_jetpack", "jetpack_mk1"]
+		"artifact_rewind", "artifact_cloak", "stalker_fang", "blade_hook", "bp_blade_hook", "bp_spear_reed"]
+const KEPT_ITEMS: Array[String] = ["bike_scrapper", "bike_raider", "bp_jetpack", "jetpack_mk1", "bp_frame_thermal",
+		"bp_grip_glacier", "frame_thermal"]
 
 
 static func run(t: Node) -> void:
@@ -50,7 +51,7 @@ static func _held(t: Node) -> void:
 	# Items: never sold, rolled, paid or crafted.
 	t.check(HELD_ITEMS.all(func(id: String) -> bool: return LaunchScope.holds_item(id))
 			and not KEPT_ITEMS.any(func(id: String) -> bool: return LaunchScope.holds_item(id)),
-			"the rover, mech, jet, their blueprints and artifacts are held; the bikes and rig blueprints are not")
+			"the rover, mech, jet, artifacts, the Marsh's parts and blades and their blueprints are held; the bikes and Frostline's blueprints are not")
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	var table := [{"id": "rover_warden", "weight": 1000.0}, {"id": "bike_scrapper", "weight": 1.0}]
@@ -84,7 +85,7 @@ static func _held(t: Node) -> void:
 	for i in 200:
 		paid[Contracts.reward_for("blueprint", i)] = true
 	t.check(not paid.keys().any(func(id: String) -> bool: return LaunchScope.holds_item(id)),
-			"no job pays a held blueprint")
+			"no job pays a held blueprint, the Marsh blades' included")
 	t.check("mech_bulwark" not in Crafting.ids() and "jet_kestrel" not in Crafting.ids() and "jetpack_mk2" in Crafting.ids(),
 			"the fabricator offers no mech or jet")
 	t.check(Crafting.blocked(["reactor_core", "alloy_ingot", "alloy_ingot", "alloy_ingot", "power_cell", "power_cell"],
