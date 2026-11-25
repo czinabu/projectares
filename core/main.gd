@@ -328,6 +328,8 @@ func _ready() -> void:
 ## Between places the hub's travel screen fills the window; anywhere else it
 ## is only ever seen on a station's screen.
 func _process(delta: float) -> void:
+	if controller != null and is_instance_valid(controller) and phone != null:
+		controller.mirror_focus = 1.0 if phone.mirror_on_face() else 0.0
 	if _server_pid > 0:
 		_beat_left -= delta
 		if _beat_left <= 0.0:
