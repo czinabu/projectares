@@ -265,7 +265,9 @@ date in the same PR.
   `ActorSkin._build_android`, "heavy_chassis" for the colossus). The
   weapon is the right forearm (`_update_arm_weapon`, rebuilt when the
   weapon changes): a gun housing with a barrel, lit coils and an
-  "ArmMuzzle" the shot's flash comes from (`_on_fired`), or a blade. A gun
+  "ArmMuzzle" (set on the gun's visual as "drawn_muzzle", so
+  `Gun.muzzle_point` draws every tracer and beam shot leaving it, and the
+  lock beam and flash start there too), or a blade. A gun
   arm is swung up along the aim while it fights (`_aim_arm`, a hook after
   the clip: the upper arm and then the forearm turned so the next joint
   lies along the aim, blended by `_arm_raise`). The shot itself still

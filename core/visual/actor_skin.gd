@@ -3191,6 +3191,9 @@ func _update_arm_weapon() -> void:
 		_arm_muzzle.name = "ArmMuzzle"
 		_arm_muzzle.transform = at * Transform3D(Basis.IDENTITY, Vector3(0, 0.12 * w + reach, 0))
 		root.add_child(_arm_muzzle)
+		# Tracers, beams and the flash leave the arm (`Gun.muzzle_point`).
+		if weapon.visual:
+			weapon.visual.set_meta("drawn_muzzle", _arm_muzzle)
 	else:
 		var blade := (1.2 if heavy else 0.8) * w
 		put.call("Guard", BoxMesh.new(), shell, Vector3(0, -forearm * 0.3, 0), Vector3(0.16 * w, forearm * 0.75, 0.16 * w))
@@ -3456,6 +3459,11 @@ func _update_beam(delta: float) -> void:
 	var dir := actor.cmd.aim_dir if actor.cmd.aim_dir.length() > 0.5 \
 			else Basis.from_euler(Vector3(actor.cmd.pitch, actor.cmd.yaw, 0.0)) * Vector3.FORWARD
 	var reach := beam_reach
+	var drawn_from := from
+	if is_instance_valid(_arm_muzzle) and _arm_muzzle.is_inside_tree():
+		# An android's beam leaves its gun arm; what it meets is still
+		# judged along the aim from the eyes.
+		drawn_from = _arm_muzzle.global_position
 	if is_inside_tree():
 		var query := PhysicsRayQueryParameters3D.create(from, from + dir * reach,
 				Actor.LAYER_WORLD | Actor.LAYER_ACTORS)
@@ -3471,11 +3479,16 @@ func _update_beam(delta: float) -> void:
 		# Locked: it flickers as the cannon fires down it.
 		color.a *= 0.75 + 0.25 * sin(_beam_held * 40.0)
 	_beam_mat.albedo_color = color
-	var mid := from + dir * reach * 0.5
-	var basis := Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT)
+	var end := from + dir * reach
+	var line := end - drawn_from
+	if line.length() < 0.01:
+		return
+	var mid := drawn_from + line * 0.5
+	var along := line.normalized()
+	var basis := Basis.looking_at(along, Vector3.UP if absf(along.y) < 0.99 else Vector3.RIGHT)
 	# The tube stands along Y: lay it along the aim (-Z of `looking_at`).
 	basis = basis * Basis(Vector3.RIGHT, PI * 0.5)
-	_beam.global_transform = Transform3D(basis.scaled_local(Vector3(width, reach, width)), mid)
+	_beam.global_transform = Transform3D(basis.scaled_local(Vector3(width, line.length(), width)), mid)
 
 
 ## How far a tracking beam reaches when it meets nothing.
