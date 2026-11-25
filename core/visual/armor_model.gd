@@ -295,6 +295,13 @@ static func pouch(root: Node3D, m: Kit, size: Vector3, at: Vector3, out: Vector3
 ## The torso round the chest bone. Named plates: "Chest" and "Back" always,
 ## "Carrier" under them, "Strap" over the shoulders, "Side" for a
 ## cummerbund (not light), "Collar" (the gorget) and "Belly" lames on heavy.
+## How far down the trunk the front pieces hang straight from the fullest
+## point above them (a share of it) before following the body in again:
+## enough to fall from the chest, not so much a plate drops from the bust
+## like a slab.
+const DRAPE := 0.15
+
+
 static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 	var root := _root("FrameModel")
 	var m := Kit.new(style)
@@ -306,20 +313,21 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 	# The carrier (fabric) under the plates, front and back.
 	var cw := 1.1 if light else 1.25
 	var cg := 0.009
-	plate(root, "Carrier", b.wrap(0.36 if light else 0.3, 0.86, -cw, cw, cg, 0.07, 0.0, 0.0, 0.25), 0.01, m.fabric)
+	plate(root, "Carrier", b.wrap(0.36 if light else 0.3, 0.86, -cw, cw, cg, 0.07, 0.0, 0.0, DRAPE), 0.01, m.fabric)
 	var bw := cw * 0.78
 	plate(root, "Carrier", b.wrap(0.34 if light else 0.3, 0.88, PI - bw, PI + bw, cg, 0.03, 0.0, 0.18, 0.08), 0.01, m.fabric)
 	# The hard plates: sculpted over the chest, thicker and further out the
 	# heavier the frame.
 	# Out past the carrier (and the straps' ends) under it.
-	var pg := 0.036
+	# (A cuirass a little further: its high neckline goes over the straps.)
+	var pg := 0.036 if heavy else 0.034
 	var pt: float = {"light": 0.012, "medium": 0.016, "heavy": 0.018}[weight]
 	var pw: float = {"light": 0.85, "medium": 0.98, "heavy": 1.12}[weight]
 	var chest_low := 0.42 if heavy else 0.5
 	# Heavy is a cuirass with a keel down its middle, narrowing to the
 	# shoulders so it never reads as a box.
 	plate(root, "Chest", b.wrap(chest_low, 0.88, -pw + skew, pw + skew, pg, 0.1 if heavy else 0.07, 0.014 if heavy else 0.008, 0.2 if heavy else 0.12,
-			0.25), pt, m.plate, 20, 9)
+			DRAPE), pt, m.plate, 20, 9)
 	# The back plate stays between the shoulder blades and narrows to the
 	# top, so from behind it never reads wider than the back.
 	var back_w: float = {"light": 0.68, "medium": 0.76, "heavy": 0.98}[weight]
@@ -329,16 +337,16 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 		# The cuirass closes down the sides, layered abdominal lames under it,
 		# each edged in steel.
 		for side: float in [-1.0, 1.0]:
-			plate(root, "SidePlate", b.wrap(0.44, 0.62, side * 1.5 - 0.26, side * 1.5 + 0.26, 0.048, 0.0, 0.0, 0.0, 0.25), pt * 0.7, m.plate2, 8, 6)
+			plate(root, "SidePlate", b.wrap(0.44, 0.62, side * 1.5 - 0.26, side * 1.5 + 0.26, 0.048, 0.0, 0.0, 0.0, DRAPE), pt * 0.7, m.plate2, 8, 6)
 		# Edge to edge down from the chest plate, over the carrier; the
 		# lowest stops above the belt.
 		for k in 3:
 			var top := chest_low - k * 0.075
 			var w := 1.05 - k * 0.08
-			plate(root, "Belly" if k == 0 else "Belly%d" % k, b.wrap(top - 0.073, top - 0.002, -w, w, 0.022 + k * 0.004, 0.0, 0.004, 0.0, 0.25),
+			plate(root, "Belly" if k == 0 else "Belly%d" % k, b.wrap(top - 0.073, top - 0.002, -w, w, 0.027 + k * 0.004, 0.0, 0.004, 0.0, DRAPE),
 					pt * 0.8,
 					m.plate2 if k % 2 else m.plate, 16, 4)
-			plate(root, "LameEdge", b.wrap(top - 0.078, top - 0.063, -w + 0.04, w - 0.04, 0.022 + pt * 0.8 + k * 0.004, 0.0, 0.0, 0.0, 0.25), 0.004,
+			plate(root, "LameEdge", b.wrap(top - 0.078, top - 0.063, -w + 0.04, w - 0.04, 0.027 + pt * 0.8 + k * 0.004, 0.0, 0.0, 0.0, DRAPE), 0.004,
 					m.metal, 16, 1)
 		# A keel down the middle of the cuirass, and a pressed V from each
 		# shoulder to it, so the chest reads sculpted, not boxed.
@@ -376,10 +384,10 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 				plate(root, "Elastic", b.wrap(f, f + 0.035, minf(a0, a1), maxf(a0, a1), 0.022), 0.006, m.strap, 10, 1)
 			continue
 		# Over the carrier's edges.
-		plate(root, "Side", b.wrap(0.28, 0.55, minf(a0, a1), maxf(a0, a1), 0.026, 0.0, 0.0, 0.0, 0.25), 0.014, m.fabric, 10, 4)
+		plate(root, "Side", b.wrap(0.28, 0.55, minf(a0, a1), maxf(a0, a1), 0.023, 0.0, 0.0, 0.0, DRAPE), 0.009, m.fabric, 10, 4)
 		for k in 3:
 			var f := 0.32 + k * 0.07
-			plate(root, "Webbing", b.wrap(f, f + 0.018, minf(a0, a1) + 0.06, maxf(a0, a1) - 0.06, 0.044, 0.0, 0.0, 0.0, 0.25), 0.004, m.strap, 10, 1)
+			plate(root, "Webbing", b.wrap(f, f + 0.018, minf(a0, a1) + 0.06, maxf(a0, a1) - 0.06, 0.034, 0.0, 0.0, 0.0, DRAPE), 0.004, m.strap, 10, 1)
 	# Magazine pouches across the front below the plate, each with its cell's
 	# lit gauge.
 	var mags := 2 if light else 3
@@ -474,10 +482,10 @@ static func _torso_details(root: Node3D, m: Kit, b: Trunk, out: float, light: bo
 	if "hydration" in d:
 		# A hydration carrier on the back, webbing across it.
 		# Hung like the back plate under it.
-		plate(root, "Hydration", b.wrap(0.48, 0.82, PI - 0.55, PI + 0.55, out + 0.008, 0.0, 0.0, 0.0, 0.2), 0.03, m.fabric, 10, 6)
+		plate(root, "Hydration", b.wrap(0.48, 0.82, PI - 0.5, PI + 0.5, out + 0.008, 0.0, 0.0, 0.0, 0.2), 0.022, m.fabric, 10, 6)
 		for k in 4:
 			var f := 0.52 + k * 0.08
-			plate(root, "Webbing", b.wrap(f, f + 0.014, PI - 0.56, PI + 0.56, out + 0.048, 0.0, 0.0, 0.0, 0.2), 0.004, m.strap, 10, 1)
+			plate(root, "Webbing", b.wrap(f, f + 0.014, PI - 0.51, PI + 0.51, out + 0.032, 0.0, 0.0, 0.0, 0.2), 0.004, m.strap, 10, 1)
 	if "vents" in d:
 		# Heat vents in the back plate, glowing: it runs hot.
 		for x: float in [-0.32, 0.32]:
