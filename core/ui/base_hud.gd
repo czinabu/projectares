@@ -211,8 +211,11 @@ func _place(node: Control, ax: float, ay: float, offset: Vector2, p_size: Vector
 	node.offset_bottom = offset.y + p_size.y
 
 
-## Shows or hides the cross in the middle of the screen, which would sit on
-## your face in the phone's mirror.
+## Shows or hides the cross in the middle of the screen and the prompt
+## under it, which would sit on your face in the phone's mirror (the
+## wardrobe's "[F]" stayed over the glass).
 func show_aim(on: bool) -> void:
 	if crosshair:
 		crosshair.visible = on
+	if _prompt:
+		_prompt.visible = on

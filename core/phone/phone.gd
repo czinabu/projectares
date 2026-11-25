@@ -2617,6 +2617,8 @@ class HoloScreen extends Node3D:
 	## lower corner up this share of its height.
 	var beam_reach := 0.25
 	var backing := 0.6
+	## The scan lines' depth, faint so they never dim a line of text.
+	var line_depth := 0.05
 	var open_time := 0.15
 	## 0 down, 1 fully up.
 	var open := 0.0
@@ -2634,13 +2636,15 @@ class HoloScreen extends Node3D:
 		_card.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var mat := ShaderMaterial.new()
 		var shader := Shader.new()
-		# Depth tested, as the watch's card seen from behind: the body passes
-		# in front of it.
-		shader.code = Hud.Wrist.HOLO_SHADER.replace("DEPTH", "depth_draw_never")
+		# Drawn over the world: a wall or the ground beside you never hides
+		# the phone you are reading (it stands right of the body, which it
+		# seldom overlaps).
+		shader.code = Hud.Wrist.HOLO_SHADER.replace("DEPTH", "depth_test_disabled")
 		mat.shader = shader
 		mat.set_shader_parameter("card", texture)
 		mat.set_shader_parameter("tint", TINT)
 		mat.set_shader_parameter("backing", backing)
+		mat.set_shader_parameter("line_depth", line_depth)
 		mat.render_priority = 10
 		_card.material_override = mat
 		_card.top_level = true
@@ -2689,7 +2693,9 @@ class HoloScreen extends Node3D:
 		var spot := view * Vector3(x, middle, -depth)
 		var grow := ease(open, -2.0)
 		var at := from.lerp(spot, grow)
-		_card.global_transform = Transform3D(view.basis.orthonormalized().scaled(
+		# Scaled along its own axes: `scaled` would stretch it along the
+		# world's, skewing the card off square whenever the view is turned.
+		_card.global_transform = Transform3D(view.basis.orthonormalized().scaled_local(
 				Vector3(size.x * maxf(grow, 0.05), size.y * maxf(grow, 0.05), 1.0)), at)
 		_card.visible = true
 		(_card.material_override as ShaderMaterial).set_shader_parameter("open", open)

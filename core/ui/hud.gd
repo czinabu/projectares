@@ -1809,12 +1809,21 @@ uniform float open = 1.0;
 // A dark glass behind the card's lines (0 none, 1 solid), so the world
 // does not show through where it has to be read.
 uniform float backing = 0.0;
+// How deep the scan lines run (0 none): a card full of small text, like the
+// phone's, keeps them faint so they never dim a line of it.
+uniform float line_depth = 0.14;
 void fragment() {
 	vec2 uv = UV;
 	float settle = 1.0 - open;
 	uv.x += settle * 0.03 * sin(uv.y * 90.0 + TIME * 40.0);
-	vec4 c = texture(card, uv);
-	float lines = 0.86 + 0.14 * sin(uv.y * 420.0 - TIME * 8.0);
+	// Four taps across the pixel's footprint on the card: drawn smaller than
+	// its texture (a viewport texture has no mipmaps) one tap would skip
+	// whole strokes of the text and crawl as the card moves.
+	vec2 dx = dFdx(uv) * 0.25;
+	vec2 dy = dFdy(uv) * 0.25;
+	vec4 c = (texture(card, uv + dx + dy) + texture(card, uv + dx - dy)
+			+ texture(card, uv - dx + dy) + texture(card, uv - dx - dy)) * 0.25;
+	float lines = 1.0 - line_depth + line_depth * sin(uv.y * 420.0 - TIME * 8.0);
 	float sweep = smoothstep(0.08, 0.0, abs(fract(TIME * 0.3) * 1.4 - 0.2 - uv.y));
 	float flick = 0.93 + 0.07 * sin(TIME * 53.0) * sin(TIME * 7.3);
 	float edge = smoothstep(0.0, 0.012, uv.x) * smoothstep(0.0, 0.012, 1.0 - uv.x)
@@ -2166,7 +2175,7 @@ void fragment() {
 				_row_scale = 1.0
 				if cam and not from_eyes:
 					_row_scale = _tp_row_scale(cam, spot, size)
-				_holo.global_transform = Transform3D(facing.scaled(Vector3(size, size * maxf(open, 0.001), size)), at)
+				_holo.global_transform = Transform3D(facing.scaled_local(Vector3(size, size * maxf(open, 0.001), size)), at)
 				_glow.global_position = wrist
 		_third = third
 		# From the eyes nothing comes between you and the card, so it is drawn

@@ -24,7 +24,7 @@ const ROSTER := {
 	"marksman": {"name": "Dune Marksman", "look": "raider", "chance": 2.0, "health": 90.0, "armor": 20.0,
 			"walk": 4.2, "sprint": 6.6, "weapon": "gun", "gun": "Long Rifle", "damage": 28.0, "spread": 0.8,
 			"interval": 0.9, "metas": {"sight": 70.0, "range": 35.0, "burst": Vector2(0.1, 1.4)}},
-	"brute": {"name": "Scrap Brute", "look": "heavy", "chance": 1.5, "health": 260.0, "armor": 40.0,
+	"brute": {"name": "Scrap Brute", "look": "scrap_brute", "chance": 1.5, "health": 260.0, "armor": 40.0,
 			"walk": 5.0, "sprint": 8.6, "weapon": "blade", "blade": "Cleaver", "damage": 30.0, "windup": 0.55,
 			"reach": 2.6},
 }
@@ -262,6 +262,8 @@ func _roll_kind(rng: RandomNumberGenerator) -> String:
 ## clients build the same warlord from it.
 func make_warlord(bot: Actor) -> void:
 	bot.display_name = "Wreck Baron"
+	# A body of its own (`Look.SKINS` "baron"), not a brute with more health.
+	bot.set_meta("look", "baron")
 	bot.health.max_health = 900.0
 	bot.health.health = 900.0
 	bot.health.set_armor(120.0)

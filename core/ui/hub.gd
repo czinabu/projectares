@@ -4,11 +4,12 @@ extends Control
 ## between places. The game never opens on this: it opens in your home base,
 ## and each station there (`STATIONS`) shows one part of it on its own screen
 ## in the room (`Main` puts this in a viewport shown on a `WorldScreen`):
-## the locker your loadout, the mastery bench your variants, the wardrobe the
-## customizer, the records board your stash and last life, and the trader the
-## shops. Going online is the phone's Servers app, not a station. There is no
-## deploy screen: you leave for a world through a squad portal opened from the
-## watch.
+## the locker your loadout, the mastery bench your variants, the records
+## board your stash and last life, and the trader the shops. The wardrobe is
+## a mirror, not a screen: it opens the phone's Mirror app, which scrolls
+## through `character` (kept here, never shown). Going online is the
+## phone's Servers app, not a station. There is no deploy screen: you
+## leave for a world through a squad portal opened from the watch.
 ##
 ## It also keeps what is on show: the local profile, or the account a server
 ## keeps for you while you are in its lobby (`enter_lobby`).
@@ -52,7 +53,6 @@ const SCREEN_WIDTH := 1180.0
 const STATIONS := {
 	"locker": {"sections": ["loadout"]},
 	"mastery": {"sections": ["mastery"]},
-	"wardrobe": {"sections": ["character"]},
 	"records": {"sections": ["records"]},
 	"trader": {"sections": ["shop"]},
 	# The fabricator on the gunsmith bench (`HomeBase.CraftConsole`).
@@ -132,7 +132,7 @@ func _ready() -> void:
 	_kicker = _text("", 13, TerminalStyle.CYAN)
 	_kicker.visible = false
 	box.add_child(_kicker)
-	_title = _text("PROJECT ARES", 40, Color(1.0, 0.55, 0.25))
+	_title = _text("VERGE", 40, Color(1.0, 0.55, 0.25))
 	box.add_child(_title)
 
 	var records := _section(box, "records")
@@ -195,10 +195,6 @@ func _ready() -> void:
 	character = CharacterPanel.new()
 	character.appearance = Profile.appearance
 	character.changed.connect(func(appearance: Dictionary) -> void: look_changed.emit(appearance))
-	# The wardrobe opens the customizer itself; finishing there steps away.
-	character.customizer_closed.connect(func() -> void:
-		if station == "wardrobe":
-			close())
 	_section(box, "character").add_child(character)
 
 	_shop = ShopPanel.new()
@@ -298,17 +294,14 @@ func open_station(id: String, also: Array = []) -> void:
 	_shade.visible = true
 	_close_button.visible = true
 	visible = true
-	if id == "wardrobe":
-		character.show_customizer()
 
 
 ## The screen between places (connecting, travelling): the backdrop and a
 ## line on what is happening. Set the line with `set_online_status`.
 func show_travel() -> void:
 	station = ""
-	character.hide_customizer()
 	_show_only(["status"])
-	_title.text = "PROJECT ARES"
+	_title.text = "VERGE"
 	_title.add_theme_font_size_override("font_size", 40)
 	_kicker.visible = false
 	_backdrop.visible = true
@@ -321,8 +314,6 @@ func show_travel() -> void:
 func close() -> void:
 	var was := station
 	station = ""
-	if character:
-		character.hide_customizer()
 	visible = false
 	if was != "":
 		closed.emit()

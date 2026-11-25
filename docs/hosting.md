@@ -1,6 +1,6 @@
 # Host a server online
 
-This guide puts a Project Ares server on a rented cloud machine so friends can
+This guide puts a Verge server on a rented cloud machine so friends can
 join from anywhere, even when your own computer is off. It takes about 30
 minutes the first time and costs a few dollars a month. Everything here runs
 from PowerShell on Windows; you do not need to install anything on your PC.

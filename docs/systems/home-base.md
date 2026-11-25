@@ -150,3 +150,10 @@ date in the same PR.
   `Profile` or `NetSession.equip`. Like `Raid`, `HomeBase` has no camera, HUD
   or input code, and its displays are greybox shapes that `Look` dresses
   (any node with the meta `display_item`).
+
+- The wardrobe is a standing mirror, not a console (`HomeBase._dress_wardrobe`,
+  `wardrobe_mirror`): using it turns you to the glass and brings the phone
+  up on its Mirror app, which looks into that glass in first person and
+  swings to the dressing room in third (`Main._use_wardrobe`). It shares
+  nothing: until the ops consoles, the mastery bench and the records both
+  share the trader's console (`HomeBase.MERGED`).

@@ -222,8 +222,26 @@ date in the same PR.
   how much longer it is. A foot is placed relative to how it stands in the
   old idle (the old feet are IK bones that lie differently), and a finger
   takes only how far the old one curls, about its own curl axis from the
-  pack's closed hand (turned over whole, the fingers splay into a claw). An outfit no longer swaps meshes: it picks the
-  hair (`Human.HAIR`) and the suit's colours (`Human.SUITS`), and the
+  pack's closed hand (turned over whole, the fingers splay into a claw). The hair is its own choice on either body: a
+  hairstyle (`Human.STYLES`, "shaved" for none) and facial hair
+  (`Human.FACIAL`), all free, picked apart from any outfit; a look saved
+  before that keeps its head outfit's old hair (`Human.HAIR`,
+  `_legacy_hair`). The eyes take a chosen iris colour (`Human.iris_for`:
+  `character.gdshader` tints only the disc in the middle of the eye's UVs,
+  `iris_centre`, `iris_radius`). The suit is cloth, not paint on the bare
+  body (Caleb's call: it hugged every curve): `SuitShape`
+  (`core/visual/suit_shape.gd`) reshapes the torso and legs meshes at rest
+  into cloth hung over the body (each slice filled to its hull, draped from
+  the chest and seat, what stands out at the front and back eased back,
+  `SLACK` off the skin; shoulders, arms and below the knee left alone),
+  baked offline into `suit_<build>_<part>.res` by `tools/suit_shape` and
+  swapped in by `Human.build`. Re-bake whenever the bodies or `suit_shape.gd`
+  change, then re-measure with `tools/body_fit` (which measures the suited
+  body) and run `tools/armor_fit/clip_check.tscn`. The shader draws a
+  fatigue kit on it (`suit_kit`: a belt at `belt_y`, cargo pockets down the
+  outer thighs, knee pads, a shoulder yoke) and keeps only a little of the
+  body's normal map. An outfit no longer swaps meshes: it picks
+  the suit's colours (`Human.SUITS`), and the
   shader draws every surface below the head as a fitted tactical suit
   (`suit`, `suit_color`, `suit_trim`, gloves and a lit cuff;
   `Human.surface_kind` says which surfaces it covers) over the body's own
@@ -234,6 +252,12 @@ date in the same PR.
   Online it travels in the spawn data as
   `data["look"]`; the server keeps what each signed-in player sent
   (`NetSession.look_for_peer`). `Raid` and gameplay never read it.
+  Looks are changed only in front of a mirror, never on a flat screen
+  (Caleb's immersion rule): the phone's Mirror app anywhere, or the base's
+  Wardrobe, a standing mirror (`HomeBase._dress_wardrobe`) whose glass the
+  app uses in first person (`Main._use_wardrobe`). Its rows are
+  `CharacterPanel.PICKS`: body, hairstyle, facial hair, hair colour, eyes,
+  skin, then the suit.
   A look changed while in a world (the phone's Mirror app) is checked by the
   server in `_request_look` and passed to everyone there with `_look_changed`.
   The mirror itself (`core/visual/mirror.gd`) is a client-side view: no
@@ -243,3 +267,42 @@ date in the same PR.
   `Human.player_look(raw, owned)` enforces it on the profile, in the
   customizer and on the server. Better outfits are bought or earned, never
   added to the starter list. Bots use `Human.sanitize` and can wear anything.
+
+## Enemy bodies
+
+- No stock robot model stands in any world (`tests/enemy_bodies_tests.gd`).
+  A heavy or a boss is a person (`Look.SKINS` "vanguard", "tide_brute",
+  "scrap_brute", "slag_brute", "warlord", "baron", "crown_lord") in plates
+  of its own: a skin's "frame" names the weight and, after a colon, the
+  frame look (`ActorSkin.FRAME_STYLES`), worn in the skin's "paint"
+  (`"heavy:scrap"` with "desert"); `ActorSkin.frame_weight`/`frame_look`
+  read `"skin:<weight>:<look>"`, and the skin's own helmet ("helmet", where
+  "scrap" is the Junker's bucket) takes the plates' colours. A world picks
+  the skin: the roster's "look", or `make_warlord` setting the boss's
+  (an Ashfront walker warlord stays a walker).
+- A boss's "regalia" (`ActorSkin._build_regalia`: "warlord", "baron",
+  "crown") is built in code: a cloak in two panels, the upper on the chest
+  and the lower on the hips, and a banner, an engine with exhaust stacks or
+  a crown. Plain pieces, merged as they hang.
+- Frostline's automata ("sentinel", "colossus") are a body built in code
+  round Stan's walking skeleton, its mesh hidden ("chassis": "android",
+  `ActorSkin._build_android`, "heavy_chassis" for the colossus). The
+  weapon is the right forearm (`_update_arm_weapon`, rebuilt when the
+  weapon changes): a gun housing with a barrel, lit coils and an
+  "ArmMuzzle" (set on the gun's visual as "drawn_muzzle", so
+  `Gun.muzzle_point` draws every tracer and beam shot leaving it, and the
+  lock beam and flash start there too), or a blade. A gun
+  arm is swung up along the aim while it fights (`_aim_arm`, a hook after
+  the clip: the upper arm and then the forearm turned so the next joint
+  lies along the aim, blended by `_arm_raise`). The shot itself still
+  starts at the eyes. View only.
+- The Feral Stalker is a creature ("feral", `_build_creature` with
+  `_feral`): the marsh stalker's body furred, its glow the cold's blue
+  (`FROST_GLOW`).
+- People are never told apart by skin. `Human.for_name` draws the skin
+  tone from the name alone, the same whatever the outfits on offer, and
+  the character shader keeps skin out of the skin's tint, saturation and
+  brightness (`bare_skin`, `SKIN_SATURATION`, `SKIN_BRIGHTNESS`). An army
+  is dressed in its uniform instead: the bot's "uniform" meta ("top" and
+  "bottom" `Human.CLOTH_COLORS`, Ashfront's `ARMIES`), merged into the
+  appearance `Look.character` makes for anyone who has not chosen one.

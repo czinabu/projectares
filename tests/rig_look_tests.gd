@@ -11,6 +11,10 @@ static func run(t: Node) -> void:
 			and RigModel.kind_for("boots_thruster") == "boots" and RigModel.kind_for("wings_glide") == "wings",
 			"each flight rig picks its model from its stats")
 	t.check(RigModel.kind_for("rifle_scrap") == "", "gear that is not a flight rig gets no rig model")
+	# The plate against the back is lighter than the pack's dark trim, so a
+	# side view does not read it as a gap between the body and the pack.
+	t.check(RigModel.HARNESS.get_luminance() > RigModel.DARK.get_luminance() * 1.8,
+			"a back rig's harness plate reads as part of the pack, not as a gap")
 	for id: String in ItemDB.all_ids():
 		if ItemDB.has_tag(id, "flight_rig"):
 			var back := RigModel.build_back(id)

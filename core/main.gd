@@ -128,6 +128,12 @@ var dressing_turn_per_pixel := 0.008
 ## The mirror standing in front of the player while the phone's Mirror app is
 ## up, else null.
 var mirror: Node3D
+## The wardrobe's glass while the Mirror app was opened from it
+## (`_use_wardrobe`): first person looks into it instead of a mirror of its
+## own. It belongs to the base and is never freed here.
+var _wardrobe_glass: Node3D
+## How far (radians) the view turns right of the wardrobe's glass.
+var wardrobe_turn := 0.2
 ## The home base while the player is walking around it, else null.
 var base: HomeBase
 var base_hud: CanvasLayer
@@ -652,6 +658,9 @@ func open_station(id: String) -> void:
 	var console := base.station(id)
 	if console == null:
 		return
+	if id == "wardrobe":
+		_use_wardrobe()
+		return
 	hub.open_station(id, base.also_shows(id))
 	if not hub.visible:
 		return
@@ -668,6 +677,29 @@ func open_station(id: String) -> void:
 	if controller != null and is_instance_valid(controller):
 		controller.input_blocked = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## The wardrobe is a mirror: you turn to it and the phone comes up on its
+## Mirror app, with this glass as the mirror in first person (the dressing
+## room in third, as anywhere). No screen and no flat customizer.
+func _use_wardrobe() -> void:
+	var glass: Node3D = base.wardrobe_mirror
+	var me := _my_actor()
+	if glass == null or not is_instance_valid(glass) or me == null or controller == null \
+			or not is_instance_valid(controller):
+		return
+	_wardrobe_glass = glass
+	var to := glass.global_position - me.global_position
+	to.y = 0.0
+	if to.length() > 0.05:
+		# Square to the glass, turned a touch right so it stands clear of the
+		# phone held on the right.
+		controller.yaw = atan2(-to.x, -to.z) - wardrobe_turn
+	controller.pitch = 0.0
+	if phone.mirror_open():
+		_on_mirror_changed(true)
+	else:
+		phone.open("mirror")
 
 
 ## Takes the live screen off its console and gives the view back.
@@ -1561,6 +1593,8 @@ func _my_actor() -> Actor:
 ## when the app or the phone does.
 func _on_mirror_changed(up: bool) -> void:
 	_put_away_mirror()
+	if not up:
+		_wardrobe_glass = null
 	var me := _my_actor()
 	if not up or me == null or me.is_dead or controller == null or not is_instance_valid(controller) \
 			or controller.actor != me:
@@ -1577,6 +1611,11 @@ func _on_mirror_changed(up: bool) -> void:
 		return
 	# Level the gaze so the glass is in view. The camera mode stays as it is.
 	controller.pitch = clampf(controller.pitch, -0.15, 0.05)
+	if _wardrobe_glass != null and is_instance_valid(_wardrobe_glass) and _wardrobe_glass.is_inside_tree() \
+			and _wardrobe_glass.global_position.distance_to(me.global_position) < 4.0:
+		controller.phone_mirror = _wardrobe_glass
+		phone.set_mirror_up(true)
+		return
 	mirror = MirrorScript.new()
 	mirror.name = "Mirror"
 	mirror.setup(me, controller.camera)
@@ -1606,7 +1645,8 @@ func _keep_mirror_view() -> void:
 	if phone == null or not phone.mirror_open() or controller == null or not is_instance_valid(controller):
 		return
 	var third := controller.active_view() == PlayerController.ViewMode.THIRD
-	if (mirror != null or phone.dressing) and third != phone.dressing:
+	var glass_up := mirror != null or (controller.phone_mirror != null and is_instance_valid(controller.phone_mirror))
+	if (glass_up or phone.dressing) and third != phone.dressing:
 		_on_mirror_changed(true)
 
 

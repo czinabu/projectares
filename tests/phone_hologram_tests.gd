@@ -69,7 +69,24 @@ static func run(t: Node) -> void:
 			"square to the camera")
 	var to_card := cam.global_transform.affine_inverse() * card.global_position
 	var to_head := cam.global_transform.affine_inverse() * raid.player.get_eye_position()
-	t.check(-to_card.z > -to_head.z, "standing just past the character, so the body passes in front of it")
+	t.check(-to_card.z > -to_head.z, "standing just past the character")
+	var card_shader := (card.material_override as ShaderMaterial).shader.code
+	t.check("depth_test_disabled" in card_shader, "drawn over the world, so a wall or the ground beside you never hides it")
+	# Turned and looking down, it stays square and the same size: scaled along
+	# the world's axes it used to skew off square and squash its text.
+	var level_size := rect.size
+	controller.yaw = 0.9
+	controller.pitch = -0.9
+	for i in 6:
+		await t.frames(1)
+	var turned: Rect2 = projection.on_screen(cam)
+	t.check(card.global_basis.z.normalized().dot(cam.global_basis.z.normalized()) > 0.999
+			and turned.size.distance_to(level_size) < 3.0,
+			"turned and looking down, still square to the camera and as big (%s against %s)" % [turned.size, level_size])
+	controller.yaw = 0.0
+	controller.pitch = 0.0
+	for i in 6:
+		await t.frames(1)
 	t.check(projection.get_node("Beam").visible, "with light running up to it from the device")
 	var middle: Vector2 = phone.screen_point(rect.get_center())
 	t.check(middle.distance_to(Vector2(phone.screen_size) * 0.5) < 6.0, "a click on it lands on the phone's screen")

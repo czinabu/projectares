@@ -19,7 +19,7 @@ const FAINT := Color(0.72, 0.76, 0.84, 0.9)
 ## Text on a lit (amber) button.
 const INK_DARK := Color(0.06, 0.05, 0.04)
 
-var title_text := "PROJECT ARES"
+var title_text := "VERGE"
 var tagline_text := "Take what you can carry. Get out alive."
 ## Small caps in the bottom right corner. Empty hides it.
 var location_text := ""

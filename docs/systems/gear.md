@@ -329,7 +329,9 @@ date in the same PR.
   away, a backpack and a helmet on the belt on both builds, tests every
   piece of gear against the armor, the body and the other gear, and must
   report 0 clashes after any change to gear, armor or where gear is worn
-  (a hand or the weapon in it is counted apart, `--arms`); see it with
+  (a hand or the weapon in it is counted apart, `--arms`). It needs a
+  display or xvfb: headless no body is dressed, and it exits 1 rather
+  than report an empty 0; see it with
   `visual_check.tscn -- <dir> --gear-only`. The kit: a fabric carrier with straps,
   webbing and pouches under curved, bevelled plates, a padded battle belt
   under a webbing belt on every frame, and a cloth seat over the backside
@@ -358,6 +360,12 @@ date in the same PR.
   stands (`HomeBase.PaintSwatch`, `paint_requested`, `show_paints`).
   Check by eye with
   `visual_check.tscn -- <dir> --armor-only`.
+- Flight rig models (`core/visual/rig_model.gd`) are one size for both
+  builds, hung snug by the fitter above. The plate a back rig rests on
+  (`RigModel.HARNESS`) is a mid grey, never the pack's dark trim: dark, it
+  reads as a gap between the back and the pack in a side view. Check by
+  eye with `GEAR_BUILD=m` and `f` on `--gear-only`, and run
+  `tools/armor_fit/gear_check.tscn` (0 clashes) after a rig model change.
 - Thruster trails (DESIGN.md "Thruster trails"): `RigTrail`
   (`core/visual/rig_trail.gd`) colours the flames of every rig worn, a
   glow and a core held in a safe range (`RigTrail.SAFE`), and never a stat

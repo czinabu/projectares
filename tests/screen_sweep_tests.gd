@@ -40,9 +40,10 @@ static func _sweep_base(t: Node, main: Node) -> void:
 			continue
 		main.open_station(id)
 		await t.frames(5)
-		if main.hub.is_open():
+		if main.hub.is_open() or (id == "wardrobe" and main.phone.mirror_open()):
 			opened.append(id)
 		main.hub.close()
+		main.phone.close()
 		await t.frames(3)
 	t.check(not opened.is_empty() and main.station_screen == null and not main.hub.is_open(),
 			"the base's stations open and close (%s)" % ", ".join(opened))

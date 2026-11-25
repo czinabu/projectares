@@ -2,13 +2,16 @@ extends RefCounted
 ## People. Each build is one body (Quaternius' Universal Base Characters,
 ## made into `body_<build>.glb` by `tools/human_rig`) cut into a head, body,
 ## legs and feet, everyone in the tactical suit. An "appearance" is a small
-## dictionary naming an outfit per part and colours: the head's outfit picks
-## the hair (`HAIR`), the others the suit's colours (`SUITS`). This script
-## checks one, makes random ones, and builds the model.
+## dictionary naming a hairstyle (`STYLES`), facial hair (`FACIAL`), an
+## outfit per part (the body, legs and feet pick the suit's colours, `SUITS`)
+## and colours for skin, hair, eyes and the suit. A look saved before the
+## hairstyle was its own choice takes the head outfit's hair (`HAIR`). This
+## script checks one, makes random ones, and builds the model.
 ##
 ## An appearance is only ever cosmetic. `sanitize` is safe to run on a
 ## headless server on whatever a client sent: it loads no art.
 
+const SuitShape := preload("res://core/visual/suit_shape.gd")
 const DIR := "res://assets/characters/humans/"
 const SLOTS: Array[String] = ["head", "body", "legs", "feet"]
 const SLOT_NAMES := {"head": "Head", "body": "Torso", "legs": "Legs", "feet": "Shoes"}
@@ -45,6 +48,13 @@ const HAIR_COLORS: Array[Color] = [
 	Color(0.85, 0.70, 0.40), Color(0.60, 0.20, 0.12), Color(0.75, 0.75, 0.78), Color(0.25, 0.45, 0.75),
 ]
 const HAIR_NAMES: Array[String] = ["As made", "Black", "Brown", "Chestnut", "Blond", "Red", "Grey", "Blue"]
+## Iris colours (`character.gdshader` tints the iris only). Index 0 keeps the
+## pack's brown.
+const EYE_COLORS: Array[Color] = [
+	Color.WHITE, Color(0.12, 0.07, 0.04), Color(0.45, 0.33, 0.12), Color(0.22, 0.5, 0.2),
+	Color(0.2, 0.42, 0.85), Color(0.5, 0.56, 0.62), Color(0.85, 0.55, 0.12), Color(0.55, 0.25, 0.75),
+]
+const EYE_NAMES: Array[String] = ["Brown", "Dark brown", "Hazel", "Green", "Blue", "Grey", "Amber", "Violet"]
 const CLOTH_COLORS: Array[Color] = [
 	Color.WHITE, Color(0.16, 0.17, 0.19), Color(0.55, 0.57, 0.60), Color(0.42, 0.44, 0.30),
 	Color(0.55, 0.42, 0.28), Color(0.50, 0.16, 0.14), Color(0.18, 0.30, 0.50), Color(0.75, 0.45, 0.15),
@@ -54,9 +64,18 @@ const CLOTH_NAMES: Array[String] = ["As made", "Black", "Grey", "Olive", "Tan", 
 const SKIN_NAMES: Array[String] = ["Tone 1", "Tone 2", "Tone 3", "Tone 4", "Tone 5", "Tone 6"]
 ## Colour choices: key -> [label, names].
 const COLOR_KEYS := {
-	"skin": ["Skin", SKIN_NAMES], "hair": ["Hair", HAIR_NAMES],
+	"skin": ["Skin", SKIN_NAMES], "hair": ["Hair colour", HAIR_NAMES], "eyes": ["Eyes", EYE_NAMES],
 	"top": ["Top colour", CLOTH_NAMES], "bottom": ["Bottom colour", CLOTH_NAMES],
 }
+## Hairstyles, picked on their own on either body: id -> [name, the hair
+## meshes in the body file (`tools/human_rig`)]. Every one is free.
+const STYLES := {
+	"buzzed": ["Buzz cut", ["Hair_Buzzed"]], "cropped": ["Crop", ["Hair_BuzzedFemale"]],
+	"parted": ["Side part", ["Hair_SimpleParted"]], "long": ["Long", ["Hair_Long"]],
+	"buns": ["Buns", ["Hair_Buns"]], "shaved": ["Shaved", []],
+}
+## Facial hair, on either body: id -> [name, meshes].
+const FACIAL := {"none": ["None", []], "beard": ["Beard", ["Hair_Beard"]]}
 
 
 ## A valid appearance from anything: unknown parts and out-of-range colours
@@ -76,6 +95,13 @@ static func sanitize(raw: Variant) -> Dictionary:
 		var index: Variant = source.get(key)
 		# JSON hands numbers back as floats.
 		out[key] = clampi(int(index), 0, names.size() - 1) if typeof(index) in [TYPE_INT, TYPE_FLOAT] else 0
+	# The hairstyle and facial hair; a look from before they were their own
+	# choice keeps the head outfit's hair.
+	var legacy := _legacy_hair(build, out["head"])
+	var style: Variant = source.get("style")
+	out["style"] = style if typeof(style) == TYPE_STRING and STYLES.has(style) else legacy[0]
+	var facial: Variant = source.get("facial")
+	out["facial"] = facial if typeof(facial) == TYPE_STRING and FACIAL.has(facial) else legacy[1]
 	# Armor paints, frame look to paint (`ArmorPaint`); left out when none.
 	var paints := ArmorPaint.clean(source.get("paints"))
 	if not paints.is_empty():
@@ -84,6 +110,25 @@ static func sanitize(raw: Variant) -> Dictionary:
 	var trail := RigTrail.clean(source.get("trail"))
 	if trail != "":
 		out["trail"] = trail
+	return out
+
+
+## [style, facial] matching the hair a head outfit used to pick (`HAIR`).
+static func _legacy_hair(build: String, head: String) -> Array:
+	var meshes: Array = HAIR.get(build, {}).get(head, [])
+	var style := "shaved"
+	for id: String in STYLES:
+		var wanted: Array = STYLES[id][1]
+		if not wanted.is_empty() and wanted[0] in meshes:
+			style = id
+	return [style, "beard" if "Hair_Beard" in meshes else "none"]
+
+
+## The hair meshes a look shows: its hairstyle's and its facial hair's.
+static func hair_meshes(appearance: Dictionary) -> Array:
+	var out: Array = []
+	out.append_array(STYLES.get(appearance.get("style", ""), ["", []])[1])
+	out.append_array(FACIAL.get(appearance.get("facial", ""), ["", []])[1])
 	return out
 
 
@@ -135,6 +180,7 @@ static func random(rng: RandomNumberGenerator, pool: Dictionary = {}) -> Diction
 		out[slot] = outfits[rng.randi() % outfits.size()]
 	out["skin"] = rng.randi() % SKIN_TONES.size()
 	out["hair"] = rng.randi() % HAIR_COLORS.size()
+	out["eyes"] = rng.randi() % EYE_COLORS.size()
 	out["top"] = 0
 	out["bottom"] = 0
 	return sanitize(out)
@@ -151,8 +197,8 @@ static func rig_path(build: String) -> String:
 	return DIR + "body_%s.glb" % build
 
 
-## The hairstyles a head outfit wears: meshes in the body file
-## (`tools/human_rig`), shown together (a beard goes with a cut).
+## The hair a head outfit picked before the hairstyle was its own choice
+## (`_legacy_hair`): meshes in the body file, a beard with a cut.
 const HAIR := {
 	"m": {
 		"Swat": ["Hair_Buzzed"], "Spacesuit": ["Hair_Buzzed"], "Adventurer": ["Hair_SimpleParted"],
@@ -195,7 +241,7 @@ const SUITS := {
 
 
 ## Builds the model: the build's body (skeleton, animations and the four
-## parts), with the head outfit's hair showing. Returns null if art is
+## parts), with the look's hairstyle and facial hair showing. Returns null if art is
 ## missing. Colours are applied later by `color_for` and `suit_for`, when
 ## the caller makes its materials.
 static func build(look: Node, appearance: Dictionary) -> Node3D:
@@ -206,7 +252,9 @@ static func build(look: Node, appearance: Dictionary) -> Node3D:
 	if skeleton == null:
 		rig.free()
 		return null
-	var hair: Array = HAIR.get(appearance["build"], {}).get(appearance["head"], [])
+	# The suit hangs as cloth, not painted on the bare body.
+	SuitShape.apply(rig, appearance["build"])
+	var hair: Array = hair_meshes(appearance)
 	for node in skeleton.get_children():
 		var part := node as MeshInstance3D
 		if part == null:
@@ -252,6 +300,12 @@ static func color_for(appearance: Dictionary, slot: String, material_name: Strin
 		var hair: int = appearance["hair"]
 		return {"color": HAIR_COLORS[hair] if hair > 0 else NATURAL_HAIR, "keep_shading": true}
 	return {}
+
+
+## The iris colour a look's eyes are tinted, or null to keep the pack's.
+static func iris_for(appearance: Dictionary) -> Variant:
+	var pick: int = appearance.get("eyes", 0)
+	return EYE_COLORS[pick] if pick > 0 and pick < EYE_COLORS.size() else null
 
 
 ## The suit a part is drawn in: {"color", "trim"} for the body, legs and

@@ -1,4 +1,4 @@
-# Dedicated server image for Project Ares.
+# Dedicated server image for Verge.
 #
 # Build:  docker build -t ares-server .
 # Run:    docker run -d -t --init --name ares -p 24565-24569:24565-24569/udp -v ares-data:/data ares-server
