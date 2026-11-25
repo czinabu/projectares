@@ -372,7 +372,7 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 		# Over the carrier, tucked under the plates at each end.
 		var strap := func(u: float, v: float) -> Vector3:
 			var phi := lerpf(0.12, PI - 0.12, v)
-			return b.cast(from + Vector3((u - 0.5) * sw, 0.0, 0.0), Vector3(0.0, sin(phi), -cos(phi)), cg + 0.015)
+			return b.cast(from + Vector3((u - 0.5) * sw, 0.0, 0.0), Vector3(0.0, sin(phi), -cos(phi)), cg + (0.017 if heavy else 0.015))
 		plate(root, "Strap", strap, 0.008, m.fabric, 2, 14)
 	# The cummerbund round the sides with webbing rows; elastic on light.
 	for side: float in [-1.0, 1.0]:
