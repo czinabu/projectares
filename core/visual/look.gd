@@ -1961,6 +1961,7 @@ func dress_surfaces(mesh_node: MeshInstance3D, def: Dictionary, chosen: Dictiona
 				mat.set_shader_parameter("suit", 1.0)
 				mat.set_shader_parameter("suit_color", suit["color"])
 				mat.set_shader_parameter("suit_trim", suit["trim"])
+				mat.set_shader_parameter("suit_pattern", suit.get("pattern", 0))
 		mesh_node.set_surface_override_material(i, mat)
 		materials.append(mat)
 	return materials

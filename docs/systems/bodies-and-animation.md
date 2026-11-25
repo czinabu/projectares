@@ -226,7 +226,17 @@ date in the same PR.
   hairstyle (`Human.STYLES`, "shaved" for none) and facial hair
   (`Human.FACIAL`), all free, picked apart from any outfit; a look saved
   before that keeps its head outfit's old hair (`Human.HAIR`,
-  `_legacy_hair`). The eyes take a chosen iris colour (`Human.iris_for`:
+  `_legacy_hair`, which only ever maps to a pack mesh worn whole). Styles
+  beyond the pack's six are cut from its meshes by `HeadShape`
+  (`core/visual/head_shape.gd`, named "Hair_Long:bob"): a cut only drops,
+  folds or moves what is there, dropping strands and buns as whole pieces
+  so it never opens a hole. A face shape (`Human.FACES`) moves the head's
+  skin, brows, hair and beard by one smooth field set around the eyes, in
+  the head bone's space (the pack's hair is bound from the first build's
+  head), so a beard follows its jaw; the eyes move whole and the neck's
+  open edge stays put (`SEAM_FREE`), so the head still meets the body. Cut
+  and shaped meshes are made once per build and shared; the worn hair
+  nodes are named `Worn_<mesh>`. The eyes take a chosen iris colour (`Human.iris_for`:
   `character.gdshader` tints only the disc in the middle of the eye's UVs,
   `iris_centre`, `iris_radius`). The suit is cloth, not paint on the bare
   body (Caleb's call: it hugged every curve): `SuitShape`
@@ -239,7 +249,10 @@ date in the same PR.
   change, then re-measure with `tools/body_fit` (which measures the suited
   body) and run `tools/armor_fit/clip_check.tscn`. The shader draws a
   fatigue kit on it (`suit_kit`: a belt at `belt_y`, cargo pockets down the
-  outer thighs, knee pads, a shoulder yoke) and keeps only a little of the
+  outer thighs, knee pads, a shoulder yoke), prints a chosen pattern on
+  it in shades of its own colour (`suit_pattern`, `Human.PATTERNS`:
+  woodland, digital, tiger stripe, splinter, from the rest body so it stays
+  put; gloves stay plain) and keeps only a little of the
   body's normal map. An outfit no longer swaps meshes: it picks
   the suit's colours (`Human.SUITS`), and the
   shader draws every surface below the head as a fitted tactical suit
@@ -257,7 +270,7 @@ date in the same PR.
   Wardrobe, a standing mirror (`HomeBase._dress_wardrobe`) whose glass the
   app uses in first person (`Main._use_wardrobe`). Its rows are
   `CharacterPanel.PICKS`: body, hairstyle, facial hair, hair colour, eyes,
-  skin, then the suit.
+  skin, face, then the suit and its pattern.
   A look changed while in a world (the phone's Mirror app) is checked by the
   server in `_request_look` and passed to everyone there with `_look_changed`.
   The mirror itself (`core/visual/mirror.gd`) is a client-side view: no

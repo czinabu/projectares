@@ -2,7 +2,8 @@ extends RefCounted
 ## People. Each build is one body (Quaternius' Universal Base Characters,
 ## made into `body_<build>.glb` by `tools/human_rig`) cut into a head, body,
 ## legs and feet, everyone in the tactical suit. An "appearance" is a small
-## dictionary naming a hairstyle (`STYLES`), facial hair (`FACIAL`), an
+## dictionary naming a hairstyle (`STYLES`), facial hair (`FACIAL`), a face
+## shape (`FACES`), a suit pattern (`PATTERNS`), an
 ## outfit per part (the body, legs and feet pick the suit's colours, `SUITS`)
 ## and colours for skin, hair, eyes and the suit. A look saved before the
 ## hairstyle was its own choice takes the head outfit's hair (`HAIR`). This
@@ -12,6 +13,7 @@ extends RefCounted
 ## headless server on whatever a client sent: it loads no art.
 
 const SuitShape := preload("res://core/visual/suit_shape.gd")
+const HeadShape := preload("res://core/visual/head_shape.gd")
 const DIR := "res://assets/characters/humans/"
 const SLOTS: Array[String] = ["head", "body", "legs", "feet"]
 const SLOT_NAMES := {"head": "Head", "body": "Torso", "legs": "Legs", "feet": "Shoes"}
@@ -62,20 +64,43 @@ const CLOTH_COLORS: Array[Color] = [
 ]
 const CLOTH_NAMES: Array[String] = ["As made", "Black", "Grey", "Olive", "Tan", "Rust", "Navy", "Orange", "White"]
 const SKIN_NAMES: Array[String] = ["Tone 1", "Tone 2", "Tone 3", "Tone 4", "Tone 5", "Tone 6"]
-## Colour choices: key -> [label, names].
+## Patterns the suit can be printed in (`character.gdshader`), drawn in
+## the suit's own colour: index -> name. 0 is plain.
+const PATTERNS: Array[String] = ["Plain", "Woodland", "Digital", "Tiger stripe", "Splinter"]
+## Colour and pattern choices: key -> [label, names].
 const COLOR_KEYS := {
 	"skin": ["Skin", SKIN_NAMES], "hair": ["Hair colour", HAIR_NAMES], "eyes": ["Eyes", EYE_NAMES],
 	"top": ["Top colour", CLOTH_NAMES], "bottom": ["Bottom colour", CLOTH_NAMES],
+	"pattern": ["Suit pattern", PATTERNS],
 }
 ## Hairstyles, picked on their own on either body: id -> [name, the hair
 ## meshes in the body file (`tools/human_rig`)]. Every one is free.
+## A mesh named "Hair_Long:bob" is a cut of the pack's mesh (`HeadShape`).
 const STYLES := {
 	"buzzed": ["Buzz cut", ["Hair_Buzzed"]], "cropped": ["Crop", ["Hair_BuzzedFemale"]],
-	"parted": ["Side part", ["Hair_SimpleParted"]], "long": ["Long", ["Hair_Long"]],
-	"buns": ["Buns", ["Hair_Buns"]], "shaved": ["Shaved", []],
+	"fringe": ["Crop and fringe", ["Hair_Buzzed", "Hair_Buns:fringe"]],
+	"parted": ["Side part", ["Hair_SimpleParted"]], "mohawk": ["Mohawk", ["Hair_Buzzed:mohawk"]],
+	"bob": ["Bob", ["Hair_Long:bob"]], "long": ["Long", ["Hair_Long"]],
+	"swept": ["Long, swept back", ["Hair_Long:swept"]], "buns": ["Buns", ["Hair_Buns"]],
+	"knot": ["Top knot", ["Hair_Buns:knot"]], "shaved": ["Shaved", []],
 }
 ## Facial hair, on either body: id -> [name, meshes].
-const FACIAL := {"none": ["None", []], "beard": ["Beard", ["Hair_Beard"]]}
+const FACIAL := {
+	"none": ["None", []], "beard": ["Beard", ["Hair_Beard"]], "short": ["Short beard", ["Hair_Beard:short"]],
+	"goatee": ["Goatee", ["Hair_Beard:goatee"]], "moustache": ["Moustache", ["Hair_Beard:moustache"]],
+	"chinstrap": ["Chin strap", ["Hair_Beard:chinstrap"]],
+}
+## Face shapes, on either body: id -> [name, the parts it moves
+## (`HeadShape.FACE_PARTS`)]. Small moves: a face stays the face it is.
+const FACES := {
+	"standard": ["Standard", {}],
+	"broad": ["Broad", {"jaw": 1.12, "cheeks": 1.06, "chin": 0.003}],
+	"narrow": ["Narrow", {"jaw": 0.88, "cheeks": 0.94, "length": 1.04}],
+	"square": ["Square jaw", {"jaw": 1.16, "chin_down": 0.004, "chin": 0.004}],
+	"long": ["Long", {"length": 1.1, "jaw": 0.95, "chin_down": 0.003}],
+	"round": ["Round", {"cheeks": 1.1, "jaw": 1.07, "length": 0.94}],
+	"brow": ["Heavy brow", {"brow": 0.005, "chin": 0.004, "jaw": 1.04}],
+}
 
 
 ## A valid appearance from anything: unknown parts and out-of-range colours
@@ -102,6 +127,8 @@ static func sanitize(raw: Variant) -> Dictionary:
 	out["style"] = style if typeof(style) == TYPE_STRING and STYLES.has(style) else legacy[0]
 	var facial: Variant = source.get("facial")
 	out["facial"] = facial if typeof(facial) == TYPE_STRING and FACIAL.has(facial) else legacy[1]
+	var face: Variant = source.get("face")
+	out["face"] = face if typeof(face) == TYPE_STRING and FACES.has(face) else "standard"
 	# Armor paints, frame look to paint (`ArmorPaint`); left out when none.
 	var paints := ArmorPaint.clean(source.get("paints"))
 	if not paints.is_empty():
@@ -119,7 +146,8 @@ static func _legacy_hair(build: String, head: String) -> Array:
 	var style := "shaved"
 	for id: String in STYLES:
 		var wanted: Array = STYLES[id][1]
-		if not wanted.is_empty() and wanted[0] in meshes:
+		# Only the pack's own meshes, worn whole, were ever a head's hair.
+		if wanted.size() == 1 and not String(wanted[0]).contains(":") and wanted[0] in meshes:
 			style = id
 	return [style, "beard" if "Hair_Beard" in meshes else "none"]
 
@@ -181,6 +209,7 @@ static func random(rng: RandomNumberGenerator, pool: Dictionary = {}) -> Diction
 	out["skin"] = rng.randi() % SKIN_TONES.size()
 	out["hair"] = rng.randi() % HAIR_COLORS.size()
 	out["eyes"] = rng.randi() % EYE_COLORS.size()
+	out["face"] = FACES.keys()[rng.randi() % FACES.size()]
 	out["top"] = 0
 	out["bottom"] = 0
 	return sanitize(out)
@@ -254,7 +283,10 @@ static func build(look: Node, appearance: Dictionary) -> Node3D:
 		return null
 	# The suit hangs as cloth, not painted on the bare body.
 	SuitShape.apply(rig, appearance["build"])
-	var hair: Array = hair_meshes(appearance)
+	# The hair and facial hair, cut from the pack's, and the face's shape.
+	var face: String = appearance.get("face", "standard")
+	var hair: Array[String] = HeadShape.dress(skeleton, appearance["build"], hair_meshes(appearance), face,
+			FACES.get(face, FACES["standard"])[1])
 	for node in skeleton.get_children():
 		var part := node as MeshInstance3D
 		if part == null:
@@ -308,7 +340,7 @@ static func iris_for(appearance: Dictionary) -> Variant:
 	return EYE_COLORS[pick] if pick > 0 and pick < EYE_COLORS.size() else null
 
 
-## The suit a part is drawn in: {"color", "trim"} for the body, legs and
+## The suit a part is drawn in: {"color", "trim", "pattern"} for the body, legs and
 ## feet ({} for the head). The boots are the cloth darkened.
 static func suit_for(appearance: Dictionary, slot: String) -> Dictionary:
 	if slot == "head" or slot == "":
@@ -320,6 +352,6 @@ static func suit_for(appearance: Dictionary, slot: String) -> Dictionary:
 		cloth = CLOTH_COLORS[pick]
 	if slot == "feet":
 		cloth = cloth.darkened(0.55)
-	return {"color": cloth, "trim": style[1]}
+	return {"color": cloth, "trim": style[1], "pattern": appearance.get("pattern", 0)}
 
 
