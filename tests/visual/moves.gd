@@ -11,16 +11,20 @@ extends RefCounted
 ## between neighbours. `only=slide,kick` shoots just those rows. `frames`
 ## instead saves every other tick of each move, from three sides, as
 ## `moves/<move>_<view>_NN.png`, to be strung into a clip (30 a second plays
-## them at the game's speed).
+## them at the game's speed). `weapon=axe_splitter` swings another melee
+## weapon than the scrap blade.
 static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 	var names: PackedStringArray = []
 	var frames := args.has("frames")
+	var weapon := "blade_scrap"
 	for arg in args:
 		if arg.begins_with("only="):
 			names = arg.substr(5).split(",")
+		elif arg.begins_with("weapon="):
+			weapon = arg.substr(7)
 	var raid := Raid.new()
 	v.add_child(raid)
-	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", "blade_scrap", "frame_trooper"])
+	raid.start(Worlds.get_world("ashfront"), 42, ["rifle_carbine", weapon, "frame_trooper"])
 	v._armed(raid)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
@@ -138,6 +142,6 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 					continue
 				(sheets[view] as Image).blit_rect(cut, Rect2i(Vector2i.ZERO, cell), Vector2i(i * cell.x, row * cell.y))
 	for view: String in ([] if frames else sheets.keys()):
-		(sheets[view] as Image).save_png(out_dir.path_join("moves_%s.png" % view))
+		(sheets[view] as Image).save_png(out_dir.path_join("moves_%s%s.png" % [view, "" if weapon == "blade_scrap" else "_" + weapon]))
 		print("saved moves_%s.png" % view)
 	raid.queue_free()

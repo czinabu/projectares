@@ -144,4 +144,10 @@ date in the same PR.
   do not, and the weapon waits out `dodge_recover`. What a guarded strike,
   a reel and the feet look like is view only: `ActionPose.bind` (both
   blades meet at `ActorSkin.bind_point`), `reel`, `footwork`; check with
-  `visual_check.tscn -- <dir> --bind-only`.
+  `visual_check.tscn -- <dir> --bind-only` (the foe is armed through
+  `Loadout.refit`, so its blade has its model). Each technique moves the
+  feet its own way (`ActionPose.technique_steps`, [windup, strike, rate]
+  as multiples of the `step_*` values): a knife short and quick, a
+  one-handed axe settling back further, a hammer hauling right back and
+  driving in slowly, a spear lunging furthest, a katana a touch past a
+  sword. See a weapon's swings with `--moves-only weapon=<id>`.
