@@ -97,13 +97,16 @@ const SKINS := {
 		"saturation": 0.7, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
 	},
-	"heavy": {
-		"scenes": ["George.glb"], "height": 2.35, "tint": Color(0.55, 0.42, 0.38),
-		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "SwordSlash"},
-	},
+	# Frostline's station automata (Caleb's call: machines only where the
+	# story has machines): a body built in code ("chassis": "android",
+	# `ActorSkin._build_android`) round the walking skeleton of the scene,
+	# whose own mesh is hidden. Pale ceramic shells over a graphite frame,
+	# seams and a visor lit in the body's colour, and the weapon built into
+	# the right forearm ("bare": no model held in the hand; a gun's barrel
+	# comes up along the aim, `ActorSkin._aim_arm`).
 	"sentinel": {
-		"scenes": ["Stan.glb"], "height": 2.2, "tint": Color(0.62, 0.68, 0.74),
-		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+		"scenes": ["Stan.glb"], "height": 2.2, "hide": ["Stan"], "chassis": "android", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "SwordSlash"},
 	},
 	# Ashfront's Legion riflemen: people in the army's uniform kit.
 	"legionary": {
@@ -122,6 +125,81 @@ const SKINS := {
 		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
 		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS,
+	},
+	# Heavies and bosses are people too (Caleb's call): big fighters in
+	# full plate, each army's or world's own. A skin's own armor ("frame")
+	# names its weight and, after a colon, the frame look it is built in
+	# (`ActorSkin.FRAME_STYLES`), worn in the armor paint "paint"; its own
+	# helmet ("helmet") takes the plates' colours. The Legion Vanguard:
+	# gunmetal plate in the Legion's cobalt under a Warden helm.
+	"vanguard": {
+		"people": {"m": ["Swat"], "f": ["Soldier"]},
+		"height": 1.95, "tint": Color(0.62, 0.68, 0.8), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.55, "brightness": 0.78, "metal": 0.0, "rough": 0.85,
+		"anims": HUMAN_ANIMS, "frame": "heavy:bulwark", "paint": "cobalt", "helmet": "threat",
+	},
+	# The Tide Brute: a militia bruiser in rusted scrap plate and a
+	# riveted bucket helm.
+	"tide_brute": {
+		"people": {"m": ["Punk", "Adventurer"], "f": ["Punk", "Medieval"]},
+		"height": 1.95, "tint": Color(0.86, 0.72, 0.6), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "heavy:scrap", "paint": "crimson", "helmet": "scrap",
+	},
+	# The Dune Sea's Scrap Brute: scrap plate sanded to the desert's colour.
+	"scrap_brute": {
+		"people": {"m": ["Farmer", "Punk"], "f": ["Worker", "Punk"]},
+		"height": 1.95, "tint": Color(0.88, 0.78, 0.66), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.65, "brightness": 0.78, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "heavy:scrap", "paint": "desert", "helmet": "scrap",
+	},
+	# The Basalt Rift's Slag Brute: heavy plate that runs hot (lit vents),
+	# blackened by the lava, under a ceramic Ember helm.
+	"slag_brute": {
+		"people": {"m": ["Punk", "Adventurer"], "f": ["Punk", "Medieval"]},
+		"height": 1.95, "tint": Color(0.84, 0.74, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.72, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "heavy:bulwark", "paint": "ashen", "helmet": "thermal",
+	},
+	# Bosses: a body of their own, not a heavy with more health. Each is the
+	# tallest person on the field in full plate, with "regalia" built in
+	# code (`ActorSkin._build_regalia`). Ashfront's Warlord: black and gold
+	# plate, a long cloak and a banner on its back in its army's colour.
+	"warlord": {
+		"people": {"m": ["King"], "f": ["Medieval"]},
+		"height": 2.05, "tint": Color(0.82, 0.8, 0.78), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.78, "metal": 0.0, "rough": 0.85,
+		"anims": HUMAN_ANIMS, "frame": "heavy:bulwark", "paint": "warlord", "helmet": "threat", "regalia": "warlord",
+	},
+	# The Dune Sea's Wreck Baron: hazard-striped scrap plate, a sand-torn
+	# cloak and exhaust stacks off a salvaged engine block on its back.
+	"baron": {
+		"people": {"m": ["Punk"], "f": ["Punk"]},
+		"height": 2.05, "tint": Color(0.88, 0.78, 0.66), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.65, "brightness": 0.78, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "heavy:scrap", "paint": "hazard", "helmet": "scrap", "regalia": "baron",
+	},
+	# The Basalt Rift's Lord of the Crown: crimson plate that runs hot, a
+	# crown of basalt spikes lit with lava, and a cloak with a burning hem.
+	"crown_lord": {
+		"people": {"m": ["King"], "f": ["Medieval"]},
+		"height": 2.05, "tint": Color(0.84, 0.74, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.72, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "heavy:bulwark", "paint": "crimson", "helmet": "thermal", "regalia": "crown",
 	},
 	# An exo trooper: an ordinary soldier strapped into a mechanical
 	# exoskeleton. The person stays person-sized; the bulk is the suit
@@ -147,17 +225,14 @@ const SKINS := {
 		"chassis": "walker", "beam": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Shoot"},
 	},
-	# A colossus: the station automaton's frame built three metres tall, a
-	# heavy guard machine. Its weapon draws a tracking beam while it aims
-	# ("beam", in "beam_color").
+	# A colossus: the automaton built nearly four metres tall, a heavy guard
+	# machine ("heavy_chassis": broader shells, a reactor on its back and a
+	# missile pod on the left shoulder, a lance for a forearm). Its weapon
+	# draws a tracking beam while it aims ("beam", in "beam_color").
 	"colossus": {
-		"scenes": ["Stan.glb"], "height": 3.9, "tint": Color(0.5, 0.62, 0.7),
-		"beam": true, "beam_color": Color(0.25, 0.95, 0.9),
+		"scenes": ["Stan.glb"], "height": 3.9, "hide": ["Stan"], "chassis": "android", "heavy_chassis": true,
+		"bare": true, "beam": true, "beam_color": Color(0.25, 0.95, 0.9),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
-	},
-	"stalker": {
-		"scenes": ["Enemy_2Legs_Gun.glb"], "height": 1.7, "tint": Color(0.3, 0.32, 0.38),
-		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Attack"},
 	},
 	# Wildlife (DESIGN.md "Spore Marsh"): beasts of their own, built in code
 	# like the walker ("creature": `ActorSkin._build_creature`) round the
@@ -209,6 +284,13 @@ const SKINS := {
 	},
 	"broodling": {
 		"scenes": ["Leela.glb"], "height": 0.9, "hide": ["Leela"], "creature": "broodling", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# Frostline's Feral Stalker: a lean pack beast of the ice, built like a
+	# marsh stalker but furred against the cold, a mane of frost-lit ice
+	# spines down its back and hooked foreclaws for its blades.
+	"feral": {
+		"scenes": ["Leela.glb"], "height": 1.6, "hide": ["Leela"], "creature": "feral", "bare": true,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
 	# A bloater: a swollen sac of spores on stubby legs, studded with lit
@@ -1794,13 +1876,20 @@ func set_appearance(actor: Actor, appearance: Variant) -> void:
 ## "materials": Array[ShaderMaterial], "chosen": the person's appearance (empty
 ## for a skin that is not a person)}, or {} when the art is missing.
 ## `appearance` only matters for skins of people; `who` picks a steady random
-## look for anyone who has not chosen one.
-func character(skin_name: String, appearance: Dictionary = {}, who := "") -> Dictionary:
+## look for anyone who has not chosen one, dressed in `uniform` ("top" and
+## "bottom" `Human.CLOTH_COLORS` indices, an army's) when one is given.
+func character(skin_name: String, appearance: Dictionary = {}, who := "", uniform: Dictionary = {}) -> Dictionary:
 	var def: Dictionary = SKINS.get(skin_name, SKINS[DEFAULT_SKIN])
 	var model: Node3D
 	var chosen := {}
 	if def.has("people"):
-		chosen = Human.sanitize(appearance) if not appearance.is_empty() else Human.for_name(who, def["people"])
+		if not appearance.is_empty():
+			chosen = Human.sanitize(appearance)
+		else:
+			chosen = Human.for_name(who, def["people"])
+			if not uniform.is_empty():
+				chosen.merge(uniform, true)
+				chosen = Human.sanitize(chosen)
 		model = Human.build(self, chosen)
 	else:
 		var scenes: Array = def["scenes"]

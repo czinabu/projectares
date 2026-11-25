@@ -104,16 +104,22 @@ const VEHICLE_SITE_TABLE := [
 const ARMIES := {
 	"legion": {
 		"name": "the Legion",
+		# What its people wear (`Human.CLOTH_COLORS`: navy top, grey
+		# trousers). An army is told apart by its uniform and its kit, never
+		# by its people: both draw from every skin tone (`Human.random`).
+		"uniform": {"top": 6, "bottom": 2},
 		"soldier": {"name": "Legionnaire", "look": "legionary", "color": Color(0.3, 0.45, 0.7), "weapon": "Service Rifle"},
-		"heavy": {"name": "Legion Vanguard", "look": "sentinel", "color": Color(0.2, 0.3, 0.55), "weapon": "Breaching Blade"},
+		"heavy": {"name": "Legion Vanguard", "look": "vanguard", "color": Color(0.2, 0.3, 0.55), "weapon": "Breaching Blade"},
 		"marksman": {"name": "Legion Marksman", "look": "legionary", "color": Color(0.22, 0.36, 0.6), "weapon": "Marksman Rifle"},
 		"exo": {"name": "Legion Exo Trooper", "look": "exo", "color": Color(0.3, 0.6, 1.0), "weapon": "Support Rifle"},
 		"walker": {"name": "Kiln Walker", "look": "walker", "color": Color(0.3, 0.6, 1.0), "weapon": "Kiln Cannon"},
 	},
 	"tide": {
 		"name": "the Tide",
+		# Rust top, tan trousers.
+		"uniform": {"top": 5, "bottom": 4},
 		"soldier": {"name": "Tide Raider", "look": "tide", "color": Color(0.85, 0.3, 0.2), "weapon": "Worn Rifle"},
-		"heavy": {"name": "Tide Brute", "look": "heavy", "color": Color(0.5, 0.1, 0.12), "weapon": "Rusted Cleaver"},
+		"heavy": {"name": "Tide Brute", "look": "tide_brute", "color": Color(0.5, 0.1, 0.12), "weapon": "Rusted Cleaver"},
 		"runner": {"name": "Tide Runner", "look": "tide", "color": Color(0.95, 0.42, 0.2), "weapon": "Hook Knife"},
 		"exo": {"name": "Tide Exo Trooper", "look": "exo", "color": Color(1.0, 0.35, 0.15), "weapon": "Support Rifle"},
 		"walker": {"name": "Kiln Walker", "look": "walker", "color": Color(1.0, 0.35, 0.15), "weapon": "Kiln Cannon"},
@@ -548,6 +554,7 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.set_meta("kind", kind)
 	bot.display_name = def["name"]
 	bot.set_meta("look", def["look"])
+	bot.set_meta("uniform", army["uniform"])
 	bot.body_color = def["color"]
 	if bot.body_mesh:
 		var mat := StandardMaterial3D.new()
@@ -723,6 +730,9 @@ func _army_gun(gun_name: String, damage: float, spread: float, interval: float) 
 ## length, and which weapon they rolled still decides how it feels.
 func make_warlord(bot: Actor) -> void:
 	bot.display_name = "Warlord"
+	# A body of its own (`Look.SKINS` "warlord"); a walker stays a machine.
+	if bot.get_meta("kind", "") != "walker":
+		bot.set_meta("look", "warlord")
 	# A warlord fights for itself, not by its army's doctrine, and an army's
 	# own kind keeps only its weapon's sort (`DOCTRINE`, `_take_doctrine`).
 	for key in ["range", "reach", "sight", "burst", "flankers", "hunters", "breaks_at", "dash"]:
