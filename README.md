@@ -1,4 +1,8 @@
-# Project Ares
+# Verge
+
+"Project Ares" was the prototype name; it lives on in file names (`ProjectAres.exe`,
+the install and save folders) so existing installs keep updating and keep
+their saves.
 
 A full-loot PvPvE war game across a set of hand-built worlds, made in Godot 4.
 New worlds are designed and added by the team over time. Each world

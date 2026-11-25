@@ -1,4 +1,4 @@
-PROJECT ARES - playtest build
+VERGE - playtest build
 
 1. Easiest: run ProjectAres-Setup.exe from the release page. It installs to
    your user's Programs folder and adds desktop and Start menu shortcuts.

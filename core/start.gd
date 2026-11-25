@@ -14,6 +14,9 @@ func _ready() -> void:
 	if "--server" in args or "--account-service" in args:
 		get_tree().change_scene_to_file.call_deferred(GAME_SCENE)
 		return
+	# The project keeps its prototype name ("Project Ares") so the save folder
+	# under app_userdata never moves; the window shows the game's name.
+	DisplayServer.window_set_title("Verge")
 	backdrop = TitleBackdrop.new()
 	add_child(backdrop)
 	var layer := CanvasLayer.new()

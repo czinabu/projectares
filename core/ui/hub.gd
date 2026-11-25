@@ -132,7 +132,7 @@ func _ready() -> void:
 	_kicker = _text("", 13, TerminalStyle.CYAN)
 	_kicker.visible = false
 	box.add_child(_kicker)
-	_title = _text("PROJECT ARES", 40, Color(1.0, 0.55, 0.25))
+	_title = _text("VERGE", 40, Color(1.0, 0.55, 0.25))
 	box.add_child(_title)
 
 	var records := _section(box, "records")
@@ -308,7 +308,7 @@ func show_travel() -> void:
 	station = ""
 	character.hide_customizer()
 	_show_only(["status"])
-	_title.text = "PROJECT ARES"
+	_title.text = "VERGE"
 	_title.add_theme_font_size_override("font_size", 40)
 	_kicker.visible = false
 	_backdrop.visible = true

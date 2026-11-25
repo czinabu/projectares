@@ -1,4 +1,4 @@
-# Project Ares: game design
+# Verge: game design
 
 This is the plan every thread builds against. It describes the game we are
 aiming for, not only what exists today. What is built and what is still
@@ -21,9 +21,9 @@ balance" (https://claude.ai/artifact/5oqEMAXpKisXTojV9w47pv).
 
 ## 1. The pitch
 
-A full-loot PvPvE war game in the spirit of Planet Doom: you drop into an
-endless warzone with gear you are willing to lose, fly, ride and fight
-through it, and get your loot home. Every world is hand-built by the team,
+A full-loot PvPvE war game across the Verge, a ring of war-torn worlds:
+you drop into an endless warzone with gear you are willing to lose, fly,
+ride and fight through it, and get your loot home. Every world is hand-built by the team,
 and new ones are added over time without touching the core (each is a
 `WorldDef` plug-in in the code). The game is not a platform for
 player-made worlds, and it is never marketed as one (Caleb's call).
@@ -654,8 +654,8 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   clumps from the rim inward, darkest in the corners, the middle always
   clear, more the deeper in the storm, and it blows off slowly after.
 - **The battle around you (Caleb's go-ahead, concepts in `ares/epic-battle/`
-  in the project files).** The war should happen *to* you, as in Helldivers
-  or Planet Doom, not only behind you. Three parts, built in this order:
+  in the project files).** The war should happen *to* you, as in Helldivers,
+  not only behind you. Three parts, built in this order:
   shelling (below), a scenery army fighting in the mid distance, and a busy
   low sky (gunships strafing, return fire, a dropship going down burning).
   The scenery army is view only and cannot be shot (Caleb's call), so it

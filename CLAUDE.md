@@ -1,4 +1,4 @@
-# Project Ares: notes for AI sessions
+# Verge (formerly Project Ares): notes for AI sessions
 
 Full-loot PvPvE war game in Godot 4 (GDScript). Each world is an endless
 warzone, not a timed raid (see the endless warzone rule below). See README.md for the
