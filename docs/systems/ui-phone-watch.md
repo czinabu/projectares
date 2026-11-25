@@ -50,11 +50,25 @@ date in the same PR.
   mipmaps), and its scan lines are faint (`HoloScreen.line_depth`) so they
   never dim a line of text. The Mirror app (Caleb's pick): in first person a
   mirror stands square in front of the body, never along the camera, close
-  enough that you stand large in it (`Mirror.distance`), and the eyes drop
-  less to see it (`phone_mirror_pitch`); in third person there is no mirror
+  enough that you stand large in it (`Mirror.distance`). Caleb's "make the
+  mirror easy to use and clear": the phone in the hand was too small to
+  read with the mirror in view and you too small in the glass, so in first
+  person the view frames your reflection, you left of the middle the whole
+  body tall (`PlayerController.mirror_frame`, `mirror_left`, `mirror_fill`,
+  view only: `yaw`, `pitch` and the aim stay put), and the phone throws its
+  screen up beside you as the same hologram third person reads
+  (`Phone._hold`); the phone in your hand is left out of the eyes' camera
+  meanwhile, as your head is, so it never stands in front of your
+  reflection (`Phone._keep_device_from_eyes`), and the hologram is kept out
+  of the mirror's camera. In third person there is no mirror
   but a dressing room: the camera swings round in front of the character
-  (`PlayerController.dressing_room`, `_dress_view`) with the body framed
-  left of the middle, the phone stays up with its hologram on the right,
+  (`PlayerController.dressing_room`, `_dress_view`) from over the phone
+  held at the chest (`dressing_height`, so it never hides the face), with
+  the body framed left of the middle, the phone stays up with its hologram
+  on the right. Choosing a face row (hairstyle, facial hair, hair colour,
+  eyes: `Phone.FACE_PICKS`, `mirror_on_face`) brings either view in close
+  on the face (`PlayerController.mirror_focus`, `dressing_close`), and the
+  page says how to use it at the top,
   and a drag beside the hologram turns the view round you
   (`Phone.dressing`, `dressing_dragged`, `dressing_turn`). Switching view
   with the app up swaps one for the other (`Main._keep_mirror_view`), and

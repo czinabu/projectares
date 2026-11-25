@@ -411,8 +411,8 @@ static func _run_mirror(t: Node) -> void:
 	t.check(mirror != null and mirror.get_parent() == main.raid and main.phone.mirror_up,
 			"opening the Mirror app stands a mirror in the world")
 	if mirror != null:
-		var ahead := -controller.camera.global_basis.z
-		ahead.y = 0.0
+		# In front of the body: the view itself turns to frame the reflection.
+		var ahead := Basis(Vector3.UP, controller.yaw) * Vector3.FORWARD
 		var to_mirror := mirror.global_position - me.global_position
 		t.check(to_mirror.normalized().dot(ahead.normalized()) > 0.95 and to_mirror.length() > 1.0
 				and to_mirror.length() <= mirror.distance + mirror.side_offset and absf(to_mirror.y) < 0.2,
@@ -461,6 +461,31 @@ static func _run_mirror(t: Node) -> void:
 			"Esc brings it back up too, without closing the phone")
 	await t.frames(2)
 	t.check(me.cmd.phone, "and the hand holds it up again")
+	# Caleb's "easy to use and clear": the view frames your reflection and
+	# the phone's screen is thrown up beside it, readable, as in third person.
+	for i in 40:
+		await t.frames(1)
+	t.check(main.phone.projection.showing(), "with the mirror up in first person the screen is thrown up as a hologram")
+	var hand_phone: Node3D = me.get_node("Skin").handheld() if me.has_node("Skin") else null
+	if hand_phone != null:
+		var parts := hand_phone.find_children("*", "VisualInstance3D", true, false)
+		t.check(not parts.is_empty() and parts.all(func(part: VisualInstance3D) -> bool:
+				return part.layers == 1 << (MirrorScript.HEAD_LAYER - 1)),
+				"the phone in your hand is left out of the eyes' camera, so it never covers your reflection")
+	if mirror != null and is_instance_valid(mirror):
+		var normal: Vector3 = mirror.global_basis.z
+		var eye_seen: Vector3 = me.get_eye_position() - 2.0 * (me.get_eye_position() - mirror.glass_centre()).dot(normal) * normal
+		var spot := controller.camera.unproject_position(eye_seen)
+		var view_size: Vector2 = controller.camera.get_viewport().get_visible_rect().size
+		t.check(not controller.camera.is_position_behind(eye_seen) and spot.x > 0.0 and spot.x < view_size.x * 0.5
+				and spot.y > 0.0, "your reflection is framed left of the middle, clear of the hologram")
+		var body_fov := controller.camera.fov
+		main.phone.mirror_row = main.phone.wardrobe.pick_keys().find("eyes")
+		for i in 60:
+			await t.frames(1)
+		t.check(main.phone.mirror_on_face() and controller.camera.fov < body_fov * 0.7,
+				"choosing a face row brings the view in close on the face (%.0f from %.0f)" % [controller.camera.fov, body_fov])
+		main.phone.mirror_row = 0
 	var before: Dictionary = me.get_meta("appearance", {}).duplicate()
 	main.phone.mirror_step("body", 1)
 	await t.frames(2)
@@ -494,6 +519,17 @@ static func _run_mirror(t: Node) -> void:
 	var wide: float = controller.camera.get_viewport().get_visible_rect().size.x
 	t.check(not controller.camera.is_position_behind(me.global_position + Vector3.UP) and seen.x < wide * 0.5
 			and seen.x > 0.0, "looking at them, framed left of the middle clear of the hologram")
+	t.check(controller.camera.global_position.y - me.global_position.y > 1.45,
+			"from over the phone held at the chest, so it never hides the face")
+	var far_out := controller.camera.global_position.distance_to(me.get_eye_position())
+	main.phone.mirror_row = main.phone.wardrobe.pick_keys().find("style")
+	for i in 60:
+		await t.frames(1)
+	t.check(controller.camera.global_position.distance_to(me.get_eye_position()) < far_out * 0.6,
+			"choosing a face row brings the dressing room in close on the face")
+	main.phone.mirror_row = 0
+	for i in 60:
+		await t.frames(1)
 	var turn_before := controller.dressing_turn
 	var grab := InputEventMouseButton.new()
 	grab.button_index = MOUSE_BUTTON_LEFT

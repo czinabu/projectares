@@ -106,9 +106,22 @@ var phone_zoom_edge := 0.94
 ## pitch), in first person, the same way the model's head bows to it. Only the
 ## view moves: `pitch`, and so the aim, is left where it was.
 var phone_view_pitch := -0.4
-## With the Mirror app's mirror up the eyes drop less, to see yourself in it
-## over the phone.
-var phone_mirror_pitch := -0.2
+## With the Mirror app's mirror up (first person) the view frames your
+## reflection instead of the phone in your hand, whose screen is thrown up
+## beside it as a hologram (`Phone.HoloScreen`): it turns to put you
+## `mirror_left` of the view's half width left of the middle and narrows
+## until you stand `mirror_fill` of the view's height, the whole body, or
+## the face while a face row is chosen (`mirror_focus`, 0 to 1, set by
+## `Main` from the phone). Only the view moves: `yaw`, `pitch` and the aim
+## stay as they were.
+var mirror_left := 0.45
+var mirror_fill := 0.86
+var mirror_focus := 0.0
+var mirror_focus_rate := 3.0
+var _mirror_focus_now := 0.0
+var _mirror_look := 0.0
+## [yaw, pitch, fov] that frame the reflection this frame.
+var _mirror_frame := Vector3.ZERO
 var _phone_look := 0.0
 ## The mirror standing in front of you for the phone's Mirror app (`Main`),
 ## or null; the eyes drop less to see yourself in it.
@@ -124,6 +137,11 @@ var dressing_turn := 0.0
 var dressing_distance := 2.3
 var dressing_look := 1.05
 var dressing_side := 0.45
+## The camera stands this high (m over the feet), over the phone held at the
+## chest, so it looks down past it at the face instead of up into the phone.
+var dressing_height := 1.6
+## Close on the face (`mirror_focus`): this far out, framing the face.
+var dressing_close := 0.95
 var dressing_rate := 4.0
 ## How far into the dressing-room view the camera is now (0..1).
 var dressing := 0.0
@@ -1432,9 +1450,18 @@ func _process(delta: float) -> void:
 	_update_shake(delta)
 	_phone_look = move_toward(_phone_look, 1.0 if phone_out and not phone_preview and not actor.is_dead \
 			and not _wants_third_person() else 0.0, phone_read_rate * delta)
-	var reading_pitch := phone_mirror_pitch if mirror_in_view() else phone_view_pitch
-	var view_pitch := lerpf(pitch, reading_pitch, smoothstep(0.0, 1.0, _phone_look))
-	var look := Basis.from_euler(Vector3(view_pitch + _shake.y, yaw + _shake.x, 0.0))
+	var view_pitch := lerpf(pitch, phone_view_pitch, smoothstep(0.0, 1.0, _phone_look))
+	var view_yaw := yaw
+	_mirror_focus_now = move_toward(_mirror_focus_now, mirror_focus, mirror_focus_rate * delta)
+	var framing := mirror_in_view() and not actor.is_dead and not _wants_third_person()
+	if framing:
+		_mirror_frame = mirror_frame(actor.get_eye_position())
+	_mirror_look = move_toward(_mirror_look, 1.0 if framing else 0.0, phone_read_rate * delta)
+	if _mirror_look > 0.0:
+		var k := smoothstep(0.0, 1.0, _mirror_look)
+		view_yaw = lerp_angle(yaw, _mirror_frame.x, k)
+		view_pitch = lerpf(view_pitch, _mirror_frame.y, k)
+	var look := Basis.from_euler(Vector3(view_pitch + _shake.y, view_yaw + _shake.x, 0.0))
 	var pivot := actor.get_eye_position() - Vector3(0.0, _dip, 0.0)
 	_shoulder_aim = move_toward(_shoulder_aim, 1.0 if aiming else 0.0, shoulder_rate * delta)
 	var desired := pivot + _third_person_offset(look, pivot, delta)
@@ -1486,6 +1513,8 @@ func _process(delta: float) -> void:
 		fov = zoomed_fov(wanted_base_fov(), _zoom())
 	if phone_zoomed():
 		fov = minf(fov, phone_fit_fov())
+	if _mirror_look > 0.0:
+		fov = lerpf(fov, minf(fov, _mirror_frame.z), smoothstep(0.0, 1.0, _mirror_look))
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-14.0 * delta))
 	# First and third person differ only in where the camera is (Caleb's
 	# rule): your own body is drawn and posed the same in both, holding the
@@ -1846,15 +1875,19 @@ func _dress_view(delta: float) -> void:
 	dressing = move_toward(dressing, 1.0 if wanted else 0.0, dressing_rate * delta)
 	if dressing <= 0.0:
 		return
-	var centre := actor.global_position + Vector3.UP * dressing_look
+	var f := smoothstep(0.0, 1.0, _mirror_focus_now)
+	var face := actor.get_eye_position().y - actor.global_position.y - 0.04
+	var centre := actor.global_position + Vector3.UP * lerpf(dressing_look, face, f)
+	var high := actor.global_position + Vector3.UP * lerpf(dressing_height, face + 0.04, f)
 	var out := Basis(Vector3.UP, yaw + dressing_turn) * Vector3.FORWARD
-	var reach := dressing_distance
+	var far := lerpf(dressing_distance, dressing_close, f)
+	var reach := far
 	var space := actor.get_world_3d().direct_space_state
-	var ray := PhysicsRayQueryParameters3D.create(centre, centre + out * (dressing_distance + camera_radius), Actor.LAYER_WORLD)
+	var ray := PhysicsRayQueryParameters3D.create(high, high + out * (far + camera_radius), Actor.LAYER_WORLD)
 	var hit := space.intersect_ray(ray)
 	if not hit.is_empty():
-		reach = clampf(centre.distance_to(hit.position) - camera_radius, 0.6, dressing_distance)
-	var spot := centre + out * reach
+		reach = clampf(high.distance_to(hit.position) - camera_radius, 0.6, far)
+	var spot := high + out * reach
 	var facing := Basis.looking_at(centre - spot, Vector3.UP)
 	var aim_at := centre + facing.x * dressing_side * reach / dressing_distance
 	var front := Transform3D(Basis.looking_at(aim_at - spot, Vector3.UP), spot)
@@ -1898,6 +1931,46 @@ func phone_fit_fov() -> float:
 
 
 ## True while the Mirror app's mirror stands in front of you.
+## The view's [yaw, pitch, field of view] that frames your reflection in
+## `phone_mirror` from `eye`: you `mirror_left` left of the middle, standing
+## `mirror_fill` of the view's height, the whole body or (`mirror_focus`)
+## the face. The hologram of the phone stands on the right.
+func mirror_frame(eye: Vector3) -> Vector3:
+	var normal := phone_mirror.global_basis.z.normalized()
+	var across := phone_mirror.global_basis.x.normalized()
+	var centre: Vector3 = phone_mirror.glass_centre()
+	var head := actor.get_eye_position()
+	var feet := actor.global_position
+	var f := smoothstep(0.0, 1.0, _mirror_focus_now)
+	var top := head + Vector3.UP * lerpf(0.22, 0.2, f)
+	var bottom := feet.lerp(head - Vector3.UP * 0.22, f)
+	var wide := lerpf(0.32, 0.16, f)
+	var points: Array[Vector3] = [top, bottom, (top + bottom) * 0.5 + across * wide, (top + bottom) * 0.5 - across * wide]
+	for i in points.size():
+		points[i] = points[i] - 2.0 * (points[i] - centre).dot(normal) * normal
+	# Across, the middle follows the head, which leans and turns with the
+	# phone; the feet stay put.
+	var middle := (points[0] + points[1]) * 0.5
+	var head_seen := head - 2.0 * (head - centre).dot(normal) * normal
+	middle += across * (head_seen - middle).dot(across)
+	var to := (middle - eye).normalized()
+	var aspect := 16.0 / 9.0
+	var shown := camera.get_viewport().get_visible_rect().size if camera.get_viewport() else Vector2.ZERO
+	if shown.y > 0.0:
+		aspect = shown.x / shown.y
+	var half_wide := tan(deg_to_rad(camera.fov) * 0.5) * aspect
+	var view_yaw := atan2(-to.x, -to.z) - atan(mirror_left * half_wide)
+	var view_pitch := asin(clampf(to.y, -1.0, 1.0))
+	var view := Basis.from_euler(Vector3(view_pitch, view_yaw, 0.0)).inverse()
+	var need := 0.01
+	for point in points:
+		var p := view * (point - eye)
+		var ahead := maxf(-p.z, 0.05)
+		need = maxf(need, absf(p.y) / ahead / mirror_fill)
+		need = maxf(need, absf(p.x) / ahead / aspect / 0.97)
+	return Vector3(view_yaw, view_pitch, clampf(rad_to_deg(2.0 * atan(need)), 12.0, 179.0))
+
+
 func mirror_in_view() -> bool:
 	return phone_mirror != null and is_instance_valid(phone_mirror) and phone_mirror.is_inside_tree() \
 			and phone_mirror.has_method("glass_centre")

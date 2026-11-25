@@ -331,6 +331,10 @@ var _notice_left := 0.0
 var _error: Label
 var _compose: LineEdit
 var _mirror_was_up := false
+## The handheld left out of first person's camera while the Mirror app's
+## mirror is up (`_keep_device_from_eyes`).
+var _device_hidden: Node3D
+var _device_from_eyes := false
 ## The Servers app: the line `Main` gives on going online (connecting, what
 ## went wrong; `set_link_status`), and where the link leads ("your own
 ## server" or the address joined), set by `Main` as it connects.
@@ -673,6 +677,20 @@ func _on_wardrobe_changed(_appearance: Dictionary) -> void:
 ## True while the phone is out on the Mirror app.
 func mirror_open() -> bool:
 	return is_open and app == "mirror"
+
+
+## The Mirror app's rows that change the face: choosing one brings the view
+## in close on it (`PlayerController.mirror_focus`), in the mirror and the
+## dressing room alike.
+const FACE_PICKS := ["style", "facial", "hair", "eyes"]
+
+
+## True while the Mirror app's chosen row is one of the face's.
+func mirror_on_face() -> bool:
+	if not mirror_open() or wardrobe == null:
+		return false
+	var keys := wardrobe.pick_keys()
+	return not keys.is_empty() and keys[clampi(mirror_row, 0, keys.size() - 1)] in FACE_PICKS
 
 
 ## `Main` reports whether a mirror could stand in front of the player.
@@ -1301,6 +1319,9 @@ func _build_flat() -> void:
 	projection.name = "HoloScreen"
 	projection.setup(_screen.get_texture(), Vector2(screen_size))
 	add_child(projection)
+	# A mirror never shows the hologram: it is the view's, thrown for you.
+	for part: String in ["Card", "Beam"]:
+		(projection.get_node(part) as VisualInstance3D).layers = 1 << (MirrorScript.MIRROR_LAYER - 1)
 	_flat = TextureRect.new()
 	_flat.name = "Flat"
 	_flat.texture = _screen.get_texture()
@@ -1347,8 +1368,46 @@ func _hold(camera: Camera3D) -> void:
 		var from_behind := camera != null and holder != null and is_instance_valid(holder) \
 				and holder.has_method("get_eye_position") \
 				and camera.global_position.distance_to(holder.get_eye_position()) >= HoloScreen.THIRD_PERSON_AT
-		projection.step(camera, holder if from_behind else null, _device, held() and from_behind and _device != null and _device.is_visible_in_tree(),
+		# In first person the Mirror app's mirror needs the view (it frames
+		# your reflection), so the screen is thrown up beside it too.
+		var thrown := from_behind or (mirror_up and holder != null and is_instance_valid(holder)
+				and holder.has_method("get_eye_position"))
+		projection.step(camera, holder if thrown else null, _device, held() and thrown and _device != null and _device.is_visible_in_tree(),
 				get_process_delta_time())
+		# Looking into the mirror from the eyes, the phone in your hand would
+		# stand in front of your reflection: this camera leaves it out, as it
+		# leaves out your head, while its screen is thrown up beside you. The
+		# mirror (and everyone else) still sees you holding it.
+		_keep_device_from_eyes(thrown and not from_behind)
+
+
+## Puts the handheld in your hand on the layer first person's camera leaves
+## out (`Mirror.HEAD_LAYER`), or back on its own.
+func _keep_device_from_eyes(hide: bool) -> void:
+	if hide == _device_from_eyes and (not hide or _device_hidden == _held_root()):
+		return
+	if _device_hidden != null and is_instance_valid(_device_hidden):
+		for node in _device_hidden.find_children("*", "VisualInstance3D", true, false):
+			var part := node as VisualInstance3D
+			part.layers = int(part.get_meta("eyes_layers", part.layers))
+			part.remove_meta("eyes_layers")
+	_device_hidden = null
+	_device_from_eyes = hide
+	var root := _held_root() if hide else null
+	if root == null:
+		return
+	for node in root.find_children("*", "VisualInstance3D", true, false):
+		var part := node as VisualInstance3D
+		part.set_meta("eyes_layers", part.layers)
+		part.layers = 1 << (MirrorScript.HEAD_LAYER - 1)
+	_device_hidden = root
+
+
+func _held_root() -> Node3D:
+	if holder == null or not is_instance_valid(holder):
+		return null
+	var skin := holder.get_node_or_null("Skin")
+	return skin.handheld() if skin != null and skin.has_method("handheld") else null
 
 
 ## True when the holder has a hand to hold the device in (a dressed
@@ -2155,14 +2214,12 @@ func _draw_mirror() -> void:
 	if wardrobe == null:
 		_body.add_child(_label("Your wardrobe is not here.", 15, UiTheme.INK))
 		return
-	var line := "Out in the world a mirror stands in front of you. Changes still save as you go."
+	var line := "Scroll to a row. < > change it, or click the row and scroll."
 	if dressing:
-		line = "The camera faces you. Drag beside the phone to turn round. Changes save as you go."
-	elif mirror_up:
-		line = "Look ahead: the mirror shows you. Scroll through what you own. Changes save as you go."
-	_body.add_child(_label(line, 14, Color(0.7, 0.7, 0.7)))
+		line += " Drag beside the phone to turn round."
+	_body.add_child(_label(line, 14, Color(0.78, 0.78, 0.78)))
 	if mirror_up:
-		var lower := _button("Lower the phone to look", set_mirror_lowered.bind(true))
+		var lower := _button("Put the phone down to see it all", set_mirror_lowered.bind(true))
 		lower.focus_mode = Control.FOCUS_NONE
 		_body.add_child(lower)
 	var keys := wardrobe.pick_keys()
@@ -2172,8 +2229,7 @@ func _draw_mirror() -> void:
 		_body.add_child(row)
 		if i == mirror_row:
 			_follow = row
-	_body.add_child(_label("Wheel: move between rows. Click a row, then the wheel turns it. Right click: back.",
-			13, Color(0.6, 0.6, 0.6)))
+	_body.add_child(_label("Changes save as you go. Face rows bring the view in close.", 13, Color(0.6, 0.6, 0.6)))
 	var shuffle := _button("Surprise me", func() -> void: wardrobe.randomize_look())
 	shuffle.focus_mode = Control.FOCUS_NONE
 	_body.add_child(shuffle)
