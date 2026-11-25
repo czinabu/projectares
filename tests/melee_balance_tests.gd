@@ -33,6 +33,8 @@ const FLIER_WEIGHT := 0.04 # reaches well overhead
 const MOVE_WEIGHT := 0.5 # per step of move speed past a one-hander's
 const LUNGE_WEIGHT := 0.01 # per m/s of heavy lunge past 9
 const SLAM_WEIGHT := 0.0015 # per point of slam damage x radius / 4.5 past the reference
+## Weapon abilities (`MeleeWeapon.ability`), each a share of the score.
+const ABILITY_WEIGHTS := {"ground_pound": 0.04}
 
 
 static func run(t: Node) -> void:
@@ -97,6 +99,7 @@ static func measure(id: String) -> Dictionary:
 	traits += MOVE_WEIGHT * (b.move_speed_mult() - b.one_hand_speed)
 	traits += LUNGE_WEIGHT * (b.heavy_lunge - 9.0)
 	traits += SLAM_WEIGHT * (b.slam_damage * b.slam_radius - 55.0 * 4.5) / 4.5
+	traits += ABILITY_WEIGHTS.get(b.ability, 0.0)
 	var hits := 0
 	var left := 100.0
 	while left > 0.0:

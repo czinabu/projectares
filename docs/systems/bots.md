@@ -146,7 +146,8 @@ date in the same PR.
   feints (a charge that switches side and lets go as a light) and
   dash-strikes by ring (`BotBrain.RING_HEAVY`, `RING_FEINT`, `RING_DASH`),
   and a strike into any opening; they press the same buttons a player
-  does (`_start_attack`, `_carry_charge`). A blade in reach beats a rifle
+  does (`_start_attack`, `_carry_charge`), the weapon ability too (a
+  hammer bot pounds a crowd, `_wants_pound`). A blade in reach beats a rifle
   (Caleb's call): an army gunner cut by a blade flinches
   (`BotBrain.melee_flinch`, its aim and trigger only, never a player's)
   and gives ground from one (`blade_backoff`). Measure with the duel

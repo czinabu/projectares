@@ -845,10 +845,10 @@ func footwork_wanted(melee: MeleeWeapon) -> float:
 	if melee.is_blocking():
 		return step_guard
 	var steps := _steps_of(melee)
-	var strike := (step_heavy if melee._shown_kind == "heavy" or melee._dashing else step_light) * float(steps[1])
+	var strike := (step_heavy if melee._shown_kind in ["heavy", "pound"] or melee._dashing else step_light) * float(steps[1])
 	var windup := step_windup * float(steps[0])
 	if melee.is_winding_up():
-		var heavy := melee._windup_kind == "heavy"
+		var heavy := melee._windup_kind in ["heavy", "pound"]
 		return windup * (1.6 if heavy else 1.0)
 	var arc := melee.swing_arc()
 	if arc >= 0.0:
@@ -1567,10 +1567,10 @@ func both_hands(melee: MeleeWeapon) -> bool:
 ## True while `melee` is showing, winding up or drawing back toward a heavy.
 static func is_heavy(melee: MeleeWeapon) -> bool:
 	if melee.is_winding_up():
-		return melee._windup_kind == "heavy"
+		return melee._windup_kind in ["heavy", "pound"]
 	if charge_amount(melee) > 0.0:
 		return true
-	return melee._shown_kind == "heavy"
+	return melee._shown_kind in ["heavy", "pound"]
 
 
 ## The hand offset `done` (0..1) of the way through the swing from `dir`:
