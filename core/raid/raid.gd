@@ -400,6 +400,12 @@ var _molten_in := 0.0
 ## { at, radius, damage, left, kind, faction }, hurting once a second.
 var clouds: Array[Dictionary] = []
 var _cloud_in := 1.0
+## Bots that leave hurting ground where they walk (their "trail" meta, a
+## cloud as `burst_cloud` takes it, and "every", the seconds between two):
+## bot -> { at (where it last left one), wait }. Authority only.
+var _trails := {}
+var _trail_in := 0.0
+const TRAIL_STEP := 0.5
 ## The map's warmth (heaters, vents; Marker3D in group "warmth") and the
 ## clock for the cold's once-a-second hurt.
 var warmth: Array[Node3D] = []
@@ -672,6 +678,8 @@ func _physics_process(delta: float) -> void:
 	_tick_hazards(delta)
 	if world.molten_level > -INF:
 		_tick_molten(delta)
+	if not _trails.is_empty():
+		_tick_trails(delta)
 	if not clouds.is_empty():
 		_tick_clouds(delta)
 	if world.shelling > 0.0 and zone_rules:
@@ -3549,6 +3557,31 @@ func burst_cloud(at: Vector3, burst: Dictionary, faction: String) -> void:
 	cloud_burst.emit(at, cloud.radius, cloud.left, cloud.kind)
 
 
+## A trail-leaving bot (the Rift's Magma Crawlers) leaves a cloud at its
+## feet every "every" seconds while it walks on, never two on one spot, so
+## the ground it has crossed hurts the other side for a while. Checked
+## every `TRAIL_STEP` seconds over only the bots that leave one.
+func _tick_trails(delta: float) -> void:
+	_trail_in -= delta
+	if _trail_in > 0.0:
+		return
+	_trail_in = TRAIL_STEP
+	for body: Variant in _trails.keys():
+		if not is_instance_valid(body) or (body as Actor).is_dead:
+			_trails.erase(body)
+			continue
+		var bot := body as Actor
+		var left: Dictionary = _trails[bot]
+		left.wait = float(left.wait) - TRAIL_STEP
+		var trail: Dictionary = bot.get_meta("trail")
+		var feet := bot.global_position
+		if left.wait > 0.0 or not bot.is_on_floor() or feet.distance_to(left.at) < float(trail.get("radius", 2.0)):
+			continue
+		left.at = feet
+		left.wait = float(trail.get("every", 1.5))
+		burst_cloud(feet + Vector3(0, 0.3, 0), trail, bot.faction)
+
+
 ## Death bursts' clouds hang a while and hurt, once a second, everyone of
 ## another faction inside them (players and bots alike) through
 ## `Combat.deal`, past armor. Authority only.
@@ -3586,13 +3619,16 @@ func _tick_clouds(delta: float) -> void:
 
 
 ## A death burst's cloud, view only: a slow swell of spores that thins and
-## goes as it runs out.
-func _show_cloud(at: Vector3, radius: float, seconds: float, _kind: String) -> void:
+## goes as it runs out. Burning ground ("fire") is a low haze of embers.
+func _show_cloud(at: Vector3, radius: float, seconds: float, kind: String) -> void:
+	var color: Color = CLOUD_COLORS.get(kind, CLOUD_COLOR)
+	# Burning ground (a trail) is low and quiet: it is left every step.
+	var trail := kind == "fire"
 	# Soft puffs hung through the cloud's ball, low ones more than high, so it
 	# lies on the ground with a ragged edge (`spore_cloud.gdshader`).
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://assets/shaders/spore_cloud.gdshader") as Shader
-	mat.set_shader_parameter("tint", Color(CLOUD_COLOR, CLOUD_ALPHA))
+	mat.set_shader_parameter("tint", Color(color, CLOUD_ALPHA * (0.5 if trail else 1.0)))
 	mat.set_shader_parameter("alpha", 0.0)
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2.0, 2.0)
@@ -3607,7 +3643,9 @@ func _show_cloud(at: Vector3, radius: float, seconds: float, _kind: String) -> v
 	for i in CLOUD_PUFFS:
 		var dir := Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-0.3, 0.7), rng.randf_range(-1.0, 1.0))
 		var spot := dir.limit_length(1.0) * radius * 0.7
-		var size := radius * rng.randf_range(0.45, 0.75)
+		if trail:
+			spot.y = absf(spot.y) * 0.25
+		var size := radius * rng.randf_range(0.45, 0.75) * (0.6 if trail else 1.0)
 		puffs.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ONE * size), spot))
 		puffs.set_instance_custom_data(i, Color(rng.randf(), radius * 0.12, 0.0, 0.0))
 	var cloud := MultiMeshInstance3D.new()
@@ -3624,11 +3662,15 @@ func _show_cloud(at: Vector3, radius: float, seconds: float, _kind: String) -> v
 	swell.tween_interval(maxf(seconds - 2.8, 0.1))
 	swell.tween_property(mat, "shader_parameter/alpha", 0.0, 2.0)
 	swell.tween_callback(cloud.queue_free)
-	Fx.ring(self, at, radius, CLOUD_COLOR, 0.9, false)
+	if trail:
+		return
+	Fx.ring(self, at, radius, color, 0.9, false)
 	Sfx.play("spore_burst", at, 0.0, 50.0)
 
 
 const CLOUD_COLOR := Color(0.62, 0.85, 0.3)
+## A cloud's colour by its kind; spores are `CLOUD_COLOR`.
+const CLOUD_COLORS := {"fire": Color(1.0, 0.42, 0.1)}
 const CLOUD_ALPHA := 0.36
 const CLOUD_PUFFS := 22
 
@@ -4101,6 +4143,8 @@ func spawn_bot(bot_name: String, at: Vector3, equip_seed: int, warlord := false,
 		warlords[bot] = true
 	bot_seeds[bot] = equip_seed
 	bots.append(bot)
+	if bot.has_meta("trail"):
+		_trails[bot] = {"at": Vector3.INF, "wait": 0.0}
 	return bot
 
 

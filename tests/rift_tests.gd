@@ -43,7 +43,7 @@ static func run(t: Node) -> void:
 	for bot in raid.bots:
 		kinds[bot.get_meta("kind", "")] = true
 	t.check(raid.bots.size() >= world.bot_count and kinds.keys().all(func(k: String) -> bool:
-			return k in world.ROSTER or k == ""), "rift: the roster's bots spawn (%s)" % ", ".join(kinds.keys()))
+			return k in world.ROSTER or k in ["", "hound"]), "rift: the roster's bots and the dens' hounds spawn (%s)" % ", ".join(kinds.keys()))
 	t.check(raid.bots.all(func(b: Actor) -> bool: return b.weapons.size() > 0 and b.faction != me.faction),
 			"rift: every bot is armed and hostile")
 	var walls := raid.get_tree().get_nodes_in_group("map_edge").filter(func(w: Node) -> bool:
