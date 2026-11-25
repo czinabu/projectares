@@ -23,8 +23,10 @@ balance" (https://claude.ai/artifact/5oqEMAXpKisXTojV9w47pv).
 
 A full-loot PvPvE war game in the spirit of Planet Doom: you drop into an
 endless warzone with gear you are willing to lose, fly, ride and fight
-through it, and get your loot home. Worlds are plug-ins, so new planets can
-be added later without touching the core.
+through it, and get your loot home. Every world is hand-built by the team,
+and new ones are added over time without touching the core (each is a
+`WorldDef` plug-in in the code). The game is not a platform for
+player-made worlds, and it is never marketed as one (Caleb's call).
 
 Two standing rules shape every feature:
 

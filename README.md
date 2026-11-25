@@ -1,6 +1,7 @@
 # Project Ares
 
-A full-loot PvPvE war game with plug-in worlds, built in Godot 4. Each world
+A full-loot PvPvE war game across a set of hand-built worlds, made in Godot 4.
+New worlds are designed and added by the team over time. Each world
 is a warzone that never ends. Drop in with gear you are willing to lose, fight
 and loot for as long as you like, and bank what you find at a depot. Die and
 everything you carried stays behind, and you drop back in seconds later.
@@ -8,12 +9,15 @@ everything you carried stays behind, and you drop back in seconds later.
 You start in your home base, which is the menu: the stash is on show, and
 you gear up where you stand. Online, the door leads to the Concourse, a
 safe plaza shared by everyone on the server, with gates into the raid
-worlds, shops, a clan hall and the arena. Three fighting worlds plug in today.
+worlds, shops, a clan hall and the arena. These are the fighting worlds so far.
 Ashfront is the full-loot war, one open battlefield where two bot armies
 fight over the landmarks. Frostline is the gentler co-op world, a frozen
 valley: players cannot hurt each other there, and dying drops only your
 backpack. The Spore Marsh is co-op too, a drowned basin of fungus forests
-where the enemy is wildlife, guns foul and blades shine. You fly a jetpack, thruster boots or glide wings, and you throw
+where the enemy is wildlife, guns foul and blades shine. The Dune Sea is a
+wide desert of wreck fields where you haul salvage home by vehicle, and the
+Basalt Rift is a vertical sky fight over lava, home to the Sky Leviathan.
+Meridian is the race world. You fly a jetpack, thruster boots or glide wings, and you throw
 vehicles off your watch: a motorbike, a two-seat hoverbike, a rover, a
 mech and a jet. Shops, mastery and crafting are in, and on a server the
 contract board pays you for work you sign out with. Online play is an
@@ -542,15 +546,19 @@ core/            Shared by every world. Never names a specific world.
 worlds/
   plaza/         The Concourse: the social safe zone
   ashfront/      The PvP warzone: rules, loot tables, and its map
-  frostline/     A smaller PvE world that proves the plug-in contract
+  frostline/     The co-op frozen valley and the Stilled Engine
   marsh/         The Spore Marsh: a co-op hunt against the wildlife
+  dunes/         The Dune Sea: salvage, cargo, sandstorms and convoys
+  rift/          The Basalt Rift: lava, updrafts and the Sky Leviathan
+  meridian/      Meridian: the race world
 assets/          Models, textures, sky, font and shaders, with LICENSES.md
 tests/           Headless test suite and a screenshot tool
 ```
 
 Three rules keep the foundation solid:
 
-1. **Worlds are plug-ins.** Core code talks to a world only through `WorldDef`.
+1. **Worlds are self-contained.** Core code talks to a world only through
+   `WorldDef`, so the team can add a new world without touching the core.
 2. **Actors are driven only by commands.** The player, bots and remote
    players all fill in an `ActorCommand`. The simulation never reads the
    keyboard, so it can run on a dedicated server.
