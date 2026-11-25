@@ -320,13 +320,16 @@ date in the same PR.
   a crown. Plain pieces, merged as they hang.
 - A plain fighter wears a touch of its own, a skin's "gear"
   (`ActorSkin._build_gear`), so a marksman or a runner reads apart from
-  the rifleman beside it: "hood" (a hood and shoulder mantle in the army's
-  colour, darkened: "legion_marksman"), "scarf" (a scarf with tails:
-  "tide_runner"), "nomad" (a sand wrap, a rust scarf over the mouth,
-  goggles and a sash: the Dune Sea's "sand_raider", over light scrap plate
-  in "desert") and "duster" (the nomad's mask and goggles under a hood,
-  and a long coat: "dune_marksman"). The hood and wrap hang on the head,
-  the rest on the chest and hips. No world's fighter wears the players'
+  the rifleman beside it: "hood" (a hood framing the face and a short
+  cape, in the army's colour, darkened: "legion_marksman"), "scarf" (a
+  scarf wound twice round the neck, tails flying: "tide_runner"), "nomad"
+  (a wrap round the crown, a gaiter over the mouth and nose, goggles on a
+  strap and a sash: the Dune Sea's "sand_raider", over light scrap plate
+  in "desert") and "duster" (the gaiter and goggles under a hood, a cape
+  and a long coat open at the front: "dune_marksman"). Rounded pieces
+  (spheres, rings, cones) fitted round the head's middle, about 0.1 above
+  the "Head" bone, hung on the head, chest and hips; `--plain-fighters-only`
+  in `visual_check` shoots them close. No world's fighter wears the players'
   "raider" or the civilians' "scavenger". A Legion Marksman's rifle shows
   a long scope (`Gun.attachments` set without `fit`, so its stats leave
   the tuning alone). View only.
