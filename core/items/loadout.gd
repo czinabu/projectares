@@ -182,8 +182,7 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 			pass
 		else:
 			actor.inventory.add_item(id)
-	# Frames go last because they scale what the other gear set up. One is
-	# worn; another is only carried, as loot.
+	# One frame is worn; another is only carried, as loot.
 	for id in frames:
 		if actor.frame_id == "":
 			wear_frame(actor, id)
@@ -196,6 +195,8 @@ static func equip(actor: Actor, item_ids: Array) -> void:
 		var worn := actor.weapon_for_key(1)
 		if worn >= 0 and worn != actor.active_weapon_index:
 			actor.draw_weapon(worn)
+	# Attachments joined the worn gear without a signal: weigh it all again.
+	actor.mark_carry()
 
 
 ## Changes what `actor` wears to `kit` (item ids, as for `equip`) in place,
@@ -367,50 +368,35 @@ static func wear_frame(actor: Actor, id: String, armor_left := -1.0) -> float:
 			actor.health.armor = minf(armor_left, actor.health.max_armor)
 		_scale_frame(actor, stats, false)
 		actor.gear_items.append(id)
+	actor.mark_carry()
 	actor.frame_changed.emit(id)
 	return left
 
 
 ## Puts backpack `id` on (`""` takes it off, back to the field pack): the
-## pack holds its `capacity` (`FIELD_PACK` with none) and the sprint is
-## scaled by its `sprint_mult`, the old pack's taken back off first. The
-## pack's contents stay as they are, even past a smaller capacity: nothing
-## more goes in until it is under again.
+## pack holds its `capacity` (`FIELD_PACK` with none). A bigger pack costs
+## nothing on its own but its own weight: what slows you is what you fill it
+## with (`CarryLoad`). The pack's contents stay as they are, even past a
+## smaller capacity: nothing more goes in until it is under again.
 static func wear_pack(actor: Actor, id: String) -> void:
 	if id != "" and not ItemDB.has_tag(id, "backpack"):
 		return
 	if actor.pack_id != "":
-		actor.sprint_speed /= maxf(float(ItemDB.item_stats(actor.pack_id).get("sprint_mult", 1.0)), 0.01)
 		actor.gear_items.erase(actor.pack_id)
 	actor.pack_id = id
 	var stats := ItemDB.item_stats(id) if id != "" else {}
 	actor.inventory.capacity = int(stats.get("capacity", FIELD_PACK))
 	if id != "":
-		actor.sprint_speed *= float(stats.get("sprint_mult", 1.0))
 		actor.gear_items.append(id)
 	actor.inventory.changed.emit()
 
 
-## Applies a frame's speed and heat scaling, or with `undo` takes it back off.
+## Applies a frame's thermal signature, or with `undo` takes it back off. How
+## a frame slows you and heats your rig is its weight (`CarryLoad`).
 static func _scale_frame(actor: Actor, stats: Dictionary, undo: bool) -> void:
-	var speed: float = stats.get("speed_mult", 1.0)
-	var heat_mult: float = stats.get("heat_mult", 1.0)
-	if actor.flight.heavy_lift:
-		# A jetpack carries heavy armor without running hotter.
-		heat_mult = minf(heat_mult, 1.0)
 	var signature: float = stats.get("heat_signature", 1.0)
 	if undo:
-		speed = 1.0 / maxf(speed, 0.01)
-		heat_mult = 1.0 / maxf(heat_mult, 0.01)
 		signature = 1.0 / maxf(signature, 0.01)
-	actor.walk_speed *= speed
-	actor.sprint_speed *= speed
-	actor.flight.heat_per_sec *= heat_mult
-	actor.flight.burst_heat *= heat_mult
-	actor.flight.pulse_heat *= heat_mult
-	actor.flight.air_dash_heat *= heat_mult
-	actor.flight.glide_boost_heat *= heat_mult
-	actor.flight.glide_heat *= heat_mult
 	actor.heat_signature *= signature
 
 
@@ -430,12 +416,11 @@ static func wear_helmet(actor: Actor, id: String) -> void:
 		actor.visor.display_name = ItemDB.item_name(id)
 		_apply_stats(actor.visor, ItemDB.item_stats(id))
 		actor.gear_items.append(id)
+	actor.mark_carry()
 	actor.helmet_changed.emit(id)
 
 
-## Puts flight rig `id` on the actor, or with "" takes the worn one off. The
-## worn frame scales what a rig sets up, so its scaling comes off first and
-## goes back on round the new rig (its armor untouched). With `in_use` (a
+## Puts flight rig `id` on the actor, or with "" takes the worn one off. With `in_use` (a
 ## swap from the pack mid-life, `Raid.swap_worn`) the heat the old rig had
 ## carries over to the new one, so a swap is no free cool-down. The one
 ## replaced leaves `gear_items`; where it goes is the caller's job. Emits
@@ -444,9 +429,6 @@ static func wear_helmet(actor: Actor, id: String) -> void:
 static func wear_rig(actor: Actor, id: String, in_use := true) -> void:
 	if id != "" and not ItemDB.has_tag(id, "flight_rig"):
 		return
-	var frame_stats := ItemDB.item_stats(actor.frame_id) if actor.frame_id != "" else {}
-	if not frame_stats.is_empty():
-		_scale_frame(actor, frame_stats, true)
 	var heat := actor.flight.heat if actor.flight.enabled else 0.0
 	var overheated := actor.flight.overheated if actor.flight.enabled else false
 	if actor.flight.enabled:
@@ -462,8 +444,8 @@ static func wear_rig(actor: Actor, id: String, in_use := true) -> void:
 			actor.flight.heat = heat
 			actor.flight.overheated = overheated
 		actor.gear_items.append(id)
-	if not frame_stats.is_empty():
-		_scale_frame(actor, frame_stats, false)
+	# The new rig carries the load its own way (a jetpack, heavy lift).
+	actor.mark_carry()
 	actor.rig_changed.emit(id)
 
 
@@ -485,6 +467,7 @@ static func wear_ability(actor: Actor, id: String, in_use := true) -> void:
 		if in_use:
 			actor.ability.cooldown_left = actor.ability.cooldown
 		actor.gear_items.append(id)
+	actor.mark_carry()
 	actor.ability_changed.emit(id)
 
 
@@ -704,6 +687,8 @@ static func _setup_weapon(weapon: Weapon, id: String, stats: Dictionary) -> void
 ## property is a typo in ItemDB, so it is reported.
 static func _apply_stats(target: Object, stats: Dictionary) -> void:
 	for key: String in stats:
+		if key == "weight":
+			continue  # What it weighs to carry (`CarryLoad`), not a property.
 		if key in target:
 			target.set(key, stats[key])
 		else:

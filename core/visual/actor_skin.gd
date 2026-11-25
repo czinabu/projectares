@@ -999,6 +999,7 @@ func _update_carry(weapon: Weapon, gait: Dictionary, airborne: bool) -> void:
 	var pace := actor.walk_speed * gun.move_speed_mult() if gun != null else actor.walk_speed
 	if actor.flight.enabled:
 		pace *= actor.flight.ground_speed_mult
+	pace *= actor.carry_speed
 	var ratio := flat.length() / maxf(pace, 0.1)
 	# Forward only: a strafe or a backpedal keeps the low ready.
 	var ahead := clampf(-flat.z / maxf(flat.length(), 0.001), 0.0, 1.0)
@@ -4278,6 +4279,8 @@ func _update_glide(delta: float) -> void:
 			# A running jump leans into it, and rights itself for the landing.
 			tilt = dir * leap_lean * clampf(speed / leap_lean_speed, 0.0, 1.0) * (1.0 - _air_fall)
 	_run_out = _run_out and alive and speed > run_out_speed * 0.5 and actor.is_on_floor()
+	if locomotion != null:
+		locomotion.skid = _run_out
 	# The actor turns with the view, and this model is its child. While the
 	# body is laid out in flight, a look round must not drag it round with
 	# the camera and then let it swing back: undo the view's turn first, so

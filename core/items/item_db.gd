@@ -41,7 +41,7 @@ func _ready() -> void:
 	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], JETPACK_MK1.duplicate(),
 			"Height and hover. Climb to 40 m and hover 8 s to fight from above with steady aim, or hold Shift to cruise level at 16 m/s, the steadiest of the cruises. The slowest across the map, clumsy under a roof, and loud and bright on scans and thermal.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
-			{"armor": 30.0}, "30 armor.")
+			{"armor": 30.0, "weight": 4.0}, "30 armor. Light: 4 kg.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
 			{"heal": 30.0}, "Heals 30.")
 
@@ -209,32 +209,32 @@ func _ready() -> void:
 
 	# Backpacks (Caleb's call: four sizes, bought from the Outfitter). None
 	# worn is the 12-slot field pack everyone has; each bigger one carries
-	# more, so more is at stake, and slows the sprint a little
-	# (`Loadout.wear_pack`). "pack_size" sizes it on the back.
+	# more, so more is at stake, and weighs a little more. What slows you is
+	# what you fill it with (`CarryLoad`). "pack_size" sizes it on the back.
 	register("pack_rucksack", "Rucksack", Rarity.UNCOMMON, 400, ["backpack", "vendor"],
-			{"capacity": 16, "sprint_mult": 0.97, "pack_size": 1},
-			"16 slots in the pack. Sprint 3% slower.")
+			{"capacity": 16, "weight": 1.5, "pack_size": 1},
+			"16 slots in the pack. 1.5 kg empty; a full pack is a heavier load.")
 	register("pack_hauler", "Hauler Pack", Rarity.UNCOMMON, 900, ["backpack", "vendor"],
-			{"capacity": 20, "sprint_mult": 0.94, "pack_size": 2},
-			"20 slots in the pack. Sprint 6% slower.")
+			{"capacity": 20, "weight": 2.5, "pack_size": 2},
+			"20 slots in the pack. 2.5 kg empty; a full pack is a heavier load.")
 	register("pack_mule", "Mule Frame", Rarity.UNCOMMON, 1800, ["backpack", "vendor"],
-			{"capacity": 24, "sprint_mult": 0.9, "pack_size": 3},
-			"24 slots on a carrying frame. Sprint 10% slower.")
+			{"capacity": 24, "weight": 4.0, "pack_size": 3},
+			"24 slots on a carrying frame. 4 kg empty; a full one is a heavy load.")
 
 	# Armor frames
 	register("frame_runner", "Runner Frame", Rarity.UNCOMMON, 400, ["armor", "frame_light", "vendor"],
-			{"armor": 45.0, "speed_mult": 1.08, "heat_mult": 0.8, "heat_signature": 0.7},
-			"Light: 45 armor, 8% faster, jetpack runs cooler. Dim on thermal.")
+			{"armor": 45.0, "weight": 5.0, "heat_signature": 0.7},
+			"Light: 45 armor at 5 kg, so a light kit stays quick and runs its rig cool. Dim on thermal.")
 	register("frame_trooper", "Trooper Frame", Rarity.UNCOMMON, 450, ["armor", "frame_medium", "vendor"],
-			{"armor": 85.0},
-			"Medium: 85 armor, no penalties.")
+			{"armor": 85.0, "weight": 11.0},
+			"Medium: 85 armor at 11 kg.")
 	register("frame_bulwark", "Bulwark Frame", Rarity.RARE, 900, ["armor", "frame_heavy"],
-			{"armor": 125.0, "speed_mult": 0.86, "heat_mult": 1.25, "heat_signature": 1.3},
-			"Heavy: 125 armor, 14% slower, wings and boots run hotter (jetpacks carry it). Bright on thermal.")
+			{"armor": 125.0, "weight": 22.0, "heat_signature": 1.3},
+			"Heavy: 125 armor at 22 kg, enough to make most kits heavy: slower, and rigs run hotter (jetpacks carry it best). Bright on thermal.")
 	# Crafted only, from a blueprint found on an expedition. "insulation" is
 	# the share of the cold's drain it keeps out (`Raid._tick_cold`).
 	register("frame_thermal", "Thermal Frame", Rarity.UNCOMMON, 500, ["armor", "frame_medium"],
-			{"armor": 65.0, "insulation": 0.4, "heat_signature": 1.3},
+			{"armor": 65.0, "weight": 12.0, "insulation": 0.4, "heat_signature": 1.3},
 			"Medium: 65 armor over a heated liner that keeps out 40% of the cold. Bright on thermal.")
 
 	# Flight rigs (the Mk1 numbers are `JETPACK_MK1`, `BOOTS_MK1` and
@@ -759,7 +759,7 @@ const JETPACK_MK1 := {
 	"heat_per_sec": 12.5, "hover_heat_mult": 1.0, "cruise_heat_mult": 1.0, "climb_heat_mult": 1.3,
 	"boost_heat_mult": 0.18, "cool_per_sec": 25.0, "coast_cool": 25.0, "ceiling": 40.0,
 	"flight_aim": 0.1, "fall_damage_mult": 0.5, "scan_range": 120.0, "indoor_mult": 0.5,
-	"heavy_lift": true, "gust_mult": 0.6, "tier": 1,
+	"heavy_lift": true, "gust_mult": 0.6, "tier": 1, "weight": 6.0,
 }
 
 ## Thruster boots: ground agility and stealth. No heat: 4 charges pay for
@@ -773,7 +773,7 @@ const BOOTS_MK1 := {
 	"skim_mid_heat": 0.0, "skim_high_heat": 0.0, "air_dash_speed": 14.0, "air_dash_time": 0.3,
 	"air_dash_heat": 0.0, "air_dash_cooldown": 0.25, "ground_speed_mult": 1.15, "flight_aim": 0.0,
 	"fall_damage_mult": 0.0, "graze_window": 0.2, "scan_range": 30.0, "indoor_mult": 1.0,
-	"ceiling": 10.0, "gust_mult": 0.25, "skate_speed": 18.0, "tier": 1,
+	"ceiling": 10.0, "gust_mult": 0.25, "skate_speed": 18.0, "tier": 1, "weight": 2.0,
 }
 
 ## Glide wings: distance and speed. A free launch, then a 22 m/s glide that
@@ -791,7 +791,7 @@ const WINGS_MK1 := {
 	"max_charges": 2, "charge_time": 1.0, "charge_on_ground": true,
 	"glide_sidearm_only": true, "slide_landing_speed": 18.0, "ground_speed_mult": 0.95,
 	"flight_aim": 1.5, "fall_damage_mult": 1.0, "scan_range": 80.0, "indoor_mult": 0.0,
-	"ceiling": 40.0, "gust_mult": 1.0, "tier": 1,
+	"ceiling": 40.0, "gust_mult": 1.0, "tier": 1, "weight": 4.0,
 }
 
 ## What a higher tier improves on each rig: its strength only (see

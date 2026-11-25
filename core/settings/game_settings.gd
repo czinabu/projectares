@@ -64,6 +64,32 @@ const VIEW_DISTANCE := [
 	["Low", 0.5, 0.5, 700.0, 2.5],
 ]
 const VIEW_DISTANCE_DEFAULT := 1
+## One pick that sets every PERFORMANCE setting at once (and the edge
+## smoothing), best first: [name on the phone, then a value for each of
+## `GRAPHICS_KEYS` in order]. "High" is the defaults, the world as made;
+## "Low" is for a laptop's built-in graphics; "Lowest" for the weakest
+## machines. Changing any one of those settings by hand reads "Custom" (the
+## last row, which sets nothing). A weak graphics card is spotted on the
+## first launch and given a lower one (`detect_graphics`).
+const GRAPHICS := [
+	["High", 0, 0, 1, true, true, 2, true],
+	["Medium", 1, 1, 1, false, true, 2, true],
+	["Low (laptops)", 2, 2, 2, false, false, 1, true],
+	["Lowest", 3, 3, 3, false, false, 1, false],
+	["Custom"],
+]
+const GRAPHICS_KEYS := ["shadows", "render_scale", "view_distance", "ambient_occlusion", "ground_smoke",
+		"anti_aliasing", "edge_ink"]
+const GRAPHICS_HIGH := 0
+const GRAPHICS_MEDIUM := 1
+const GRAPHICS_LOW := 2
+const GRAPHICS_LOWEST := 3
+const GRAPHICS_CUSTOM := 4
+## Built-in graphics strong enough for Medium rather than Low, by a piece of
+## their name (lower case).
+const STRONG_BUILT_IN := ["780m", "880m", "890m", "8060s", "8050s", "arc(tm) 140", "arc 140", "arc(tm) b3", "apple m"]
+## Software renderers (no graphics card at all): Lowest.
+const SOFTWARE_GPU := ["llvmpipe", "lavapipe", "swiftshader", "softpipe", "microsoft basic render"]
 
 ## Every setting, in the order the phone's Settings app shows it (Caleb's
 ## call: a new setting is one row here and its var below, never new code in
@@ -85,6 +111,8 @@ const SCHEMA := [
 			"default": ANTI_ALIASING_DEFAULT, "choices": ANTI_ALIASING},
 	{"key": "edge_ink", "tab": "view", "section": "DISPLAY", "kind": "toggle",
 			"label": "Outline far shapes (not with MSAA)", "default": true},
+	{"key": "graphics", "tab": "view", "section": "PERFORMANCE", "kind": "choice",
+			"label": "Graphics quality (sets the rows below)", "default": GRAPHICS_HIGH, "choices": GRAPHICS},
 	{"key": "shadows", "tab": "view", "section": "PERFORMANCE", "kind": "choice", "label": "Shadows",
 			"default": 0, "choices": SHADOWS},
 	{"key": "render_scale", "tab": "view", "section": "PERFORMANCE", "kind": "choice", "label": "Render scale",
@@ -114,6 +142,8 @@ const SCHEMA := [
 	# Kept but not on a Settings tab ("tab" ""): the watch's mission log.
 	{"key": "untracked", "tab": "", "kind": "list", "default": []},
 	{"key": "main_mission", "tab": "", "kind": "text", "default": ""},
+	# The graphics card `detect_graphics` last looked at ("" before the first).
+	{"key": "graphics_card", "tab": "", "kind": "text", "default": ""},
 ]
 
 ## Tests turn this off so they never touch a real settings file.
@@ -193,6 +223,16 @@ const TOUR_KEY := "tour"
 static var main_mission: String:
 	get: return _values["main_mission"]
 	set(v): _values["main_mission"] = v
+## An index into `GRAPHICS`: the pick that set the PERFORMANCE rows, or
+## `GRAPHICS_CUSTOM` once one of them was changed by hand.
+static var graphics: int:
+	get: return _values["graphics"]
+	set(v): _values["graphics"] = v
+## The name of the graphics card `detect_graphics` looked at, so it looks
+## only once.
+static var graphics_card: String:
+	get: return _values["graphics_card"]
+	set(v): _values["graphics_card"] = v
 ## An index into `VIEW_DISTANCE`.
 static var view_distance: int:
 	get: return _values["view_distance"]
@@ -209,6 +249,7 @@ static func ensure_loaded() -> void:
 		return
 	_loaded = true
 	load_settings()
+	detect_graphics()
 	apply()
 	# Once more after the first frame: a window still being shown at start
 	# can drop the mode set before it, leaving it the other way round from
@@ -216,6 +257,7 @@ static func ensure_loaded() -> void:
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree != null:
 		tree.process_frame.connect(apply_window, CONNECT_ONE_SHOT)
+		tree.process_frame.connect(fit_window_to_screen, CONNECT_ONE_SHOT)
 
 
 static func reset() -> void:
@@ -290,7 +332,83 @@ static func set_value(key: String, value: Variant) -> void:
 					if str(each) != "" and str(each) not in list:
 						list.append(str(each))
 			_values[key] = list
+	if key == "graphics":
+		_use_graphics(graphics)
+	elif key in GRAPHICS_KEYS:
+		_values["graphics"] = graphics_matching()
 	apply()
+	save()
+
+
+## Sets every one of `GRAPHICS_KEYS` from the `GRAPHICS` row `pick` (not
+## "Custom", which sets nothing).
+static func _use_graphics(pick: int) -> void:
+	var row: Array = GRAPHICS[pick]
+	if row.size() < GRAPHICS_KEYS.size() + 1:
+		return
+	for i: int in GRAPHICS_KEYS.size():
+		_values[GRAPHICS_KEYS[i]] = row[i + 1]
+	_values["graphics"] = pick
+
+
+## The `GRAPHICS` row the settings are on now, or `GRAPHICS_CUSTOM`.
+static func graphics_matching() -> int:
+	for pick: int in GRAPHICS.size():
+		var row: Array = GRAPHICS[pick]
+		if row.size() < GRAPHICS_KEYS.size() + 1:
+			continue
+		var same := true
+		for i: int in GRAPHICS_KEYS.size():
+			if _values[GRAPHICS_KEYS[i]] != row[i + 1]:
+				same = false
+				break
+		if same:
+			return pick
+	return GRAPHICS_CUSTOM
+
+
+## The `GRAPHICS` pick for a graphics card, from what Godot says of it
+## (`RenderingServer.get_video_adapter_type` and `_name`) and whether the
+## game is drawing with the full Vulkan renderer (`full_renderer`; false on
+## the OpenGL fallback a card with no Vulkan gets). A laptop's built-in
+## graphics gets Low (the strongest of them Medium), a software renderer
+## Lowest, and a separate card High.
+static func graphics_for(device_type: int, card: String, full_renderer := true) -> int:
+	var lower := card.to_lower()
+	for each: String in SOFTWARE_GPU:
+		if lower.contains(each):
+			return GRAPHICS_LOWEST
+	if device_type == RenderingDevice.DEVICE_TYPE_CPU:
+		return GRAPHICS_LOWEST
+	if not full_renderer:
+		return GRAPHICS_LOW
+	match device_type:
+		RenderingDevice.DEVICE_TYPE_DISCRETE_GPU:
+			return GRAPHICS_HIGH
+		RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU:
+			for each: String in STRONG_BUILT_IN:
+				if lower.contains(each):
+					return GRAPHICS_MEDIUM
+			return GRAPHICS_LOW
+	return GRAPHICS_MEDIUM
+
+
+## On the first launch on a graphics card (`graphics_card` is the last one
+## looked at), picks the `GRAPHICS` row for it (`graphics_for`), so a laptop
+## starts on settings it can run. It only lowers the defaults: settings the
+## player chose by hand are kept. Nothing with no window.
+static func detect_graphics() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var card := RenderingServer.get_video_adapter_name()
+	if card == "" or card == graphics_card:
+		return
+	var full := RenderingServer.get_current_rendering_method() != "gl_compatibility"
+	var pick := graphics_for(RenderingServer.get_video_adapter_type(), card, full)
+	_values["graphics_card"] = card
+	if graphics_matching() == GRAPHICS_HIGH and pick != GRAPHICS_HIGH:
+		_use_graphics(pick)
+		print("GameSettings: %s, starting on %s graphics" % [card, GRAPHICS[pick][0]])
 	save()
 
 
@@ -331,6 +449,32 @@ static func apply_window() -> void:
 				else DisplayServer.WINDOW_MODE_WINDOWED)
 
 
+## A window bigger than the screen it opens on (the game asks for 1600x900,
+## more than many laptop screens) is shrunk to fit and put in the middle.
+static func fit_window_to_screen() -> void:
+	if DisplayServer.get_name() == "headless" or window_is_full():
+		return
+	var screen := DisplayServer.window_get_current_screen()
+	var room := DisplayServer.screen_get_usable_rect(screen)
+	if room.size.x <= 0 or room.size.y <= 0:
+		return
+	var size := DisplayServer.window_get_size()
+	var fitted := window_fit(size, room.size)
+	if fitted == size:
+		return
+	DisplayServer.window_set_size(fitted)
+	DisplayServer.window_set_position(room.position + (room.size - fitted) / 2)
+
+
+## A window of `size` shrunk, keeping its shape, to fit in `room` with a
+## margin for the window's frame; the same size when it already fits.
+static func window_fit(size: Vector2i, room: Vector2i) -> Vector2i:
+	if size.x <= room.x and size.y <= room.y:
+		return size
+	var share := minf(room.x * 0.92 / size.x, room.y * 0.88 / size.y)
+	return Vector2i(floori(size.x * share), floori(size.y * share))
+
+
 ## Sets the main view's edge smoothing and render scale (only the main
 ## view: the scope's and the mirror's small pictures keep their own), shows
 ## or hides the edge ink on far shapes, and fits every world's sun and
@@ -340,10 +484,13 @@ static func apply_graphics() -> void:
 	if tree == null or tree.root == null:
 		return
 	var mode: Array = ANTI_ALIASING[anti_aliasing]
+	# The OpenGL fallback (a card with no Vulkan) has neither the screen-space
+	# smoothing nor FSR: it keeps MSAA and scales plainly.
+	var full := RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	tree.root.msaa_3d = mode[1]
-	tree.root.screen_space_aa = mode[2]
+	tree.root.screen_space_aa = mode[2] if full else Viewport.SCREEN_SPACE_AA_DISABLED
 	var scale: float = RENDER_SCALE[render_scale][1]
-	tree.root.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
+	tree.root.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 1.0 and full else Viewport.SCALING_3D_MODE_BILINEAR
 	tree.root.scaling_3d_scale = scale
 	for ink: Node in tree.get_nodes_in_group("edge_ink"):
 		(ink as Node3D).visible = ink_shown()

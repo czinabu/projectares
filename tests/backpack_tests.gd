@@ -1,6 +1,6 @@
 extends RefCounted
 ## Checks for bigger backpacks (Caleb's call: four sizes, 12/16/20/24, each
-## bigger one slowing the sprint a little, bought from the Outfitter): the
+## bigger one weighing a little more, bought from the Outfitter): the
 ## items, `Loadout.wear_pack`, what is at stake, the shop, the gear room's
 ## hooks and the model worn on the back.
 
@@ -20,14 +20,14 @@ static func run(t: Node) -> void:
 static func _items(t: Node) -> void:
 	print("Backpacks: four sizes, bought from the Outfitter")
 	var sizes: Array[int] = [Loadout.FIELD_PACK]
-	var sprints: Array[float] = [1.0]
+	var kgs: Array[float] = [0.0]
 	for id in PACKS:
 		var stats := ItemDB.item_stats(id)
 		sizes.append(int(stats.get("capacity", 0)))
-		sprints.append(float(stats.get("sprint_mult", 1.0)))
+		kgs.append(CarryLoad.weight_of(id))
 	t.check(sizes == ([12, 16, 20, 24] as Array[int]), "the field pack and three bigger ones: %s slots" % str(sizes))
-	t.check(sprints[1] < sprints[0] and sprints[2] < sprints[1] and sprints[3] < sprints[2] and sprints[3] >= 0.85,
-			"each bigger one slows the sprint a little more, never much: %s" % str(sprints))
+	t.check(kgs[1] > kgs[0] and kgs[2] > kgs[1] and kgs[3] > kgs[2] and kgs[3] <= 5.0,
+			"each bigger one weighs a little more empty, never much: %s kg" % str(kgs))
 	t.check(PACKS.all(func(id: String) -> bool: return Loadout.slot_of(id) == "pack") and "pack" in Loadout.OPTIONAL_SLOTS,
 			"they go in the backpack slot, which may be left empty for the field pack")
 	t.check(PACKS.all(func(id: String) -> bool: return Economy.for_sale("outfitter", id) and id in Economy.stock("outfitter")),
@@ -54,18 +54,19 @@ static func _worn(t: Node) -> void:
 	var raid: Raid = await t._kit_raid(512, kit)
 	var p := raid.player
 	t.check(p.pack_id == "pack_hauler" and p.inventory.capacity == 20, "a hauler worn holds 20")
-	t.check(is_equal_approx(p.sprint_speed, sprint * 0.94) and is_equal_approx(p.walk_speed, walk),
-			"it slows the sprint 6%% (%.2f against %.2f), never the walk" % [p.sprint_speed, sprint])
+	t.check(is_equal_approx(p.sprint_speed, sprint) and is_equal_approx(p.walk_speed, walk),
+			"it costs nothing on its own but its weight (%.2f against %.2f)" % [p.sprint_speed, sprint])
 	t.check(p.inventory.has_item("pack_rucksack"), "a second backpack in the kit is only carried")
 	t.check("pack_hauler" in p.get_drop_items() and Hud.pack_text(p).contains("/20"), "the worn one is at stake like any gear, and the watch shows the room: %s"
 			% Hud.pack_text(p))
 	Loadout.wear_pack(p, "pack_mule")
-	t.check(p.inventory.capacity == 24 and is_equal_approx(p.sprint_speed, sprint * 0.9)
+	var kg := p.carry_kg()
+	t.check(p.inventory.capacity == 24 and is_equal_approx(kg, CarryLoad.of_actor(p))
 			and p.gear_items.count("pack_mule") == 1 and "pack_hauler" not in p.gear_items,
-			"another goes on in its place, the old one's slowdown taken back off")
+			"another goes on in its place, and the load weighs the new one (%.1f kg)" % kg)
 	Loadout.wear_pack(p, "")
-	t.check(p.inventory.capacity == 12 and is_equal_approx(p.sprint_speed, sprint) and p.pack_id == "",
-			"taken off, the field pack and the full sprint come back")
+	t.check(p.inventory.capacity == 12 and p.carry_kg() < kg and p.pack_id == "",
+			"taken off, the field pack is back and the load is lighter")
 	for n in 12:
 		p.inventory.add_item("scrap_metal")
 	Loadout.wear_pack(p, "pack_rucksack")

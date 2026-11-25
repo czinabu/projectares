@@ -122,9 +122,12 @@ var climb_heat_mult := 1.3
 var boost_heat_mult := 0.7
 var coast_cool := 25.0
 var cruise_turn_rate := 1.2
-## A jetpack carries heavy armor: a frame's extra heat (`heat_mult` above 1)
-## does not apply to it (`Loadout.equip`).
+## A jetpack carries heavy loads: it builds only part of a heavy load's
+## extra heat (`CarryLoad.heat_mult`).
 var heavy_lift := false
+## The wearer's load scales every bit of heat the rig builds (`CarryLoad`,
+## set by `Actor.refresh_carry`): over 1 when heavy, under when light.
+var load_heat := 1.0
 ## Gliding is flown like a wing. The heading turns toward where you steer at
 ## up to `glide_turn_rate` (radians a second) instead of sliding sideways.
 ## Speed is energy: looking down dives (up to `glide_dive_gain` faster,
@@ -510,9 +513,10 @@ func lock_up() -> void:
 	is_soaring = false
 
 
-## Heat that `amount` really adds: none while overclocked.
+## Heat that `amount` really adds: none while overclocked, and scaled by
+## what the wearer carries (`load_heat`) otherwise.
 func _heat(amount: float) -> float:
-	return 0.0 if heat_free else amount
+	return 0.0 if heat_free else amount * load_heat
 
 
 ## True if the rig can hold you up and fly you about (it has thrust).

@@ -19,6 +19,11 @@ static func run(t: Node) -> void:
 	var me := dana.raid.player
 	var seen := eli.actor_for(dana.my_actor_id)
 	await t.frames(30)
+	# The server sends each body's load (`CarryLoad`), so both screens move
+	# it by what the server works out, pack and all.
+	t.check(is_instance_valid(seen) and seen.carry_sent >= 0.0 and me.carry_sent >= 0.0
+			and is_equal_approx(seen.carry_kg(), me.carry_kg()),
+			"the server tells both players what the body carries (%.1f kg)" % me.carry_kg())
 
 	# 120 ms each way: the server's answers describe where you were a quarter
 	# of a second ago.
