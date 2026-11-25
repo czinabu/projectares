@@ -68,6 +68,10 @@ const ICE_GRIP := 0.35
 ## "Frostline", step 7): one hurt in a fight it survives calls every Warden
 ## within this many metres (`WorldDef.linked_factions`).
 const GRID_LINK := 60.0
+## A valley pocket wakes when a player comes this near (metres): past a
+## Warden's sight (`WARDEN_SIGHT`), so a post is already standing when you
+## first see it.
+const POCKET_WAKE := 150.0
 ## The grid's boss, the Engine Sentinel, guards the hatch: a Warden three
 ## metres tall with a lance that must hold its tracking beam on you before it
 ## fires, and its heat vent in its back (hits there do `SENTINEL_REAR`
@@ -271,8 +275,11 @@ func _init() -> void:
 	warlord_artifact_chance = 0.0
 	pod_artifact_chance = 0.0
 	# Packs of Ferals on the floor and Wardens on the posts (DESIGN.md "The
-	# enemy AI pass", step 2): the map lists the spots in the order they fill.
-	bot_count = 22
+	# enemy AI pass", step 2), as encounter pockets (DESIGN.md "Enemy
+	# layout"): each wakes as a player comes within sight range, so the
+	# budget is spent where someone is. No army walks the valley.
+	bot_count = 0
+	pocket_wake = POCKET_WAKE
 	# The Engine's levels go down under the valley floor: the world ends
 	# below the Descent's foot.
 	void_y = MapScript.engine_bed() + MapScript.ENGINE_AXIS + MapScript.DESCENT_FLOOR - 15.0

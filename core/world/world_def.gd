@@ -110,7 +110,11 @@ extends RefCounted
 ##   - Marker3D nodes in group "spawn_guard": a dungeon's garrison. A bot of
 ##     the marker's "faction" stands guard over "radius" metres (10 by
 ##     default) round it, outside the armies, and another comes back
-##     `guard_respawn_time` after it dies.
+##     `guard_respawn_time` after it dies. In a world with `pocket_wake`
+##     the guards are encounter pockets: markers with the same "pocket"
+##     meta (a name) wake together when a player comes within
+##     `pocket_wake` metres (a marker's own "wake" meta overrides it) and
+##     sleep when nobody is near (see `pocket_wake`).
 ##   - Marker3D nodes in group "lift_stop": a lift's two stops (meta "lift",
 ##     the lift's id; "radius" metres). Once it is powered, a player who
 ##     stands `lift_wait` in one stop's ring is carried to the other.
@@ -412,6 +416,17 @@ var void_y := -30.0
 const VOID_Y_MAX := -30.0
 ## Seconds before a guard at a "spawn_guard" marker comes back after it dies.
 var guard_respawn_time := 240.0
+## Encounter pockets (0 is off): the world's "spawn_guard" markers stand
+## only while a living player is within this many metres of a marker of
+## their "pocket", and the enemy budget (`Raid.enemy_cap`) counts only the
+## pockets awake. A pocket nobody is near for a while, and none of whose
+## guards is fighting, sleeps: its guards go quietly (no body, no loot)
+## and stand again, whole, when it wakes. A fallen guard still comes back
+## only `guard_respawn_time` later, and while its pocket is awake only out
+## of every player's sight, so cleared ground stays cleared. Nearest
+## pockets wake first when the budget is short. A world of pockets may
+## have no army of its own (`bot_count` 0).
+var pocket_wake := 0.0
 ## A lift (see "lift_stop" and "lift_power" above): how long a player stands
 ## at its switch to power it, how long it then runs for everyone, and how
 ## long a rider waits in a stop before it carries them.

@@ -37,7 +37,13 @@ static func run(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.apply_to_profile = false
-	raid.start_server(Worlds.get_world("frostline"), 97)
+	# Tried with an army walking the valley, as Frostline had before its
+	# pockets (`pocket_tests` has those): put back at the end.
+	var frost := Worlds.get_world("frostline")
+	var kept := [frost.bot_count, frost.pocket_wake]
+	frost.bot_count = 22
+	frost.pocket_wake = 0.0
+	raid.start_server(frost, 97)
 	t.check(raid.strongpoints.size() == 3 and raid.strongpoints[0].title == "Echo Post"
 			and raid.strongpoints.all(func(p: Strongpoint) -> bool: return p.holder == "faction:warden" and not p.holder_is_player),
 			"Frostline has three strongpoints, held by the Wardens to begin with")
@@ -100,6 +106,8 @@ static func run(t: Node) -> void:
 	t.check(feed.has("Echo Post is under attack") and sent.size() == Worlds.get_world("frostline").assault_size,
 			"every so often bots are sent to retake a site players hold (%d sent)" % sent.size())
 	await t._end_raid(raid)
+	frost.bot_count = kept[0]
+	frost.pocket_wake = kept[1]
 
 	# Where players fight each other, a site is its taker's alone.
 	var pvp := Raid.new()

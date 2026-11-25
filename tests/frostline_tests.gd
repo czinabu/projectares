@@ -20,6 +20,10 @@ static func run(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start(world, 7)
+	# The valley's enemies are pockets that wake near a player: visit a den
+	# and a post.
+	_wake_near(raid, "feral")
+	_wake_near(raid, "warden")
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 	await t.frames(3)
@@ -95,6 +99,7 @@ static func run(t: Node) -> void:
 	raid = Raid.new()
 	t.add_child(raid)
 	raid.start(world, 8, Profile.checkout_loadout(world))
+	_wake_near(raid, "warden")
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 	await t.frames(3)
@@ -127,3 +132,12 @@ static func run(t: Node) -> void:
 	t.check(axe != null and is_equal_approx(axe.heavy_lunge, 12.0), "the ice axe equips with its own stats")
 	axe_holder.queue_free()
 	await t._end_raid(raid)
+
+
+## Walks the player over to the first pocket of `faction` and lets it wake.
+static func _wake_near(raid: Raid, faction: String) -> void:
+	for marker in raid._map_nodes("spawn_guard"):
+		if str(marker.get_meta("faction", "")) == faction and not str(marker.get_meta("pocket", "")).begins_with("engine"):
+			raid.player.global_position = marker.global_position + Vector3(30, 1, 0)
+			raid._tick_pockets()
+			return

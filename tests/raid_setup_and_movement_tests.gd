@@ -8,7 +8,7 @@ static func run(t: Node) -> void:
 	var raid: Raid = await t._new_raid(42, false)
 	var p := raid.player
 	t.check(p != null and p.is_player, "player spawns")
-	t.check(raid.bots.size() == raid.world.bot_count + raid._bosses.size() + raid._guards.size(), "all bots spawn")
+	t.check(raid.bots.size() == raid.world.bot_count + raid._bosses.size() + raid._guards.filter(func(g: Dictionary) -> bool: return g.bot != null).size(), "all bots spawn")
 	t.check(raid.depots.size() >= 2, "map provides depots to bank at")
 	var caches := raid.get_children().filter(func(n: Node) -> bool: return n is LootContainer)
 	t.check(caches.size() >= 8, "loot caches are placed (%d)" % caches.size())

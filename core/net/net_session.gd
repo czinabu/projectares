@@ -706,6 +706,9 @@ func _start_server_raid() -> void:
 		raid.rewind = _seen_positions
 	if bot_count >= 0:
 		world.bot_count = bot_count
+		# No bots asked for: no pockets either.
+		if bot_count == 0:
+			world.pocket_wake = 0.0
 	var arena := raid as Arena
 	if arena != null:
 		# The arena pays wagers from the accounts this server keeps.

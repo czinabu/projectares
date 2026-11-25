@@ -707,7 +707,8 @@ func _build_posts() -> void:
 		_add_depot(_ground(at + (Vector2(0, -9.0) if side != 0.0 else Vector2(-12.0, 0))))
 		_add_marker("spawn_cache", base + Vector3(0, 0.1, 0))
 		for k in 2:
-			_bot_spot(_ground(at + Vector2(facing * 3.0, (k * 2 - 1) * 4.0)), "warden", 0 if k == 0 else 3)
+			_bot_spot(_ground(at + Vector2(facing * 3.0, (k * 2 - 1) * 4.0)), "warden", 0 if k == 0 else 3,
+					"post " + str(post["name"]), 13.0)
 
 
 ## A heater hut: three walls and a roof against the cliff, open toward the
@@ -753,7 +754,7 @@ func _build_listening_posts() -> void:
 		SolidProp.place(nav_region, "Antenna_2.glb", 2.2, top + Vector3(1.4, 0, 1.0), -float(spot["side"]) * PI / 2.0, 0.5)
 		_add_marker("spawn_cache", base + Vector3(0, 4.0, 0)).set_meta("loot_source", "rooftop")
 		if i % 2 == 0:
-			_bot_spot(_ground(at + Vector2(-float(spot["side"]) * 4.0, 0)), "warden", 2)
+			_bot_spot(_ground(at + Vector2(-float(spot["side"]) * 4.0, 0)), "warden", 2, "listening %d" % i, 8.0)
 
 
 ## The valley floor: rock for cover in a few repeated shapes, caches among
@@ -775,7 +776,9 @@ func _build_floor() -> void:
 		if placed % 4 == 0:
 			_add_marker("spawn_cache", _ground(Vector2(x + 3.5, z)))
 		placed += 1
-	var dens: Array[float] = [20.0, -20.0, -60.0, LAKE_Z + LAKE_RADIUS.y + 6.0, LAKE_Z - 10.0]
+	# Four dens, each pocket at least 85 m from the next and from any
+	# Warden's (DESIGN.md "Enemy layout": you never pull two at once).
+	var dens: Array[float] = [100.0, 15.0, -75.0, LAKE_Z + LAKE_RADIUS.y]
 	for k in dens.size():
 		var z := dens[k]
 		var side := 1.0 if k % 2 == 0 else -1.0
@@ -783,7 +786,7 @@ func _build_floor() -> void:
 		# A pack of three to a den, close together, so they set out as one.
 		var den := Vector2(centre(z) + side * w, z)
 		for p in 3:
-			_bot_spot(_ground(den + Vector2(-side * 3.0 * p, (p - 1) * 3.0)), "feral", 1)
+			_bot_spot(_ground(den + Vector2(-side * 3.0 * p, (p - 1) * 3.0)), "feral", 1, "den %d" % k, 14.0)
 
 
 func _add_rocks(at: Vector2, count: int) -> void:
@@ -841,7 +844,7 @@ func _build_engine() -> void:
 	for x: float in [-14.0, 0.0, 14.0]:
 		_add_marker("spawn_cache", _ground(Vector2(base.x + x, base.z + ENGINE_RADIUS + 7.0))).set_meta("loot_source", "cache_core")
 	for x: float in [-20.0, 20.0]:
-		_bot_spot(_ground(Vector2(base.x + x, base.z + ENGINE_RADIUS + 12.0)), "warden", 4)
+		_bot_spot(_ground(Vector2(base.x + x, base.z + ENGINE_RADIUS + 12.0)), "warden", 4, "core", 14.0)
 	_add_rocks(Vector2(base.x - 10.0, base.z + ENGINE_RADIUS + 16.0), 3)
 	_add_rocks(Vector2(base.x + 12.0, base.z + ENGINE_RADIUS + 18.0), 2)
 
@@ -999,7 +1002,7 @@ func _build_hall(engine: StaticBody3D) -> void:
 	_add_marker("spawn_cache", frame * Vector3(-(out - CATWALK_WIDTH * 0.5), walk + 0.1, east - 4.0)).set_meta("loot_source", "engine")
 	for at: Vector3 in [Vector3(-4.0, f, -22.0), Vector3(8.0, f, -12.0), Vector3(2.0, f, -32.0),
 			Vector3(out - CATWALK_WIDTH * 0.5, walk, 0.0)]:
-		_guard(frame * (at + Vector3(0, 0.1, 0)), HALL_GUARD)
+		_guard(frame * (at + Vector3(0, 0.1, 0)), HALL_GUARD, "hall")
 
 
 ## Where the hall's fallen vanes lie (x, z in the drum's frame; a turn).
@@ -1011,6 +1014,9 @@ const HALL_CRATES := [Vector2(-12.0, -20.0), Vector2(14.0, -32.0), Vector2(4.0, 
 const HALL_TANKS := [Vector2(-17.5, -33.0), Vector2(17.5, -33.0), Vector2(-17.5, -2.0), Vector2(17.5, 2.0)]
 ## How far each guard keeps from its post.
 const HALL_GUARD := 12.0
+## How near a player comes before a pocket inside the Engine wakes (metres):
+## its walls hide it from further off.
+const ENGINE_WAKE := 50.0
 ## The lift switch's own guards stay close by it.
 const SWITCH_GUARDS := [Vector2(-4.0, 173.5), Vector2(-6.5, 175.0)]
 const SWITCH_GUARD := 5.0
@@ -1084,7 +1090,7 @@ func _build_shaft(engine: StaticBody3D) -> void:
 		_add_marker("spawn_cache", frame * (at + Vector3(0, 0.1, 0))).set_meta("loot_source", "engine")
 	for at: Vector3 in [Vector3(-4.0, mid_y, turn + 2.0), Vector3(4.0, low, 18.0), Vector3(-1.0, low, turn),
 			Vector3(-4.0, low, foot + 2.5)]:
-		_guard(frame * (at + Vector3(0, 0.1, 0)), SHAFT_GUARD)
+		_guard(frame * (at + Vector3(0, 0.1, 0)), SHAFT_GUARD, "shaft")
 
 
 ## The Coil Galleries: the rooms floored, roofed and walled, cover down
@@ -1127,8 +1133,8 @@ func _build_galleries(engine: StaticBody3D) -> void:
 		_add_marker("spawn_cache", frame * Vector3(at.x, g + 0.1, at.y)).set_meta("loot_source", "engine")
 	for at: Vector2 in [Vector2(13.0, 46.0), Vector2(14.0, 90.0), Vector2(12.0, 72.0), Vector2(-17.5, 58.0),
 			Vector2(-8.5, 96.0), Vector2(3.0, 103.0)]:
-		_guard(frame * Vector3(at.x, g + 0.1, at.y), HALL_GUARD)
-	_guard(frame * Vector3(18.0, g + WALKWAY_UP + 0.1, 70.0), HALL_GUARD)
+		_guard(frame * Vector3(at.x, g + 0.1, at.y), HALL_GUARD, "galleries south" if at.y < 75.0 else "galleries north")
+	_guard(frame * Vector3(18.0, g + WALKWAY_UP + 0.1, 70.0), HALL_GUARD, "galleries south")
 
 
 ## The north gallery's walkway: a deck on posts along the outer wall, a
@@ -1329,10 +1335,10 @@ func _build_descent(engine: StaticBody3D) -> void:
 		_add_marker("spawn_cache", frame * (at + Vector3(0, 0.1, 0))).set_meta("loot_source", "engine")
 	for at: Vector3 in [Vector3(4.0, g, from + 3.0), Vector3(-6.0, g - step, east + 1.5),
 			Vector3(5.0, g - step * 2.0, from + 3.0), Vector3(6.0, bottom, 167.0), Vector3(-3.0, bottom, 163.5)]:
-		_guard(frame * (at + Vector3(0, 0.1, 0)), SHAFT_GUARD)
+		_guard(frame * (at + Vector3(0, 0.1, 0)), SHAFT_GUARD, "descent" if at.y > bottom else "lift")
 	# Two more keep the lift's switch: powering it is a fight, never free.
 	for at: Vector2 in SWITCH_GUARDS:
-		_guard(frame * Vector3(at.x, bottom + 0.1, at.y), SWITCH_GUARD)
+		_guard(frame * Vector3(at.x, bottom + 0.1, at.y), SWITCH_GUARD, "lift")
 
 
 ## The cable lift's upper stop, in the hall beside the Shaft.
@@ -1489,11 +1495,15 @@ static func heart_purges() -> Array:
 	return out
 
 
-## A Warden of the Engine's garrison (`WorldDef`'s "spawn_guard").
-func _guard(at: Vector3, radius: float) -> void:
+## A Warden of the Engine's garrison (`WorldDef`'s "spawn_guard"), one of
+## its section's pocket, which wakes only when a player is close: walls
+## hide it from further off.
+func _guard(at: Vector3, radius: float, pocket: String) -> void:
 	var marker := _add_marker("spawn_guard", at)
 	marker.set_meta("faction", "warden")
 	marker.set_meta("radius", radius)
+	marker.set_meta("pocket", "engine " + pocket)
+	marker.set_meta("wake", ENGINE_WAKE)
 
 
 ## The warm vents on the floor: a grate, low enough to walk over.
@@ -1528,8 +1538,13 @@ func _add_warmth(at: Vector3, kind: Dictionary) -> void:
 	marker.set_meta("warmth", kind["warmth"])
 
 
-func _bot_spot(at: Vector3, faction: String, rank: int) -> void:
-	_bot_spots.append({"at": at, "faction": faction, "rank": rank, "order": _bot_spots.size()})
+## A spot of one of the valley's encounter pockets (`WorldDef.pocket_wake`):
+## a guard of `faction` who keeps to `radius` metres round it, waking with
+## the rest of `pocket`. It is also a "spawn_bot" marker, where a world
+## event comes in.
+func _bot_spot(at: Vector3, faction: String, rank: int, pocket: String, radius: float) -> void:
+	_bot_spots.append({"at": at, "faction": faction, "rank": rank, "order": _bot_spots.size(),
+			"pocket": pocket, "radius": radius})
 
 
 func _place_bot_spots() -> void:
@@ -1537,6 +1552,10 @@ func _place_bot_spots() -> void:
 		return a.rank < b.rank or (a.rank == b.rank and a.order < b.order))
 	for spot in _bot_spots:
 		_add_marker("spawn_bot", spot.at).set_meta("faction", spot.faction)
+		var guard := _add_marker("spawn_guard", spot.at)
+		guard.set_meta("faction", spot.faction)
+		guard.set_meta("pocket", spot.pocket)
+		guard.set_meta("radius", spot.radius)
 
 
 func _cylinder(parent: Node3D, radius: float, length: float, at: Vector3, material: Material) -> void:

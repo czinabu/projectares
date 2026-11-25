@@ -59,13 +59,17 @@ static func _laid_down(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(frost, 4242)
+	var me := raid.add_player(KIT, {}, "Walker", "walker")
+	var x := MapScript.centre(106.0) + 25.0
+	# The pockets near the walk wake as the walker arrives: park them, so
+	# only the walker's feet mark the snow.
+	me.global_position = Vector3(x, MapScript.floor_at(106.0) + 1.0, 106.0)
+	raid._tick_pockets()
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
 		bot.global_position = Vector3(500, 0, 500)
-	var me := raid.add_player(KIT, {}, "Walker", "walker")
 	await t.frames(3)
-	var x := MapScript.centre(106.0) + 25.0
 	await _walk(t, raid, me, Vector3(x, 0, 110.0), Vector3(x, 0, 102.0), 12)
 	var marks := raid.tracks.near(Vector3(x, 0, 106.0), 5.0)
 	t.check(marks.size() >= 6, "walking leaves footprints (%d over 8 m)" % marks.size())

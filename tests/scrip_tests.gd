@@ -10,7 +10,13 @@ static func run(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.apply_to_profile = false
-	raid.start_server(Worlds.get_world("frostline"), 31)
+	# Tried with an army walking the valley, as Frostline had before its
+	# pockets (`pocket_tests` has those): put back at the end.
+	var frost := Worlds.get_world("frostline")
+	var kept := [frost.bot_count, frost.pocket_wake]
+	frost.bot_count = 22
+	frost.pocket_wake = 0.0
+	raid.start_server(frost, 31)
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
@@ -60,4 +66,6 @@ static func run(t: Node) -> void:
 	t.check(results.has("Bravo") and results.Bravo.scrip == k and StashService.Economy.payout(results.Bravo) == k,
 			"signing out carries your scrip home")
 	raid.queue_free()
+	frost.bot_count = kept[0]
+	frost.pocket_wake = kept[1]
 	await t.frames(2)

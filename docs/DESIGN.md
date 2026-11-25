@@ -1070,6 +1070,37 @@ cover or a plan, and five should take at least six seconds to kill
 someone standing still. The duel rows above stay in their bands with this
 on (one attacker always has a slot).
 
+### Enemy layout (trial on Frostline; Caleb chose pockets that wake near players)
+
+The aim: a player meets one readable group at a time, picks the moment to
+engage, and wins when they play it well, while the frame rate stays high.
+The rules proposed (the enemy gallery's plan, 25 Nov), on trial in
+Frostline before any other world moves over:
+
+- Encounter pockets. Enemies live in pockets of 1 to 5 at a named place,
+  never spread evenly, far enough apart that you can't pull two at once
+  (about 80 m, 100 m where a long gun stands). The ground between is quiet
+  travel.
+- Pockets wake near players (Caleb's call, 25 Nov). A pocket stands only
+  while a player is within its wake range (past the sight of anything in
+  it) and sleeps when nobody has been near for a while, so the enemy cap
+  (8 today) counts only the pockets near players, and a world can hold
+  far more pockets than the cap.
+- Cleared stays cleared for a while: a killed enemy comes back only
+  after its world's respawn time (4 minutes in Frostline), and never in a
+  player's sight.
+
+Frostline's trial (`WorldDef.pocket_wake`): no army walks the valley. Its
+pockets are the three posts (2 Wardens each), three rim lookouts (1
+Warden), four Feral dens (3 each, now at least 85 m from each other and
+from any Warden pocket; two of the old five sat 30 and 45 m apart), the
+core at the Engine's foot (2 Wardens), and the Engine's garrison by
+section, which wakes at 50 m because its walls hide it. Still to decide
+after the trial: whether every world moves over, the per-world caps
+(proposed 8 on Ashfront, 12 elsewhere, each measured first), and whether
+bosses sleep too (they stand all the time today and take 2 of
+Frostline's 8).
+
 ### Enemy senses and squads (Caleb's call)
 
 Playtest: "sometimes it seems like every AI converges on me like I'm the
