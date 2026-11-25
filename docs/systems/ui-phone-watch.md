@@ -33,14 +33,22 @@ date in the same PR.
   zoom): the screen is thrown up off the handheld as a hologram, like the
   watch's card off the wrist (`Phone.HoloScreen`, view only, your own
   phone only). It stands just past the character from the camera
-  (`behind`), so the body passes in front of it, right of the crosshair,
-  `tall` of the view's height and square to the camera so its text reads,
+  (`behind`), right of the crosshair, drawn over the world so a wall or
+  the ground beside you never hides it (Caleb's "fix the projected phone":
+  it used to be depth tested, and a wall to your right swallowed it),
+  `tall` of the view's height and square to the camera so its text reads
+  (scaled along its own axes, `scaled_local`: `Basis.scaled` stretches
+  along the world's and skewed it whenever the view turned),
   on dark glass the world shows through a little (`backing`, `TINT`,
   Caleb's feedback). Where it stands follows Caleb's sketch: just right of
   the crosshair, its middle a little over the view's (`across`, `lift`), and
   the light runs from the device into its near edge like a projector's cone
   (`beam_reach`); clicks are cast onto it (`HoloScreen.card_point`)
-  instead of the device. The Mirror app (Caleb's pick): in first person a
+  instead of the device. Its text stays sharp drawn smaller than its
+  texture because the hologram shader takes four taps across each
+  pixel's footprint (`Hud.Wrist.HOLO_SHADER`, a viewport texture has no
+  mipmaps), and its scan lines are faint (`HoloScreen.line_depth`) so they
+  never dim a line of text. The Mirror app (Caleb's pick): in first person a
   mirror stands square in front of the body, never along the camera, close
   enough that you stand large in it (`Mirror.distance`), and the eyes drop
   less to see it (`phone_mirror_pitch`); in third person there is no mirror
