@@ -1454,6 +1454,11 @@ class WarMood:
 	## How far into a storm the view is shown to be, 0 to 1.
 	var storm_shown := 0.0
 	var _ink_strength := -1.0
+	## The (war, storm, close air) shown when the mood was last written.
+	var _applied := Vector3(-1.0, -1.0, -1.0)
+	## The smallest change in the mood worth redrawing the sky for: a blend
+	## step this small is not seen.
+	const MOOD_STEP := 0.004
 
 	func _process(delta: float) -> void:
 		var parent := get_parent()
@@ -1465,11 +1470,31 @@ class WarMood:
 		if not close.is_empty():
 			var shut := clampf(float(parent.get_meta("close_here", 0.0)), 0.0, 1.0)
 			close_shown = move_toward(close_shown, shut, Look.close_follow * delta)
-		show_intensity(shown, parent.get_meta("war_centre", Vector3.ZERO))
+		var centre: Vector3 = parent.get_meta("war_centre", Vector3.ZERO)
+		# The mood is written only when it has moved a visible step (or
+		# reached where it was going): any write to the sky's material, even
+		# of the same value, has the renderer redraw the sky's light map
+		# (radiance) that frame, a real cost on built-in graphics.
+		if not mood_moved(_applied, Vector3(shown, storm_shown, close_shown)):
+			_move_column(shown, centre)
+			return
+		show_intensity(shown, centre)
+
+	## Whether a mood shown at `now` (war, storm, close air) is worth writing
+	## over the one written at `was`: a step of `MOOD_STEP` or more on any of
+	## them, or any change that lands on 0 or 1 (calm and full war are shown
+	## exactly).
+	static func mood_moved(was: Vector3, now: Vector3) -> bool:
+		for i: int in 3:
+			var step := absf(now[i] - was[i])
+			if step >= MOOD_STEP or (step > 0.0 and (now[i] == 0.0 or now[i] == 1.0)):
+				return true
+		return false
 
 	## Sets the mood for an intensity at once. `_process` calls this with the eased value.
 	func show_intensity(value: float, centre: Vector3) -> void:
 		shown = value
+		_applied = Vector3(shown, storm_shown, close_shown)
 		var mood := Look.blend_moods(calm, war, value)
 		if not close.is_empty():
 			mood = Look.blend_moods(mood, close, close_shown)
@@ -1488,6 +1513,10 @@ class WarMood:
 					var base: Variant = mat.get_shader_parameter("strength")
 					_ink_strength = float(base) if base != null else 0.8
 				mat.set_shader_parameter("strength", _ink_strength * (1.0 - maxf(Look.weather_cover, Look.close_cover)))
+		_move_column(value, centre)
+
+	## The war's smoke column: as strong as the war, drifting to its centre.
+	func _move_column(value: float, centre: Vector3) -> void:
 		if column == null:
 			return
 		var smoke: GPUParticles3D = column.get_node("Smoke")

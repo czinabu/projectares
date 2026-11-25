@@ -192,7 +192,24 @@ date in the same PR.
   a laptop's built-in graphics starts on Low (the strongest of them on
   Medium), a software renderer on Lowest and the OpenGL fallback on Low
   (`graphics_for`); it only lowers untouched defaults, never settings the
-  player chose. A window bigger than the screen it opens on is shrunk to
+  player chose. A saved pick (not Custom) takes the pick's rows as they are
+  now when the settings load (`use_saved`), so a change to a pick reaches
+  players already on it. Low's render scale is Auto (`RENDER_SCALE_AUTO`):
+  `GameSettings.AutoScale` times the graphics card on the main view and
+  every 1.5 s moves the scale a step between 100% and 50%
+  (`AUTO_SCALES`, `AutoScale.next_step`) to keep it under `AUTO_TARGET_MS`,
+  waiting 2 s after each change (it rebuilds the view's buffers); with no
+  timing from the card (the OpenGL fallback) it stays on 67%. The glow
+  around bright things (`bloom`, the atmosphere's glow) is a row of its
+  own, off on Low and Lowest: about a seventh of a laptop-class frame.
+  A world's war mood (`Look.WarMood`) writes the sky only when it moved a
+  visible step (`mood_moved`): any write to a sky material, even of the
+  same value, has Godot redraw the sky's light map that frame. Every
+  body part keeps levels of detail for far away (the bodies' import makes
+  them; `SuitShape` makes them again for the suit it reshapes, and
+  `laptop_frame_tests` checks the baked parts have them): without them a
+  far body draws all its triangles, about a fifth of Ashfront's at Low. A window
+  bigger than the screen it opens on is shrunk to
   fit (`fit_window_to_screen`). These are view only: a server, the
   simulation and first or third person are untouched. Compare the picks by
   eye and graphics card time with `visual_check.tscn -- <dir>

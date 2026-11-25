@@ -15,7 +15,8 @@ extends Node
 ## long it measures and how long the armies march first. `--aa <0-4>` and
 ## `--ink 0|1` pick the edge smoothing and the far-shape outline
 ## (`GameSettings.ANTI_ALIASING`, `edge_ink`) for this run only, to measure
-## what each costs. `--look` dresses the bodies headless too (the art layer
+## what each costs; `--graphics <0-3>` a Graphics quality pick
+## (`GameSettings.GRAPHICS`). `--look` dresses the bodies headless too (the art layer
 ## is off without a screen), to measure what posing them costs the game's
 ## own processing; `--seed <n>` starts the world from a fixed seed, so two
 ## builds can be compared on the same battle (with `--fixed-fps 60` the
@@ -101,6 +102,10 @@ func _ready() -> void:
 		return
 	var GameSettings: GDScript = load("res://core/settings/game_settings.gd")
 	GameSettings.set("persist", false)
+	# `--graphics <0-3>` picks a Graphics quality row (`GameSettings.GRAPHICS`)
+	# for this run, before `--aa` and `--ink` change a part of it.
+	if _arg(args, "--graphics", "") != "":
+		GameSettings.call("set_value", "graphics", int(_arg(args, "--graphics", "")))
 	if _arg(args, "--aa", "") != "":
 		GameSettings.call("set_value", "anti_aliasing", int(_arg(args, "--aa", "")))
 	if _arg(args, "--ink", "") != "":

@@ -50,6 +50,9 @@ const FLATTEN_SPAN := 6
 const MOST_OUT := 0.035
 ## Passes of smoothing over the mesh.
 const SMOOTH := 12
+## How far apart, in degrees, two faces' normals may be and still be merged
+## when the levels of detail are made (Godot's import default).
+const LOD_MERGE_ANGLE := 25.0
 
 ## Build -> {part name: ArrayMesh}, made once.
 static var _made := {}
@@ -371,9 +374,12 @@ static func _rebuild(info: Dictionary, points: Array[Vector3], moved: Array[Vect
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	var source := node.mesh
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(source.surface_get_primitive_type(0), arrays, [], {},
-			source.surface_get_format(0) & ~Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
-	mesh.surface_set_material(0, source.surface_get_material(0))
-	mesh.surface_set_name(0, source.surface_get_name(0))
-	return mesh
+	# Through an ImporterMesh to make its levels of detail again, as the
+	# body's import did (`meshes/generate_lods`): without them a far body
+	# draws all of its triangles, the costliest part of a crowd on a
+	# laptop's graphics.
+	var made := ImporterMesh.new()
+	made.add_surface(source.surface_get_primitive_type(0), arrays, [], {}, source.surface_get_material(0),
+			source.surface_get_name(0), source.surface_get_format(0) & ~Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
+	made.generate_lods(LOD_MERGE_ANGLE, 0.0, [])
+	return made.get_mesh()
