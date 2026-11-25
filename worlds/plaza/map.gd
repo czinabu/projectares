@@ -145,6 +145,24 @@ const TALKERS := {
 			"Bring a blade. The crowd likes a blade.",
 			"Wager on yourself. Everyone else is."], ""],
 }
+## What someone says instead while the launch holds back what they talk
+## about (`LaunchScope`): talker id -> {held feature: lines}.
+const HELD_LINES := {
+	"sola": {"arena": ["The Pit opens soon. I'll be the first to tell you.",
+			"Keep your blade sharp. The crowd's waiting too."]},
+	"wren": {"base_visits": ["Your quarters are through the lift. It knows where you live.",
+			"Anything you bring home stays home. Anything you take out is fair game."]},
+}
+
+
+## The held-back feature a talker's lines are about, or "" if none is held.
+static func _held_by(id: String) -> String:
+	for feature: String in HELD_LINES.get(id, {}):
+		if LaunchScope.holds(feature):
+			return feature
+	return ""
+
+
 ## What each of them wears for their work (`Human.random`'s pool: build ->
 ## outfits), so the armorer looks like an armorer and the tailor dresses
 ## well. Anyone missing is dressed at random.
@@ -620,7 +638,8 @@ func _build_market_row() -> void:
 		_part(self, Vector3(1.4, 0.1, 0.45), Vector3(0, 8.3, lamp_z), WARM, true)
 		_lamps.append(Vector3(0, 7.8, lamp_z))
 	var listed := shops().filter(func(entry: Dictionary) -> bool: return not entry.get("stall", false))
-	listed.append(EXCHANGE)
+	# Held back at launch (`LaunchScope`): the Exchange's shutter stays down.
+	listed.append(EXCHANGE.merged({"shuttered": LaunchScope.holds("market")}))
 	for entry: Dictionary in shops():
 		if entry.get("stall", false):
 			_build_stall(entry, STALL_AT, PI / 2.0)
@@ -660,6 +679,11 @@ func _build_shop(entry: Dictionary, at: Vector3, yaw: float) -> void:
 	_part(self, Vector3(w + 0.4, 0.06, 0.06), f * Vector3(0, h + 0.02, 0.28), color, true, yaw)
 	_sign(str(entry.get("name", "")).to_upper(), f * Vector3(0, h + 1.25, 0.27), yaw, 1.0, color)
 	_sign(trade[0], f * Vector3(0, h + 0.5, 0.27), yaw, 0.3, Color(0.88, 0.9, 0.95))
+	if entry.get("shuttered", false):
+		# Not open yet: a shutter down across the whole front, nobody inside.
+		_shutter(f, w, h, yaw)
+		_sign("OPENING SOON", f * Vector3(0, h * 0.5, 0.32), yaw, 0.6, color)
+		return
 	# Display windows either side of the door (a garage is one wide bay with
 	# its shutter rolled up instead).
 	var span := (w - door) * 0.5
@@ -728,6 +752,14 @@ func _build_shop(entry: Dictionary, at: Vector3, yaw: float) -> void:
 	_fronts.append({"id": id, "at": at, "yaw": yaw, "color": color,
 			"door": f * Vector3(0, 0, 2.4)})
 	_fit_out(id, f, color)
+
+
+## A front's shutter, rolled down across its whole width: one solid sheet
+## with its slats. Local +Z is the street, like a front.
+func _shutter(f: Transform3D, w: float, h: float, yaw: float) -> void:
+	_solid(Vector3(w, h, 0.3), f * Vector3(0, h * 0.5, 0), STEEL, yaw)
+	for k in int(h / 0.32):
+		_part(self, Vector3(w, 0.04, 0.05), f * Vector3(0, 0.2 + k * 0.32, 0.17), Color(0.2, 0.21, 0.24), false, yaw)
 
 
 ## A stall down an alley (the back room): no front, no windows, a counter
@@ -1179,6 +1211,14 @@ func _build_arena_gate() -> void:
 	_solid(Vector3(1.6, 8.0, 2.4), at + facing * Vector3(4.0, 4.0, 0), DARK, yaw)
 	_solid(Vector3(9.6, 1.4, 2.4), at + facing * Vector3(0, 8.7, 0), STEEL, yaw)
 	_part(self, Vector3(6.4, 0.12, 0.12), at + facing * Vector3(0, 7.9, 1.25), red, true, yaw)
+	_sign("ARENA", at + facing * Vector3(0, 8.7, 1.25), yaw, 1.0, Color(1.0, 0.4, 0.35))
+	_solid(Vector3(1.6, 1.1, 0.8), at + facing * Vector3(7.0, 0.55, 1.4), DARK, yaw)
+	if LaunchScope.holds("arena"):
+		# Held back at launch (`LaunchScope`): the gate's shutter is down,
+		# like the RC yard's.
+		_shutter(Transform3D(facing, at), 6.4, 8.0, yaw)
+		_sign("OPENING SOON", at + facing * Vector3(0, 4.0, 0.2), yaw, 0.7, red)
+		return
 	var portal := _add_portal("arena", "Enter the arena", at + facing * Vector3(0, 0, 1.4), 3.0)
 	_part(self, Vector3(6.2, 7.0, 0.04), at + facing * Vector3(0, 3.6, -0.6), red.darkened(0.92), true, yaw)
 	var lit := Node3D.new()
@@ -1186,9 +1226,6 @@ func _build_arena_gate() -> void:
 	lit.visible = false
 	portal.add_child(lit)
 	_part(lit, Vector3(6.2, 7.0, 0.04), facing * Vector3(0, 3.6, -1.9), red.darkened(0.62), true, yaw)
-	_sign("ARENA", at + facing * Vector3(0, 8.7, 1.25), yaw, 1.0, Color(1.0, 0.4, 0.35))
-	# The promoter's stand beside the gate.
-	_solid(Vector3(1.6, 1.1, 0.8), at + facing * Vector3(7.0, 0.55, 1.4), DARK, yaw)
 
 
 ## South-west: a walled yard kept for the toy RC arena (a later game), its
@@ -1566,7 +1603,7 @@ func _build_talkers() -> void:
 		var entry: Array = TALKERS[id]
 		var at: Vector3 = entry[0]
 		var yaw: float = entry[1]
-		_add_talker(id, at, yaw, entry[2], entry[3], entry[4], entry[5])
+		_add_talker(id, at, yaw, entry[2], entry[3], HELD_LINES.get(id, {}).get(_held_by(id), entry[4]), entry[5])
 		var front := Basis(Vector3.UP, yaw) * Vector3.FORWARD
 		# No glowing pad: you walk up to a person, not onto a spot.
 		var portal := _add_portal("talk:%s" % id, "Talk to %s" % entry[2], at + front * 1.5, 1.8)

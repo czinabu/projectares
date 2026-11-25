@@ -128,3 +128,7 @@ date in the same PR.
   (`cosmetic`, with an `outfits` stat of customizer outfit ids) are ordinary
   stash items that fit no loadout slot, so they never go on a raid.
   `Economy.unlocked_outfits(stash)` lists the outfits a stash unlocks.
+- The launch scope (`docs/systems/launch-scope.md`) holds back the player
+  market and the rover, mech, jet and artifacts: `Economy.is_shop_item`,
+  the back room, `Contracts.reward_for` and `Crafting` ask
+  `LaunchScope.holds_item`, and the loot rolls skip them.

@@ -80,12 +80,14 @@ var _veil: MeshInstance3D
 var _label: Label3D
 
 
-## Every world a portal can deploy you into: each raid world, then the arena.
+## Every world a portal can deploy you into: each raid world, then the arena
+## (unless the launch holds it back, `LaunchScope`).
 static func destinations() -> Array[String]:
 	var out: Array[String] = []
 	for world in Worlds.raid_worlds():
 		out.append(world.id)
-	out.append(Arena.ArenaVenue.ID)
+	if not LaunchScope.holds("arena"):
+		out.append(Arena.ArenaVenue.ID)
 	return out
 
 

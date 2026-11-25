@@ -1597,6 +1597,9 @@ func _request_market(action: String, item_id: String, a: int, b: int) -> void:
 		return
 	var account_id: String = _peer_account[peer]
 	var result := {"ok": true}
+	if LaunchScope.holds("market"):
+		# The launch holds the player market back (`LaunchScope`).
+		return
 	match action:
 		"view":
 			if peer not in _market_viewers:

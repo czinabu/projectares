@@ -117,6 +117,8 @@ static func black_market_pool() -> Array[String]:
 			continue
 		if ItemDB.has_tag(id, "power") or ItemDB.has_tag(id, "artifact") or is_trade_good(id):
 			continue
+		if LaunchScope.holds_item(id):
+			continue
 		if int(ItemDB.item_stats(id).get("tier", 1)) > 1 or buy_price(id) <= 0:
 			continue
 		for tag: String in BLACK_MARKET_TAGS:
@@ -145,7 +147,8 @@ static func black_market_stock(day: int) -> Array[String]:
 ## part of the free scrap kit.
 static func is_shop_item(id: String) -> bool:
 	return (StashRules.storable(id) and ItemDB.has_tag(id, VENDOR_TAG)
-			and ItemDB.item_rarity(id) <= MAX_SHOP_RARITY and buy_price(id) > 0)
+			and ItemDB.item_rarity(id) <= MAX_SHOP_RARITY and buy_price(id) > 0
+			and not LaunchScope.holds_item(id))
 
 
 ## True if the shop `shop_id` sells the item.

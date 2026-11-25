@@ -39,6 +39,7 @@ const SOCKET_NAMES := {
 ##   opens   the upgrade that opens its small form into the whole room ("" if
 ##           it is whole from the start)
 ##   holds   one line on what is in it, for the plan table
+##   held    the `LaunchScope` feature that holds it back, if any (`held`)
 const ROOMS := {
 	"armory": {"title": "Armory", "opens": "armory_alcove", "holds": "Every weapon on one rack"},
 	"workshop": {"title": "Workshop", "opens": "", "holds": "Gunsmith bench and fabricator"},
@@ -46,7 +47,7 @@ const ROOMS := {
 	"ops": {"title": "Ops", "opens": "ops_consoles", "holds": "Wardrobe, records, mastery, trader"},
 	"gear": {"title": "Gear hall", "opens": "gear_hall", "holds": "Armor, helmets, rigs, chips"},
 	"stores": {"title": "Stores", "opens": "trophy_hall", "holds": "Supplies and trophies"},
-	"lounge": {"title": "Lounge", "opens": "lounge", "holds": "Somewhere to sit, and a window out"},
+	"lounge": {"title": "Lounge", "opens": "lounge", "holds": "Somewhere to sit, and a window out", "held": "lounge"},
 }
 
 ## The hub's shapes, in the order the plan table lists them:
@@ -144,8 +145,15 @@ const DEFAULT := {"W1": "armory", "W2": "workshop", "N1": "gear", "N2": "stores"
 static func rooms() -> Array[String]:
 	var out: Array[String] = []
 	for id: String in ROOMS:
-		out.append(id)
+		if not held(id):
+			out.append(id)
 	return out
+
+
+## True while the launch holds a room back (`LaunchScope`, its "held"
+## feature): its doorway is sealed and the plan table leaves it out.
+static func held(room: String) -> bool:
+	return ROOMS.has(room) and LaunchScope.holds(str(ROOMS[room].get("held", "")))
 
 
 static func title(room: String) -> String:
@@ -324,7 +332,8 @@ static func clean(saved: Variant) -> Dictionary:
 	ordered["styles"] = styled
 	var worn: Variant = saved.get("finishes") if typeof(saved) == TYPE_DICTIONARY else null
 	var finished := {}
-	for area: String in areas():
+	# Every room's finish, held-back ones too (`held`), so a plan keeps it.
+	for area: Variant in [HUB] + ROOMS.keys():
 		var finish: Variant = worn.get(area) if typeof(worn) == TYPE_DICTIONARY else null
 		finished[area] = finish if typeof(finish) == TYPE_STRING and FINISHES.has(finish) else "steel"
 	ordered["finishes"] = finished

@@ -11,6 +11,9 @@ date in the same PR.
   Whatever is worn is always on show (`BaseLayout.plan` gives it a spot
   even when better gear fills its section), so anything can be taken off
   in the room.
+  While the launch scope holds them back (`docs/systems/launch-scope.md`),
+  the lounge's doorway is sealed (`BasePlan.held`) and the trophy shelf and
+  artifact case have no spots.
   The base is modular (Caleb's call, DESIGN.md "Home base"): a hub with seven
   doorways of one size (`BasePlan.SOCKETS`, `HomeBase.socket_transform`)
   and seven rooms standing in them, one each (`BasePlan.ROOMS`: armory,

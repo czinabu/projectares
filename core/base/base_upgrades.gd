@@ -40,8 +40,9 @@ const UPGRADES := {
 	"gear_hall": {"title": "Gear hall", "track": "Halls", "price": 1000,
 		"adds": "6 armor stands, 4 rig stands\nand the ability chip case"},
 	"trophy_hall": {"title": "Trophy hall", "track": "Halls", "price": 1500,
-		"adds": "The trophy shelf for relics and loot,\nand a full supplies shelf"},
-	"lounge": {"title": "Lounge", "track": "Halls", "price": 800,
+		"adds": "The trophy shelf for relics and loot,\nand a full supplies shelf",
+		"adds_held": {"trophies": "A full supplies shelf"}},
+	"lounge": {"title": "Lounge", "track": "Halls", "price": 800, "held": "lounge",
 		"adds": "The whole lounge: more to sit on,\nwarm lamps and a window out"},
 	"ops_consoles": {"title": "Ops consoles", "track": "Headquarters", "price": 500,
 		"adds": "The mastery bench and records\nget consoles of their own"},
@@ -81,9 +82,9 @@ const UPGRADES := {
 		"adds": "Trophies on lit plinths"},
 	"style_stores_cargo": {"title": "Cargo stores", "track": "Designs", "price": 800,
 		"adds": "Crate stacks and a pallet rack"},
-	"style_lounge_bar": {"title": "Bar lounge", "track": "Designs", "price": 1500,
+	"style_lounge_bar": {"title": "Bar lounge", "track": "Designs", "price": 1500, "held": "lounge",
 		"adds": "A counter with stools and lit shelves,\nand a booth under the window"},
-	"style_lounge_quarters": {"title": "Quarters lounge", "track": "Designs", "price": 1500,
+	"style_lounge_quarters": {"title": "Quarters lounge", "track": "Designs", "price": 1500, "held": "lounge",
 		"adds": "A curtained bunk, a desk\nand a small sofa"},
 	# Finishes (`BasePlan.FINISHES`): bought once, worn by any room after.
 	"finish_gunmetal": {"title": "Gunmetal finish", "track": "Designs", "price": 1200,
@@ -121,8 +122,16 @@ static func price(id: String) -> int:
 	return int(UPGRADES[id]["price"]) if UPGRADES.has(id) else 0
 
 
+## What it adds, said without anything the launch holds back
+## (`LaunchScope`, the entry's "adds_held": feature -> text).
 static func adds(id: String) -> String:
-	return str(UPGRADES[id].get("adds", "")) if UPGRADES.has(id) else ""
+	if not UPGRADES.has(id):
+		return ""
+	var held: Dictionary = UPGRADES[id].get("adds_held", {})
+	for feature: String in held:
+		if LaunchScope.holds(feature):
+			return str(held[feature])
+	return str(UPGRADES[id].get("adds", ""))
 
 
 ## True for a design unlock (a hub shape or a room style, `BasePlan`).
@@ -130,9 +139,11 @@ static func is_design(id: String) -> bool:
 	return UPGRADES.has(id) and str(UPGRADES[id].get("track", "")) == DESIGNS
 
 
-## False while what the upgrade opens is not built yet.
+## False while what the upgrade opens is not built yet, or while the launch
+## holds it back (`LaunchScope`, the entry's "held" feature).
 static func is_ready(id: String) -> bool:
-	return UPGRADES.has(id) and bool(UPGRADES[id].get("ready", true))
+	return UPGRADES.has(id) and bool(UPGRADES[id].get("ready", true)) \
+			and not LaunchScope.holds(str(UPGRADES[id].get("held", "")))
 
 
 ## Every upgrade that can be bought today: the finished base.

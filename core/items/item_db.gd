@@ -715,18 +715,26 @@ func total_value(ids: Array) -> int:
 
 
 ## Picks one item id from a weighted table: [{ "id": String, "weight": float }].
+## Anything the launch holds back (`LaunchScope`) is never picked: the rest
+## share its weight.
 func roll(table: Array, rng: RandomNumberGenerator) -> String:
 	var total := 0.0
+	var last := ""
 	for entry: Dictionary in table:
+		if LaunchScope.holds_item(entry.id):
+			continue
 		total += entry.weight
+		last = entry.id
 	if total <= 0.0:
 		return ""
 	var pick := rng.randf() * total
 	for entry: Dictionary in table:
+		if LaunchScope.holds_item(entry.id):
+			continue
 		pick -= entry.weight
 		if pick <= 0.0:
 			return entry.id
-	return table.back().id
+	return last
 
 
 ## "3x Scrap Metal, 1x Power Cell" style summary, most valuable first.

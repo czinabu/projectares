@@ -122,3 +122,7 @@ date in the same PR.
   `visual_check.tscn -- <dir> --toys-only`. The picker on the watch
   (`PlayerController.held_toy`, `Hud.Wrist.show_toys`) is a view.
   A new vehicle is a new `vehicle` item; its toy is `toy_model(id)`.
+- The launch scope (`docs/systems/launch-scope.md`) holds back the rover,
+  mech and jet (items tagged "rover", "walker", "aircraft") and their
+  blueprints: never sold, rolled, crafted or put on the watch. The bikes
+  stay.

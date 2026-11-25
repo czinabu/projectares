@@ -2029,9 +2029,24 @@ void fragment() {
 	## The tab an icon is on ("" if it is not on the card).
 	static func tab_of(id: String) -> String:
 		for tab: String in TABS:
-			if id in TAB_SLOTS[tab]:
+			if id in row(tab):
 				return tab
 		return ""
+
+	## The icons on a tab, left to right: `TAB_SLOTS` without what the launch
+	## holds back (`LaunchScope`: the artifact icon while artifacts are).
+	static func row(tab: String) -> Array:
+		var out: Array = TAB_SLOTS.get(tab, []).duplicate()
+		if LaunchScope.holds_tag("artifact"):
+			out.erase("artifact")
+		return out
+
+	## What a tab holds, the line shown on the tab row.
+	static func tab_line(tab: String) -> String:
+		var line: String = TAB_LINES.get(tab, "")
+		if "artifact" in TAB_SLOTS.get(tab, []) and "artifact" not in row(tab):
+			line = line.replace(" · artifacts", "")
+		return line
 
 	## Takes the watch off the character (the HUD going away).
 	func take_off() -> void:
@@ -2823,7 +2838,7 @@ void fragment() {
 			# on the tab row, what the tab holds, with the wheel and a click.
 			var open := slots[focus]
 			if tabs:
-				open = {"detail": TAB_LINES.get(tab, ""), "hints": ["wheel", "click"], "alert": false, "empty": false}
+				open = {"detail": Wrist.tab_line(tab), "hints": ["wheel", "click"], "alert": false, "empty": false}
 			var line_y := h - 40.0 if note == "" else h - 56.0
 			var hints: Array = open.hints
 			var room := w - 40.0 - hints.size() * 34.0

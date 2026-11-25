@@ -643,7 +643,7 @@ func roll_artifact(rng: RandomNumberGenerator, chance: float) -> String:
 		return ""
 	var ids: Array[String] = []
 	for id: String in ItemDB.all_ids():
-		if ItemDB.has_tag(id, "artifact"):
+		if ItemDB.has_tag(id, "artifact") and not LaunchScope.holds_item(id):
 			ids.append(id)
 	if ids.is_empty():
 		return ""
@@ -661,7 +661,8 @@ func roll_crafting_loot(rng: RandomNumberGenerator, chance: float, data: int) ->
 	if chance > 0.0 and rng.randf() < chance:
 		var ids: Array[String] = []
 		for id: String in ItemDB.all_ids():
-			if ItemDB.has_tag(id, "blueprint") and not ItemDB.has_tag(id, "expedition"):
+			if ItemDB.has_tag(id, "blueprint") and not ItemDB.has_tag(id, "expedition") \
+					and not LaunchScope.holds_item(id):
 				ids.append(id)
 		if not ids.is_empty():
 			ids.sort()

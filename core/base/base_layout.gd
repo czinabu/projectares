@@ -42,7 +42,7 @@ const KINDS := {
 	# Artifacts sit in a lit case at the end of the chip shelf. Even the
 	# starter bunker shows one: they are the long chase.
 	"artifact_case": {"tag": "artifact", "spots": 2, "starter": 1, "steps": {"gear_hall": 2},
-		"per_copy": false, "title": "Artifacts"},
+		"per_copy": false, "title": "Artifacts", "held": "trophies"},
 	# Backpacks hang on hooks by the gear room's way in.
 	"pack_hooks": {"tag": "backpack", "spots": 3, "starter": 1, "steps": {"gear_hall": 3},
 		"per_copy": false, "title": "Backpacks"},
@@ -56,15 +56,16 @@ const KINDS := {
 	"gunsmith": {"tag": "attachment", "spots": 0, "starter": 0, "per_copy": false, "title": "Gunsmith bench", "at_bench": true},
 	# Anything else worth keeping: materials, relics, augments.
 	"trophy": {"tag": "", "spots": 8, "starter": 0, "steps": {"trophy_hall": 8},
-		"per_copy": false, "title": "Trophy shelf"},
+		"per_copy": false, "title": "Trophy shelf", "held": "trophies"},
 }
 
 
 ## How many spots a display kind has in a base that owns `upgrades` (ids from
 ## `BaseUpgrades`). No upgrades is the starter bunker. An upgrade only ever
 ## adds room to show gear: what does not fit is still owned (`stored_away`).
+## A kind the launch holds back (`LaunchScope`, its "held" feature) has none.
 static func spots(kind: String, upgrades: Array = []) -> int:
-	if not KINDS.has(kind):
+	if not KINDS.has(kind) or LaunchScope.holds(str(KINDS[kind].get("held", ""))):
 		return 0
 	var count := int(KINDS[kind].get("starter", KINDS[kind]["spots"]))
 	var steps: Dictionary = KINDS[kind].get("steps", {})

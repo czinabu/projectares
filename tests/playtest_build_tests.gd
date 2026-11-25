@@ -8,6 +8,10 @@ static func run(t: Node) -> void:
 	print("Playtest and dev builds")
 	var every := Worlds.all().size()
 	var was: Variant = ProjectSettings.get_setting("ares/release/playtest_worlds")
+	# The ready list on its own: the launch scope (`launch_scope_tests.gd`)
+	# replaces it when it applies.
+	var launch: Variant = ProjectSettings.get_setting(LaunchScope.SETTING)
+	ProjectSettings.set_setting(LaunchScope.SETTING, false)
 	ProjectSettings.set_setting("ares/release/playtest_worlds", PackedStringArray(["plaza", "ashfront"]))
 	Worlds.choose_offered(true)
 	var ids := Worlds.all().map(func(w: WorldDef) -> String: return w.id)
@@ -18,6 +22,7 @@ static func run(t: Node) -> void:
 	t.check(Worlds.get_world("rift") != null and not Worlds.offered("rift"),
 			"a world left out is still known (old saves keep working) but never offered")
 	ProjectSettings.set_setting("ares/release/playtest_worlds", was)
+	ProjectSettings.set_setting(LaunchScope.SETTING, launch)
 	Worlds.choose_offered(false)
 	t.check(Worlds.all().size() == every and every >= 7, "the dev build offers every world (%d)" % every)
 	var presets := ConfigFile.new()

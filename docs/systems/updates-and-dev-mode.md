@@ -18,7 +18,9 @@ date in the same PR.
   the playtest build from the editor. A world joins the list once it runs
   smoothly (the frame bench, `--world <id>`) and its core loop works;
   changing the list is Caleb's call. Never branch the code for a build:
-  gate on the tag or the list.
+  gate on the tag or the list. The release build also applies the launch
+  scope (`docs/systems/launch-scope.md`), which offers the launch's worlds
+  instead of this list; the dev builds never apply it.
 - The game updates itself (`core/update/updater.gd`, the `Updater`
   autoload, second after `Boot` and, like it, free of project classes). The
   Windows client keeps its pack beside the exe (`embed_pck` off); the
