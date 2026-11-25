@@ -990,6 +990,7 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 	skin._aim_left = 0.0
 	skin._process(1.0)
 	t.check(skin._current == "idle", tag + "an actor standing empty-handed plays the plain idle")
+	_check_knockdown(t, tag, player, skin)
 	if skin._anims.has("aim_gun"):
 		t.check(skin._anims["idle"] != skin._anims["aim_gun"], tag + "the empty-handed idle is not the gun-pointing pose")
 	var gun_index := -1
@@ -1063,6 +1064,34 @@ static func _check_legs(t: Node, tag: String, player: Actor, skin: Node, skeleto
 
 
 ## The materials of a melee model's surfaces that fold away, in order.
+
+## A knockdown (`ActorSkin._show_knocked_down`): a person is thrown onto the
+## ground, lies there and pushes up to stand by the end; a body with no
+## clips of its own plays the death clip's fall and back. Either way it is
+## posed by the time left, so each view shows the same moment.
+static func _check_knockdown(t: Node, tag: String, player: Actor, skin: Node) -> void:
+	var own: bool = skin._anims.has("knock_fall") and skin._anims.has("knock_rise")
+	player.knocked_time = 1.4
+	player.knocked_left = 1.3
+	skin._process(1.0)
+	t.check(skin._current == ("knock_fall" if own else "death"), tag + "a knocked-down body falls (%s)" % skin._current)
+	if own:
+		var early: float = skin._player.current_animation_position
+		player.knocked_left = 1.0
+		skin._process(1.0)
+		t.check(skin._player.current_animation_position > early, tag + "the fall plays on as the knockdown runs")
+		player.knocked_left = 0.6
+		skin._process(1.0)
+		t.check(skin._current == "knock_rise", tag + "near the end it gets up off the ground")
+		var rising: float = skin._player.current_animation_position
+		player.knocked_left = 0.05
+		skin._process(1.0)
+		t.check(skin._player.current_animation_position > rising, tag + "and is nearly up as the knockdown ends")
+	player.knocked_left = 0.0
+	player.knocked_time = 0.0
+	skin._process(1.0)
+	t.check(skin._current not in ["knock_fall", "knock_rise", "death"], tag + "and once up it plays its stand again")
+
 static func _fold_mats(model: Node3D) -> Array[ShaderMaterial]:
 	var out: Array[ShaderMaterial] = []
 	for node in model.find_children("*", "MeshInstance3D", true, false):

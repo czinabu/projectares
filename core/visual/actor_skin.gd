@@ -67,11 +67,17 @@ var sprint_from := Vector2(1.08, 1.35)
 var gait_blend := 0.2
 var stand_blend := 0.35
 var cut_blend := 0.15
-## A knockdown (`_show_knocked_down`): the fall to the ground, the rise back
-## up at the end, and how far into the death clip the body goes down.
-var knock_fall_time := 0.4
-var knock_rise_time := 0.6
+## A knockdown (`_show_knocked_down`): the most the fall to the ground and
+## the rise back up at the end take, in seconds (a short knockdown splits its
+## time between them), and how far into the death clip a body with no fall
+## and rise of its own goes down. `knock_rise_from` and `knock_rise_to` are
+## the part of the rise clip played: where the lying starts to move and where
+## the stand is reached.
+var knock_fall_time := 0.6
+var knock_rise_time := 0.7
 var knock_depth := 1.0
+var knock_rise_from := 0.15
+var knock_rise_to := 1.35
 
 ## How far behind the back bone a back-worn rig sits, and how far the boots
 ## sit above and behind the ankle bone, in meters.
@@ -558,7 +564,7 @@ func _ready() -> void:
 			var found := _find_animation(def["anims"][key])
 			if found != "":
 				_anims[key] = found
-				if key not in ["death", "attack", "roll", "kick", "fist"]:
+				if key not in ["death", "attack", "roll", "kick", "fist", "knock_fall", "knock_rise"]:
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
 		# Sized in the relaxed stand: an idle that bends the knees or
 		# spreads the feet (a person's) would otherwise size the body up.
@@ -693,20 +699,41 @@ func _find_animation(wanted: String) -> String:
 	return ""
 
 
-## Plays a clip at a speed, negative to play it backwards. Moving from one
-## walk or run clip to another keeps the point in the stride.
-## Knocked off the feet (`Actor.knock_down`): the fall of the death clip,
-## held at the bottom, then played back up to stand. Timed by what is left
-## of the knockdown, so every view shows the same moment.
+## Knocked off the feet (`Actor.knock_down`). A body with its own clips
+## (`knock_fall`, `knock_rise`: a person's) is thrown back onto the ground,
+## lies there and pushes itself up, the fall and the rise sped to fit the
+## knockdown. Any other body plays the death clip's fall, holds it and plays
+## it back up. Timed by what is left of the knockdown, so every view shows
+## the same moment.
 func _show_knocked_down() -> void:
+	var total := maxf(actor.knocked_time, 0.01)
+	var since := total - actor.knocked_left
+	if _anims.has("knock_fall") and _anims.has("knock_rise"):
+		var rise := minf(knock_rise_time, total * 0.5)
+		var fall := minf(knock_fall_time, total - rise)
+		if actor.knocked_left > rise:
+			# Played at the speed it runs, not held still: a still player
+			# never finishes the blend in from the stand.
+			var length := _player.get_animation(_anims["knock_fall"]).length
+			_play("knock_fall", length / maxf(fall, 0.01))
+			_player.seek(length * clampf(since / maxf(fall, 0.01), 0.0, 1.0), true)
+		else:
+			var length := _player.get_animation(_anims["knock_rise"]).length
+			var to := minf(knock_rise_to, length)
+			var from := minf(knock_rise_from, to)
+			var t := 1.0 - clampf(actor.knocked_left / maxf(rise, 0.01), 0.0, 1.0)
+			_play("knock_rise", (to - from) / maxf(rise, 0.01))
+			_player.seek(from + (to - from) * t, true)
+		return
 	_play("death", 0.0)
 	var length := _player.current_animation_length
-	var since := actor.knocked_time - actor.knocked_left
 	var t := minf(clampf(since / maxf(knock_fall_time, 0.01), 0.0, 1.0),
 			clampf(actor.knocked_left / maxf(knock_rise_time, 0.01), 0.0, 1.0))
 	_player.seek(length * knock_depth * (1.0 - (1.0 - t) * (1.0 - t)), true)
 
 
+## Plays a clip at a speed, negative to play it backwards. Moving from one
+## walk or run clip to another keeps the point in the stride.
 func _play(key: String, speed := 1.0) -> void:
 	if _player == null or not _anims.has(key):
 		return
