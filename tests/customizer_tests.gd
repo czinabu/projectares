@@ -64,7 +64,7 @@ static func run(t: Node) -> void:
 	var bearded := Human.sanitize({"build": "f", "style": "shaved", "facial": "beard", "eyes": 4})
 	t.check(bearded["style"] == "shaved" and bearded["facial"] == "beard" and Human.hair_meshes(bearded) == ["Hair_Beard"]
 			and Human.iris_for(bearded) == Human.EYE_COLORS[4], "any hairstyle, a beard and an eye colour go on either body")
-	var bad_hair := Human.sanitize({"build": "m", "head": "Farmer", "style": "mohawk", "facial": 3, "eyes": 99})
+	var bad_hair := Human.sanitize({"build": "m", "head": "Farmer", "style": "afro", "facial": 3, "eyes": 99})
 	t.check(bad_hair["style"] == "buzzed" and bad_hair["facial"] == "beard" and bad_hair["eyes"] == Human.EYE_COLORS.size() - 1,
 			"an unknown hairstyle or facial hair falls back to the head outfit's, and eyes are clamped")
 	t.check(Human.player_look(bearded)["facial"] == "beard" and Human.player_look(bearded)["style"] == "shaved",
@@ -98,7 +98,7 @@ static func run(t: Node) -> void:
 		for table: Dictionary in [Human.STYLES, Human.FACIAL]:
 			for id: String in table:
 				for hair: String in table[id][1]:
-					complete = complete and body.find_child(hair, true, false) is MeshInstance3D
+					complete = complete and body.find_child(hair.split(":")[0], true, false) is MeshInstance3D
 		body.free()
 	t.check(complete, "each build's body has a head, body, legs, feet and every hairstyle, bound to bones by name")
 	# The suit hangs as cloth: each build's torso and legs come baked in its shape.
@@ -121,7 +121,8 @@ static func run(t: Node) -> void:
 		t.check(worn.size() == 4 + hair.size() and worn.all(func(part: MeshInstance3D) -> bool:
 				return part.get_parent() == skeleton and part.skin != null and part.get_meta("slot", "") != ""),
 				"the model wears the four parts and the chosen hair, nothing else")
-		t.check(hair == ["Hair_BuzzedFemale"] and model.find_child(hair[0], true, false) != null,
+		t.check(hair == ["Hair_BuzzedFemale"] and model.find_child("Worn_Hair_BuzzedFemale", true, false) != null
+				and model.find_child("Hair_BuzzedFemale", true, false) == null,
 				"the hair is the chosen hairstyle")
 		var legs_mat: Array = built["materials"].filter(func(m: ShaderMaterial) -> bool:
 				return m.get_meta("suit_slot", "") == "legs")
@@ -139,8 +140,8 @@ static func run(t: Node) -> void:
 	var styled: Dictionary = Look.character("raider", bearded)
 	if not styled.is_empty():
 		var face: Node3D = styled["model"]
-		t.check(face.find_child("Hair_Beard", true, false) != null and face.find_child("Hair_Long", true, false) == null
-				and face.find_child("Hair_Buns", true, false) == null, "a shaved head with a beard shows just the beard")
+		t.check(face.find_child("Worn_Hair_Beard", true, false) != null
+				and face.find_children("Hair_*", "MeshInstance3D", true, false).is_empty(), "a shaved head with a beard shows just the beard")
 		var irises: Array = styled["materials"].filter(func(m: ShaderMaterial) -> bool:
 				return m.get_shader_parameter("surface_kind") == 3)
 		t.check(not irises.is_empty() and irises.all(func(m: ShaderMaterial) -> bool:
@@ -182,11 +183,15 @@ static func run(t: Node) -> void:
 	t.check(panel.options_for("body").any(func(option: Array) -> bool: return option[0] == "King"),
 			"an owned outfit shows up in the pickers")
 	# What the phone's mirror scrolls through.
-	t.check(panel.pick_keys() == ["build", "style", "facial", "hair", "eyes", "skin", "body", "legs", "feet", "top", "bottom"],
+	t.check(panel.pick_keys() == ["build", "style", "facial", "hair", "eyes", "skin", "face", "body", "legs", "feet", "top",
+			"bottom", "pattern"],
 			"the mirror lists the body, the head's choices, then the suit")
 	t.check(panel.options_for("style").size() == Human.STYLES.size() and panel.options_for("facial").size() == Human.FACIAL.size()
 			and panel.pick_title("style") == "Hairstyle" and panel.pick_title("hair") == "Hair colour",
 			"every hairstyle and facial hair is offered, by its own name")
+	t.check(panel.options_for("face").size() == Human.FACES.size() and panel.pick_title("face") == "Face"
+			and panel.options_for("pattern").size() == Human.PATTERNS.size() and panel.pick_title("pattern") == "Suit pattern",
+			"every face shape and suit pattern is offered")
 	var first_style: String = panel.options_for("style")[0][0]
 	panel.choose("style", first_style)
 	panel.step("style", -1)
@@ -225,7 +230,7 @@ static func run(t: Node) -> void:
 	await t.frames(4)
 	var skin := raid.player.get_node_or_null("Skin")
 	var punk_hair: String = Human.HAIR["f"]["Punk"][0]
-	t.check(skin != null and skin.find_child(punk_hair, true, false) != null and skin.find_child("PartHead", true, false) != null,
+	t.check(skin != null and skin.find_child("Worn_" + punk_hair, true, false) != null and skin.find_child("PartHead", true, false) != null,
 			"the player wears the chosen look in a raid")
 	# Under an armor frame the suit below the head takes the frame's colours.
 	Loadout.wear_frame(raid.player, "frame_trooper")
@@ -330,7 +335,7 @@ static func _run_mirror(t: Node) -> void:
 	await t.frames(1)
 	t.check(phone.mirror_open() and ups == [true], "the Mirror app asks for a mirror")
 	var rows: Array = phone._body.get_children().filter(func(child: Node) -> bool: return child is PanelContainer)
-	t.check(rows.size() == 11, "the app has a row for the body, each hair, eye and skin choice and the suit")
+	t.check(rows.size() == 13, "the app has a row for the body, the face, each hair, eye and skin choice, the suit and its pattern")
 	var looks: Array = []
 	hub.look_changed.connect(func(appearance: Dictionary) -> void: looks.append(appearance))
 	var key := KEY_DOWN

@@ -20,9 +20,11 @@ var owned: Array = []
 var _summary: Label
 
 ## Every choice, in the order the Mirror app lists them: the body, then the
-## head (hairstyle, facial hair, hair colour, eyes, skin), then the suit.
-const PICKS: Array[String] = ["build", "style", "facial", "hair", "eyes", "skin", "body", "legs", "feet", "top", "bottom"]
-const TITLES := {"build": "Body", "style": "Hairstyle", "facial": "Facial hair", "body": "Suit top",
+## head (hairstyle, facial hair, hair colour, eyes, skin, face shape), then
+## the suit.
+const PICKS: Array[String] = ["build", "style", "facial", "hair", "eyes", "skin", "face", "body", "legs", "feet",
+		"top", "bottom", "pattern"]
+const TITLES := {"build": "Body", "face": "Face", "style": "Hairstyle", "facial": "Facial hair", "body": "Suit top",
 		"legs": "Suit legs", "feet": "Boots"}
 
 
@@ -48,8 +50,8 @@ func options_for(key: String) -> Array:
 	if key == "build":
 		for build in Human.BUILDS:
 			out.append([build, Human.BUILD_NAMES[build]])
-	elif key == "style" or key == "facial":
-		var table: Dictionary = Human.STYLES if key == "style" else Human.FACIAL
+	elif key in ["style", "facial", "face"]:
+		var table: Dictionary = {"style": Human.STYLES, "facial": Human.FACIAL, "face": Human.FACES}[key]
 		for id: String in table:
 			out.append([id, table[id][0]])
 	elif key in Human.SLOTS:
@@ -134,7 +136,9 @@ func randomize_look() -> void:
 		pool[build] = Human.wearable(build, owned)
 	var next := Human.random(rng, pool)
 	next["style"] = Human.STYLES.keys()[rng.randi() % Human.STYLES.size()]
-	next["facial"] = "beard" if rng.randf() < 0.25 else "none"
+	var facial: Array = Human.FACIAL.keys()
+	next["facial"] = facial[1 + rng.randi() % (facial.size() - 1)] if rng.randf() < 0.3 else "none"
+	next["pattern"] = 1 + rng.randi() % (Human.PATTERNS.size() - 1) if rng.randf() < 0.4 else 0
 	next["top"] = rng.randi() % Human.CLOTH_COLORS.size()
 	next["bottom"] = rng.randi() % Human.CLOTH_COLORS.size()
 	_apply(Human.player_look(next, owned))
