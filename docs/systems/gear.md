@@ -329,7 +329,9 @@ date in the same PR.
   away, a backpack and a helmet on the belt on both builds, tests every
   piece of gear against the armor, the body and the other gear, and must
   report 0 clashes after any change to gear, armor or where gear is worn
-  (a hand or the weapon in it is counted apart, `--arms`); see it with
+  (a hand or the weapon in it is counted apart, `--arms`). It needs a
+  display or xvfb: headless no body is dressed, and it exits 1 rather
+  than report an empty 0; see it with
   `visual_check.tscn -- <dir> --gear-only`. The kit: a fabric carrier with straps,
   webbing and pouches under curved, bevelled plates, a padded battle belt
   under a webbing belt on every frame, and a cloth seat over the backside

@@ -67,9 +67,13 @@ func _ready() -> void:
 	raid.add_child(cam)
 	cam.current = true
 	var total := 0
+	var missing := 0
 	for build: String in builds:
 		if not bodies.has(build):
-			push_error("gear check: no body of build " + build)
+			# Headless, `Look` dresses no body, so there is nothing to test:
+			# fail rather than report an empty 0.
+			push_error("gear check: no body of build " + build + " (needs a display or xvfb)")
+			missing += 1
 			continue
 		var actor: Actor = bodies[build]
 		cam.global_position = actor.global_position + actor.global_basis.z * -3.0 + Vector3(0, 1.2, 0)
@@ -85,7 +89,7 @@ func _ready() -> void:
 					total += await _check(actor, kit, "%s %s %s kit %d" % [build, frame if frame != "" else "none",
 							rig if rig != "" else "norig", k])
 	print("gear check: ", total, " clashes; hands and held weapons against gear: ", arm_contacts, "" if show_arms else " (--arms lists them)")
-	get_tree().quit(1 if total > 0 else 0)
+	get_tree().quit(1 if total > 0 or missing > 0 else 0)
 
 
 ## One standing body of each build, everyone else out of the way.
