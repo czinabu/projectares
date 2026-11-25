@@ -9,8 +9,10 @@ date in the same PR.
   offers only the worlds in the project setting
   `ares/release/playtest_worlds` (`Worlds.choose_offered`); a world left
   out is still loaded, so its items and old saves stay good, but it is
-  never listed, offered or travelled to. The "Windows Dev" preset has no
-  tag and offers every world; CI exports it as a workflow artifact only.
+  never listed, offered or travelled to. The "Windows Dev" and "Linux Dev"
+  presets have no tag and offer every world; CI exports them as workflow
+  artifacts only (`ProjectAresDev-windows-<commit>`,
+  `ProjectAresDev-linux-<commit>`).
   Only the playtest build updates itself (`Updater`), so the dev build is
   never swapped for the release. `--playtest` on the command line tries
   the playtest build from the editor. A world joins the list once it runs

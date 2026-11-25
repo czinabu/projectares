@@ -30,6 +30,8 @@ static func run(t: Node) -> void:
 			"the client testers get and the server they join are the playtest build")
 	t.check(features.has("Windows Dev") and "playtest" not in str(features["Windows Dev"]),
 			"the dev build is its own preset with every world")
+	t.check(features.has("Linux Dev") and "playtest" not in str(features["Linux Dev"]),
+			"the dev build has a Linux preset too, with every world")
 	var ready: PackedStringArray = ProjectSettings.get_setting("ares/release/playtest_worlds", PackedStringArray())
 	t.check(not ready.is_empty() and ready.has("plaza") and Array(ready).all(func(id: String) -> bool: return Worlds.get_world(id) != null),
 			"the ready list names real worlds and keeps the plaza (%s)" % ", ".join(ready))
