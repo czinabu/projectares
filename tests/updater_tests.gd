@@ -17,6 +17,7 @@ static func run(t: Node) -> void:
 	_install(t)
 	_wiring(t)
 	_prompts(t)
+	_dev_updates(t)
 
 
 static func _when_it_runs(t: Node) -> void:
@@ -66,6 +67,18 @@ static func _manifests(t: Node) -> void:
 	t.check(UpdaterScript.decide(linux, 19, "4.7", "Linux") == "download"
 			and UpdaterScript.decide(linux, 19, "4.7", "Windows") == "other",
 			"the Linux build downloads the Linux pack, and Windows never takes it")
+	var dev := good.duplicate()
+	dev["channel"] = "dev"
+	t.check(UpdaterScript.decide(dev, 19, "4.7", "Windows", "dev") == "download"
+			and UpdaterScript.decide(dev, 19, "4.7", "Windows") == "other"
+			and UpdaterScript.decide(good, 19, "4.7", "Windows", "dev") == "other",
+			"a dev build takes only dev builds, and the playtest build never takes one")
+	t.check(UpdaterScript.channel(true) == "release" and UpdaterScript.channel(false) == "dev",
+			"the playtest build is the release channel, any other exported build the dev channel")
+	t.check(UpdaterScript.manifest_name("Windows", "dev") == "update-dev.json"
+			and UpdaterScript.manifest_name("Linux", "dev") == "update-dev-linux.json"
+			and UpdaterScript.pack_path(20, UpdaterScript.DEV_DIR) != UpdaterScript.pack_path(20),
+			"the dev build reads its own manifests and keeps its downloads apart")
 	t.check(UpdaterScript.manifest_name("Linux") == UpdaterScript.LINUX_MANIFEST
 			and UpdaterScript.manifest_name("Windows") == UpdaterScript.MANIFEST,
 			"each system reads its own manifest")
@@ -134,7 +147,10 @@ static func _wiring(t: Node) -> void:
 	t.check(workflow == "" or (UpdaterScript.BUILD_SETTING.get_slice("/", 2) in workflow
 			and UpdaterScript.MANIFEST in workflow and "ProjectAres.pck" in workflow
 			and UpdaterScript.LINUX_MANIFEST in workflow and "ProjectAres-linux.pck" in workflow
-			and "\"platform\": \"linux\"" in workflow),
+			and "\"platform\": \"linux\"" in workflow
+			and "update-dev.json" in workflow and "\"channel\": \"dev\"" in workflow
+			and "dev-update-pack-windows" in workflow and "dev-update-manifest-linux" in workflow
+			and not "dev-latest" in workflow),
 			"the release workflow stamps the build and publishes each system's pack and manifest")
 	t.check(str(ProjectSettings.get_setting("application/config/icon", "")).begins_with("res://assets/branding/")
 			and str(ProjectSettings.get_setting("application/boot_splash/image", "")).begins_with("res://assets/branding/")
@@ -200,3 +216,68 @@ static func _write(path: String, text: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string(text)
 	file.close()
+
+
+## The dev build's private updates: the newest artifact of main, the hop to
+## GitHub's storage without the token, the artifact's zip, and the token
+## field on the phone.
+static func _dev_updates(t: Node) -> void:
+	t.check(UpdaterScript.dev_artifact("pack", "Linux") == "dev-update-pack-linux"
+			and UpdaterScript.dev_artifact("manifest", "Windows") == "dev-update-manifest-windows",
+			"each system's dev build asks for its own artifacts")
+	var api := "https://api.github.com/repos/czinabu/verge/actions/artifacts/"
+	var listing := {"artifacts": [
+		{"expired": false, "created_at": "2026-11-25T10:00:00Z", "archive_download_url": api + "1/zip",
+				"workflow_run": {"head_branch": "main"}},
+		{"expired": false, "created_at": "2026-11-25T12:00:00Z", "archive_download_url": api + "2/zip",
+				"workflow_run": {"head_branch": "some-pr"}},
+		{"expired": true, "created_at": "2026-11-25T13:00:00Z", "archive_download_url": api + "3/zip",
+				"workflow_run": {"head_branch": "main"}},
+		{"expired": false, "created_at": "2026-11-25T11:00:00Z", "archive_download_url": api + "4/zip",
+				"workflow_run": {"head_branch": "main"}},
+	]}
+	t.check(UpdaterScript.pick_artifact(listing, "main") == api + "4/zip",
+			"the newest unexpired artifact built from main is the one taken")
+	t.check(UpdaterScript.pick_artifact({"artifacts": [{"expired": false, "created_at": "x",
+			"archive_download_url": "https://evil.example/zip", "workflow_run": {"head_branch": "main"}}]}, "main") == ""
+			and UpdaterScript.pick_artifact(null, "main") == "" and UpdaterScript.pick_artifact({}, "main") == "",
+			"nothing is fetched with the token from outside GitHub's API, nor from a bad answer")
+	t.check(UpdaterScript.redirect_location(PackedStringArray(["Content-Type: x", "location: https://blob.example/a?sig=1"]))
+			== "https://blob.example/a?sig=1" and UpdaterScript.redirect_location(PackedStringArray()) == "",
+			"the archive's short-lived address is read from the redirect")
+	var headers := UpdaterScript.api_headers("tok")
+	t.check("Authorization: Bearer tok" in headers and headers.size() == 4, "the API is asked with the token")
+	DirAccess.make_dir_recursive_absolute(DIR)
+	var zip := ProjectSettings.globalize_path(DIR.path_join("artifact.zip"))
+	var packer := ZIPPacker.new()
+	packer.open(zip)
+	packer.start_file("ProjectAresDev.pck")
+	packer.write_file("dev pack".to_utf8_buffer())
+	packer.close_file()
+	packer.close()
+	var out := ProjectSettings.globalize_path(DIR.path_join("out.pck"))
+	t.check(UpdaterScript.unzip_one(zip, ".pck", out) == 8 and FileAccess.get_file_as_string(out) == "dev pack"
+			and UpdaterScript.unzip_one(zip, ".json", out) == -1,
+			"the pack is taken out of the artifact's zip whole, and a missing file is refused")
+	for file in [zip, out]:
+		DirAccess.remove_absolute(file)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(DIR))
+
+	var was_state: String = Updater.state
+	var was_api: bool = Updater._dev_api
+	var phone: CanvasLayer = PhoneScript.new()
+	t.add_child(phone)
+	Updater._dev_api = true
+	Updater.state = "no_token"
+	phone.open("servers")
+	var edit := phone.find_child("DevTokenEdit", true, false) as LineEdit
+	t.check(edit != null and edit.secret and "Servers" in Updater.status_line(),
+			"a dev build without a token asks for one, hidden, in the Servers app")
+	t.check(not PhoneScript.update_waiting(), "waiting for a token is not an update to buzz about")
+	Updater._dev_api = false
+	phone.refresh()
+	t.check(phone.find_child("DevTokenEdit", true, false) == null, "the playtest build never asks for a token")
+	phone.queue_free()
+	Updater._dev_api = was_api
+	Updater.state = was_state
+	Updater.changed.emit()

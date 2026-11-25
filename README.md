@@ -169,6 +169,12 @@ the same way once unpacked somewhere you can write to: it reads its own
 `update-linux.json` and swaps in `ProjectAres-linux.pck` beside
 `ProjectAres.x86_64`, never the executable itself.
 
+The dev build (every world) is never on a release. It updates itself privately
+from the workflow's artifacts once you give it a GitHub token: make a
+fine-grained token (Settings > Developer settings > Fine-grained tokens) for
+this repository only, with Actions: read, and paste it into the phone's Servers
+app. It only ever takes dev builds of main.
+
 ## Play online (early test)
 
 Walk out of your home base's **door** and you are in the plaza. The first time,
