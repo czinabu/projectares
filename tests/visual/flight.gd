@@ -14,7 +14,7 @@ const MOVES := {
 	"jetpack_takeoff": {"rig": "jetpack_mk1", "lift": 0.0, "ticks": 260},
 	"jetpack_boost": {"rig": "jetpack_mk1", "lift": 0.0, "ticks": 240},
 	"boots_kicks": {"rig": "boots_thruster", "lift": 0.0, "ticks": 200},
-	"wings_glide": {"rig": "wings_glide", "lift": 22.0, "ticks": 300},
+	"wings_glide": {"rig": "wings_glide", "lift": 9.0, "ticks": 330},
 	"jetpack_cruise": {"rig": "jetpack_mk1", "lift": 0.0, "ticks": 420},
 	"boots_skate": {"rig": "boots_thruster", "lift": 0.0, "ticks": 420},
 	"wings_soar": {"rig": "wings_glide", "lift": 0.0, "ticks": 480},
@@ -66,6 +66,9 @@ static func _fly(v: Node, out_dir: String, move: String) -> void:
 					p.flight.is_boosting, p.flight.is_gliding])
 		p.cmd.aim_dir = -p.global_basis.z
 		await v.get_tree().physics_frame
+		# The signal comes before the tick's step: wait the step out, or the
+		# next tick's controls would land on it and lose this one's presses.
+		await v.get_tree().process_frame
 		if tick % 2 != 0:
 			continue
 		# A chase camera beside and behind the way it flies, eased.
@@ -142,10 +145,10 @@ static func _controls(cmd: ActorCommand, move: String, tick: int) -> void:
 			if tick >= 120 and tick < 240:
 				cmd.move = Vector2(0, -0.6)
 		"wings_glide":
-			# Off a height: the fall, the glide held, a dive, a flare and
-			# the landing.
+			# Off a height: the fall, the glide held, a dive straight into
+			# the ground at speed (the run-out), then a step back.
 			cmd.jump = tick >= 25
-			if tick >= 140 and tick < 180:
+			if tick >= 110 and tick < 190:
 				cmd.move = Vector2(0, 1.0)
-			elif tick >= 230:
+			elif tick >= 200:
 				cmd.move = Vector2(0, -1.0)
