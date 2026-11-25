@@ -228,7 +228,19 @@ date in the same PR.
   before that keeps its head outfit's old hair (`Human.HAIR`,
   `_legacy_hair`). The eyes take a chosen iris colour (`Human.iris_for`:
   `character.gdshader` tints only the disc in the middle of the eye's UVs,
-  `iris_centre`, `iris_radius`). An outfit no longer swaps meshes: it picks
+  `iris_centre`, `iris_radius`). The suit is cloth, not paint on the bare
+  body (Caleb's call: it hugged every curve): `SuitShape`
+  (`core/visual/suit_shape.gd`) reshapes the torso and legs meshes at rest
+  into cloth hung over the body (each slice filled to its hull, draped from
+  the chest and seat, what stands out at the front and back eased back,
+  `SLACK` off the skin; shoulders, arms and below the knee left alone),
+  baked offline into `suit_<build>_<part>.res` by `tools/suit_shape` and
+  swapped in by `Human.build`. Re-bake whenever the bodies or `suit_shape.gd`
+  change, then re-measure with `tools/body_fit` (which measures the suited
+  body) and run `tools/armor_fit/clip_check.tscn`. The shader draws a
+  fatigue kit on it (`suit_kit`: a belt at `belt_y`, cargo pockets down the
+  outer thighs, knee pads, a shoulder yoke) and keeps only a little of the
+  body's normal map. An outfit no longer swaps meshes: it picks
   the suit's colours (`Human.SUITS`), and the
   shader draws every surface below the head as a fitted tactical suit
   (`suit`, `suit_color`, `suit_trim`, gloves and a lit cuff;

@@ -11,6 +11,7 @@ extends RefCounted
 ## An appearance is only ever cosmetic. `sanitize` is safe to run on a
 ## headless server on whatever a client sent: it loads no art.
 
+const SuitShape := preload("res://core/visual/suit_shape.gd")
 const DIR := "res://assets/characters/humans/"
 const SLOTS: Array[String] = ["head", "body", "legs", "feet"]
 const SLOT_NAMES := {"head": "Head", "body": "Torso", "legs": "Legs", "feet": "Shoes"}
@@ -251,6 +252,8 @@ static func build(look: Node, appearance: Dictionary) -> Node3D:
 	if skeleton == null:
 		rig.free()
 		return null
+	# The suit hangs as cloth, not painted on the bare body.
+	SuitShape.apply(rig, appearance["build"])
 	var hair: Array = hair_meshes(appearance)
 	for node in skeleton.get_children():
 		var part := node as MeshInstance3D

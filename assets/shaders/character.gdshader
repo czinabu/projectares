@@ -42,6 +42,12 @@ uniform vec3 suit_color : source_color = vec3(0.075, 0.08, 0.09);
 uniform vec3 glove_color : source_color = vec3(0.045, 0.045, 0.05);
 uniform vec3 suit_trim : source_color = vec3(0.35, 0.85, 1.0);
 uniform float suit_cell = 0.022;
+// The suit's fatigue kit, drawn on the rest body (metres, feet at 0, front
+// +Z): a belt, cargo pockets down the outer thighs, knee pads, a darker
+// yoke over the shoulders, so it reads as
+// clothing, not a skin. 0 leaves the plain suit.
+uniform float suit_kit = 1.0;
+uniform float belt_y = 1.0;
 varying vec4 rest;
 // Storm readability. Godot drops its own fog once FOG is written, so this
 // repeats that curve and then keeps less of it up close. `storm_pop` is 1
@@ -133,18 +139,50 @@ void fragment() {
 		vec3 cloth = mix(suit_color, glove_color, glove);
 		// A flat pack outfit's own panels kept as tone, so pads and seams
 		// still read; a detailed body's texture is skin, so it is left out
-		// and its normal map, softened, gives the suit its form.
+		// and its normal map, softened a lot (the cloth hangs over it), gives the suit its form.
 		if (normal_amount <= 0.0) {
 			cloth *= mix(0.7 + 0.9 * own, 1.0, glove);
 		} else {
-			NORMAL_MAP_DEPTH = mix(normal_amount, normal_amount * 0.45, suited);
+			NORMAL_MAP_DEPTH = mix(normal_amount, normal_amount * 0.15, suited);
 		}
 		// A fine hex weave, faint, gloves left smooth.
 		float seam = 1.0 - smoothstep(0.03, 0.12, edge);
 		cloth *= mix(1.0, 0.86, seam * (1.0 - glove) * near);
+		float kit_rough = 0.0;
+		float buckle_m = 0.0;
+		if (suit_kit > 0.0) {
+			float ax = abs(p.x);
+			float trunk = 1.0 - smoothstep(0.2, 0.24, ax);
+			// The belt, with a buckle at the front.
+			float belt = (1.0 - smoothstep(0.022, 0.026, abs(p.y - belt_y))) * trunk;
+			float buckle = belt * (1.0 - smoothstep(0.022, 0.028, ax)) * step(0.0, p.z);
+			// Cargo pockets on the outer thighs, a flap across the top.
+			float side = step(rn.z, rn.x) * step(0.075, ax) * step(ax, 0.26);
+			float pocket = side * step(0.6, p.y) * step(p.y, 0.8) * step(abs(p.z + 0.01), 0.065);
+			float flap = pocket * step(0.765, p.y);
+			float pocket_edge = pocket * (1.0 - smoothstep(0.004, 0.008, min(min(p.y - 0.6, 0.8 - p.y), 0.065 - abs(p.z + 0.01))));
+			// Knee pads on the front of the knees.
+			vec2 knee_at = vec2((ax - 0.105) / 0.065, (p.y - 0.5) / 0.07);
+			float knee = (1.0 - smoothstep(0.85, 1.0, length(knee_at))) * smoothstep(-0.07, -0.05, p.z);
+			// A yoke over the shoulders, seamed where it ends.
+			float yoke_line = p.y - (belt_y + 0.38);
+			float yoke = smoothstep(-0.004, 0.004, yoke_line) * trunk;
+			float yoke_seam = (1.0 - smoothstep(0.002, 0.005, abs(yoke_line))) * trunk;
+			float kit = (1.0 - glove) * suit_kit;
+			cloth *= mix(1.0, 0.82, yoke * kit);
+			cloth *= mix(1.0, 0.86, pocket * kit);
+			cloth *= mix(1.0, 0.72, flap * kit);
+			cloth *= mix(1.0, 0.6, max(pocket_edge, yoke_seam) * kit);
+			cloth = mix(cloth, glove_color * 1.4, knee * kit);
+			cloth = mix(cloth, glove_color, belt * kit);
+			cloth = mix(cloth, vec3(0.42, 0.42, 0.4), buckle * kit);
+			kit_rough = max(knee, belt) * kit;
+			buckle_m = buckle * kit;
+		}
 		c = mix(c, cloth, suited);
-		r = mix(r, mix(0.82, 0.7, glove), suited);
+		r = mix(r, mix(mix(0.82, 0.62, kit_rough), 0.7, glove), suited);
 		m = mix(m, 0.0, suited);
+		m = mix(m, 0.8, buckle_m * suited);
 		NORMAL = mix(NORMAL, bump(NORMAL, VERTEX, -seam * 0.0004 * (1.0 - glove) * near), suited);
 		// A lit trim where the glove meets the sleeve.
 		float cuff = smoothstep(0.3, 0.42, rest.w) * (1.0 - smoothstep(0.42, 0.54, rest.w));
