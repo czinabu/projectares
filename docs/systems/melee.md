@@ -39,8 +39,15 @@ date in the same PR.
   `POUND_HEIGHT` above rides over it. A knockdown (`Actor.knock_down`) is a
   stagger that also stops walking; the server sends it in the state
   (`ActorCommand.STATE_KNOCKED_DOWN`, past bit 31, so states only) and
-  `ActorSkin._show_knocked_down` plays the death clip's fall, holds it and
-  plays it back up, timed by what is left. A bot pounds when the pound is
+  `ActorSkin._show_knocked_down` poses it by what is left, so every view
+  shows the same moment: a person is thrown onto the back (`knock_fall`,
+  the library's "Hit_Knockback"), lies there and pushes up to stand
+  (`knock_rise`, "LayToIdle" from `knock_rise_from` to `knock_rise_to`),
+  the fall taking at most `knock_fall_time` and the rise `knock_rise_time`
+  (a short knockdown splits its time between them). Both play at the speed
+  they are shown at, never held still, or the blend in from the stand
+  never finishes. A body without those clips plays the death clip's fall,
+  holds it and plays it back up. A bot pounds when the pound is
   ready and a second foe stands in its ring, now and then on one alone
   (`BotBrain._wants_pound`, asked only as a hammer bot picks a swing). Check with
   `visual_check.tscn -- <dir> --moves-only weapon=<id> only=ability`

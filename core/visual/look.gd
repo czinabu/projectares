@@ -65,13 +65,15 @@ const SURFACES := {
 ## `stand_legs` is where the legs stand while a gun is held low. `fist` is
 ## the clip whose first frame closes the hands round a grip (`WeaponArm`
 ## learns its fist from it): the pack's own, whose fingers curl at the
-## knuckles.
+## knuckles. `knock_fall` and `knock_rise` are a knockdown's: thrown onto
+## the back, and up again from lying there.
 const HUMAN_ANIMS := {"idle": "Idle_Stand", "idle_gun": "Idle_Gun", "aim_gun": "Idle_Gun_Pointing",
 	"stand_legs": "Idle_Neutral", "walk": "Walk", "run": "Run", "death": "Death",
 	"idle_melee": "Idle_Sword", "attack": "Sword_Slash", "move_gun": "Run_Shoot",
 	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right", "roll": "Roll",
 	"kick": "Kick_Right", "slide": "Slide_L", "slide_start": "Slide_Start_L",
-	"slide_exit": "Slide_Exit_L", "air_legs": "Jump", "fist": "Sword_Idle"}
+	"slide_exit": "Slide_Exit_L", "air_legs": "Jump", "fist": "Sword_Idle",
+	"knock_fall": "Hit_Knockback", "knock_rise": "LayToIdle"}
 const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
 const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
 const HUMAN_FEET := ["Foot.L", "Foot.R"]
