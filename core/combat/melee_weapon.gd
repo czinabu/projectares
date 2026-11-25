@@ -203,9 +203,9 @@ var guard_break_stagger := 0.9
 ## dodge, block or step out, then is driven into the ground. A shock ring
 ## reaches everyone on the ground within `ability_radius` for a little
 ## damage (`ability_damage`, through `Combat.deal`, so a guard blocks it and
-## a parry staggers the pounder) and knocks them back off their feet: a
-## stagger (`ability_stagger`) and a shove out and up (`ability_knock`,
-## `ability_lift`, less at the ring's edge). Then it is spent for
+## a parry staggers the pounder) and knocks them back off their feet: down
+## for `ability_knockdown` (`Actor.knock_down`) and shoved out and up
+## (`ability_knock`, `ability_lift`, less at the ring's edge). Then it is spent for
 ## `ability_cooldown` seconds, from the press.
 var ability := ""
 var ability_windup := 0.65
@@ -213,7 +213,7 @@ var ability_recover := 0.7
 var ability_cooldown := 12.0
 var ability_radius := 5.0
 var ability_damage := 12.0
-var ability_stagger := 1.1
+var ability_knockdown := 1.4
 var ability_knock := 10.0
 var ability_lift := 5.0
 var ability_stamina := 25.0
@@ -593,8 +593,7 @@ func _pound_lands() -> void:
 		info.armor_pierce = armor_pierce
 		if not Combat.deal(other, info) or info.blocked or info.parried or other.is_dead:
 			continue
-		other.stagger(ability_stagger)
-		other.notice.emit("Knocked back")
+		other.knock_down(ability_knockdown)
 		var away := to / dist if dist > 0.1 else forward
 		var share := 1.0 - 0.5 * clampf(dist / maxf(ability_radius, 0.1), 0.0, 1.0)
 		other.add_impulse(away * ability_knock * share + Vector3.UP * ability_lift * share)

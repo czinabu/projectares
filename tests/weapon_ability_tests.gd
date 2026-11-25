@@ -44,6 +44,9 @@ static func _wire(t: Node) -> void:
 	var sent: Array = NetSession.unpack_inputs(NetSession.pack_inputs([[1, cmd.to_array(), 0]]))[0][1]
 	var back := ActorCommand.new()
 	back.apply_array(sent)
+	t.check(ActorCommand.STATE_KNOCKED_DOWN > ActorCommand.FLAG_WEAPON_ABILITY_PRESSED
+			and (ActorCommand.HELD_MASK | ActorCommand.ONE_SHOT_MASK) & ActorCommand.STATE_KNOCKED_DOWN == 0,
+			"a knockdown is a state bit, never an input")
 	t.check(back.weapon_ability_pressed and back.lamp and back.kick_pressed,
 			"the press crosses the wire in its own byte, past the first 32 bits, and leaves the others alone")
 	cmd.weapon_ability_pressed = false
@@ -88,11 +91,27 @@ static func _in_raid(t: Node) -> void:
 	await t.frames(10)
 	t.check(is_equal_approx(health - foe.health.health, hammer.ability_damage),
 			"it lands for a little damage (%.0f)" % (health - foe.health.health))
-	t.check(foe.stagger_left > 0.5, "and knocks the foe off its feet (staggered %.2f s)" % foe.stagger_left)
+	t.check(foe.knocked_left > 0.5 and foe.stagger_left > 0.5,
+			"and knocks the foe off its feet (down for %.2f s)" % foe.knocked_left)
 	await t.frames(30)
 	var pushed := Vector2(foe.global_position.x - start.x, foe.global_position.z - start.z)
 	t.check(pushed.y < -1.0, "and back, away from the hammer (%.1f m)" % pushed.length())
 	t.check(hammer.ability_left > hammer.ability_cooldown - 2.0, "then it cools down")
+	# The server's word on it reaches every view through the state.
+	var net := NetSession.new()
+	net.raid = raid
+	net._actors[7] = foe
+	var entry := net._state_entry(7, 0)
+	t.check(int(entry[3][ActorCommand.FLAGS_INDEX]) & ActorCommand.STATE_KNOCKED_DOWN != 0,
+			"the state a client is sent says the foe is down")
+	var left := foe.knocked_left
+	foe.knocked_left = 0.0
+	net._apply_state(foe, entry, false)
+	t.check(foe.knocked_left > 0.0 and absf(foe.knocked_left - foe.stagger_left) < 0.05,
+			"and a client puts it down for what is left (%.2f of %.2f s)" % [foe.knocked_left, left])
+	net.free()
+	await t.frames(int(foe.knocked_left * 60.0) + 2)
+	t.check(foe.knocked_left <= 0.0, "and the foe gets back up")
 
 	# Spent: a second press does nothing until it has cooled.
 	await t.frames(int(hammer.ability_recover * 60.0) + 10)
@@ -138,3 +157,23 @@ static func _in_raid(t: Node) -> void:
 			"a raised guard stops it and keeps its feet")
 	foe.cmd.secondary = false
 	await t.frames(2)
+
+	# A bot with the hammer uses it when foes crowd it.
+	var brain := foe.get_node_or_null("Brain") as BotBrain
+	if brain == null:
+		t.check(false, "the foe has a brain to ask")
+		return
+	var bot_hammer := await Arsenal._arm(t, foe, HAMMER)
+	Arsenal._reset(foe)
+	Arsenal._place(p, foe, 3.0)
+	await t.frames(2)
+	brain.target = p
+	brain.pound_alone_chance = 0.0
+	t.check(not brain._wants_pound(bot_hammer), "a bot keeps the pound for a crowd, one foe alone is not worth it")
+	brain.pound_alone_chance = 1.0
+	t.check(brain._wants_pound(bot_hammer), "but sometimes uses it on one")
+	bot_hammer.ability_left = 5.0
+	t.check(not brain._wants_pound(bot_hammer), "never while it cools")
+	bot_hammer.ability_left = 0.0
+	Arsenal._place(p, foe, bot_hammer.ability_radius + 1.0)
+	t.check(not brain._wants_pound(bot_hammer), "nor with the foe outside the ring")

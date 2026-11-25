@@ -2438,7 +2438,8 @@ func _state_entry(id: int, tier: int) -> Array:
 			| int(_one_shots[tier].get(id, 0)) | (ActorCommand.STATE_HOVERING if actor.flight.is_hovering else 0) \
 			| (ActorCommand.STATE_SHELTERED if actor.weapons_locked else 0) \
 			| (ActorCommand.STATE_SIGN_OUT_BEACON if actor.sign_out_beacon else 0) \
-			| (ActorCommand.STATE_CHILLED if actor.shivering else 0)
+			| (ActorCommand.STATE_CHILLED if actor.shivering else 0) \
+			| (ActorCommand.STATE_KNOCKED_DOWN if actor.knocked_left > 0.0 else 0)
 	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
 	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
 			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
@@ -4215,6 +4216,15 @@ func _apply_state(actor: Actor, entry: Array, mine: bool, tick: int = 0) -> void
 	# So is the cold (`Raid._tick_cold`): everyone sees who shivers.
 	actor.shivering = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
 			and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_CHILLED != 0
+	# And a knockdown (`Actor.knock_down`): down for what is left of the
+	# stagger it came with.
+	var down: bool = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
+			and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_KNOCKED_DOWN != 0
+	if down and actor.knocked_left <= 0.0 and actor.stagger_left > 0.0:
+		actor.knocked_left = actor.stagger_left
+		actor.knocked_time = actor.stagger_left
+	elif not down:
+		actor.knocked_left = 0.0
 	var id: int = entry[0]
 	if actor.vehicle != null:
 		# A rider goes where their vehicle goes.

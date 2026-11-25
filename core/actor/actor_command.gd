@@ -162,6 +162,9 @@ const STATE_SIGN_OUT_BEACON := 1 << 27
 ## Not an input either: the actor is cold enough to shiver (`Actor.shivering`,
 ## decided by the authority's `Raid._tick_cold`).
 const STATE_CHILLED := 1 << 28
+## Not an input either: the actor is knocked off its feet (`Actor.knock_down`).
+## Past bit 31, so it rides only in states, never in an input.
+const STATE_KNOCKED_DOWN := 1 << 33
 const FLAG_FREE_LOOK := 2097152
 const FLAG_ARTIFACT_PRESSED := 8388608
 const FLAG_INSPECT := 33554432
