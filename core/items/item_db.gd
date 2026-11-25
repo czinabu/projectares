@@ -30,7 +30,9 @@ func _ready() -> void:
 	register("rifle_scrap", "Scrap Rifle", Rarity.COMMON, 0, ["weapon", "firearm", "rifle", "starter"],
 			{"recoil_pattern": "sway", "shot_sound": "shot_scrap", "headshot_mult": 1.5, "falloff_start": 40.0, "falloff_end": 90.0, "falloff_min": 0.75},
 			"Worn automatic rifle.")
-	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "one_handed", "blade", "starter"], {},
+	register("blade_scrap", "Scrap Blade", Rarity.COMMON, 0, ["weapon", "melee", "one_handed", "blade", "starter"],
+			{"ability": "counter_stance", "ability_windup": 0.8, "ability_recover": 0.2, "ability_cooldown": 10.0,
+			"ability_stamina": 15.0},
 			"A sharpened strip of plating.")
 	register("pistol_service", "Service Pistol", Rarity.COMMON, 0,
 			["weapon", "firearm", "sidearm", "pistol", "starter"],
@@ -169,7 +171,8 @@ func _ready() -> void:
 	# (`MeleeWeapon`), and the hands hold it that way (`Look.is_two_handed`).
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "one_handed", "blade"],
 			{"light_damage": 26.0, "heavy_damage": 66.0, "light_recover": 0.26, "parry_window": 0.26,
-			"swing_style": "cut"},
+			"swing_style": "cut", "ability": "counter_stance", "ability_windup": 0.8, "ability_recover": 0.2,
+			"ability_cooldown": 10.0, "ability_stamina": 15.0},
 			"Quick to recover and the most forgiving parry of any blade, for lighter cuts.")
 	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "two_handed", "hammer", "vendor"],
 			{"light_damage": 46.0, "heavy_damage": 98.0, "light_windup": 0.22, "light_recover": 0.45,
@@ -181,30 +184,40 @@ func _ready() -> void:
 			"light_windup": 0.08, "light_recover": 0.15, "heavy_windup": 0.25, "heavy_recover": 0.35,
 			"heavy_lunge": 12.0, "light_stamina": 6.0, "heavy_stamina": 18.0, "parry_window": 0.16,
 			"slam_damage": 35.0, "slam_radius": 3.0, "backstab_mult": 2.2, "backstab_arc_deg": 180.0,
-			"move_mult": 1.15, "heavy_style": "thrust", "swing_scale": 0.7},
+			"move_mult": 1.15, "heavy_style": "thrust", "swing_scale": 0.7,
+			"ability": "shadow_step", "ability_windup": 0.3, "ability_recover": 0.15, "ability_radius": 5.0,
+			"ability_cooldown": 12.0, "ability_stamina": 20.0},
 			"Very quick, short and light. Cuts from behind do more than double, so get round their guard.")
 	register("axe_splitter", "Splitter Axe", Rarity.UNCOMMON, 550, ["weapon", "melee", "one_handed", "axe", "vendor"],
 			{"light_damage": 33.0, "heavy_damage": 85.0, "reach": 2.6, "light_windup": 0.16,
 			"light_recover": 0.34, "heavy_windup": 0.48, "light_stamina": 13.0, "heavy_stamina": 32.0,
-			"guard_crush": 2.5, "swing_style": "chop", "swing_scale": 0.9},
+			"guard_crush": 2.5, "swing_style": "chop", "swing_scale": 0.9,
+			"ability": "guard_hook", "ability_windup": 0.45, "ability_recover": 0.35, "ability_radius": 3.0,
+			"ability_damage": 8.0, "ability_knock": 8.0, "ability_cooldown": 12.0, "ability_stamina": 18.0},
 			"Chops through guards. Blocking it costs two and a half times the stamina, so a few hits break a guard.")
 	register("spear_lancer", "Lancer Spear", Rarity.RARE, 900, ["weapon", "melee", "two_handed", "spear"],
 			{"light_damage": 29.0, "heavy_damage": 66.0, "reach": 4.1, "arc_deg": 40.0,
 			"vertical_reach": 3.8, "close_range": 1.5, "close_mult": 0.6, "light_windup": 0.14,
 			"light_recover": 0.3, "heavy_windup": 0.42, "heavy_lunge": 6.0, "heavy_stagger": 0.6,
-			"slam_damage": 40.0, "slam_radius": 3.5, "swing_style": "thrust"},
+			"slam_damage": 40.0, "slam_radius": 3.5, "swing_style": "thrust",
+			"ability": "vault", "ability_windup": 0.25, "ability_recover": 0.2, "ability_knock": 7.0,
+			"ability_lift": 11.0, "ability_cooldown": 12.0, "ability_stamina": 20.0},
 			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, weaker up close, and a heavy thrust staggers.")
 	# The Spore Marsh's melee options (DESIGN.md "Spore Marsh"), crafted from
 	# its blueprints: sidegrades, never a higher Mk.
 	register("blade_hook", "Marsh Hookblade", Rarity.UNCOMMON, 600, ["weapon", "melee", "one_handed", "blade"],
 			{"light_damage": 25.0, "heavy_damage": 56.0, "reach": 2.5, "light_windup": 0.12, "light_recover": 0.2,
-			"backstab_mult": 1.6, "backstab_arc_deg": 140.0, "swing_style": "slash"},
+			"backstab_mult": 1.6, "backstab_arc_deg": 140.0, "swing_style": "slash",
+			"ability": "trip", "ability_windup": 0.35, "ability_recover": 0.4, "ability_radius": 2.6,
+			"ability_damage": 8.0, "ability_knockdown": 1.0, "ability_cooldown": 14.0, "ability_stamina": 18.0},
 			"A hooked marsh blade. Quick cuts that bite harder from behind, but a lighter heavy.")
 	register("spear_reed", "Reed Spear", Rarity.UNCOMMON, 650, ["weapon", "melee", "two_handed", "spear"],
 			{"light_damage": 25.0, "heavy_damage": 56.0, "reach": 3.8, "arc_deg": 45.0,
 			"vertical_reach": 3.4, "close_range": 1.4, "close_mult": 0.7, "light_windup": 0.12,
 			"light_recover": 0.25, "heavy_windup": 0.38, "heavy_lunge": 8.0, "heavy_stagger": 0.4,
-			"slam_damage": 32.0, "slam_radius": 3.0, "move_mult": 1.05, "swing_style": "thrust"},
+			"slam_damage": 32.0, "slam_radius": 3.0, "move_mult": 1.05, "swing_style": "thrust",
+			"ability": "vault", "ability_windup": 0.25, "ability_recover": 0.2, "ability_knock": 7.0,
+			"ability_lift": 11.0, "ability_cooldown": 12.0, "ability_stamina": 20.0},
 			"A light spear of marsh reed and chitin. Long reach and quick to move with, but it hits softer.")
 
 	# Backpacks (Caleb's call: four sizes, bought from the Outfitter). None

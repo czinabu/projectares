@@ -121,7 +121,7 @@ date in the same PR.
   Every rig air dashes on Shift + a move key (`ActorCommand.sprint_pressed`,
   `Actor._air_dash`, tuned by the rig's `air_dash_*` stats): the dash is
   added on top of the rig's own flight and taken back off, so a glide or a
-  cruise carries on after it. Q and E fly nothing (Caleb's call); E holds free look.
+  cruise carries on after it. Q and E fly nothing (Caleb's call); E holds free look and Q is the melee weapon's ability.
   The body's attitude in the air (flat, banked, leaning, barrel rolled by a
   sideways air dash) is the skin's job (`ActorSkin._update_glide`; a boost's
   prone pose eases in and out by `boost_ease`, so coming upright into a

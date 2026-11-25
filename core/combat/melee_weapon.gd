@@ -207,6 +207,25 @@ var guard_break_stagger := 0.9
 ## for `ability_knockdown` (`Actor.knock_down`) and shoved out and up
 ## (`ability_knock`, `ability_lift`, less at the ring's edge). Then it is spent for
 ## `ability_cooldown` seconds, from the press.
+## "shadow_step" (the knife): a short crouch (`ability_windup`), then a step
+## through to just behind the foe in front within `ability_radius`, turned
+## to face their back, where the knife's cut is a backstab. With no foe in
+## front it does nothing and costs nothing.
+## "counter_stance" (swords): the blade held up for `ability_windup`; a melee
+## hit that lands on it from the front is turned aside (a parry, the
+## attacker staggered) and answered at once with a quick riposte cut. It
+## ends on the first hit, and leaves its user open while it lasts to a
+## kick, which goes through any guard.
+## "guard_hook" (axes): a windup (`ability_windup`), then the axe's beard
+## hooks the foe in front within `ability_radius`: through any guard (a
+## held guard is torn open, `guard_break_stagger`), a little damage, and a
+## pull a step toward the axe (`ability_knock`). A dodge slips it.
+## "vault" (spears): the spear is planted (`ability_windup`) and the body
+## vaults up and ahead (`ability_lift`, `ability_knock`); from the top of
+## the arc the heavy is the spear's dive slam or air-lunge.
+## "trip" (the hook blade): a low hooked cut (`ability_windup`) at the foe in
+## front within `ability_radius`, blockable like any cut, that knocks them
+## down for `ability_knockdown`.
 var ability := ""
 var ability_windup := 0.65
 var ability_recover := 0.7
@@ -219,6 +238,15 @@ var ability_lift := 5.0
 var ability_stamina := 25.0
 ## Who is higher above (or below) the pounder than this rides over the ring.
 const POUND_HEIGHT := 1.5
+## What each ability is called on the weapon line and in the controls.
+const ABILITY_NAMES := {"ground_pound": "pound", "shadow_step": "shadow step", "counter_stance": "counter",
+		"guard_hook": "hook", "vault": "vault", "trip": "trip"}
+## How wide in front the hook and the trip reach, in degrees.
+const ABILITY_ARC_DEG := 80.0
+## How far behind the foe's back a shadow step lands, and the windup of the
+## riposte a counter stance answers with.
+const STEP_BEHIND := 1.3
+const COUNTER_ANSWER := 0.08
 var riposte_window := 1.6
 var riposte_mult := 1.5
 
@@ -341,6 +369,10 @@ var _shown_kind := "light"
 var _hitstop_left := 0.0
 ## Seconds until the weapon ability can be used again.
 var ability_left := 0.0
+## Seconds left in a counter stance.
+var _countering_left := 0.0
+## The foe a shadow step is going behind.
+var _step_foe: Actor = null
 
 
 func build_visual() -> Node3D:
@@ -409,7 +441,7 @@ static func mirror(dir: int) -> int:
 
 
 func controls_hint() -> String:
-	var pound := "   O or the mouse's thumb button: ground pound" if ability == "ground_pound" else ""
+	var pound := "   Q or the mouse's thumb button: %s" % ABILITY_NAMES[ability] if ABILITY_NAMES.has(ability) else ""
 	return "Tap left mouse to swing, hold it for a heavy (a dive slam in the air)" + pound + "   Right mouse just before a hit parries, a little earlier blocks cheaply; held, the guard drains stamina"
 
 
@@ -424,6 +456,7 @@ func is_winding_up() -> bool:
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
 	ability_left = maxf(0.0, ability_left - delta)
+	_countering_left = maxf(0.0, _countering_left - delta)
 	if _combo_timer > 0.0:
 		_combo_timer -= delta
 		if _combo_timer <= 0.0:
@@ -435,6 +468,8 @@ func tick(delta: float) -> void:
 		_blocking = false
 		_lunge_left = 0.0
 		_queued = false
+		_countering_left = 0.0
+		_step_foe = null
 	elif _windup_left > 0.0:
 		_windup_left -= delta
 		if _windup_left <= 0.0:
@@ -442,6 +477,14 @@ func tick(delta: float) -> void:
 				_kick_lands()
 			elif _windup_kind == "pound":
 				_pound_lands()
+			elif _windup_kind == "step":
+				_shadow_step_lands()
+			elif _windup_kind == "hook":
+				_hook_lands()
+			elif _windup_kind == "vault":
+				_vault_lands()
+			elif _windup_kind == "trip":
+				_trip_lands()
 			else:
 				_strike(_windup_damage, _windup_kind)
 			_windup_kind = ""
@@ -546,16 +589,170 @@ func ability_ready() -> bool:
 
 ## The weapon's ability (`ability`): the ground pound, on the ground only.
 func weapon_ability() -> void:
-	if ability != "ground_pound" or ability_left > 0.0 or not actor.is_on_floor():
+	if ability == "" or ability_left > 0.0 or not actor.is_on_floor():
+		return
+	var foe: Actor = null
+	if ability == "shadow_step":
+		var found := _lunge_target(ability_radius)
+		if found.is_empty():
+			return
+		foe = found[0]
+	elif not ABILITY_NAMES.has(ability):
 		return
 	if not actor.spend_stamina(ability_stamina):
 		return
 	ability_left = ability_cooldown
 	combo_step = 0
 	_cooldown = ability_windup + ability_recover
-	_begin_windup("pound", ability_damage, ability_windup)
-	attack_dir = Dir.OVERHEAD
-	swung.emit("pound_windup")
+	match ability:
+		"ground_pound":
+			_begin_windup("pound", ability_damage, ability_windup)
+			attack_dir = Dir.OVERHEAD
+			swung.emit("pound_windup")
+		"shadow_step":
+			_step_foe = foe
+			_begin_windup("step", 0.0, ability_windup)
+			swung.emit("step_windup")
+		"guard_hook", "vault", "trip":
+			var kind: String = {"guard_hook": "hook", "vault": "vault", "trip": "trip"}[ability]
+			_begin_windup(kind, ability_damage, ability_windup)
+			if kind == "trip":
+				attack_dir = swing_from(stance) as Dir
+			swung.emit(kind + "_windup")
+		"counter_stance":
+			_countering_left = ability_windup
+			_shown_kind = "counter"
+			guard_dir = Dir.OVERHEAD
+			_recover_total = 0.0
+			swung.emit("counter")
+
+
+## The foes in front within `ability_radius` and `ABILITY_ARC_DEG`, with
+## where this machine sees them.
+func _ability_reach() -> Array:
+	var forward := actor.get_aim_dir()
+	forward.y = 0.0
+	forward = forward.normalized() if forward.length() > 0.01 else Vector3.FORWARD
+	var seen := Combat.positions_seen_by(actor)
+	var out: Array = []
+	for other in _other_actors():
+		var at: Vector3 = seen.get(other, other.global_position)
+		var to := at - actor.global_position
+		if absf(to.y) > 1.2:
+			continue
+		to.y = 0.0
+		if to.length() - HIT_ALLOWANCE > ability_radius:
+			continue
+		if to.length() > 0.6 and forward.angle_to(to.normalized()) > deg_to_rad(ABILITY_ARC_DEG) * 0.5:
+			continue
+		out.append([other, at, to])
+	return out
+
+
+## The axe's hook lands: through any guard, and a pull toward the axe.
+func _hook_lands() -> void:
+	swung.emit("hook")
+	_swing_left = SWING_TIME
+	_swing_time = SWING_TIME
+	_recover_total = _cooldown
+	Sfx.play("block", null if actor.is_player else actor.global_position, -4.0)
+	for reached: Array in _ability_reach():
+		var other: Actor = reached[0]
+		var to: Vector3 = reached[2]
+		var blade := other.get_active_weapon() as MeleeWeapon
+		var guarding := blade != null and blade.is_blocking()
+		_contact(other, reached[1])
+		if not Combat.deal(other, DamageInfo.make(_windup_damage, actor, "hook", reached[1])) or other.is_dead:
+			continue
+		if guarding:
+			blade.drop_aim()
+			other.stagger(guard_break_stagger)
+			other.notice.emit("Guard hooked open")
+		var back := -to.normalized() if to.length() > 0.1 else Vector3.ZERO
+		# A little lift, so the pull carries over the ground.
+		other.add_impulse(back * ability_knock + Vector3.UP * 2.5)
+
+
+## The spear's vault: up and ahead off the planted spear.
+func _vault_lands() -> void:
+	swung.emit("vault")
+	_shown_kind = "vault"
+	var forward := actor.get_aim_dir()
+	forward.y = 0.0
+	forward = forward.normalized() if forward.length() > 0.01 else Vector3.FORWARD
+	actor.velocity = forward * ability_knock + Vector3.UP * ability_lift
+	if actor.is_inside_tree():
+		Fx.puff(actor.get_parent(), actor.global_position + forward * 0.6, 0.7, Color(0.55, 0.5, 0.45, 0.6))
+	Sfx.play("dash", null if actor.is_player else actor.global_position, -4.0)
+	# Free in the air at once, for the heavy from the top.
+	_cooldown = minf(_cooldown, ability_recover)
+
+
+## The hook blade's trip: a low cut that takes the feet out.
+func _trip_lands() -> void:
+	swung.emit("trip")
+	_swing_time = SWING_TIME
+	_swing_left = _swing_time
+	_recover_total = _cooldown
+	Sfx.play("swing", null if actor.is_player else actor.global_position)
+	for reached: Array in _ability_reach():
+		var other: Actor = reached[0]
+		_contact(other, reached[1])
+		var info := DamageInfo.make(_windup_damage, actor, "melee", reached[1])
+		info.direction = attack_dir
+		info.armor_pierce = armor_pierce
+		if not Combat.deal(other, info) or info.blocked or info.parried or other.is_dead:
+			continue
+		other.knock_down(ability_knockdown)
+
+
+## True while a counter stance is held.
+func is_countering() -> bool:
+	return _countering_left > 0.0
+
+
+## The guard is shown: held, or a counter stance. For poses.
+func is_guard_shown() -> bool:
+	return _blocking or _countering_left > 0.0
+
+
+## The shadow step lands: through to just behind the foe, facing their back.
+func _shadow_step_lands() -> void:
+	var foe := _step_foe
+	_step_foe = null
+	_shown_kind = "step"
+	if foe == null or not is_instance_valid(foe) or foe.is_dead:
+		return
+	var seen := Combat.positions_seen_by(actor)
+	var at: Vector3 = seen.get(foe, foe.global_position)
+	var facing := foe.get_aim_dir()
+	facing.y = 0.0
+	if facing.length() < 0.01:
+		facing = (at - actor.global_position) * Vector3(1, 0, 1)
+	facing = facing.normalized()
+	var to := at - facing * STEP_BEHIND
+	if actor.is_inside_tree():
+		# Never through a wall: short of it, or the side the step came from.
+		var chest := Vector3.UP * Actor.BODY_HEIGHT * 0.6
+		var query := PhysicsRayQueryParameters3D.create(at + chest, to + chest, Actor.LAYER_WORLD)
+		var hit := actor.get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			var room := at.distance_to(hit.position) - 0.5
+			if room < 0.8:
+				return
+			to = at - facing * room
+	if actor.is_inside_tree():
+		Fx.puff(actor.get_parent(), actor.global_position + Vector3.UP * 0.9, 0.8, Color(0.15, 0.15, 0.18, 0.6))
+		Fx.puff(actor.get_parent(), to + Vector3.UP * 0.9, 0.6, Color(0.15, 0.15, 0.18, 0.5))
+	actor.global_position = to
+	actor.velocity = Vector3.ZERO
+	# Turned to the foe's back: the view follows (`Actor.turn_request`).
+	var look := at - to
+	actor.turn_request = atan2(-look.x, -look.z)
+	Sfx.play("dash", null if actor.is_player else actor.global_position, -6.0)
+	swung.emit("step")
+	# The blade is ready at once behind them.
+	_cooldown = minf(_cooldown, ability_recover)
 
 
 ## True while the ground pound is winding up or being shown.
@@ -712,7 +909,7 @@ func in_timed_window() -> bool:
 
 ## True while a swing, its recovery or a slam keeps the blade from attacking.
 func is_busy() -> bool:
-	return _cooldown > 0.0 or _slamming or _windup_left > 0.0
+	return _cooldown > 0.0 or _slamming or _windup_left > 0.0 or _countering_left > 0.0
 
 
 ## Remembers a press made while busy, and how long it is held.
@@ -816,6 +1013,8 @@ func status_text() -> String:
 		return "%s  dive slam" % display_name
 	if is_pounding():
 		return "%s  ground pound" % display_name
+	if _countering_left > 0.0:
+		return "%s  counter stance" % display_name
 	if _air_lunge and _windup_left > 0.0:
 		return "%s  air lunge" % display_name
 	if actor.riposte_left > 0.0:
@@ -823,11 +1022,13 @@ func status_text() -> String:
 	if combo_step > 0:
 		return "%s  %s  combo %d" % [display_name, DIR_NAMES[stance], combo_step]
 	if ability != "" and ability_left > 0.0:
-		return "%s  %s  pound in %ds" % [display_name, DIR_NAMES[stance], ceili(ability_left)]
+		return "%s  %s  %s in %ds" % [display_name, DIR_NAMES[stance], ABILITY_NAMES.get(ability, "ability"), ceili(ability_left)]
 	return "%s  %s" % [display_name, DIR_NAMES[stance]]
 
 
 func modify_incoming(info: DamageInfo) -> void:
+	if _countering_left > 0.0 and info.kind == "melee" and _counter(info):
+		return
 	if not _blocking or info.kind not in ["bullet", "melee"]:
 		return
 	if info.kind == "bullet" and not stops_round(info.weapon_id):
@@ -887,6 +1088,32 @@ func modify_incoming(info: DamageInfo) -> void:
 		_blocking = false
 		actor.stagger(guard_break_stagger)
 		actor.notice.emit("Guard broken")
+
+
+## A counter stance meets `info`: from the front it is turned aside, the
+## attacker staggered, and a quick riposte answers. True when it did.
+func _counter(info: DamageInfo) -> bool:
+	var attacker := info.source as Actor
+	if attacker == null:
+		return false
+	var forward := actor.get_aim_dir()
+	forward.y = 0.0
+	var to := attacker.global_position - actor.global_position
+	to.y = 0.0
+	if to.length() > 0.01 and forward.normalized().angle_to(to.normalized()) > deg_to_rad(block_arc_deg) * 0.5:
+		return false
+	info.amount = 0.0
+	info.parried = true
+	_countering_left = 0.0
+	attacker.stagger(parry_stagger)
+	actor.notice.emit("Countered!")
+	parried_hit.emit(info)
+	Sfx.play("parry", null if actor.is_player else actor.global_position)
+	# The answer: a riposte cut straight away, at the riposte's strength.
+	actor.riposte_left = riposte_window
+	_cooldown = COUNTER_ANSWER + light_recover
+	_begin_windup("light", light_damage, COUNTER_ANSWER)
+	return true
 
 
 func _light_attack(held: float) -> void:
@@ -1190,7 +1417,7 @@ func guess_outcome(other: Actor) -> String:
 	var blade := other.get_active_weapon() as MeleeWeapon
 	if clashes_with(blade):
 		return "clash"
-	if blade == null or not blade.is_blocking() or other.stagger_left > 0.0:
+	if blade == null or not blade.is_guard_shown() or other.stagger_left > 0.0:
 		return "hit"
 	var facing := other.get_aim_dir()
 	facing.y = 0.0
@@ -1199,7 +1426,7 @@ func guess_outcome(other: Actor) -> String:
 	if facing.length() > 0.01 and to.length() > 0.01 \
 			and facing.normalized().angle_to(to.normalized()) > deg_to_rad(blade.block_arc_deg) * 0.5:
 		return "hit"
-	return "parry" if blade.in_parry_window("melee") else "block"
+	return "parry" if blade.is_countering() or blade.in_parry_window("melee") else "block"
 
 
 ## How far through the shown swing the blade is, 0 to 1 along its arc, or -1
@@ -1325,7 +1552,7 @@ func _animate(delta: float) -> void:
 			if attack_dir == Dir.OVERHEAD:
 				pose += 0.35
 				offset.y = 0.12
-	elif _blocking:
+	elif is_guard_shown():
 		pose = GUARD_POSE
 		if guard_dir == Dir.OVERHEAD:
 			roll = 1.4

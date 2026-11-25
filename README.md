@@ -50,10 +50,11 @@ looks" below).
 | Reload | R |
 | Inspect what is in your hand (the weapon, or a toy vehicle): it comes up close and turns. Anything else you do stops it | I |
 | Use a medkit | H |
+| Melee weapon's ability: the hammer's ground pound, the knife's shadow step, the sword's counter stance, the axe's guard hook, the spear's vault, the hook blade's trip | Q, or the mouse's thumb button |
 | Loot, or get on and off a vehicle | F |
 | Ride: throttle, brake or reverse, steer, boost | W, S, A / D, Shift |
 | Switch camera: first-person or third-person | Tab |
-| Scoreboard: who is fighting, who is down, kills | Hold Q |
+| Scoreboard: who is fighting, who is down, kills | Hold O |
 | Sign out and go home with what you carry (10 seconds, out of a fight) | L |
 | After dying: drop back in, or go home | Enter, or L |
 | Open your phone: players, messages, invites, news, servers, mirror, every control (Keys), settings | P |
