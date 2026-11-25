@@ -308,7 +308,8 @@ func _init() -> void:
 	bot_count = 60
 	# A hot war draws in up to this many more.
 	war_reinforcements = 60
-	max_players = 32
+	# Caleb's launch call (DESIGN.md "More worlds"): 24 players.
+	max_players = 24
 	bots_contest_sites = true
 	# Each army remembers who has been killing its soldiers, for one life.
 	grudge_factions.assign(["legion", "tide"])

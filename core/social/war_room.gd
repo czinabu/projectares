@@ -128,11 +128,13 @@ static func segments(status: Dictionary) -> Array[String]:
 	ids.sort()
 	for id: Variant in ids:
 		var entry: Variant = status[id]
-		if typeof(entry) == TYPE_DICTIONARY and not (entry.get("front", []) as Array).is_empty():
+		if typeof(entry) == TYPE_DICTIONARY and not (entry.get("front", []) as Array).is_empty() \
+				and (Worlds.get_world(str(id)) == null or Worlds.offered(str(id))):
 			out.append("front:%s" % id)
+	# The race feed only for a race world this build offers (none at launch).
 	for id: Variant in ids:
 		var world := Worlds.get_world(str(id))
-		if world != null and not world.feed_tracks().is_empty():
+		if world != null and Worlds.offered(world.id) and not world.feed_tracks().is_empty():
 			out.append("race:%s" % id)
 	out.append("worlds")
 	return out

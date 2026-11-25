@@ -21,6 +21,8 @@ stability/enemies=false
 stability/enemy_cap=8
 stability/enemies_full_detail=12
 release/playtest_worlds=PackedStringArray("plaza", "rift", "marsh", "dunes", "frostline")
+release/launch_scope=true
+release/launch_worlds=PackedStringArray("plaza", "ashfront", "frostline")
 
 [autoload]
 

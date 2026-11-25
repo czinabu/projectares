@@ -353,7 +353,7 @@ static func clean_text(text: String) -> String:
 func invite(from: String, to: String, kind: String, world_id := "", now := -1.0) -> Dictionary:
 	if now < 0.0:
 		now = Time.get_unix_time_from_system()
-	if kind not in INVITE_KINDS:
+	if kind not in INVITE_KINDS or (kind == "base" and LaunchScope.holds("base_visits")):
 		return _fail("That is not something you can invite people to.")
 	if to == from:
 		return _fail("That is you.")

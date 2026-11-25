@@ -1917,6 +1917,15 @@ func _build_rooms() -> void:
 		_keep(node)
 		_into = node
 		_finish = area_finish(room)
+		if BasePlan.held(room):
+			# Held back at launch (`LaunchScope`): a sealed panel in the
+			# doorway, no room behind it and no plate over it.
+			var seal := _box(Vector3(room_door.x + 0.2, room_door.y + 0.1, 0.3),
+					Vector3(0, (room_door.y + 0.1) * 0.5, 0.25), _shell("seal"))
+			seal.name = "SealedDoor"
+			_into = null
+			_finish = area_finish(BasePlan.HUB)
+			continue
 		_build_shell(room)
 		match room_style(room):
 			"rack":
@@ -2587,6 +2596,8 @@ func _furnish_stores() -> void:
 	var width := 7.6 if whole else 3.0
 	var steel := Color(0.24, 0.25, 0.27)
 	for kind: String in (["supplies", "trophy"] if whole else ["supplies"]):
+		if BaseLayout.spots(kind, upgrades) <= 0:
+			continue
 		_shelf(Vector3(0, STORAGE_ROWS[kind], back + 0.45), width, false)
 	for side: float in [-1.0, 1.0]:
 		_target().add_child(_part(Vector3(0.08, (2.7 if whole else 1.5), 0.6), Vector3(side * (width * 0.5 + 0.05), (1.35 if whole else 0.75), back + 0.45), steel))
@@ -3221,7 +3232,7 @@ func _build_gates() -> void:
 	for room: String in BasePlan.ROOMS:
 		var opens := str(BasePlan.ROOMS[room]["opens"])
 		var xf := room_transform(room)
-		if opens != "" and not owns(opens):
+		if opens != "" and not owns(opens) and not BasePlan.held(room):
 			_add_bulkhead(opens, xf * _spot(Vector3(side - 0.6, 0, -small_depth + 0.45), 0.0), "post")
 	var garage := room_transform("garage")
 	if not owns("bay_second"):
@@ -4579,6 +4590,7 @@ func watch_vehicles() -> Array[String]:
 		return ids
 	for id: String in stash + [str(loadout.get("vehicle", ""))]:
 		if ItemDB.has_tag(id, "vehicle") and id not in ids and not is_instance_valid(out_vehicles.get(id)) \
+				and not LaunchScope.holds_item(id) \
 				and not _toy_throws.any(func(t: Dictionary) -> bool: return t.id == id):
 			ids.append(id)
 	return ids

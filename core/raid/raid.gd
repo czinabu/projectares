@@ -1952,9 +1952,10 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 	world.on_spawn(actor)
 	_publish_standing()
 	actor_spawned.emit(actor)
-	# Their own vehicle, if they brought one, rides on their watch as a toy.
+	# Their own vehicle, if they brought one, rides on their watch as a toy
+	# (never one the launch holds back, `LaunchScope`).
 	for id in state.kit:
-		if ItemDB.has_tag(id, "vehicle"):
+		if ItemDB.has_tag(id, "vehicle") and not LaunchScope.holds_item(id):
 			state.deployed_vehicles.append(id)
 			state.stowed.append(id)
 	watch_changed.emit(actor)

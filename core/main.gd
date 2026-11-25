@@ -836,7 +836,7 @@ func _refresh_base() -> void:
 ## a world such as the plaza through its arena gate), or a solo one against
 ## bot gladiators.
 func open_arena() -> void:
-	if raid is Arena or (base != null and base.read_only):
+	if raid is Arena or (base != null and base.read_only) or LaunchScope.holds("arena"):
 		return
 	if net != null:
 		if raid == null and not hub.in_lobby():
@@ -1931,7 +1931,8 @@ func start_server(world_id: String, port: int, with_plaza := true, bots := -1, s
 	var store: RefCounted = net.stash.store()
 	if store != null:
 		print("Server: accounts in %s (%s)" % [ProjectSettings.globalize_path(store.dir), store.kind])
-	if arena_port >= 0:
+	# The launch holds the Pit back (`LaunchScope`): no arena session at all.
+	if arena_port >= 0 and not LaunchScope.holds("arena"):
 		var arena := NetSession.new()
 		arena.name = "Net_%s" % Arena.ArenaVenue.ID
 		arena.isolated = true
@@ -2063,7 +2064,7 @@ func _run_cluster(args: PackedStringArray) -> void:
 			world_args.append_array(["--bots", _arg(args, "--bots", "")])
 		programs.append({"id": world.id, "port": next_port, "args": world_args})
 		next_port += 1
-	if "--no-arena" not in args:
+	if "--no-arena" not in args and not LaunchScope.holds("arena"):
 		programs.append({"id": Arena.ArenaVenue.ID, "port": int(_arg(args, "--arena-port",
 				str(port + ARENA_PORT_OFFSET))), "args": shared})
 	var beat := func() -> void:
@@ -2676,7 +2677,7 @@ func open_war_room() -> void:
 ## every trade; the screen shows what it sends (`market_state`) and your
 ## account, and is kept fresh while open.
 func open_market() -> void:
-	if net == null or raid == null or shop_view != null:
+	if net == null or raid == null or shop_view != null or LaunchScope.holds("market"):
 		return
 	var panel: Control = MarketPanel.new()
 	panel.account = net.account

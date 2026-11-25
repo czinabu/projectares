@@ -71,11 +71,13 @@ const RECIPES := {
 		"parts": {"chitin_plate": 2, "glowcap": 1}},
 }
 
-## Every craftable item id, in the order the bench shows them.
+## Every craftable item id, in the order the bench shows them. Anything the
+## launch holds back (`LaunchScope`) is left off.
 static func ids() -> Array[String]:
 	var out: Array[String] = []
 	for id: String in RECIPES:
-		out.append(id)
+		if not LaunchScope.holds_item(id):
+			out.append(id)
 	return out
 
 
@@ -163,7 +165,7 @@ static func learn(stash: Array[String], known: Array[String]) -> Array[String]:
 ## Why `id` cannot be crafted from this stash, these known blueprints and
 ## this much scrip, or "" if it can.
 static func blocked(stash: Array, known: Array, scrip: int, id: String) -> String:
-	if not RECIPES.has(id):
+	if not RECIPES.has(id) or LaunchScope.holds_item(id):
 		return "That cannot be crafted."
 	if blueprint_of(id) not in known:
 		return "Blueprint not found yet."

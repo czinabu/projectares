@@ -12,7 +12,9 @@ var _worlds := {}
 ## `ares/release/playtest_worlds`; the dev build (no tag) offers every one.
 ## A world left out is still loaded and its items still known, so a save
 ## holding them stays good; it is only never listed, offered or travelled to
-## (`all`, `raid_worlds`, `social_world`).
+## (`all`, `raid_worlds`, `social_world`). With the launch scope on
+## (`LaunchScope`, the release build's one switch) the playtest build offers
+## the launch's worlds (`ares/release/launch_worlds`) instead.
 var playtest := false
 var _offered := {}
 
@@ -42,11 +44,15 @@ func scan() -> void:
 
 
 ## Picks the worlds offered: every one, or for the playtest build only the
-## ready list (`ares/release/playtest_worlds`).
+## ready list (`ares/release/playtest_worlds`), or the launch's list when the
+## launch scope applies (`LaunchScope.applies`, which also turns it on).
 func choose_offered(as_playtest: bool) -> void:
 	playtest = as_playtest
 	_offered.clear()
+	LaunchScope.on = LaunchScope.applies(as_playtest)
 	var ready: PackedStringArray = ProjectSettings.get_setting("ares/release/playtest_worlds", PackedStringArray())
+	if LaunchScope.on:
+		ready = LaunchScope.worlds()
 	for id: String in _worlds:
 		if not as_playtest or id in ready:
 			_offered[id] = true

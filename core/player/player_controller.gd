@@ -973,9 +973,9 @@ func step_watch(step: int) -> void:
 		var next: String = tabs[clampi(tabs.find(tab) + signi(step), 0, tabs.size() - 1)]
 		if next != tab:
 			_tab_focus[tab] = watch_focus
-			watch_focus = int(_tab_focus.get(next, slots.find(Hud.Wrist.TAB_SLOTS[next][0])))
+			watch_focus = int(_tab_focus.get(next, slots.find(Hud.Wrist.row(next)[0])))
 		return
-	var row: Array = Hud.Wrist.TAB_SLOTS[tab]
+	var row: Array = Hud.Wrist.row(tab)
 	var id: String = row[clampi(row.find(slots[watch_focus]) + signi(step), 0, row.size() - 1)]
 	watch_focus = slots.find(id)
 	_tab_focus[tab] = watch_focus

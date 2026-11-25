@@ -459,14 +459,15 @@ func _ready() -> void:
 	register("engine_coil", "Engine Coil", Rarity.RARE, 450, ["material"], {},
 			"A winding from the Stilled Engine, still faintly warm. Every Mk3 needs one.")
 	# The Spore Marsh's goods (DESIGN.md "Spore Marsh"): what its wildlife
-	# and forests pay, and what its melee blueprints are made from.
-	register("stalker_fang", "Stalker Fang", Rarity.COMMON, 40, ["material"], {},
+	# and forests pay, and what its melee blueprints are made from. Tagged
+	# "wildlife": only wildlife drops them.
+	register("stalker_fang", "Stalker Fang", Rarity.COMMON, 40, ["material", "wildlife"], {},
 			"A hooked fang from a marsh stalker. Traders take them by the jar.")
-	register("chitin_plate", "Shellback Chitin", Rarity.UNCOMMON, 120, ["material"], {},
+	register("chitin_plate", "Shellback Chitin", Rarity.UNCOMMON, 120, ["material", "wildlife"], {},
 			"A plate of shell, light and harder than steel.")
-	register("spore_sac", "Spore Sac", Rarity.UNCOMMON, 150, ["material"], {},
+	register("spore_sac", "Spore Sac", Rarity.UNCOMMON, 150, ["material", "wildlife"], {},
 			"A bloater's sac, sealed. Do not squeeze.")
-	register("glowcap", "Glowcap", Rarity.RARE, 400, ["material"], {},
+	register("glowcap", "Glowcap", Rarity.RARE, 400, ["material", "wildlife"], {},
 			"A cap from the heart of a fungus forest. It glows for weeks after it is cut.")
 	register("lattice_shard", "Lattice Shard", Rarity.RELIC, 2500, ["relic"])
 	# The Pit's Blade Tournament (DESIGN.md "Gladiator arena"): its champion's
@@ -715,18 +716,26 @@ func total_value(ids: Array) -> int:
 
 
 ## Picks one item id from a weighted table: [{ "id": String, "weight": float }].
+## Anything the launch holds back (`LaunchScope`) is never picked: the rest
+## share its weight.
 func roll(table: Array, rng: RandomNumberGenerator) -> String:
 	var total := 0.0
+	var last := ""
 	for entry: Dictionary in table:
+		if LaunchScope.holds_item(entry.id):
+			continue
 		total += entry.weight
+		last = entry.id
 	if total <= 0.0:
 		return ""
 	var pick := rng.randf() * total
 	for entry: Dictionary in table:
+		if LaunchScope.holds_item(entry.id):
+			continue
 		pick -= entry.weight
 		if pick <= 0.0:
 			return entry.id
-	return table.back().id
+	return last
 
 
 ## "3x Scrap Metal, 1x Power Cell" style summary, most valuable first.

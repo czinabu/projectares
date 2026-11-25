@@ -11,6 +11,7 @@ rows marked **pre-playtest** come before the friends playtest.
 
 | Item | State | Notes |
 | --- | --- | --- |
+| Early Access launch scope: the base, the Concourse, Ashfront (24 players) and Frostline (8), the rest held back (DESIGN.md "More worlds") | Built | One switch, `LaunchScope` (`core/release/launch_scope.gd`, `ares/release/launch_scope`), applied only in the release ("playtest") build; the dev builds (Windows and Linux) keep everything. It offers only the launch worlds, shutters the arena gate and the Exchange, hides the Racing app, the trophy shelf, artifact case, lounge and base visits, and keeps the rover, mech, jet, their blueprints and artifacts out of shops, loot, jobs, the fabricator and the watch. See `docs/systems/launch-scope.md`. Missing: official servers in one US region. |
 | Main hub as a safe social space | Built | The Concourse: safe zone, gates, shops, clan hall, arena gate, look tags, set part way up a megacity (`worlds/plaza/megacity.gd`): towers from a canyon floor far below to over a kilometre above, lit windows, skyways, signs and air traffic, view only. |
 | Hub vehicles limited to harmless fun | Partly | Bikes can be ridden in the plaza and nobody can be hurt. An abandoned one does not pack itself away: a safe zone returns before `Raid._tick_vehicles`, so a thrown vehicle there is never removed. |
 | Watch skins shown off in the hub | Missing | No watch skin items yet. |

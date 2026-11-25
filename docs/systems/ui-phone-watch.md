@@ -327,3 +327,7 @@ date in the same PR.
   face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
   the base).
+- The launch scope (`docs/systems/launch-scope.md`) hides the phone's
+  Racing app and the "Invite to base" button, and leaves the artifact icon
+  off the watch: ask `Hud.Wrist.row(tab)` and `tab_line`, never `TAB_SLOTS`
+  directly, for the icons a tab shows.

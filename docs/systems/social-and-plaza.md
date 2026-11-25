@@ -136,3 +136,8 @@ date in the same PR.
   other world's session with a portal drop (`_onward_route`), the arena's,
   or the plaza's. It never emits `portal_entered`, and no gear goes from
   one world straight into another (Caleb's call: it banks home first).
+- The launch scope (`docs/systems/launch-scope.md`) shutters the arena gate
+  and the Exchange (`_shutter`, a solid front with "OPENING SOON"), leaves
+  the held worlds off the gate terrace and the War Room, and holds back base
+  visits; a talker whose lines are about something held says
+  `HELD_LINES` instead.

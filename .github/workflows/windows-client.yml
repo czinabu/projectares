@@ -195,6 +195,28 @@ jobs:
         with:
           name: ${{ env.DEV_NAME }}
           path: dist-dev/*.zip
+      - name: Export the Linux dev build
+        # Every world and everything held back from a release, for working
+        # on a Linux laptop. A workflow artifact only, like the Windows one.
+        run: |
+          # Another step (the dev update manifests) may have exported it.
+          mkdir -p build/linux-dev
+          if [ ! -s build/linux-dev/ProjectAresDev.pck ]; then
+            "$GODOT" --headless --path . --export-release "Linux Dev" build/linux-dev/ProjectAresDev.x86_64
+          fi
+          test -s build/linux-dev/ProjectAresDev.x86_64
+          test -s build/linux-dev/ProjectAresDev.pck
+          name="ProjectAresDev-linux-$(git rev-parse --short HEAD)"
+          mkdir -p "dist-dev-linux/$name"
+          cp build/linux-dev/ProjectAresDev.x86_64 build/linux-dev/ProjectAresDev.pck "dist-dev-linux/$name/"
+          chmod +x "dist-dev-linux/$name/ProjectAresDev.x86_64"
+          echo "$name (commit $(git rev-parse HEAD))" > "dist-dev-linux/$name/BUILD.txt"
+          tar -C dist-dev-linux -czf "dist-dev-linux/$name.tar.gz" "$name"
+          echo "DEV_LINUX_NAME=$name" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DEV_LINUX_NAME }}
+          path: dist-dev-linux/*.tar.gz
       # The dev build's private update (Updater.dev_artifact): fixed names, so
       # the game asks for the newest by name; only builds of main.
       - uses: actions/upload-artifact@v4

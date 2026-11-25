@@ -9,8 +9,10 @@ date in the same PR.
   offers only the worlds in the project setting
   `ares/release/playtest_worlds` (`Worlds.choose_offered`); a world left
   out is still loaded, so its items and old saves stay good, but it is
-  never listed, offered or travelled to. The "Windows Dev" preset has no
-  tag and offers every world; CI exports it as a workflow artifact only.
+  never listed, offered or travelled to. The "Windows Dev" and "Linux Dev"
+  presets have no tag and offer every world; CI exports them as workflow
+  artifacts only (`ProjectAresDev-windows-<commit>`,
+  `ProjectAresDev-linux-<commit>`).
   Both update themselves (`Updater`), each only from its own channel
   (`Updater.channel`: "release" for the playtest build, "dev" for any
   other exported build), and a manifest of the other channel is refused
@@ -29,7 +31,9 @@ date in the same PR.
   the playtest build from the editor. A world joins the list once it runs
   smoothly (the frame bench, `--world <id>`) and its core loop works;
   changing the list is Caleb's call. Never branch the code for a build:
-  gate on the tag or the list.
+  gate on the tag or the list. The release build also applies the launch
+  scope (`docs/systems/launch-scope.md`), which offers the launch's worlds
+  instead of this list; the dev builds never apply it.
 - The game updates itself (`core/update/updater.gd`, the `Updater`
   autoload, second after `Boot` and, like it, free of project classes). The
   Windows and Linux clients keep their pack beside the exe (`embed_pck`

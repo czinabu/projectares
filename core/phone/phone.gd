@@ -963,6 +963,8 @@ func go_back() -> void:
 func open_app(p_app: String) -> void:
 	if p_app not in APPS and p_app != HOME:
 		return
+	if p_app == "racing" and LaunchScope.holds("races"):
+		return
 	app = p_app
 	chat_with = ""
 	mirror_picking = false
@@ -1533,6 +1535,7 @@ func refresh(redraw := true) -> void:
 			"servers": badge = 1 if update_waiting() else 0
 		_icons[app_name].badge = badge
 	_icons["console"].visible = DevMode.active()  # DEV MODE
+	_icons["racing"].visible = not LaunchScope.holds("races")
 	_update_readouts()
 	if not is_open or not redraw:
 		return
@@ -1618,7 +1621,8 @@ func _draw_contacts() -> void:
 				row.add_child(_button("Message", open_chat.bind(entry.id)))
 			if entry.online:
 				row.add_child(_button("Invite to raid", send_invite.bind(entry.id, "world")))
-				row.add_child(_button("Invite to base", send_invite.bind(entry.id, "base")))
+				if not LaunchScope.holds("base_visits"):
+					row.add_child(_button("Invite to base", send_invite.bind(entry.id, "base")))
 		box.add_child(row)
 		if not entry.blocked and entry.online:
 			# Playing together: a squad, and a friend's world to go to.

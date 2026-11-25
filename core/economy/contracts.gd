@@ -367,7 +367,7 @@ static func reward_for(tag: String, seed_value: int, known: Array = []) -> Strin
 		return ""
 	var pool: Array[String] = []
 	for id: String in ItemDB.all_ids():
-		if ItemDB.has_tag(id, tag) and id not in known:
+		if ItemDB.has_tag(id, tag) and id not in known and not LaunchScope.holds_item(id):
 			pool.append(id)
 	if pool.is_empty():
 		return ""

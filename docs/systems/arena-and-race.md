@@ -125,3 +125,6 @@ date in the same PR.
   every track: check with
   `godot --headless --fixed-fps 60 --path . res://tests/race_bench.tscn`
   and tune the race profiles, never the combat stats.
+- The launch scope (`docs/systems/launch-scope.md`) holds back the arena
+  ("arena": no arena session, no way in) and Meridian (not offered), so a
+  release build has neither until it is lifted.
