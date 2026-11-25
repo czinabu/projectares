@@ -32,20 +32,20 @@ const RigModel := preload("res://core/visual/rig_model.gd")
 ## their dens (`HOUND`, built for the map's "spawn_guard" markers of
 ## faction "hound").
 const ROSTER := {
-	"grunt": {"name": "Crown Zealot", "look": "zealot", "chance": 6.0, "health": 100.0, "armor": 10.0,
-			"walk": 5.0, "sprint": 7.8, "weapon": "gun", "gun": "Ember Carbine", "damage": 10.0, "spread": 2.6,
-			"interval": 0.13, "metas": {"range": 14.0, "hunters": 1}},
-	"marksman": {"name": "Crown Sharpshooter", "look": "sharpshooter", "chance": 2.0, "health": 90.0, "armor": 20.0,
-			"walk": 4.2, "sprint": 6.6, "weapon": "gun", "gun": "Long Rifle", "damage": 28.0, "spread": 0.8,
-			"interval": 0.9, "metas": {"sight": 90.0, "range": 45.0, "burst": Vector2(0.1, 1.4)}},
-	"brute": {"name": "Slag Brute", "look": "slag_brute", "chance": 1.5, "health": 260.0, "armor": 40.0,
-			"walk": 5.0, "sprint": 8.6, "weapon": "blade", "blade": "Cleaver", "damage": 30.0, "windup": 0.55,
-			"reach": 2.6},
+	"grunt": {"name": "Crown Zealot", "look": "zealot", "chance": 6.0, "health": 115.0, "armor": 0.0,
+			"walk": 5.0, "sprint": 7.8, "weapon": "gun", "gun": "Ember Carbine", "damage": 22.0, "spread": 1.5,
+			"interval": 0.1, "metas": {"range": 14.0, "hunters": 1}},
+	"marksman": {"name": "Crown Sharpshooter", "look": "sharpshooter", "chance": 2.0, "health": 115.0, "armor": 0.0,
+			"walk": 4.3, "sprint": 6.8, "weapon": "gun", "gun": "Long Rifle", "damage": 50.0, "spread": 0.35,
+			"interval": 0.75, "metas": {"sight": 90.0, "reach": 90.0, "range": 45.0, "burst": Vector2(0.12, 0.9)}},
+	"brute": {"name": "Slag Brute", "look": "slag_brute", "chance": 1.5, "health": 225.0, "armor": 0.0,
+			"walk": 5.2, "sprint": 9.0, "weapon": "blade", "blade": "Cleaver", "damage": 48.0, "windup": 0.5,
+			"heavy_windup": 0.9, "heavy_mult": 1.25, "reach": 2.6, "metas": {"melee_tempo": 0.85}},
 	# Slow and armored, a heavy bash from the front, a soft rear behind (the
 	# marsh's shellback's way of fighting), and the ground burns behind it.
-	"crawler": {"name": "Magma Crawler", "look": "magma_crawler", "chance": 1.0, "health": 320.0, "armor": 60.0,
-			"walk": 2.6, "sprint": 3.8, "weapon": "blade", "blade": "Molten Bash", "damage": 26.0, "windup": 0.7,
-			"reach": 2.6, "height": 1.6, "rear": 2.0, "color": Color(0.2, 0.16, 0.14),
+	"crawler": {"name": "Magma Crawler", "look": "magma_crawler", "chance": 1.0, "health": 330.0, "armor": 65.0,
+			"walk": 3.0, "sprint": 5.8, "weapon": "blade", "blade": "Molten Bash", "damage": 44.0, "windup": 0.6,
+			"reach": 2.6, "height": 1.6, "rear": 2.0, "flat_armor": true, "tough": [1.0, 0.92, 0.8], "color": Color(0.2, 0.16, 0.14),
 			"metas": {"aim_turn": 90.0, "trail": {"every": 1.5, "radius": 1.8, "damage": 8.0, "seconds": 6.0,
 			"kind": "fire"}}},
 }
@@ -53,7 +53,7 @@ const ROSTER := {
 ## dens on the outer stacks. Fast and fragile, it circles, feints and darts
 ## in to bite.
 const HOUND := {"name": "Cinder Hound", "look": "cinder_hound", "health": 80.0, "armor": 10.0, "walk": 6.4,
-		"sprint": 10.0, "weapon": "blade", "blade": "Cinder Fangs", "damage": 12.0, "windup": 0.3, "reach": 2.3,
+		"sprint": 10.0, "weapon": "blade", "blade": "Cinder Fangs", "damage": 20.0, "windup": 0.3, "reach": 2.3,
 		"color": Color(0.17, 0.14, 0.13), "metas": {"feint_chance": 0.35, "dash": 0.4, "hunters": 2}}
 ## The Sky Leviathan (DESIGN.md "Basalt Rift"): its weak spots at three
 ## heights, each a bot on one of the ship's seats (its "part", the bot's
@@ -135,6 +135,15 @@ const CROWN_TABLE := [
 ## help): about half a second for anyone.
 const LAVA_DAMAGE := 50.0
 
+## Aim skill by the risk zone a bot arrived in, as Ashfront's (DESIGN.md
+## "Enemy balance"): the outer ring is where new players learn.
+const BOT_SKILL := [Vector2(0.36, 0.56), Vector2(0.42, 0.66), Vector2(0.48, 0.72)]
+## Health and armor by the risk zone, a share of the row's (the outer
+## ring's): Ashfront's soldier curve.
+const ZONE_TOUGH := [1.0, 1.17, 1.22]
+## A warlord's health and armor (`make_warlord`).
+const WARLORD_HEALTH := 280.0
+const WARLORD_ARMOR := 48.0
 ## The faction every roster kind fights for. A second army is a second
 ## faction on some "spawn_bot" markers (their meta "faction").
 const FACTION := "rift"
@@ -352,10 +361,13 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.rear_damage_mult = float(row.get("rear", bot.rear_damage_mult))
 	# Further in is tougher (the Raid sets "zone" before this).
 	var tier := clampi(int(bot.get_meta("zone", 0)), 0, 2)
-	var tough := 1.0 + tier * 0.25
+	# A kind whose fighting already sharpens a lot further in (a slow melee
+	# beast that feints and kicks in the core) may keep its own curve.
+	var tough: float = row.get("tough", ZONE_TOUGH)[tier]
 	bot.health.max_health = float(row["health"]) * tough
 	bot.health.health = bot.health.max_health
-	bot.health.set_armor(float(row["armor"]) * tough)
+	# A shell is as thick in every ring ("flat_armor"): only its health grows.
+	bot.health.set_armor(float(row["armor"]) * (1.0 if row.get("flat_armor", false) else tough))
 	var metas: Dictionary = row.get("metas", {})
 	for key: String in metas:
 		bot.set_meta(key, metas[key])
@@ -366,7 +378,9 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		blade.display_name = row["blade"]
 		blade.light_damage = row["damage"]
 		blade.light_windup = row["windup"]
-		blade.heavy_damage = float(row["damage"]) * 1.6
+		blade.heavy_damage = float(row["damage"]) * float(row.get("heavy_mult", 1.6))
+		if row.has("heavy_windup"):
+			blade.heavy_windup = row["heavy_windup"]
 		blade.light_stamina = 0.0
 		blade.reach = row["reach"]
 		bot.equip_weapon(blade)
@@ -417,6 +431,21 @@ func _roll_kind(rng: RandomNumberGenerator) -> String:
 	return ROSTER.keys()[0]
 
 
+## The Lord of the Crown is one of the cult's people, never a Magma
+## Crawler: a crawler rolled as a warlord is turned away and rolled again.
+func bot_allowed(bot: Actor, raid: Node) -> bool:
+	var r := raid as Raid
+	return not (bot.get_meta("kind", "") == "crawler" and r != null and r.warlords.has(bot))
+
+
+## Bots further in aim better (`BOT_SKILL`); a warlord aims like the
+## core's best, and a little past them.
+func bot_skill_range(bot: Actor, warlord: bool) -> Vector2:
+	if warlord:
+		return Vector2(0.62, 0.85)
+	return BOT_SKILL[clampi(int(bot.get_meta("zone", 1)), 0, 2)]
+
+
 ## A warlord (a world event, or a "spawn_boss" marker) is a fight of its own:
 ## more health, real armor, a better gun. Keep this free of randomness:
 ## clients build the same warlord from it.
@@ -424,6 +453,22 @@ func make_warlord(bot: Actor) -> void:
 	bot.display_name = "Lord of the Crown"
 	# A body of its own (`Look.SKINS` "crown_lord"), not a brute with more health.
 	bot.set_meta("look", "crown_lord")
-	bot.health.max_health = 900.0
-	bot.health.health = 900.0
-	bot.health.set_armor(120.0)
+	# It fights for itself, not as its kind's doctrine (Ashfront's warlord
+	# numbers, DESIGN.md "Enemy balance": a squad fight, 10-35% one on one).
+	for key in ["range", "reach", "sight", "burst", "flankers", "hunters", "dash", "feint_chance"]:
+		bot.remove_meta(key)
+	bot.walk_speed = maxf(bot.walk_speed, 4.5)
+	bot.sprint_speed = maxf(bot.sprint_speed, 7.0)
+	bot.health.max_health = WARLORD_HEALTH
+	bot.health.health = WARLORD_HEALTH
+	bot.health.set_armor(WARLORD_ARMOR)
+	var gun := bot.get_active_weapon() as Gun
+	if gun:
+		gun.damage = 27.0
+		gun.spread_deg = 0.25
+		gun.fire_interval = 0.12
+	var blade := bot.get_active_weapon() as MeleeWeapon
+	if blade:
+		blade.light_damage = 44.0
+		blade.heavy_damage = 55.0
+		blade.reach = 2.8

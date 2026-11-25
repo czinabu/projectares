@@ -143,3 +143,8 @@ Leviathan)", "(part three, built: the rig rewards)"). Check it with
   markers of faction "hound" (`HOUND`), three to a den on each outer
   stack (`HOUND_PACK`), and fight for the cult (faction "rift"). They come
   back like any guard (`guard_respawn_time`).
+- The Lord of the Crown is always one of the cult's people: `bot_allowed`
+  turns away a crawler rolled as a warlord. The roster's numbers follow
+  Ashfront's for the same roles (`BOT_SKILL`, `ZONE_TOUGH`, DESIGN.md
+  "Enemy balance"); a row may keep its own ring curve ("tough") or a shell
+  as thick in every ring ("flat_armor").

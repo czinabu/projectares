@@ -500,7 +500,7 @@ and a rising chirp; `Raid.grid_called`, online `NetSession._grid_call`).
 The grid's boss is the Engine Sentinel, which stands guard at the hatch (the
 map's "spawn_boss" marker, meta "boss" = "sentinel", sent to clients with
 the spawn so they build the same machine). It is a Warden built three
-metres tall (650 health, 40 armor) whose Grid Lance must hold a teal
+metres tall (480 health, 40 armor) whose Grid Lance must hold a teal
 tracking beam on you for 1.2 s before it fires (30 a shot), so breaking the
 line is the answer, and whose back, its heat vent, takes double. It is made
 for one player (Caleb's call: solo works too): each other player within 45 m
@@ -1031,6 +1031,52 @@ outer pair at about a third; a Marsh stalker pack of five loses 70% of
 the time, so a pack is not yet the danger it is meant to be; broodlings
 win 37% of pairs and 77% of fives.
 
+**The other worlds tuned (25 Nov, Caleb's call: tune enemies up to the
+bands).** The Dune Sea and the Rift now use Ashfront's tuned numbers
+for the same roles: an army rifle at 28 a hit (the Rift's zealots a
+quicker carbine at 22), aim skill by ring (`BOT_SKILL`), health growing
+by ring on Ashfront's soldier curve (`ZONE_TOUGH`), brutes and runners
+as Ashfront's heavies and runners, and warlords at Ashfront's 280 health
+and 48 armor. The Magma Crawler keeps one shell in every ring
+("flat_armor") and its own health curve, since a melee beast already
+sharpens a lot further in (it feints, dashes and kicks in the core). The
+Lord of the Crown is never a crawler (`bot_allowed`). The duel field
+drops "edge_guard" (no mesa, no navmesh), which had kept the Rift's melee
+kinds from taking a step. Frostline's Engine Sentinel is 480 health (was
+650) and the Heart Warden 620 health and 21 a shot (was 1400 and 24);
+the Grey Matriarch 520 (was 900), the Drowned Lurker 1400 (was 1800);
+the Shellback bashes for 36 (was 24) and moves a little quicker; a
+Cinder Hound bites for 20, so a den of three is a fight. 30-40 duels a
+row, seed 1:
+
+| Enemy | 12 m | 25 m | Band |
+| --- | --- | --- | --- |
+| Dune grunt, outer / core | 93% / 67% | 83% / 77% | 85-97% / 65-85% |
+| Dune marksman, outer / core | 100% / 90% | 100% / 87% | 85-100% / 75-100% |
+| Dune brute, outer / core | 77% / 83% | 83% / 50% | 75-95% / 55-80% |
+| Salvage Runner, outer / core | 77% / 80% | 100% / 63% | 85-97% / 65-85% |
+| Wreck Baron | 40% | 17% | 10-35% |
+| Crown Zealot, outer / core | 97% / 73% | 93% / 77% | 85-97% / 65-85% |
+| Crown Sharpshooter, outer / core | 100% / 97% | 100% / 93% | 85-100% / 75-100% |
+| Slag Brute, outer / core | 80% / 70% | 80% / 67% | 75-95% / 55-80% |
+| Magma Crawler, outer / core | 75% / 52% | 95% / 52% | 60-85% / 50-75% |
+| Cinder Hound (three: 47% / 73%) | 100% | 100% | 90-100% |
+| Lord of the Crown | 27% | 20% | 10-35% |
+| Engine Sentinel | 25% | 25% | 10-35% |
+| Heart Warden | 20% | 15% | 5-30% |
+| Grey Matriarch | 20% | 12% | 10-35% |
+| Shellback | 72% | 78% | 55-80% |
+
+At 30 duels a row swings about ten points either way, so the rows a few
+points out (the runner, the outer Dune grunt at 25 m, the core brute at
+25 m, the Baron at 12 m) are inside the noise, as Ashfront's runner is. A
+crawler is slow, so at 25 m a player who keeps back wins nearly always:
+that is its role. The ambushers (the Lurker, the Dune Burrower) cannot be
+read here: the bench starts them standing in the open, so they lose every
+duel; their danger is the ambush, which only play shows. Groups now read
+as Ashfront's: two core grunts beat the reference 80-87% of the time,
+three or five every time.
+
 ### Group fights (Caleb's call)
 
 One soldier is a fair fight; five that all open up at once is a wall of
@@ -1129,9 +1175,8 @@ names. Caleb chose a roster of their own for each:
     and follows further (up to two and a half times), where everyone
     else sees less. Burrowers and raiders leave each other be.
 
-First duel bench numbers (20 duels, 12 and 25 m) put every new kind on the
-easy side of its band, as the brutes already were; tuning waits for the
-guide's balance step.
+Their numbers are tuned to the duel bench bands ("Enemy balance", the
+other worlds tuned).
 
 ### Enemy bodies (Caleb's call: no stock robots in every world)
 
@@ -1581,7 +1626,7 @@ and a fight is short. The planet's mist lies low over everything (its
   down is not. Heavy weapons never foul (there are none here anyway), and
   every other world's guns are untouched. Bots clear their own jams.
 - **The Grey Matriarch.** The core's boss, at her den in the north forest:
-  a stalker 2.9 m tall, 900 health, quick for her size and feinting most of
+  a stalker 2.9 m tall, 520 health, quick for her size and feinting most of
   the time, made for one player and tougher for each other player near her
   (`boss_party_scale`). She carries what a warlord carries, an artifact
   more often than not, sometimes her trophy (the Matriarch's Fang, a

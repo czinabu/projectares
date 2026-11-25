@@ -22,20 +22,21 @@ const MapScript := preload("map.gd")
 ## and the Dune Burrower under the sand (`BURROWER`, built for the map's
 ## "spawn_guard" markers of faction "burrower").
 const ROSTER := {
-	"grunt": {"name": "Sand Raider", "look": "scavenger", "chance": 6.0, "health": 100.0, "armor": 0.0,
-			"walk": 4.8, "sprint": 7.4, "weapon": "gun", "gun": "Worn Rifle", "damage": 11.0, "spread": 3.2,
-			"interval": 0.16},
-	"marksman": {"name": "Dune Marksman", "look": "raider", "chance": 2.0, "health": 90.0, "armor": 20.0,
-			"walk": 4.2, "sprint": 6.6, "weapon": "gun", "gun": "Long Rifle", "damage": 28.0, "spread": 0.8,
-			"interval": 0.9, "metas": {"sight": 70.0, "range": 35.0, "burst": Vector2(0.1, 1.4)}},
-	"brute": {"name": "Scrap Brute", "look": "scrap_brute", "chance": 1.5, "health": 260.0, "armor": 40.0,
-			"walk": 5.0, "sprint": 8.6, "weapon": "blade", "blade": "Cleaver", "damage": 30.0, "windup": 0.55,
-			"reach": 2.6},
+	"grunt": {"name": "Sand Raider", "look": "scavenger", "chance": 6.0, "health": 115.0, "armor": 0.0,
+			"walk": 4.8, "sprint": 7.4, "weapon": "gun", "gun": "Worn Rifle", "damage": 28.0, "spread": 1.32,
+			"interval": 0.12},
+	"marksman": {"name": "Dune Marksman", "look": "raider", "chance": 2.0, "health": 115.0, "armor": 0.0,
+			"walk": 4.3, "sprint": 6.8, "weapon": "gun", "gun": "Long Rifle", "damage": 50.0, "spread": 0.35,
+			"interval": 0.75, "metas": {"sight": 70.0, "reach": 70.0, "range": 45.0, "burst": Vector2(0.12, 0.9)}},
+	"brute": {"name": "Scrap Brute", "look": "scrap_brute", "chance": 1.5, "health": 225.0, "armor": 0.0,
+			"walk": 5.2, "sprint": 9.0, "weapon": "blade", "blade": "Cleaver", "damage": 48.0, "windup": 0.5,
+			"heavy_windup": 0.9, "heavy_mult": 1.25, "reach": 2.6, "metas": {"melee_tempo": 0.85}},
 	# Light and quick: it runs in on a flank, dodging, while the rifles
 	# keep you down, and guts you with a knife.
-	"runner": {"name": "Salvage Runner", "look": "salvage_runner", "chance": 2.0, "health": 80.0, "armor": 0.0,
-			"walk": 5.6, "sprint": 9.2, "weapon": "blade", "blade": "Salvage Knife", "damage": 16.0, "windup": 0.3,
-			"reach": 2.0, "item": "knife_gutter", "metas": {"dash": 0.5, "hunters": 2, "flankers": 2, "feint_chance": 0.3}},
+	"runner": {"name": "Salvage Runner", "look": "salvage_runner", "chance": 2.0, "health": 150.0, "armor": 0.0,
+			"walk": 5.6, "sprint": 10.5, "weapon": "blade", "blade": "Salvage Knife", "damage": 34.0, "windup": 0.32,
+			"reach": 2.2, "item": "knife_gutter",
+			"metas": {"dash": 0.7, "hunters": 2, "flankers": 2, "feint_chance": 0.3, "melee_tempo": 1.1}},
 }
 ## A Dune Burrower: an ambusher that lies under the sand at its post, sees
 ## (feels) only what comes close, comes up with a lunge and a heavy bite,
@@ -47,6 +48,15 @@ const BURROWER := {"name": "Dune Burrower", "look": "dune_burrower", "health": 2
 		"reach": 2.8, "height": 1.4, "color": Color(0.6, 0.48, 0.32),
 		"metas": {"lies_low": true, "sight": 9.0, "fov": 360.0, "leash": 14.0, "dash": 0.6, "storm_bold": 1.5}}
 const BURROWER_FACTION := "burrower"
+## Aim skill by the risk zone a bot arrived in, as Ashfront's (DESIGN.md
+## "Enemy balance"): the outer ring is where new players learn.
+const BOT_SKILL := [Vector2(0.36, 0.56), Vector2(0.42, 0.66), Vector2(0.48, 0.72)]
+## Health and armor by the risk zone, a share of the row's (the outer
+## ring's): Ashfront's soldier curve.
+const ZONE_TOUGH := [1.0, 1.17, 1.22]
+## A warlord's health and armor (`make_warlord`).
+const WARLORD_HEALTH := 280.0
+const WARLORD_ARMOR := 48.0
 ## The faction every roster kind fights for. A second army is a second
 ## faction on some "spawn_bot" markers (their meta "faction").
 const FACTION := "dunes"
@@ -241,7 +251,7 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		bot.body_color = row["color"]
 	# Further in is tougher (the Raid sets "zone" before this).
 	var tier := clampi(int(bot.get_meta("zone", 0)), 0, 2)
-	var tough := 1.0 + tier * 0.25
+	var tough: float = ZONE_TOUGH[tier]
 	bot.health.max_health = float(row["health"]) * tough
 	bot.health.health = bot.health.max_health
 	bot.health.set_armor(float(row["armor"]) * tough)
@@ -255,7 +265,9 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 		blade.display_name = row["blade"]
 		blade.light_damage = row["damage"]
 		blade.light_windup = row["windup"]
-		blade.heavy_damage = float(row["damage"]) * 1.6
+		blade.heavy_damage = float(row["damage"]) * float(row.get("heavy_mult", 1.6))
+		if row.has("heavy_windup"):
+			blade.heavy_windup = row["heavy_windup"]
 		blade.light_stamina = 0.0
 		blade.reach = row["reach"]
 		# Held as the item it is ("item"), so it looks like one.
@@ -296,6 +308,14 @@ func _roll_kind(rng: RandomNumberGenerator) -> String:
 	return ROSTER.keys()[0]
 
 
+## Bots further in aim better (`BOT_SKILL`); a warlord aims like the
+## core's best, and a little past them.
+func bot_skill_range(bot: Actor, warlord: bool) -> Vector2:
+	if warlord:
+		return Vector2(0.62, 0.85)
+	return BOT_SKILL[clampi(int(bot.get_meta("zone", 1)), 0, 2)]
+
+
 ## A warlord (a world event, or a "spawn_boss" marker) is a fight of its own:
 ## more health, real armor, a better gun. Keep this free of randomness:
 ## clients build the same warlord from it.
@@ -303,6 +323,22 @@ func make_warlord(bot: Actor) -> void:
 	bot.display_name = "Wreck Baron"
 	# A body of its own (`Look.SKINS` "baron"), not a brute with more health.
 	bot.set_meta("look", "baron")
-	bot.health.max_health = 900.0
-	bot.health.health = 900.0
-	bot.health.set_armor(120.0)
+	# It fights for itself, not as its kind's doctrine (Ashfront's warlord
+	# numbers, DESIGN.md "Enemy balance": a squad fight, 10-35% one on one).
+	for key in ["range", "reach", "sight", "burst", "flankers", "hunters", "dash", "feint_chance"]:
+		bot.remove_meta(key)
+	bot.walk_speed = maxf(bot.walk_speed, 4.5)
+	bot.sprint_speed = maxf(bot.sprint_speed, 7.0)
+	bot.health.max_health = WARLORD_HEALTH
+	bot.health.health = WARLORD_HEALTH
+	bot.health.set_armor(WARLORD_ARMOR)
+	var gun := bot.get_active_weapon() as Gun
+	if gun:
+		gun.damage = 27.0
+		gun.spread_deg = 0.25
+		gun.fire_interval = 0.12
+	var blade := bot.get_active_weapon() as MeleeWeapon
+	if blade:
+		blade.light_damage = 44.0
+		blade.heavy_damage = 55.0
+		blade.reach = 2.8

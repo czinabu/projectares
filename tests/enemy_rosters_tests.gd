@@ -60,7 +60,7 @@ static func _rift_roster(t: Node, holder: Node3D) -> void:
 	var trail: Dictionary = crawler.get_meta("trail", {})
 	t.check(crawler.display_name == "Magma Crawler" and crawler.faction == "rift" and trail.get("kind", "") == "fire"
 			and float(trail.get("damage", 0.0)) > 0.0, "a Magma Crawler fights for the cult and leaves burning ground")
-	t.check(crawler.rear_damage_mult > 1.0 and crawler.health.max_health >= 300.0 and crawler.walk_speed < 3.0,
+	t.check(crawler.rear_damage_mult > 1.0 and crawler.health.max_health >= 300.0 and crawler.walk_speed < 4.0,
 			"slow and armored, soft behind")
 	crawler.free()
 	var hound := _equipped(rift, holder, "hound", 1)

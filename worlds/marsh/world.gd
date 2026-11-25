@@ -102,7 +102,7 @@ const ELDER_CHARGE_EVERY := [6.0, 3.5]
 ## chamber and follows anyone in it.
 const DROWNED := "drowned"
 const DROWNED_HEIGHT := 2.6
-const DROWNED_HEALTH := 1800.0
+const DROWNED_HEALTH := 1400.0
 const DROWNED_ARMOR := 70.0
 const DROWNED_SIGHT := 30.0
 ## A Rootway keeper's vault (Caleb's call on the Engine's: a share for
@@ -117,7 +117,7 @@ const ROOT_VAULT_PAINT := 0.05
 ## person's height, quick for her size, feinting most of the time. Made for
 ## one player; each other player near her makes her tougher.
 const MATRIARCH_HEIGHT := 2.9
-const MATRIARCH_HEALTH := 900.0
+const MATRIARCH_HEALTH := 520.0
 const MATRIARCH_ARMOR := 30.0
 const MATRIARCH_PARTY := 0.6
 ## The main source of artifacts (Caleb's call): the Matriarch carries one
@@ -465,8 +465,8 @@ func _make_shellback(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.set_meta("aim_turn", 90.0)
 	bot.body_color = Color(0.42, 0.38, 0.3)
 	bot.set_stand_height(SHELLBACK_HEIGHT, 0.4)
-	bot.walk_speed = 2.6
-	bot.sprint_speed = 3.8
+	bot.walk_speed = 3.0
+	bot.sprint_speed = 4.8
 	bot.health.max_health = SHELLBACK_HEALTH
 	bot.health.health = SHELLBACK_HEALTH
 	bot.health.set_armor(SHELLBACK_ARMOR)
@@ -475,7 +475,7 @@ func _make_shellback(bot: Actor, rng: RandomNumberGenerator) -> void:
 		bot.inventory.add_item(item)
 	var bash := MeleeWeapon.new()
 	bash.display_name = "Shell Bash"
-	bash.light_damage = 24.0
+	bash.light_damage = 36.0
 	bash.light_windup = 0.65
 	bash.light_stamina = 0.0
 	bash.reach = 2.6
