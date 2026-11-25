@@ -317,6 +317,8 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	var row: Dictionary = ROSTER[kind]
 	if bot.faction == "":
 		bot.faction = FACTION
+	# On foot over lava: every step is checked to stay on the mesa.
+	bot.set_meta("edge_guard", true)
 	bot.set_meta("kind", kind)
 	bot.display_name = row["name"]
 	bot.set_meta("look", row["look"])

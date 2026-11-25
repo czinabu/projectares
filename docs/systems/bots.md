@@ -118,7 +118,14 @@ date in the same PR.
   (`Strongpoint.hot_at`) keeps every team off it until the war is that
   hot, then sends only `WorldDef.elite_kinds` (`WarCommander.plan`). A
   bot on foot that gets nowhere jumps and steps aside
-  (`BotBrain._climb_out`).
+  (`BotBrain._climb_out`). A walking bot's goal is moved onto the
+  navmesh when it asks for a path (`_onto_nav`), and once the path has
+  run out it heads for the path's real end and stops within
+  `ARRIVE_STOP`, never straight on at a goal past a drop; a patrol point
+  is moved onto the navmesh too. A bot with the meta "edge_guard" (a
+  world with deadly drops sets it) checks each step stays on the navmesh
+  (`_keep_on_ground`, one closest-point query a step) and slides along
+  the edge instead.
   Only a few act on it, through `SquadBoard` claims (static, with an
   expiry, like the slots): `noise_lookers` go to look at one person's
   noise, `RING_HUNTERS` army bots may leave their ground to hunt one person
