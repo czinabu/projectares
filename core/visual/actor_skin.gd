@@ -593,6 +593,8 @@ func _ready() -> void:
 		_build_android(def.get("heavy_chassis", false))
 	if def.get("regalia", "") != "":
 		_build_regalia(str(def["regalia"]))
+	if def.get("gear", "") != "":
+		_build_gear(str(def["gear"]))
 	# Before the arm, so the arm's hooks run after the legs have turned.
 	locomotion = Locomotion.new()
 	locomotion.name = "Locomotion"
@@ -3545,6 +3547,119 @@ func _build_regalia(kind: String) -> void:
 				_piece(crown, "CrownGlow", BoxMesh.new(), lava, at + Vector3(0, tall * 0.25, -0.02 * s), Vector3(0.012, tall * 0.4 / s, 0.01) * s)
 			_piece(crown, "CrownBand", tube, basalt, Vector3(0, ring_y, head.z + 0.02 * s), Vector3(0.26, 0.04, 0.24) * s)
 			_hang_at(crown, "Crown", "Head", Vector3.ZERO)
+
+
+## A plain fighter's own touches (a skin's "gear"), so a marksman or a
+## runner reads apart from the rifleman whose clothes it shares. "hood": a
+## marksman's hood and shoulder mantle in its army's colour, darkened.
+## "scarf": a runner's scarf knotted at the neck, its tails flying behind.
+## "nomad": a desert raider's head wrap, a scarf over the mouth and goggles
+## over the eyes, a sash across the chest. "duster": the nomad's wrap and
+## goggles with a hood and a long coat to the knees, for the marksman. View
+## only; the hood and wrap hang on the head, the rest on the chest and hips.
+func _build_gear(kind: String) -> void:
+	if _skeleton == null or _skeleton.find_bone("Chest") < 0 or _skeleton.find_bone("Head") < 0:
+		return
+	var s := float(_def.get("height", 1.8)) / 1.8
+	var chest := _rest_at("Chest")
+	var hips := _rest_at("Hips")
+	var head := _rest_at("Head")
+	var knee := _rest_at("LowerLeg.L") if _skeleton.find_bone("LowerLeg.L") >= 0 else hips - Vector3(0, 0.45 * s, 0)
+	var army := actor.body_color if actor != null else Color(0.5, 0.5, 0.5)
+	var sand := Color(0.72, 0.62, 0.45)
+	var cloth_color := army.darkened(0.45)
+	var accent_color := army
+	if kind == "nomad" or kind == "duster":
+		cloth_color = sand
+		accent_color = Color(0.55, 0.2, 0.14)
+	var cloth := _cloth(cloth_color)
+	var accent := _cloth(accent_color)
+	var hooded := kind == "hood" or kind == "duster"
+	var wrapped := kind == "nomad" or kind == "duster"
+	var h := head.y
+	if hooded:
+		# A hood over the head: a crown, two sides and a back, open at the
+		# face, its rim a little forward of the brow.
+		var hood := Node3D.new()
+		_piece(hood, "Hood", BoxMesh.new(), cloth, Vector3(0, h + 0.205 * s, head.z + 0.015 * s), Vector3(0.215, 0.04, 0.23) * s)
+		_piece(hood, "Hood", BoxMesh.new(), cloth, Vector3(0, h + 0.09 * s, head.z + 0.115 * s), Vector3(0.215, 0.25, 0.035) * s)
+		for side: float in [-1.0, 1.0]:
+			_piece(hood, "Hood", BoxMesh.new(), cloth, Vector3(side * 0.1 * s, h + 0.09 * s, head.z + 0.02 * s), Vector3(0.03, 0.25, 0.2) * s)
+		_piece(hood, "HoodRim", BoxMesh.new(), cloth, Vector3(0, h + 0.19 * s, head.z - 0.09 * s), Vector3(0.2, 0.04, 0.03) * s)
+		_hang_at(hood, "Hood", "Head", Vector3.ZERO)
+	if wrapped:
+		# A wrap round the head, a scarf over the mouth and nose, goggles
+		# on a strap at the eyes.
+		var wrap := Node3D.new()
+		if not hooded:
+			_piece(wrap, "Wrap", BoxMesh.new(), cloth, Vector3(0, h + 0.18 * s, head.z + 0.01 * s), Vector3(0.2, 0.06, 0.21) * s)
+			_piece(wrap, "WrapTail", BoxMesh.new(), cloth, Vector3(0, h + 0.08 * s, head.z + 0.11 * s), Vector3(0.08, 0.18, 0.025) * s)
+		_piece(wrap, "Mask", BoxMesh.new(), accent, Vector3(0, h + 0.035 * s, head.z - 0.075 * s), Vector3(0.16, 0.065, 0.05) * s)
+		var glass := _solid(Color(0.25, 0.4, 0.42), 0.0)
+		glass.metallic = 0.6
+		glass.roughness = 0.15
+		var rim := _solid(Color(0.2, 0.17, 0.14), 0.0)
+		_piece(wrap, "GoggleStrap", BoxMesh.new(), rim, Vector3(0, h + 0.115 * s, head.z), Vector3(0.195, 0.02, 0.2) * s)
+		for side: float in [-1.0, 1.0]:
+			_piece(wrap, "Goggle", BoxMesh.new(), rim, Vector3(side * 0.04 * s, h + 0.115 * s, head.z - 0.095 * s), Vector3(0.06, 0.045, 0.025) * s)
+			_piece(wrap, "GoggleGlass", BoxMesh.new(), glass, Vector3(side * 0.04 * s, h + 0.115 * s, head.z - 0.109 * s), Vector3(0.045, 0.032, 0.005) * s)
+		_hang_at(wrap, "Wrap", "Head", Vector3.ZERO)
+	var upper := Node3D.new()
+	var lower := Node3D.new()
+	var neck_y := chest.y + 0.2 * s
+	match kind:
+		"hood":
+			# A mantle over the shoulders, longer at the back.
+			_piece(upper, "Mantle", BoxMesh.new(), cloth, Vector3(0, neck_y - 0.03 * s, chest.z + 0.01 * s), Vector3(0.36, 0.04, 0.25) * s)
+			var drop := _piece(upper, "Mantle", BoxMesh.new(), cloth, Vector3(0, neck_y - 0.14 * s, chest.z + 0.13 * s), Vector3(0.34, 0.22, 0.02) * s)
+			drop.rotation.x = 0.1
+		"scarf":
+			# A scarf round the neck, knotted at the side, two tails behind.
+			_piece(upper, "Scarf", BoxMesh.new(), accent, Vector3(0, neck_y + 0.02 * s, chest.z), Vector3(0.2, 0.07, 0.2) * s)
+			_piece(upper, "ScarfKnot", BoxMesh.new(), accent, Vector3(0.08 * s, neck_y - 0.01 * s, chest.z - 0.08 * s), Vector3(0.06, 0.06, 0.05) * s)
+			for i in 2:
+				var tail := _piece(upper, "ScarfTail", BoxMesh.new(), accent,
+						Vector3((0.03 - i * 0.07) * s, neck_y - 0.1 * s, chest.z + (0.14 + i * 0.03) * s), Vector3(0.06, 0.24 - i * 0.05, 0.015) * s)
+				tail.rotation = Vector3(0.45 + i * 0.15, 0.0, 0.1 - i * 0.2)
+		"nomad", "duster":
+			# A sash from the right shoulder to the left hip.
+			var sash := _piece(upper, "Sash", BoxMesh.new(), accent, Vector3(0, chest.y - 0.04 * s, chest.z - 0.11 * s), Vector3(0.07, 0.5, 0.02) * s)
+			sash.rotation.z = 0.6
+			var back := _piece(upper, "Sash", BoxMesh.new(), accent, Vector3(0, chest.y - 0.04 * s, chest.z + 0.12 * s), Vector3(0.07, 0.5, 0.02) * s)
+			back.rotation.z = -0.6
+	if kind == "duster":
+		# A long coat: over the back and the shoulders, open at the front,
+		# from the waist down to the knees in two flaps and a back panel.
+		var coat := _cloth(cloth_color.darkened(0.2))
+		_piece(upper, "Coat", BoxMesh.new(), coat, Vector3(0, chest.y - 0.02 * s, chest.z + 0.12 * s), Vector3(0.36, 0.46, 0.02) * s)
+		for side: float in [-1.0, 1.0]:
+			_piece(upper, "CoatShoulder", BoxMesh.new(), coat, Vector3(side * 0.13 * s, neck_y - 0.04 * s, chest.z + 0.01 * s), Vector3(0.12, 0.04, 0.24) * s)
+			_piece(upper, "CoatFront", BoxMesh.new(), coat, Vector3(side * 0.14 * s, chest.y - 0.04 * s, chest.z - 0.11 * s), Vector3(0.08, 0.42, 0.02) * s)
+		var mid := hips.y + 0.04 * s
+		var hem := knee.y - 0.08 * s
+		var skirt := _piece(lower, "Coat", BoxMesh.new(), coat, Vector3(0, (mid + hem) * 0.5, hips.z + 0.15 * s), Vector3(0.46 * s, mid - hem, 0.02 * s))
+		skirt.rotation.x = 0.12
+		for side: float in [-1.0, 1.0]:
+			var flap := _piece(lower, "CoatFlap", BoxMesh.new(), coat, Vector3(side * 0.2 * s, (mid + hem) * 0.5, hips.z - 0.02 * s),
+					Vector3(0.02 * s, mid - hem, 0.3 * s))
+			flap.rotation.z = side * 0.08
+	if upper.get_child_count() > 0:
+		_hang_at(upper, "GearUpper", "Chest", Vector3.ZERO)
+	else:
+		upper.free()
+	if lower.get_child_count() > 0 and _skeleton.find_bone("Hips") >= 0:
+		_hang_at(lower, "GearLower", "Hips", Vector3.ZERO)
+	else:
+		lower.free()
+
+
+## Matte cloth in `color`, seen from both sides.
+func _cloth(color: Color) -> StandardMaterial3D:
+	var mat := _solid(color, 0.0)
+	mat.metallic = 0.0
+	mat.roughness = 0.95
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return mat
 
 
 ## A bar along a bone, from the bone at `from` of the way to its `child` up

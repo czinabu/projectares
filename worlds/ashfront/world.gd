@@ -110,7 +110,7 @@ const ARMIES := {
 		"uniform": {"top": 6, "bottom": 2},
 		"soldier": {"name": "Legionnaire", "look": "legionary", "color": Color(0.3, 0.45, 0.7), "weapon": "Service Rifle"},
 		"heavy": {"name": "Legion Vanguard", "look": "vanguard", "color": Color(0.2, 0.3, 0.55), "weapon": "Breaching Blade"},
-		"marksman": {"name": "Legion Marksman", "look": "legionary", "color": Color(0.22, 0.36, 0.6), "weapon": "Marksman Rifle"},
+		"marksman": {"name": "Legion Marksman", "look": "legion_marksman", "color": Color(0.22, 0.36, 0.6), "weapon": "Marksman Rifle"},
 		"exo": {"name": "Legion Exo Trooper", "look": "exo", "color": Color(0.3, 0.6, 1.0), "weapon": "Support Rifle"},
 		"walker": {"name": "Kiln Walker", "look": "walker", "color": Color(0.3, 0.6, 1.0), "weapon": "Kiln Cannon"},
 	},
@@ -120,7 +120,7 @@ const ARMIES := {
 		"uniform": {"top": 5, "bottom": 4},
 		"soldier": {"name": "Tide Raider", "look": "tide", "color": Color(0.85, 0.3, 0.2), "weapon": "Worn Rifle"},
 		"heavy": {"name": "Tide Brute", "look": "tide_brute", "color": Color(0.5, 0.1, 0.12), "weapon": "Rusted Cleaver"},
-		"runner": {"name": "Tide Runner", "look": "tide", "color": Color(0.95, 0.42, 0.2), "weapon": "Hook Knife"},
+		"runner": {"name": "Tide Runner", "look": "tide_runner", "color": Color(0.95, 0.42, 0.2), "weapon": "Hook Knife"},
 		"exo": {"name": "Tide Exo Trooper", "look": "exo", "color": Color(1.0, 0.35, 0.15), "weapon": "Support Rifle"},
 		"walker": {"name": "Kiln Walker", "look": "walker", "color": Color(1.0, 0.35, 0.15), "weapon": "Kiln Cannon"},
 	},
@@ -588,7 +588,11 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 			bot.set_meta("range", MARKSMAN_RANGE)
 			bot.set_meta("burst", MARKSMAN_BURST)
 			# Its short burst is one aimed round a pull.
-			bot.equip_weapon(_army_gun(def["weapon"], MARKSMAN_DAMAGE[tier], MARKSMAN_SPREAD[tier], MARKSMAN_INTERVAL))
+			var rifle := _army_gun(def["weapon"], MARKSMAN_DAMAGE[tier], MARKSMAN_SPREAD[tier], MARKSMAN_INTERVAL)
+			# A long scope on top, so it reads as a marksman at a distance.
+			# Shown only: not fitted, so its stats leave the tuning alone.
+			rifle.attachments.append("optic_longscope")
+			bot.equip_weapon(rifle)
 		"runner":
 			# First in and first down: a quick knife, little health.
 			bot.walk_speed = RUNNER_WALK

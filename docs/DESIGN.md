@@ -1206,6 +1206,12 @@ Ferals. Caleb chose a mix instead:
   Ashfront's armies draw from every skin tone; the Legion wears navy and
   grey, the Tide rust and tan, and a faction's tint dresses clothes and
   gear but never skin.
+- **Every plain fighter has a look of its own.** A marksman or a runner
+  is not its army's rifleman: the Legion Marksman wears a hood and
+  mantle and carries a long scope, the Tide Runner goes light with a
+  scarf flying. The Dune Sea's raiders are desert nomads (Caleb's call):
+  Sand Raiders in sand wraps, scarf masks and goggles over light scrap
+  plate in desert paint, Dune Marksmen in long dusters with a hood.
 
 How it is built is in `docs/systems/bodies-and-animation.md` ("Enemy
 bodies").
