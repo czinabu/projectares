@@ -1,4 +1,4 @@
-PROJECT ARES - playtest build for Linux
+VERGE - playtest build for Linux
 
 1. Unpack this folder anywhere you can write to and run ProjectAres.x86_64
    (double-click, or ./ProjectAres.x86_64 in a terminal). Keep
