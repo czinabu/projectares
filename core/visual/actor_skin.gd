@@ -137,6 +137,13 @@ var leap_lean_speed := 8.0
 var land_full_speed := 14.0
 var land_min := 0.3
 var land_time := 0.4
+## Touching down out of a glide (or a boost) at speed is a run-out, not a
+## crash: the body leans back against the skid by up to `run_out_lean`
+## radians while it is still going faster than `run_out_speed` m/s, and the
+## squat is kept to `run_out_squat` so it never folds up flat on the ground.
+var run_out_lean := 0.3
+var run_out_speed := 7.0
+var run_out_squat := 0.4
 ## Vertical speed at which a jump counts as fully rising or fully falling.
 var air_rise_speed := 4.0
 ## A jetpack boost flies the same way with the arms held down along the
@@ -177,6 +184,17 @@ var twist_speed := 7.0
 ## aiming brings them up to it and lifts the chest by `boot_aim_ease` of the
 ## pitch so they have room. The flames stretch with the thrust,
 ## from `boot_flame_min` to `boot_flame_max` times their length.
+## Skating (the boots' cruise, `FlightRig.is_skating`): a skater's stance,
+## not the flying pose. The body leans `skate_lean` radians into the way it
+## goes and into a turn as a skater carves (up to `skate_bank` radians, read
+## from how fast the heading swings, so remote players match), the lead leg
+## reaches ahead with its knee bent and the other trails (`skate_legs`:
+## thigh and shin of each, body frame as `leap_legs`), and the arms stay on
+## the gun. The heel flames fire down under the feet.
+var skate_lean := 0.42
+var skate_bank := 0.55
+var skate_legs: Array[Vector3] = [Vector3(0.1, -0.88, -0.42), Vector3(0.04, -0.9, 0.3),
+		Vector3(0.12, -0.86, 0.48), Vector3(0.06, -0.72, 0.68)]
 var boot_drag := 0.85
 var boot_accel_rate := 6.0
 var boot_max_lean := 0.8
@@ -452,6 +470,10 @@ var _twist := 0.0
 ## How far the model is turned to face the way it flies, radians.
 var _face := 0.0
 var _last_heading := 0.0
+## Skating: the heading last frame, and the carve's lean now.
+var _skate_heading := NAN
+var _run_out := false
+var _skate_carve := 0.0
 var _has_heading := false
 ## The actor's yaw last frame: while the body lies flat in flight its
 ## attitude is held in the world, not on the view (see `_update_glide`).
@@ -1246,6 +1268,10 @@ func _on_landed(impact_speed: float) -> void:
 		return
 	_land_depth = clampf(impact_speed / land_full_speed, land_min, 1.0)
 	_land_left = 1.0
+	var flat := Vector2(actor.velocity.x, actor.velocity.z).length()
+	_run_out = (_glide > 0.05 or _boost > 0.05) and flat > run_out_speed
+	if _run_out:
+		_land_depth = minf(_land_depth, run_out_squat)
 
 
 ## Eases the air pose in and out and between its shapes, and plays out the
@@ -4097,7 +4123,8 @@ func _update_rig(delta: float) -> void:
 	if _rig_holders.is_empty():
 		return
 	_burst_left = maxf(0.0, _burst_left - delta)
-	var burning := not actor.is_dead and (actor.flight.is_thrusting or actor.flight.is_skimming or _burst_left > 0.0)
+	var burning := not actor.is_dead and (actor.flight.is_thrusting or actor.flight.is_skimming
+			or actor.flight.is_skating or _burst_left > 0.0)
 	for flame in _flames:
 		flame.visible = burning
 		if burning and actor.flight.can_skim():
@@ -4175,11 +4202,17 @@ func _update_glide(delta: float) -> void:
 		_has_heading = false
 		if alive and actor.flight.is_hovering:
 			tilt = dir * hover_lean * clampf(speed / maxf(actor.flight.fly_speed, 0.1), 0.0, 1.0)
+		elif alive and actor.flight.is_skating:
+			tilt = _skate_tilt(speed, delta)
+		elif _run_out:
+			# Down out of a glide at speed: lean back against the skid.
+			tilt = -dir * run_out_lean * clampf((speed - run_out_speed) / run_out_speed, 0.0, 1.0)
 		elif alive and _boot_w > 0.0 and is_airborne():
 			tilt = _boot_tilt() * smoothstep(0.0, 1.0, _boot_w)
 		elif alive and _air > 0.0 and is_airborne():
 			# A running jump leans into it, and rights itself for the landing.
 			tilt = dir * leap_lean * clampf(speed / leap_lean_speed, 0.0, 1.0) * (1.0 - _air_fall)
+	_run_out = _run_out and alive and speed > run_out_speed * 0.5 and actor.is_on_floor()
 	# The actor turns with the view, and this model is its child. While the
 	# body is laid out in flight, a look round must not drag it round with
 	# the camera and then let it swing back: undo the view's turn first, so
@@ -4352,7 +4385,7 @@ func _pose_air() -> void:
 		if _boot_w > 0.0:
 			# Boots firing: the legs point the nozzles down the exhaust.
 			var bw := smoothstep(0.0, 1.0, _boot_w)
-			var legs := _boot_legs(i, float(limb[3]))
+			var legs := _skate_leg(i) if actor.flight.is_skating else _boot_legs(i, float(limb[3]))
 			thigh = thigh.lerp(legs[0], bw)
 			shin = shin.lerp(legs[1], bw)
 			toes = lerpf(toes, boot_toes, bw)
@@ -4434,7 +4467,7 @@ func _update_boot_thrust(delta: float) -> void:
 	_vel_lag = _vel_lag.lerp(v, 1.0 - exp(-boot_accel_rate * delta)) if delta > 0.0 else v
 	var boots := actor.flight.enabled and actor.flight.can_skim()
 	var burning := boots and not actor.is_dead and actor.vehicle == null and is_airborne() \
-			and (actor.flight.is_skimming or actor.air_dash_left > 0.0 or _burst_left > 0.0)
+			and (actor.flight.is_skimming or actor.flight.is_skating or actor.air_dash_left > 0.0 or _burst_left > 0.0)
 	_boot_w = move_toward(_boot_w, 1.0 if burning else 0.0, air_blend * delta)
 	if not boots:
 		_boot_hero = 0.0
@@ -4453,8 +4486,24 @@ func _update_boot_thrust(delta: float) -> void:
 	var ahead := -local.z
 	var cruise := maxf(actor.flight.skim_speed, 1.0)
 	var lined := clampf(ahead / maxf(level.length(), 0.1), 0.0, 1.0)
-	var hero := smoothstep(0.45, 0.9, ahead / cruise) * lined * lined if burning else 0.0
+	# Skating keeps the skater's stance (`skate_legs`), never the flying one.
+	var hero := smoothstep(0.45, 0.9, ahead / cruise) * lined * lined if burning and not actor.flight.is_skating else 0.0
 	_boot_hero = lerpf(_boot_hero, hero, follow)
+
+
+## The body's lean while skating, as `_update_glide` takes it: forward
+## with the speed, and over into the turn being carved.
+func _skate_tilt(speed: float, delta: float) -> Vector3:
+	var heading := atan2(-actor.velocity.x, -actor.velocity.z)
+	var carve := 0.0
+	if not is_nan(_skate_heading) and speed > 2.0 and delta > 0.0:
+		var rate := wrapf(heading - _skate_heading, -PI, PI) / delta
+		carve = clampf(atan(speed * rate / 9.8), -skate_bank, skate_bank)
+	_skate_heading = heading if speed > 2.0 else NAN
+	_skate_carve = lerpf(_skate_carve, carve, 1.0 - exp(-bank_follow * delta))
+	var going := clampf(speed / maxf(actor.flight.skate_speed, 1.0), 0.0, 1.0)
+	# Turning left (heading growing) leans left: toward -X in the body frame.
+	return Vector3.FORWARD * skate_lean * going + Vector3.LEFT * _skate_carve
 
 
 ## The body's lean while boots fire, as `_update_glide` takes it: into the
@@ -4470,6 +4519,13 @@ func _boot_tilt() -> Vector3:
 			clampf((ahead - cruise) / maxf(actor.flight.air_dash_speed, 1.0), 0.0, 1.0))
 	pitch *= 1.0 - boot_aim_ease * smoothstep(0.0, 1.0, _flight_hold)
 	return lean.lerp(Vector3.FORWARD * pitch, _boot_hero)
+
+
+## Thigh and shin of leg `i` in the skater's stance (`skate_legs`), mirrored
+## for its side as `_pose_air` does.
+func _skate_leg(i: int) -> Array:
+	var at := mini(i, 1) * 2
+	return [skate_legs[at], skate_legs[at + 1]]
 
 
 ## Thigh and shin directions for leg `i` while boots fire, in the body's own
@@ -4536,15 +4592,22 @@ func _wear_rig(id: String) -> void:
 			bone = _skeleton.get_bone_name(shin)
 		_wear_part(boot, bone, offset, Vector3(side * 0.12, 0.1, 0.0))
 	var lit := false
+	var trail := rig_trail()
 	for holder in _rig_holders:
 		for nozzle in RigModel.nozzles(holder):
 			var size: Vector2 = nozzle.get_meta("flame", Vector2(0.05, 0.5))
-			var flame := Vfx.nozzle_flame(size.x, size.y, not lit)
+			var flame := Vfx.nozzle_flame(size.x, size.y, not lit, trail)
 			lit = true
 			flame.visible = false
 			nozzle.add_child(flame)
 			_flames.append(flame)
 	_mark_storm()
+
+
+## The thruster trail this body's rig burns in (`RigTrail`): the one its
+## appearance names, "" for the factory flame.
+func rig_trail() -> String:
+	return RigTrail.clean(_appearance.get("trail"))
 
 
 ## Hangs a rig part on a bone so it moves with the body (see `_hang`).

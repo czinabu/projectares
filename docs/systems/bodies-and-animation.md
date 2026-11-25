@@ -78,8 +78,9 @@ date in the same PR.
   the fore end, the gun shows low in the view and the clip's arm swing
   never reaches it (the clips' own hold put the gun out past the new
   body's reach). A gun braced at the hip (`shoulders_never`, the Storm
-  Cannon) is held the same way, lower (`hip_from_eyes_braced`), both hands
-  on it; a heavy weapon (`heavy_tags`, the power weapons) is carried level
+  Cannon) is held the same way, low at the hips the way a heavy gunner
+  hangs one from a sling (`hip_from_eyes_braced`), both hands on it, and
+  carried low there too (`carry_low_braced`); a heavy weapon (`heavy_tags`, the power weapons) is carried level
   across the hips and never thrown up to port (`carry_low_heavy`,
   `carry_port_heavy`). A gun held on a vehicle keeps the clip's wrist
   averaged over a stride.
@@ -100,6 +101,30 @@ date in the same PR.
   `wall_back`, `wall_tip`). Skins exist only where `Look` runs, so none of
   it costs a server anything. All of it is read from velocity and the command, so
   remote players match, and it is the same body in both views.
+  Keeping guns out of the body: the long guns' grip sits about half a
+  metre ahead of the butt, more than the body's whole arm, so the hold
+  moves the body to the gun. In the sights a long gun takes a cheek weld:
+  the eyes come down and over onto the stock (`ActionPose.cheek_eye`, the body bladed further, `ads_stance_long`, so the off hand still reaches a scoped gun,
+  added in `ActorSkin.eye_point`, so the sights and the first-person
+  camera stay on them) and the head tips with them at the neck
+  (`cheek_long`, `WeaponArm.cheek`), so the butt meets the shoulder
+  instead of the neck; far enough over (`cheek_eye.x`) that the butt
+  sits in the shoulder pocket outside the collar. A launcher
+  (`shoulder_fired_tags`, the Helion) takes no cheek weld: its tube rests
+  on top of the gun shoulder beside the head, its sight
+  `ActionPose.shoulder_fired` from the eyes (`sight_aside`, used by
+  `WeaponArm.sight_target` and the first-person camera alike), and the
+  eye looks along its side. Stood at ease out of a fight a gun is held at the
+  low ready in both hands (`WeaponArm` takes `low` as a carry), lower and
+  tipped further down than on the move (`carry_rest`, `ActionPose.at_ease`),
+  never hung from one hand by the clip, which ran it through the arm.
+  `tests/visual/clip.gd` (`--clip-only`) shoots the upper body close up
+  with each hold (`CLIP_AIM_ONLY` closer on the shoulder in the sights,
+  `CLIP_WIDE` the whole body), and `tests/visual/gun_moves.gd` (`--gun-moves-only`)
+  films a gun through the holds as frames for a GIF, from outside and
+  from the eyes. A summoned weapon's bounds (`ActionPose.model_box`) are
+  measured again once it has come together (`ActorSkin._update_materialize`):
+  measured while its parts flew in, every aim after a summon was off the eye.
   Check leg changes by eye: `visual_check.tscn -- <dir> --gait-only`, the
   stand with `--idle-only`, and a rifle and a pistol carried on the move
   with `--carry-only`. One-shot moves with a blade out (the slide, each

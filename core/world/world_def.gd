@@ -386,8 +386,9 @@ var airship_passes := 3
 ## holds one. 0 keeps them out of this world.
 var warlord_artifact_chance := 0.25
 var pod_artifact_chance := 0.05
-## An earned armor paint (DESIGN.md "Armor paints", an item tagged
-## "paint" that no shop sells) a warlord may carry, and the chance it does.
+## An earned cosmetic a warlord may carry, and the chance it does: an armor
+## paint (DESIGN.md "Armor paints", an item tagged "paint") or a thruster
+## trail (`RigTrail`, tagged "trail") that no shop sells.
 ## "" or 0 keeps it out of this world.
 var warlord_paint := ""
 var warlord_paint_chance := 0.0

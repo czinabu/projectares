@@ -181,8 +181,8 @@ static func _in_raid(t: Node) -> void:
 	# Spear: long reach, high reach, weak up close.
 	var spear := await _arm(t, p, SPEAR)
 	t.check(await _strike(t, p, foe, spear, 3.8) == spear.light_damage, "the spear reaches past sword range")
-	t.check(await _strike(t, p, foe, spear, 1.0) == spear.light_damage * spear.close_mult,
-			"inside the point the spear does half damage")
+	t.check(is_equal_approx(await _strike(t, p, foe, spear, 1.0), spear.light_damage * spear.close_mult),
+			"inside the point the spear does less damage")
 	t.check(await _strike(t, p, foe, spear, 2.0, 3.2) == spear.light_damage, "the spear pokes a flier overhead")
 	plain = await _arm(t, p, "")
 	t.check(await _strike(t, p, foe, plain, 3.8) == 0.0 and await _strike(t, p, foe, plain, 2.0, 3.2) == 0.0,

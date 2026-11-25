@@ -102,8 +102,9 @@ static func _rules(t: Node) -> void:
 	var clothes := Economy.stock("tailor")
 	t.check(not clothes.is_empty() and clothes.all(func(id: String) -> bool:
 		return ItemDB.has_tag(id, "cosmetic") and (not ItemDB.item_stats(id).get("outfits", []).is_empty()
-				or ArmorPaint.PAINTS.has(ItemDB.item_stats(id).get("paint", "")))),
-			"the tailor's clothing each names the outfits it unlocks, and its armor paints their paint")
+				or ArmorPaint.PAINTS.has(ItemDB.item_stats(id).get("paint", ""))
+				or RigTrail.TRAILS.has(ItemDB.item_stats(id).get("trail", "")))),
+			"the tailor's clothing each names the outfits it unlocks, its armor paints their paint and its trails their trail")
 	t.check(Economy.unlocked_outfits(["outfit_punk", "rifle_carbine", "outfit_punk", "outfit_suit"]) == (["m_Punk", "f_Punk", "m_Suit", "f_Suit"] as Array[String])
 			and Economy.unlocked_outfits(["rifle_carbine"]).is_empty(), "owned clothing unlocks its outfits, and nothing else does")
 	var home_goods := furniture + clothes

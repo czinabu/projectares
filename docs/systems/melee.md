@@ -13,6 +13,18 @@ date in the same PR.
   (`MeleeWeapon.is_two_handed_id`): it sets the walk speed with it in hand,
   makes a two-hander's heavies stagger and break armor, and is what
   `Look.is_two_handed` (the one place views ask) answers for the grip.
+  Every melee weapon spends one budget its own way (Caleb's calls: weapons
+  differ in damage, and rarity buys a more unusual trait, never more power;
+  DESIGN.md "What each axis means"). The slower the type, the harder each
+  hit (hammer, axe, sword, knife), and the hammer swings widest; a slow,
+  readable windup lands less often, so it pays for the damage. The score is
+  damage a second, times how often a swing lands, times reach, area (arc)
+  and traits (`melee_balance_tests.gd`, its weights a first guess for
+  playtesting), and every melee item, world ones too, scores within `BAND`
+  of the scrap blade; no heavy kills an unarmored person in one blow. A swing
+  hits everyone in its arc and reach at full damage, so the arc is the area
+  stat. A new or retuned weapon must fit the band; how a bot fights with each
+  one: `duel_bench.tscn -- --melee <id>`.
   Melee is made to answer guns (DESIGN.md "Melee against guns"): blades go
   past armor (`DamageInfo.armor_pierce`), a heavy started sprinting is a
   dash-strike (`dash_range`; with `dash_through`, a charge that runs its

@@ -42,7 +42,7 @@ static func run(t: Node) -> void:
 	var gun := p.weapons[0] as Gun
 	var hammer := p.weapons[1] as MeleeWeapon
 	t.check(gun.display_name == "Ashfront Carbine" and is_equal_approx(gun.damage, 24.0), "weapon stats come from the item")
-	t.check(hammer.display_name == "Breaker Hammer" and is_equal_approx(hammer.heavy_damage, 95.0), "melee stats come from the item")
+	t.check(hammer.display_name == "Breaker Hammer" and is_equal_approx(hammer.heavy_damage, ItemDB.item_stats("hammer_breaker").heavy_damage), "melee stats come from the item")
 	t.check(is_equal_approx(p.health.armor, float(ItemDB.item_stats("frame_bulwark").armor)), "the frame sets armor")
 	var base := Actor.new()
 	t.check(p.walk_speed < base.walk_speed and is_equal_approx(p.flight.heat_per_sec, FlightRig.new().heat_per_sec),

@@ -39,7 +39,7 @@ func _ready() -> void:
 			"recoil_kick_deg": 0.7, "max_range": 90.0, "falloff_start": 25.0, "falloff_end": 60.0, "falloff_min": 0.7},
 			"Reliable semi-auto sidearm. Accurate, and quick to reload.")
 	register("jetpack_mk1", "Mk1 Jetpack", Rarity.COMMON, 0, ["flight_rig", "starter"], JETPACK_MK1.duplicate(),
-			"Height and hover. Climb to 40 m and hover 8 s to fight from above with steady aim. Slow across the map, a boost overheats it in seconds, clumsy under a roof, and loud and bright on scans and thermal.")
+			"Height and hover. Climb to 40 m and hover 8 s to fight from above with steady aim, or hold Shift to cruise level at 16 m/s, the steadiest of the cruises. The slowest across the map, clumsy under a roof, and loud and bright on scans and thermal.")
 	register("plate_light", "Scrap Plate", Rarity.COMMON, 0, ["armor", "frame_light", "starter"],
 			{"armor": 30.0}, "30 armor.")
 	register("field_dressing", "Field Dressing", Rarity.COMMON, 0, ["consumable", "heal", "starter"],
@@ -168,16 +168,16 @@ func _ready() -> void:
 	# one-handers move faster, two-handers slower but stagger and break armor
 	# (`MeleeWeapon`), and the hands hold it that way (`Look.is_two_handed`).
 	register("blade_arc", "Arc Blade", Rarity.RARE, 800, ["weapon", "melee", "one_handed", "blade"],
-			{"light_damage": 34.0, "heavy_damage": 72.0, "light_recover": 0.22, "parry_window": 0.26,
+			{"light_damage": 26.0, "heavy_damage": 66.0, "light_recover": 0.26, "parry_window": 0.26,
 			"swing_style": "cut"},
-			"Faster swings and a more forgiving parry.")
+			"Quick to recover and the most forgiving parry of any blade, for lighter cuts.")
 	register("hammer_breaker", "Breaker Hammer", Rarity.UNCOMMON, 500, ["weapon", "melee", "two_handed", "hammer", "vendor"],
-			{"light_damage": 42.0, "heavy_damage": 95.0, "light_windup": 0.22, "light_recover": 0.45,
-			"heavy_windup": 0.55, "light_stamina": 16.0, "heavy_stamina": 36.0, "reach": 3.1, "swing_style": "chop",
-			"slam_damage": 85.0, "slam_radius": 5.5},
-			"Slow and brutal. Its dive slam hits a wide area.")
+			{"light_damage": 46.0, "heavy_damage": 98.0, "light_windup": 0.22, "light_recover": 0.45,
+			"heavy_windup": 0.6, "heavy_recover": 0.6, "light_stamina": 18.0, "heavy_stamina": 40.0, "reach": 3.2,
+			"arc_deg": 140.0, "swing_style": "chop", "slam_damage": 95.0, "slam_radius": 6.5},
+			"Slow and brutal, the hardest hits of any weapon. Its wide swings catch a crowd and its dive slam hits a wide area.")
 	register("knife_gutter", "Gutter Knife", Rarity.COMMON, 250, ["weapon", "melee", "one_handed", "knife", "vendor"],
-			{"light_damage": 17.0, "heavy_damage": 40.0, "reach": 2.1, "arc_deg": 90.0,
+			{"light_damage": 19.0, "heavy_damage": 40.0, "reach": 2.1, "arc_deg": 90.0,
 			"light_windup": 0.08, "light_recover": 0.15, "heavy_windup": 0.25, "heavy_recover": 0.35,
 			"heavy_lunge": 12.0, "light_stamina": 6.0, "heavy_stamina": 18.0, "parry_window": 0.16,
 			"slam_damage": 35.0, "slam_radius": 3.0, "backstab_mult": 2.2, "backstab_arc_deg": 180.0,
@@ -189,11 +189,11 @@ func _ready() -> void:
 			"guard_crush": 2.5, "swing_style": "chop", "swing_scale": 0.9},
 			"Chops through guards. Blocking it costs two and a half times the stamina, so a few hits break a guard.")
 	register("spear_lancer", "Lancer Spear", Rarity.RARE, 900, ["weapon", "melee", "two_handed", "spear"],
-			{"light_damage": 27.0, "heavy_damage": 62.0, "reach": 4.1, "arc_deg": 40.0,
-			"vertical_reach": 3.8, "close_range": 1.5, "close_mult": 0.5, "light_windup": 0.14,
+			{"light_damage": 29.0, "heavy_damage": 66.0, "reach": 4.1, "arc_deg": 40.0,
+			"vertical_reach": 3.8, "close_range": 1.5, "close_mult": 0.6, "light_windup": 0.14,
 			"light_recover": 0.3, "heavy_windup": 0.42, "heavy_lunge": 6.0, "heavy_stagger": 0.6,
 			"slam_damage": 40.0, "slam_radius": 3.5, "swing_style": "thrust"},
-			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, half damage up close, and a heavy thrust staggers.")
+			"The longest reach of any blade, and it pokes fliers overhead. Narrow thrusts, weaker up close, and a heavy thrust staggers.")
 	# The Spore Marsh's melee options (DESIGN.md "Spore Marsh"), crafted from
 	# its blueprints: sidegrades, never a higher Mk.
 	register("blade_hook", "Marsh Hookblade", Rarity.UNCOMMON, 600, ["weapon", "melee", "one_handed", "blade"],
@@ -201,8 +201,8 @@ func _ready() -> void:
 			"backstab_mult": 1.6, "backstab_arc_deg": 140.0, "swing_style": "slash"},
 			"A hooked marsh blade. Quick cuts that bite harder from behind, but a lighter heavy.")
 	register("spear_reed", "Reed Spear", Rarity.UNCOMMON, 650, ["weapon", "melee", "two_handed", "spear"],
-			{"light_damage": 22.0, "heavy_damage": 50.0, "reach": 3.8, "arc_deg": 45.0,
-			"vertical_reach": 3.4, "close_range": 1.4, "close_mult": 0.6, "light_windup": 0.12,
+			{"light_damage": 25.0, "heavy_damage": 56.0, "reach": 3.8, "arc_deg": 45.0,
+			"vertical_reach": 3.4, "close_range": 1.4, "close_mult": 0.7, "light_windup": 0.12,
 			"light_recover": 0.25, "heavy_windup": 0.38, "heavy_lunge": 8.0, "heavy_stagger": 0.4,
 			"slam_damage": 32.0, "slam_radius": 3.0, "move_mult": 1.05, "swing_style": "thrust"},
 			"A light spear of marsh reed and chitin. Long reach and quick to move with, but it hits softer.")
@@ -243,17 +243,17 @@ func _ready() -> void:
 	# drops or is sold; Mk2 and up are crafted from blueprints (DESIGN.md
 	# section 10) and are at stake like any gear.
 	_rig_tier("jetpack_mk2", "Mk2 Jetpack", Rarity.RARE, 1000, "jetpack_mk1", 2,
-			"Longer hover and more heat to burn, and a higher ceiling. Still slow across the map, loud and bright.")
+			"Longer hover and cruise, more heat to burn, and a higher ceiling. Still the slowest cruise, loud and bright.")
 	_rig_tier("jetpack_mk3", "Mk3 Jetpack", Rarity.EPIC, 2200, "jetpack_mk1", 3,
-			"The longest hover and the highest ceiling of any rig. Still slow across the map, loud and bright.")
+			"The longest hover and the highest ceiling of any rig. Still the slowest cruise, loud and bright.")
 	register("boots_thruster", "Mk1 Thruster Boots", Rarity.UNCOMMON, 1000, ["flight_rig", "vendor"], BOOTS_MK1.duplicate(),
-			"Ground agility and stealth. 15% faster on foot, no fall damage, and 4 charges for kicks and dashes, each dash a brief window where rounds only graze. Quiet and dim on scans, and they work indoors. Top out at 10 m and are slow over open ground.")
+			"Ground agility and stealth. 15% faster on foot, no fall damage, and 4 charges for kicks and dashes, each dash a brief window where rounds only graze. Hold Shift in the air to skate low over the ground at 18 m/s for as long as you like. Quiet and dim on scans, and they work indoors. Top out at 10 m.")
 	_rig_tier("boots_thruster_mk2", "Mk2 Thruster Boots", Rarity.RARE, 1300, "boots_thruster", 2,
 			"One more charge and a faster refill. Still top out at 10 m.")
 	_rig_tier("boots_thruster_mk3", "Mk3 Thruster Boots", Rarity.EPIC, 2200, "boots_thruster", 3,
 			"Two more charges than the Mk1 and the fastest refill. Still top out at 10 m.")
 	register("wings_glide", "Mk1 Glide Wings", Rarity.RARE, 1000, ["flight_rig"], WINGS_MK1.duplicate(),
-			"Distance and speed. Launch, then glide at 22 m/s and dive at 30, for 25 s of glide stamina that refills on the ground, with two boosts a flight. Twice as fast across the map, but no hover or climb, poor aim, sidearm only while spread, and they cannot open indoors.")
+			"Distance and speed. Launch, then glide at 22 m/s and dive at 30, or hold Shift to soar level and climb slowly, for about a minute of glide stamina that refills on the ground, with two boosts a flight. The fastest across the map, but no hover, poor aim, sidearm only while spread, and they cannot open indoors.")
 	_rig_tier("wings_glide_mk2", "Mk2 Glide Wings", Rarity.RARE, 1400, "wings_glide", 2,
 			"Stronger boosts and longer glide stamina. Still no hover or climb.")
 	_rig_tier("wings_glide_mk3", "Mk3 Glide Wings", Rarity.EPIC, 2200, "wings_glide", 3,
@@ -524,6 +524,19 @@ func _ready() -> void:
 	_paint_item("paint_spore", "Spore Paint", 1500, "spore",
 			"Moss green and glowing gills, taken off the Grey Matriarch in the Spore Marsh.", Rarity.RELIC)
 
+	# Thruster trails (`RigTrail`): cosmetic, the colour every rig's nozzles
+	# burn in, picked at the base's rig stands. The Tailor sells the plain
+	# ones; the earned ones are Relic loot from the hardest fights in the sky.
+	_trail_item("trail_ember", "Ember Trail", 300, "ember", "Rig flames in a hot orange.")
+	_trail_item("trail_toxic", "Toxic Trail", 300, "toxic", "Rig flames in a chemical green.")
+	_trail_item("trail_violet", "Violet Trail", 450, "violet", "Rig flames in a deep violet.", Rarity.UNCOMMON)
+	_trail_item("trail_redline", "Redline Trail", 450, "redline", "Rig flames in a hard red.", Rarity.UNCOMMON)
+	_trail_item("trail_magma", "Magma Trail", 1500, "magma",
+			"Red flames with a molten gold heart, taken off the warlord who holds the highest mesa over the lava.",
+			Rarity.RELIC)
+	_trail_item("trail_leviathan", "Leviathan Trail", 1500, "leviathan",
+			"Gold flames with a white-hot heart, from the hold of a downed sky warship.", Rarity.RELIC)
+
 
 ## Registers a weapon attachment for `slot` (also its tag: see `Loadout.SLOTS`).
 func _attachment(id: String, display_name: String, rarity: Rarity, value: int, slot: String, vendor: bool,
@@ -574,6 +587,17 @@ func _paint_item(id: String, display_name: String, value: int, paint: String, de
 	if rarity <= Rarity.UNCOMMON:
 		tags.append("vendor")
 	register(id, display_name, rarity, value, tags, {"paint": paint}, description)
+
+
+## Registers a thruster trail item that unlocks the trail `trail` (a
+## `RigTrail.TRAILS` id). Shop trails carry "vendor"; earned ones (Relic) do
+## not, so only their content hands them out.
+func _trail_item(id: String, display_name: String, value: int, trail: String, description: String,
+		rarity: Rarity = Rarity.COMMON) -> void:
+	var tags := ["cosmetic", "trail"]
+	if rarity <= Rarity.UNCOMMON:
+		tags.append("vendor")
+	register(id, display_name, rarity, value, tags, {"trail": trail}, description)
 
 
 ## Registers a home base piece. Small pieces are also tagged "decor".
@@ -731,16 +755,16 @@ const RACE_RAIDER := {
 }
 
 const JETPACK_MK1 := {
-	"thrust_accel": 36.0, "max_rise_speed": 8.0, "fly_speed": 14.0, "boost_speed": 18.0,
+	"thrust_accel": 36.0, "max_rise_speed": 8.0, "fly_speed": 14.0, "boost_speed": 16.0,
 	"heat_per_sec": 12.5, "hover_heat_mult": 1.0, "cruise_heat_mult": 1.0, "climb_heat_mult": 1.3,
-	"boost_heat_mult": 0.7, "cool_per_sec": 25.0, "coast_cool": 25.0, "ceiling": 40.0,
+	"boost_heat_mult": 0.18, "cool_per_sec": 25.0, "coast_cool": 25.0, "ceiling": 40.0,
 	"flight_aim": 0.1, "fall_damage_mult": 0.5, "scan_range": 120.0, "indoor_mult": 0.5,
 	"heavy_lift": true, "gust_mult": 0.6, "tier": 1,
 }
 
 ## Thruster boots: ground agility and stealth. No heat: 4 charges pay for
 ## kicks (up to a 10 m ceiling) and 14 m/s air dashes, one back every
-## 1.5 s. A 1.5 s skim per jump. 15% faster on foot, no fall damage, a
+## 1.5 s. A 1.5 s skim per jump, and a free 18 m/s skate on held Shift. 15% faster on foot, no fall damage, a
 ## 0.2 s graze window on every dash, steady aim mid-dash, full use indoors,
 ## seen only 30 m away on scans and thermal.
 const BOOTS_MK1 := {
@@ -749,18 +773,18 @@ const BOOTS_MK1 := {
 	"skim_mid_heat": 0.0, "skim_high_heat": 0.0, "air_dash_speed": 14.0, "air_dash_time": 0.3,
 	"air_dash_heat": 0.0, "air_dash_cooldown": 0.25, "ground_speed_mult": 1.15, "flight_aim": 0.0,
 	"fall_damage_mult": 0.0, "graze_window": 0.2, "scan_range": 30.0, "indoor_mult": 1.0,
-	"ceiling": 10.0, "gust_mult": 0.25, "tier": 1,
+	"ceiling": 10.0, "gust_mult": 0.25, "skate_speed": 18.0, "tier": 1,
 }
 
 ## Glide wings: distance and speed. A free launch, then a 22 m/s glide that
-## dives to 30, on 25 s of glide stamina (`glide_heat`) that refills in 5 s
-## on the ground only. Two boosts a flight (+8 m/s, or a small lift on
+## dives to 30, held level on Shift (a soar, `soar_accel`), on about 62 s
+## of glide stamina (`glide_heat`) that refills in 5 s on the ground only. Two boosts a flight (+8 m/s, or a small lift on
 ## Shift + S), refilled on the ground. No hover and no climb of their own,
 ## poor aim (+50% spread), sidearm only, 5% slower on foot, no fall damage
 ## out of a glide, cannot open indoors, seen 80 m away.
 const WINGS_MK1 := {
 	"thrust_accel": 0.0, "burst_velocity": 14.0, "burst_heat": 0.0, "launch_once": true,
-	"cool_per_sec": 20.0, "ground_cool_only": true, "glide_heat": 4.0, "glide_cool": 0.0,
+	"cool_per_sec": 20.0, "ground_cool_only": true, "glide_heat": 1.6, "glide_cool": 0.0, "soar_accel": 8.0,
 	"glide_fall_speed": 1.2, "glide_speed": 22.0, "glide_dive_gain": 0.364, "glide_turn_rate": 2.4,
 	"stall_sink": 6.0, "air_dash_speed": 12.0, "air_dash_heat": 0.0, "air_dash_cooldown": 1.0,
 	"glide_boost": 8.0, "glide_boost_climb": 6.0, "glide_boost_heat": 0.0,

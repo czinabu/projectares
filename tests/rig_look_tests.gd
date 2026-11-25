@@ -458,10 +458,22 @@ static func run(t: Node) -> void:
 		var flared := (skin as Node3D).global_basis.y.y
 		t.check(skin._flare > 0.9 and flared > lying + 0.4,
 				"gliding in to land, the body flares up out of the glide (%.2f to %.2f up)" % [lying, flared])
+		# Down at glide speed: a run-out, leaning back against the skid with
+		# only a shallow squat, never pitched forward onto the ground.
 		p.global_position.y = ground_y
-		p.velocity = Vector3.ZERO
 		p.flight.is_gliding = false
+		p.velocity = p.global_basis * Vector3(0, -8.0, -20.0)
+		skin._on_landed(8.0)
+		var back_lean := -1.0
+		for i in 24:
+			p.velocity = p.global_basis * Vector3(0, 0, -20.0)
+			await t.frames(1)
+			back_lean = maxf(back_lean, (skin as Node3D).transform.basis.y.z)
+		t.check(skin._run_out and skin._land_depth <= skin.run_out_squat + 0.001 and back_lean > 0.1,
+				"landing out of a glide at speed runs it out, leaning back (%.2f)" % back_lean)
+		p.velocity = Vector3.ZERO
 		await t.get_tree().create_timer(0.5).timeout
+		t.check(not skin._run_out, "stopped, the run-out is over")
 		t.check(absf(p.to_local(wing_tip.global_position).x) < 0.2, "the wings retract after gliding")
 		t.check((skin as Node3D).transform.basis.y.y > 0.99, "the body stands up again after gliding")
 

@@ -290,7 +290,8 @@ func _build_sites() -> void:
 			_add_marker("spawn_bot", Vector3(spot.x, top, spot.y)).set_meta("faction", "rift")
 
 
-## The Crown: the highest mesa, the warlord's, with the best caches.
+## The Crown: the highest mesa, the warlord's, with the best caches
+## (loot source "crown").
 func _build_crown() -> void:
 	var at: Vector2 = CROWN["at"]
 	var top: float = CROWN["top"]
@@ -302,7 +303,9 @@ func _build_crown() -> void:
 	boss.set_meta("radius", radius)
 	for i in 3:
 		var spot := at + Vector2.from_angle(i * TAU / 3.0 + 0.4) * radius * 0.55
-		_add_marker("spawn_cache", Vector3(spot.x, top + 0.1, spot.y))
+		var cache := _add_marker("spawn_cache", Vector3(spot.x, top + 0.1, spot.y))
+		# The world's best caches, with the rig rewards (`roll_loot` "crown").
+		cache.set_meta("loot_source", "crown")
 
 
 ## Iron bridges between the Shelf and the mesas, railed both sides.
