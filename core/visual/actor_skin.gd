@@ -224,7 +224,8 @@ var ride_sling_lift := 0.28
 ## slung across the back, muzzle up over the right shoulder, and over the
 ## outside of a back rig (a jetpack or wings) when one is worn. A two-handed
 ## melee weapon crosses the back the other way; a one-handed blade hangs from
-## the left hip. Distances in meters, in the actor's frame (x right, y up, z back).
+## the left hip, and then the gun leans over the left shoulder instead, its
+## stock down by the right hip, clear of the blade and behind the holster. Distances in meters, in the actor's frame (x right, y up, z back).
 var sling_tilt := deg_to_rad(35.0)
 var sling_height := -0.2
 ## Where the back is behind the back bone with nothing worn, and how far the
@@ -488,9 +489,10 @@ var look_roll_full := 2.6
 var _attack_left := 0.0
 var _aim_left := 0.0
 ## Weapon -> the copy of it worn while holstered (null if it has no model),
-## and the rig they were placed for.
+## and what they were placed for: the rig, and `_stow_flags`.
 var _stowed := {}
 var _stowed_rig := ""
+var _stowed_flags := 0
 ## Weapon -> the model node inside its worn copy, which lines up with the
 ## "Model" node under the weapon's own visual.
 var _stowed_models := {}
@@ -1376,8 +1378,10 @@ func _dress_weapons() -> void:
 func _update_stowed() -> void:
 	if _skeleton == null:
 		return
-	if _stowed_rig != _rig_id:
+	var flags := _stow_flags()
+	if _stowed_rig != _rig_id or _stowed_flags != flags:
 		_stowed_rig = _rig_id
+		_stowed_flags = flags
 		_clear_stowed()
 	for weapon: Variant in _stowed.keys():
 		if not is_instance_valid(weapon) or not weapon in actor.weapons:
@@ -1579,8 +1583,30 @@ func stow_place(weapon: Weapon) -> Dictionary:
 		# Head up over the left shoulder, crossing a slung gun.
 		return {"bone": back_bone, "at": out + Vector3(0, 0, sling_clearance), "basis": Basis(Vector3.BACK, sling_tilt),
 			"centre": true}
-	# A gun leans over the right shoulder.
-	return {"bone": back_bone, "at": out, "basis": Basis(Vector3.BACK, -sling_tilt) * upright, "centre": true}
+	# A gun leans over the right shoulder, or the left when a blade hangs
+	# on the left hip, where its stock would come down.
+	var lean := sling_tilt if _hip_blade() else -sling_tilt
+	return {"bone": back_bone, "at": out, "basis": Basis(Vector3.BACK, lean) * upright, "centre": true}
+
+
+## Besides the rig, what the weapons put away were placed for: whether a
+## backpack is worn (1) and whether a blade hangs on the hip (2). They are
+## placed again when it changes.
+func _stow_flags() -> int:
+	return (1 if _wears_pack() else 0) | (2 if _hip_blade() else 0)
+
+
+func _wears_pack() -> bool:
+	return actor.pack_id != "" and ItemDB.has_item(actor.pack_id)
+
+
+## Whether a one-handed blade is carried, so hangs on the left hip when
+## put away.
+func _hip_blade() -> bool:
+	for w: Variant in actor.weapons:
+		if is_instance_valid(w) and w is MeleeWeapon and not look.is_two_handed(w):
+			return true
+	return false
 
 
 ## What the light on a helmet's back says: "" (a plain visor has none),
@@ -3139,6 +3165,13 @@ func _fit_worn() -> void:
 	if _rig_holders.is_empty() and _pack_part == null and stowed.is_empty() and clip == null:
 		return
 	if not _fits.has(key):
+		# A new kit is worked out once for every body that wears it, at
+		# most one a frame, so a crowd arriving at once never stalls one.
+		var frame := Engine.get_process_frames()
+		if _fit_frame == frame:
+			_fit_key = ""
+			return
+		_fit_frame = frame
 		_fits[key] = _work_out_fit(stowed, clip)
 	var fit: Dictionary = _fits[key]
 	var rig_holder := _rig_holder()
@@ -3165,16 +3198,12 @@ func _fit_worn() -> void:
 ## points and which way is out, actor frame), "widen" (how much wider each
 ## boot thruster's cuff is opened across and front to back, metres)}.
 static var _fits := {}
+static var _fit_frame := -1
 var _fit_key := ""
 
 
 func _work_out_fit(stowed: Array, clip: Node3D) -> Dictionary:
-	var shape := WornFit.new(body_build(), _frame_id.get_slice("|", 0), _body_scale, _fit_shift(), func() -> PackedVector3Array:
-		var points := PackedVector3Array()
-		for part in _frame_parts:
-			if is_instance_valid(part):
-				points.append_array(_hung_points(part, [], true))
-		return points)
+	var shape := WornFit.new(body_build(), _frame_id.get_slice("|", 0), _body_scale, _fit_shift(), _armor_points)
 	var out := {"rig": Vector3.ZERO, "pack": Vector3.ZERO, "clip": Vector3.ZERO, "stowed": [], "straps": [], "widen": []}
 	var rig_holder := _rig_holder()
 	var rig_move := Vector3.ZERO
@@ -3212,9 +3241,9 @@ func _work_out_fit(stowed: Array, clip: Node3D) -> Dictionary:
 		for i in stowed.size():
 			if (stowed[i][1] as Node).get_meta("fit") != kind:
 				continue
-			var points := _hung_points(stowed[i][1])
-			var move := Vector3(0.0, 0.0, shape.back_gap(points, worn_clear)) if kind == "back" \
-					else Vector3((1.0 if kind == "right" else -1.0) * shape.side_gap(points, 1.0 if kind == "right" else -1.0, worn_clear), 0.0, 0.0)
+			var points := _hung_points(stowed[i][1], [], true)
+			var move := Vector3(0.0, 0.0, shape.back_gap(points, worn_clear, 1)) if kind == "back" \
+					else Vector3((1.0 if kind == "right" else -1.0) * shape.side_gap(points, 1.0 if kind == "right" else -1.0, hip_clear, 1), 0.0, 0.0)
 			moves[i] = move
 			shape.add_points(_moved(points, move))
 	for i in stowed.size():
@@ -3223,8 +3252,11 @@ func _work_out_fit(stowed: Array, clip: Node3D) -> Dictionary:
 		# The helmet as it hangs on its clip, off the left hip.
 		var holder := _held_part(clip)
 		var at: Transform3D = (holder.get_meta("bone_at") as Transform3D) * (holder.get_meta("rest") as Transform3D)
-		var points := WornFit.boxes(_helmet_model, at, [], true)
-		out["clip"] = Vector3(-shape.side_gap(points, -1.0, worn_clear), 0.0, 0.0)
+		# Over its faces: round, the box round it would hold it well off.
+		var points := PackedVector3Array()
+		for p in WornFit.cloud(_helmet_model):
+			points.append(at * p)
+		out["clip"] = Vector3(-shape.side_gap(points, -1.0, hip_clear, 1), 0.0, 0.0)
 	return out
 
 
@@ -3235,6 +3267,15 @@ func _fit_shift() -> Vector3:
 	if hips == "" or _skeleton.find_bone(hips) < 0:
 		return Vector3.ZERO
 	return _rest_at(hips) - BodyFit.bone(body_build(), "Hips") * _body_scale
+
+
+## The worn frame's points over its faces, actor frame.
+func _armor_points() -> PackedVector3Array:
+	var points := PackedVector3Array()
+	for part in _frame_parts:
+		if is_instance_valid(part):
+			points.append_array(_hung_points(part, [], true))
+	return points
 
 
 ## The rig's part on the back, or null.
@@ -3248,7 +3289,7 @@ func _rig_holder() -> Node3D:
 
 
 ## Points over what `hung` holds (see `_hang`) as it hangs at rest with no
-## fit, actor frame: over its faces when `faces`, else over the boxes round
+## fit, actor frame: over its faces when `faces` (`WornFit.cloud`), else over the boxes round
 ## its meshes (`WornFit.boxes`).
 func _hung_points(hung: Node3D, skip: Array = [], faces := false) -> PackedVector3Array:
 	var holder := _held_part(hung)
@@ -3257,7 +3298,11 @@ func _hung_points(hung: Node3D, skip: Array = [], faces := false) -> PackedVecto
 	for child in holder.get_children():
 		if child is Node3D:
 			var xf := at * (child as Node3D).transform
-			out.append_array(WornFit.sample(child, xf, skip, true) if faces else WornFit.boxes(child, xf, skip, true))
+			if faces:
+				for p in WornFit.cloud(child, skip):
+					out.append(xf * p)
+			else:
+				out.append_array(WornFit.boxes(child, xf, skip, true))
 	return out
 
 
@@ -3287,9 +3332,12 @@ func _fit_offset(holder: Node3D) -> Vector3:
 
 ## How far worn gear stands off what is under it.
 var worn_clear := 0.006
+## The same for what hangs on a hip, more since the thigh under it swings
+## out a little as the body moves from its rest pose.
+var hip_clear := 0.012
 ## How far a rig's shoulder strap stands off the skin or armor, and how
 ## thick and wide it is.
-var strap_clear := 0.003
+var strap_clear := 0.005
 var strap_thick := 0.007
 
 
@@ -3318,11 +3366,20 @@ func _strap_paths(shape: WornFit) -> Array:
 			outs.append(Vector3.BACK)
 			y += 0.02
 		# Over the shoulder, back to front.
-		for i in 15:
-			var phi := lerpf(0.0, PI, i / 14.0)
-			var dir := Vector3(0.0, sin(phi), cos(phi))
-			points.append(_strap_cast(shape, Vector3(x, top, axis), dir))
-			outs.append(dir)
+		var reach := PackedFloat32Array()
+		var dirs := PackedVector3Array()
+		for i in 29:
+			var phi := lerpf(0.0, PI, i / 28.0)
+			dirs.append(Vector3(0.0, sin(phi), cos(phi)))
+			reach.append(_strap_cast(shape, Vector3(x, top, axis), dirs[i]))
+		for i in reach.size():
+			# A ray that slips through a gap in a thin collar would pull the
+			# strap in through it: none dips below both its neighbours.
+			var r := reach[i]
+			if i > 0 and i < reach.size() - 1:
+				r = maxf(r, minf(reach[i - 1], reach[i + 1]))
+			points.append(Vector3(x, top, axis) + dirs[i] * r)
+			outs.append(dirs[i])
 		# Down the chest.
 		y = top - 0.02
 		while y > front_low:
@@ -3333,15 +3390,15 @@ func _strap_paths(shape: WornFit) -> Array:
 	return paths
 
 
-## Where a strap crosses the ray from `from` along `dir`: as far out as
-## its widest reach across, so neither edge sinks in where the surface
-## under it curves.
-func _strap_cast(shape: WornFit, from: Vector3, dir: Vector3) -> Vector3:
+## How far along the ray from `from` along `dir` a strap crosses it: as far
+## out as its widest reach across, so neither edge sinks in where the
+## surface under it curves.
+func _strap_cast(shape: WornFit, from: Vector3, dir: Vector3) -> float:
 	var best := -INF
 	for k in 3:
 		var off := Vector3.RIGHT * RigModel.STRAP_WIDTH * (k / 2.0 - 0.5)
-		best = maxf(best, (shape.cast_in(from + off, dir, 0.25, strap_clear) - from - off).dot(dir))
-	return from + dir * best
+		best = maxf(best, (shape.cast_in(from + off, dir, 0.4, strap_clear) - from - off).dot(dir))
+	return best
 
 
 ## Lays the fitted straps on the rig, in place of its own.
@@ -4031,7 +4088,15 @@ func _stow(weapon: Weapon) -> Node3D:
 		# Clamped: its near side rests on the clamp faces.
 		at += (place["out"] as Vector3) * (_near_side(model, place["upright"], place["side"]) + mount_clearance)
 	var fallback: Vector3 = Vector3(0.0, _def.get("height", 1.8) * 0.7, 0.0) + at
-	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), place["bone"], at, fallback)
+	var bone: String = place["bone"]
+	var hips: String = _def.get("hip_bone", "")
+	if place["centre"] and not place.has("out") and _wears_pack() and bone != "" and hips != "" \
+			and _skeleton.find_bone(bone) >= 0 and _skeleton.find_bone(hips) >= 0:
+		# Slung over a backpack, strapped to it: on the hips with it, so the
+		# two keep apart however the back bends.
+		at += _rest_at(bone) - _rest_at(hips)
+		bone = hips
+	var root := _hang(pivot, "Stowed" + str(actor.weapons.find(weapon)), bone, at, fallback)
 	# Riding lifts what is slung on the back clear of the seat; a weapon
 	# clamped to a rail stays in its clamps (it rides beside the seat).
 	root.set_meta("slung", place["centre"] and not place.has("out"))

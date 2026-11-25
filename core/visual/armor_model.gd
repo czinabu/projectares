@@ -457,14 +457,15 @@ static func _torso_details(root: Node3D, m: Kit, b: Trunk, out: float, light: bo
 		on(root, "BackPanel", Vector3(0.06, 0.16, 0.022), m.plate2, b.at(0.66, PI, out), b.out(PI), 0.008)
 		on(root, "PanelLight", Vector3(0.008, 0.12, 0.004), m.glow, b.at(0.66, PI, out + 0.022), b.out(PI), 0.001)
 	if "radio" in d:
-		# A radio on the left side, its antenna up the back.
+		# A radio on the left side, its antenna up the back between the
+		# shoulder straps of a back rig.
 		# Behind the arm, so the arm hanging by the side never meets it.
 		var a := -2.35
 		var up := 0.07 / (b.high - b.low)
 		on(root, "Radio", Vector3(0.05, 0.11, 0.04), m.fabric, b.at(0.45, a, 0.034), b.out(a), 0.008)
 		on(root, "RadioHead", Vector3(0.035, 0.03, 0.045), m.plate2, b.at(0.45 + up, a, 0.038), b.out(a), 0.005)
 		on(root, "RadioLight", Vector3(0.006, 0.006, 0.006), m.glow, b.at(0.45 + up, a, 0.062), b.out(a), 0.001)
-		G.cyl(root, "Antenna", 0.003, 0.32, m.rubber, b.at(0.86, -2.6, out + 0.01) + Vector3(0, 0.14, 0), Basis(Vector3.BACK, 0.12), 6)
+		G.cyl(root, "Antenna", 0.003, 0.32, m.rubber, b.at(0.86, -2.85, out + 0.01) + Vector3(0, 0.14, 0), Basis(Vector3.BACK, 0.04), 6)
 	if "admin" in d:
 		# An admin pouch over the mags, its tag lit.
 		var at := b.at(0.53, 0.0, out + 0.002)
