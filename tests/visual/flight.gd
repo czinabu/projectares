@@ -18,6 +18,10 @@ const MOVES := {
 	"jetpack_cruise": {"rig": "jetpack_mk1", "lift": 0.0, "ticks": 420},
 	"boots_skate": {"rig": "boots_thruster", "lift": 0.0, "ticks": 420},
 	"wings_soar": {"rig": "wings_glide", "lift": 0.0, "ticks": 480},
+	# The same flights seen square from the side, to judge a pose's lines
+	# (`as`: whose controls; `side`: the camera off the right hand).
+	"wings_soar_side": {"rig": "wings_glide", "lift": 20.0, "ticks": 300, "as": "wings_soar", "side": true},
+	"wings_glide_side": {"rig": "wings_glide", "lift": 9.0, "ticks": 330, "as": "wings_glide", "side": true},
 }
 
 
@@ -55,9 +59,9 @@ static func _fly(v: Node, out_dir: String, move: String) -> void:
 	var yaw0 := p.cmd.yaw
 	var start := p.global_position
 	for tick in int(spec["ticks"]):
-		_controls(p.cmd, move, tick)
+		_controls(p.cmd, spec.get("as", move), tick)
 		# The cruises carve: the view swings left, then back right.
-		if move.ends_with("cruise") or move.ends_with("skate") or move.ends_with("soar"):
+		if not spec.get("side", false) and (move.ends_with("cruise") or move.ends_with("skate") or move.ends_with("soar")):
 			p.cmd.yaw = yaw0 - 0.5 * sin(float(tick - 180) / 120.0 * PI) * clampf((tick - 180) / 60.0, 0.0, 1.0)
 		if tick % 60 == 0:
 			print("%s t=%d pos=%s speed=%.1f h=%.1f heat=%.0f skate=%s soar=%s boost=%s glide=%s" % [move, tick,
@@ -77,6 +81,8 @@ static func _fly(v: Node, out_dir: String, move: String) -> void:
 		var right := ahead.cross(Vector3.UP).normalized()
 		var mid := p.global_position + Vector3(0, 1.0, 0)
 		var want := mid - ahead * 4.2 + right * 2.6 + Vector3(0, 0.8, 0)
+		if spec.get("side", false):
+			want = mid + right * 5.0 + Vector3(0, 0.2, 0)
 		follow = want if tick == 0 else follow.lerp(want, 0.6)
 		cam.global_position = follow
 		cam.look_at(mid)
