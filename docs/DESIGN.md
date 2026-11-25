@@ -177,7 +177,7 @@ residences and Sola at the arena, besides:
   stand in them, one each: the **Armory** (every weapon on one rack: long
   guns, sidearms, melee, and the heavy weapon wall), the **Workshop**
   (gunsmith bench and fabricator), the **Garage** (your vehicles), **Ops**
-  (wardrobe, records, mastery bench, trader), the **Gear hall** (armor
+  (the wardrobe, a standing mirror; records, mastery bench, trader), the **Gear hall** (armor
   stands, helmets, rigs, chips) and the **Stores** (supplies and trophies).
   A plate over each doorway names its room; there are no other signs.
 - **The lounge**, a seventh room, is somewhere to sit between lives: warm
@@ -259,7 +259,7 @@ start in its small form, its front half closed off by a sealed wall: a
 short weapon rack in the armory (4 long guns, 2 sidearms, 2 melee), one
 garage bay, one armor stand and one rig stand, a small supplies shelf, the
 whole workshop, and in Ops the mastery bench and records sharing the
-trader's and the wardrobe's consoles. A room's upgrade opens the rest of
+trader's console beside the wardrobe's mirror. A room's upgrade opens the rest of
 it, wherever it stands (Armory alcove, Full garage, Ops consoles, Gear
 hall, Trophy hall for the stores). Each
 upgrade is a one-off scrip purchase kept on the account (never in the stash,

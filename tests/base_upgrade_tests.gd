@@ -328,10 +328,11 @@ static func _bunker(t: Node) -> void:
 			"each one names what is behind it and its price, in the room")
 	# The mastery bench and records share a console until the ops consoles.
 	t.check(base.station("mastery") == null and base.station("records") == null and base.station("trader") != null
-			and base.also_shows("trader") == ["mastery"] and base.also_shows("wardrobe") == ["records"]
-			and base.station_title("trader") == "Trader and mastery bench"
-			and base.station("trader").get_prompt() == "[F] Trader and mastery bench: Buy and sell, pick mastery variants",
-			"the trader's console doubles as the mastery bench, the wardrobe's as the records")
+			and base.also_shows("trader") == ["mastery", "records"] and base.also_shows("wardrobe").is_empty()
+			and base.station_title("trader") == "Trader, mastery bench and records"
+			and base.station("trader").get_prompt()
+					== "[F] Trader, mastery bench and records: Buy and sell, pick mastery variants, read your record and stash",
+			"the trader's console doubles as the mastery bench and the records; the wardrobe is a mirror")
 	# The firing range is shut.
 	p.global_position = base.to_global(Vector3(0, 0.1, -base.range_from() + 2.0))
 	p.velocity = Vector3.ZERO
@@ -494,8 +495,8 @@ static func _from_the_base(t: Node) -> void:
 	main.open_station("trader")
 	await t.frames(2)
 	t.check(main.hub.visible and main.hub._sections["shop"].visible and main.hub._sections["mastery"].visible
-			and not main.hub._sections["records"].visible and "MASTERY" in main.hub._title.text,
-			"the shared console shows the trader and the mastery bench on one screen")
+			and main.hub._sections["records"].visible and "MASTERY" in main.hub._title.text,
+			"the shared console shows the trader, the mastery bench and the records on one screen")
 	main.hub.close()
 	await t.frames(2)
 	base.upgrade_requested.emit("ops_consoles")

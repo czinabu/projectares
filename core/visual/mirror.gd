@@ -48,6 +48,12 @@ var rise_seconds := 0.3
 ## reflection while the viewer is in front of it within `draw_range`.
 var wall_mounted := false
 var draw_range := 12.0
+## A fixed mirror that stands on feet instead of hanging (the base's
+## wardrobe).
+var stands := false
+## A fixed mirror with no viewer set up: it reflects for whatever camera is
+## drawing the scene (the base's wardrobe, rebuilt with the room).
+var eye_from_view := false
 
 ## The player it stands in front of, and the camera they look through.
 var viewer: Actor
@@ -153,7 +159,7 @@ func _build() -> void:
 			[Vector3(lip, height, 0.01), Vector3(width * 0.5 - lip * 0.5, mid, 0.004), Vector3(0, -0.6, 0)]]:
 		_part(edge[0], edge[1], bevel).rotation = edge[2]
 	_part(Vector3(outer.x, outer.y, 0.02), Vector3(0, mid, -0.04), metal)
-	if not wall_mounted:
+	if not wall_mounted or stands:
 		# Two slim feet, swept back so it looks stood, not floating.
 		for side in [-1.0, 1.0]:
 			_part(Vector3(0.05, 0.04, 0.5), Vector3(side * (width * 0.5 - 0.1), 0.02, -0.12), metal)
@@ -258,10 +264,13 @@ func _process(delta: float) -> void:
 	if _camera == null:
 		return
 	if wall_mounted:
+		if eye_from_view:
+			eye = get_viewport().get_camera_3d()
 		# A second view of the room costs a frame's worth of drawing: only
 		# while someone could be looking into it.
-		var near := viewer != null and is_instance_valid(viewer) and viewer.is_inside_tree() \
-				and eye != null and is_instance_valid(eye) and _faces(eye.global_position)
+		var watched := eye_from_view or (viewer != null and is_instance_valid(viewer) and viewer.is_inside_tree())
+		var near := watched and eye != null and is_instance_valid(eye) and eye != _camera \
+				and _faces(eye.global_position)
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if near else SubViewport.UPDATE_DISABLED
 		_drawn = mini(_drawn + 1, 3) if near else 0
 		var want := 1.0 if _drawn >= 2 else 0.0

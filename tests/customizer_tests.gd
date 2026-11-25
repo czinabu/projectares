@@ -56,7 +56,19 @@ static func run(t: Node) -> void:
 	t.check(Human.color_for(plain, "head", "MI_Hair_1")["color"] == Human.NATURAL_HAIR
 			and Human.color_for(mixed, "head", "MI_Hair_2")["color"] == Human.HAIR_COLORS[5],
 			"hair is the natural brown unless a colour is chosen")
-	t.check(Human.color_for(mixed, "head", "MI_Eyes").is_empty(), "eyes keep their own colour")
+	t.check(Human.color_for(mixed, "head", "MI_Eyes").is_empty() and Human.iris_for(plain) == null,
+			"eyes keep their own colour unless one is chosen")
+	# The hairstyle, facial hair and eyes are their own choices on either body.
+	t.check(mixed["style"] == "cropped" and mixed["facial"] == "none" and plain["style"] in Human.STYLES,
+			"a look saved before hairstyles were a choice keeps its head outfit's hair")
+	var bearded := Human.sanitize({"build": "f", "style": "shaved", "facial": "beard", "eyes": 4})
+	t.check(bearded["style"] == "shaved" and bearded["facial"] == "beard" and Human.hair_meshes(bearded) == ["Hair_Beard"]
+			and Human.iris_for(bearded) == Human.EYE_COLORS[4], "any hairstyle, a beard and an eye colour go on either body")
+	var bad_hair := Human.sanitize({"build": "m", "head": "Farmer", "style": "mohawk", "facial": 3, "eyes": 99})
+	t.check(bad_hair["style"] == "buzzed" and bad_hair["facial"] == "beard" and bad_hair["eyes"] == Human.EYE_COLORS.size() - 1,
+			"an unknown hairstyle or facial hair falls back to the head outfit's, and eyes are clamped")
+	t.check(Human.player_look(bearded)["facial"] == "beard" and Human.player_look(bearded)["style"] == "shaved",
+			"hairstyles and facial hair are free: nothing has to be owned")
 	# Everyone wears the tactical suit: the outfit picks its colours.
 	var suit_top := Human.suit_for(mixed, "body")
 	var suit_legs := Human.suit_for(mixed, "legs")
@@ -70,7 +82,7 @@ static func run(t: Node) -> void:
 	t.check(Human.suit_for(mixed, "feet")["color"].get_luminance() < Human.SUITS["SciFi"][0].get_luminance(),
 			"the boots are a darker shade of their outfit")
 	t.check(Human.BUILDS.all(func(build: String) -> bool: return Human.OUTFITS[build].keys().all(func(outfit: String) -> bool:
-			return Human.SUITS.has(outfit) and Human.HAIR[build].has(outfit))), "every outfit has a suit and a hairstyle")
+			return Human.SUITS.has(outfit) and Human.HAIR[build].has(outfit))), "every outfit has a suit and its old hairstyle")
 
 	# Each build is one body file: four parts and the hairstyles, bound to bones by name.
 	var complete := true
@@ -83,9 +95,10 @@ static func run(t: Node) -> void:
 		for slot in Human.SLOTS:
 			var part := body.find_child(Human.SLOT_NODES[slot], true, false) as MeshInstance3D
 			complete = complete and part != null and part.skin != null and String(part.skin.get_bind_name(0)) != ""
-		for outfit: String in Human.HAIR[build]:
-			for hair: String in Human.HAIR[build][outfit]:
-				complete = complete and body.find_child(hair, true, false) is MeshInstance3D
+		for table: Dictionary in [Human.STYLES, Human.FACIAL]:
+			for id: String in table:
+				for hair: String in table[id][1]:
+					complete = complete and body.find_child(hair, true, false) is MeshInstance3D
 		body.free()
 	t.check(complete, "each build's body has a head, body, legs, feet and every hairstyle, bound to bones by name")
 
@@ -97,12 +110,12 @@ static func run(t: Node) -> void:
 		var model: Node3D = built["model"]
 		var skeleton := model.find_child("Skeleton3D", true, false) as Skeleton3D
 		var worn := model.find_children("*", "MeshInstance3D", true, false)
-		var hair: Array = Human.HAIR["f"]["Punk"]
+		var hair: Array = Human.hair_meshes(mixed)
 		t.check(worn.size() == 4 + hair.size() and worn.all(func(part: MeshInstance3D) -> bool:
 				return part.get_parent() == skeleton and part.skin != null and part.get_meta("slot", "") != ""),
-				"the model wears the four parts and the head outfit's hair, nothing else")
-		t.check(hair.all(func(h: String) -> bool: return model.find_child(h, true, false) != null),
-				"the hair is the head outfit's")
+				"the model wears the four parts and the chosen hair, nothing else")
+		t.check(hair == ["Hair_BuzzedFemale"] and model.find_child(hair[0], true, false) != null,
+				"the hair is the chosen hairstyle")
 		var legs_mat: Array = built["materials"].filter(func(m: ShaderMaterial) -> bool:
 				return m.get_meta("suit_slot", "") == "legs")
 		t.check(not legs_mat.is_empty() and legs_mat[0].get_shader_parameter("suit_color") == Human.CLOTH_COLORS[1]
@@ -116,6 +129,17 @@ static func run(t: Node) -> void:
 		t.check(toned > 0, "the chosen skin tone reaches the model's materials")
 		t.check(model.find_children("*", "CollisionObject3D", true, false).is_empty(), "a built character has no collision")
 		model.free()
+	var styled: Dictionary = Look.character("raider", bearded)
+	if not styled.is_empty():
+		var face: Node3D = styled["model"]
+		t.check(face.find_child("Hair_Beard", true, false) != null and face.find_child("Hair_Long", true, false) == null
+				and face.find_child("Hair_Buns", true, false) == null, "a shaved head with a beard shows just the beard")
+		var irises: Array = styled["materials"].filter(func(m: ShaderMaterial) -> bool:
+				return m.get_shader_parameter("surface_kind") == 3)
+		t.check(not irises.is_empty() and irises.all(func(m: ShaderMaterial) -> bool:
+				return m.get_shader_parameter("iris_amount") == 1.0 and m.get_shader_parameter("iris_color") == Human.EYE_COLORS[4]),
+				"the chosen eye colour reaches the eyes")
+		face.free()
 
 	# The profile keeps the look, cleaned.
 	var was_persist := Profile.persist
@@ -151,33 +175,36 @@ static func run(t: Node) -> void:
 	t.check(panel.options_for("body").any(func(option: Array) -> bool: return option[0] == "King"),
 			"an owned outfit shows up in the pickers")
 	# What the phone's mirror scrolls through.
-	t.check(panel.pick_keys() == ["build", "head", "body", "legs", "feet", "skin", "hair", "top", "bottom"],
-			"the mirror lists the build, each part and each colour")
-	var first_head: String = panel.options_for("head")[0][0]
-	panel.choose("head", first_head)
-	panel.step("head", -1)
-	t.check(panel.appearance["head"] == panel.options_for("head")[-1][0] and panel.pick_position("head")[0]
-			== panel.options_for("head").size() - 1, "scrolling back from the first option wraps round to the last")
-	panel.step("head", 1)
-	t.check(panel.appearance["head"] == first_head and panel.pick_label("head") == Human.OUTFITS["m"][first_head],
+	t.check(panel.pick_keys() == ["build", "style", "facial", "hair", "eyes", "skin", "body", "legs", "feet", "top", "bottom"],
+			"the mirror lists the body, the head's choices, then the suit")
+	t.check(panel.options_for("style").size() == Human.STYLES.size() and panel.options_for("facial").size() == Human.FACIAL.size()
+			and panel.pick_title("style") == "Hairstyle" and panel.pick_title("hair") == "Hair colour",
+			"every hairstyle and facial hair is offered, by its own name")
+	var first_style: String = panel.options_for("style")[0][0]
+	panel.choose("style", first_style)
+	panel.step("style", -1)
+	t.check(panel.appearance["style"] == panel.options_for("style")[-1][0] and panel.pick_position("style")[0]
+			== panel.options_for("style").size() - 1, "scrolling back from the first option wraps round to the last")
+	panel.step("style", 1)
+	t.check(panel.appearance["style"] == first_style and panel.pick_label("style") == Human.STYLES[first_style][0],
 			"scrolling on wraps back to the first")
+	panel.choose("facial", "beard")
+	panel.choose("build", "f")
+	t.check(panel.appearance["style"] == first_style and panel.appearance["facial"] == "beard",
+			"switching body keeps the hairstyle and facial hair")
+	panel.choose("build", "m")
 	panel.owned = [Human.outfit_id("m", "Punk")]
 	panel.choose("body", "Punk")
 	t.check(panel.appearance["body"] == "Punk" and panel.pick_source("body") == "From your stash: Punk Outfit",
 			"an owned outfit says which stash item it came from")
-	t.check(panel.pick_source("head") == "Starter clothes" and panel.pick_source("skin") == "",
-			"starter clothes say so, and colours have no source")
+	t.check(panel.pick_source("legs") == "Starter clothes" and panel.pick_source("skin") == ""
+			and panel.pick_source("style") == "", "starter clothes say so, and colours and hair have no source")
 	panel.choose("body", Human.STARTER["m"][0])
 	panel.owned = []
-	panel.show_customizer()
-	await t.frames(3)
-	t.check(panel.is_customizing() and panel._pickers.size() == 9 and panel._model != null,
-			"the customizer opens with a picker for each choice and a preview model")
 	var heard_before := heard.size()
 	panel.randomize_look()
 	t.check(heard.size() == heard_before + 1 and Human.player_look(heard[-1]) == heard[-1], "randomize picks a look from starter clothes")
-	panel.hide_customizer()
-	t.check(not panel.is_customizing(), "done closes the customizer")
+	t.check(not panel.has_method("show_customizer"), "there is no flat customizer: looks are changed in front of a mirror")
 	hub.queue_free()
 	await t.frames(2)
 
@@ -296,7 +323,7 @@ static func _run_mirror(t: Node) -> void:
 	await t.frames(1)
 	t.check(phone.mirror_open() and ups == [true], "the Mirror app asks for a mirror")
 	var rows: Array = phone._body.get_children().filter(func(child: Node) -> bool: return child is PanelContainer)
-	t.check(rows.size() == 9, "the app has a row for the build, each part and each colour")
+	t.check(rows.size() == 11, "the app has a row for the body, each hair, eye and skin choice and the suit")
 	var looks: Array = []
 	hub.look_changed.connect(func(appearance: Dictionary) -> void: looks.append(appearance))
 	var key := KEY_DOWN
@@ -308,20 +335,20 @@ static func _run_mirror(t: Node) -> void:
 	var right := InputEventKey.new()
 	right.keycode = KEY_D
 	right.pressed = true
-	var head_before: String = hub.character.appearance["head"]
+	var style_before: String = hub.character.appearance["style"]
 	phone._unhandled_input(right)
 	await t.frames(1)
-	t.check(looks.size() == 1 and looks[0]["head"] != head_before and looks[0]["head"] in Human.wearable(looks[0]["build"]),
-			"right scrolls the chosen part to the next outfit the player owns, and tells the game")
-	phone.mirror_step("hair", 1)
+	t.check(looks.size() == 1 and looks[0]["style"] != style_before and looks[0]["style"] in Human.STYLES,
+			"right scrolls the chosen row to the next hairstyle, and tells the game")
+	phone.mirror_step("skin", 1)
 	await t.frames(1)
-	t.check(looks.size() == 2 and phone.mirror_row == 6, "a row's arrows scroll it and select it")
+	t.check(looks.size() == 2 and phone.mirror_row == 5, "a row's arrows scroll it and select it")
 	# The wheel works like the watch's icons (Caleb's feedback: it used to
 	# scroll the page and turn the row under the mouse at once).
 	var wheel := InputEventMouseButton.new()
 	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
 	wheel.pressed = true
-	t.check(phone._mirror_mouse(wheel) and phone.mirror_row == 7 and not phone.mirror_picking and looks.size() == 2,
+	t.check(phone._mirror_mouse(wheel) and phone.mirror_row == 6 and not phone.mirror_picking and looks.size() == 2,
 			"with no row open the wheel moves between the rows and changes nothing")
 	await t.frames(1)
 	var click := InputEventMouseButton.new()
@@ -337,8 +364,8 @@ static func _run_mirror(t: Node) -> void:
 	right_click.button_index = MOUSE_BUTTON_RIGHT
 	right_click.pressed = true
 	t.check(phone._mirror_mouse(right_click) and not phone.mirror_picking, "a right click closes the row")
-	phone._mirror_mouse(wheel)
-	phone._mirror_mouse(wheel)
+	for i in rows.size():
+		phone._mirror_mouse(wheel)
 	t.check(phone.mirror_row == rows.size() - 1 and looks.size() == 3, "closed, the wheel stops at the last row")
 	t.check(not phone._mirror_mouse(right_click), "a right click with no row open is left alone")
 	# The page follows the chosen row (Caleb's feedback: the highlight moved

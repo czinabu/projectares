@@ -23,6 +23,12 @@ uniform vec3 recolor : source_color = vec3(1.0);
 uniform float recolor_amount = 0.0;
 uniform float recolor_shading = 0.0;
 uniform float flash = 0.0;
+// An eye's iris tinted (`Human.iris_for`): the pack's eye texture has the
+// iris as a disc in the middle of its UVs; its light and dark are kept.
+uniform vec3 iris_color : source_color = vec3(1.0);
+uniform float iris_amount = 0.0;
+uniform vec2 iris_centre = vec2(0.497, 0.5);
+uniform float iris_radius = 0.1;
 // People (see `human.gd`): each vertex carries its place on the body at
 // rest in CUSTOM0 (xyz) and how much it is a hand (w), so patterns stay on
 // the body as it moves. `surface_kind`: 0 anything else, 1 skin, 2 skin the
@@ -86,6 +92,10 @@ void fragment() {
 	vec3 c = texture(base_tex, UV).rgb * base_color;
 	float own = dot(c, vec3(0.299, 0.587, 0.114));
 	c = mix(c, recolor * mix(1.0, 0.45 + 1.1 * own, recolor_shading), recolor_amount);
+	if (iris_amount > 0.0) {
+		float in_iris = 1.0 - smoothstep(iris_radius - 0.012, iris_radius + 0.004, distance(UV, iris_centre));
+		c = mix(c, iris_color * (0.35 + 1.6 * own), in_iris * iris_amount);
+	}
 	float l = dot(c, vec3(0.299, 0.587, 0.114));
 	c = mix(vec3(l), c, saturation) * tint * brightness;
 	// Darker in the creases the flat pack colors cannot show.
