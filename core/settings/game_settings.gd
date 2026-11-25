@@ -42,13 +42,24 @@ const SHADOWS := [
 ]
 ## Drawing the 3D view smaller and sharpening it up to the screen (AMD FSR
 ## 1), cheapest last: [name on the phone, scale]. The phone, the HUD and
-## text are always drawn at full size.
+## text are always drawn at full size. "Auto" (scale 0) lets `AutoScale`
+## pick the scale from how long the graphics card takes over a frame, so a
+## laptop keeps its frame rate in a heavy fight and sharpens up in a quiet
+## spot or on a small screen.
 const RENDER_SCALE := [
 	["Full", 1.0],
 	["Quality (77%)", 0.77],
 	["Balanced (67%)", 0.67],
 	["Performance (50%)", 0.5],
+	["Auto (keeps the frame rate)", 0.0],
 ]
+const RENDER_SCALE_AUTO := 4
+## The scales "Auto" steps between, sharpest first, and the one it starts on.
+const AUTO_SCALES: Array[float] = [1.0, 0.85, 0.77, 0.67, 0.58, 0.5]
+const AUTO_SCALE_START := 3
+## The graphics card time a frame "Auto" aims under, in ms: a little under
+## 60 frames a second, so the rest of the frame has room.
+const AUTO_TARGET_MS := 14.0
 ## How far and in how much detail a world is drawn, best first: [name on the
 ## phone, share of the world's own view reach (`view_far_for`), how far small
 ## things are drawn (a share of `Look`'s size rule), how far anything bigger
@@ -72,14 +83,14 @@ const VIEW_DISTANCE_DEFAULT := 1
 ## last row, which sets nothing). A weak graphics card is spotted on the
 ## first launch and given a lower one (`detect_graphics`).
 const GRAPHICS := [
-	["High", 0, 0, 1, true, true, 2, true],
-	["Medium", 1, 1, 1, false, true, 2, true],
-	["Low (laptops)", 2, 2, 2, false, false, 1, true],
-	["Lowest", 3, 3, 3, false, false, 1, false],
+	["High", 0, 0, 1, true, true, 2, true, true],
+	["Medium", 1, 1, 1, false, true, 2, true, true],
+	["Low (laptops)", 2, RENDER_SCALE_AUTO, 2, false, false, 1, true, false],
+	["Lowest", 3, 3, 3, false, false, 1, false, false],
 	["Custom"],
 ]
 const GRAPHICS_KEYS := ["shadows", "render_scale", "view_distance", "ambient_occlusion", "ground_smoke",
-		"anti_aliasing", "edge_ink"]
+		"anti_aliasing", "edge_ink", "bloom"]
 const GRAPHICS_HIGH := 0
 const GRAPHICS_MEDIUM := 1
 const GRAPHICS_LOW := 2
@@ -123,6 +134,8 @@ const SCHEMA := [
 			"label": "Ambient occlusion", "default": true},
 	{"key": "ground_smoke", "tab": "view", "section": "PERFORMANCE", "kind": "toggle",
 			"label": "Battle smoke over the ground", "default": true},
+	{"key": "bloom", "tab": "view", "section": "PERFORMANCE", "kind": "toggle",
+			"label": "Glow around bright lights", "default": true},
 	{"key": "field_of_view", "tab": "view", "section": "CAMERA", "kind": "slider",
 			"label": "Field of view, first person", "default": 80.0, "range": FOV_RANGE, "step": 1.0,
 			"format": "whole", "preview": true},
@@ -148,6 +161,8 @@ const SCHEMA := [
 
 ## Tests turn this off so they never touch a real settings file.
 static var persist := true
+## The "Auto" render scale's node while it runs (`AutoScale`).
+static var _auto: Node
 ## The values, by `SCHEMA` key. The typed vars below read and write here.
 static var _values := {}
 static var _loaded := false
@@ -211,6 +226,12 @@ static var ambient_occlusion: bool:
 static var ground_smoke: bool:
 	get: return _values["ground_smoke"]
 	set(v): _values["ground_smoke"] = v
+## The soft glow around bright and glowing things (the atmosphere's glow,
+## `Look.atmosphere`): a few blurred copies of the frame, so a weak
+## graphics card can do without.
+static var bloom: bool:
+	get: return _values["bloom"]
+	set(v): _values["bloom"] = v
 ## The watch's mission log: what the player took off the visor's objective
 ## block (a contract's id, or `TOUR_KEY` for the new player's tour). Every
 ## mission is tracked until it is picked off. View only.
@@ -489,9 +510,16 @@ static func apply_graphics() -> void:
 	var full := RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	tree.root.msaa_3d = mode[1]
 	tree.root.screen_space_aa = mode[2] if full else Viewport.SCREEN_SPACE_AA_DISABLED
-	var scale: float = RENDER_SCALE[render_scale][1]
-	tree.root.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 1.0 and full else Viewport.SCALING_3D_MODE_BILINEAR
-	tree.root.scaling_3d_scale = scale
+	if render_scale == RENDER_SCALE_AUTO:
+		if not is_instance_valid(_auto):
+			_auto = AutoScale.new()
+			tree.root.add_child.call_deferred(_auto)
+			AutoScale.set_scale(tree.root, AUTO_SCALES[AUTO_SCALE_START])
+	else:
+		if is_instance_valid(_auto):
+			_auto.queue_free()
+		_auto = null
+		AutoScale.set_scale(tree.root, RENDER_SCALE[render_scale][1])
 	for ink: Node in tree.get_nodes_in_group("edge_ink"):
 		(ink as Node3D).visible = ink_shown()
 	RenderingServer.directional_shadow_atlas_set_size(SHADOWS[shadows][3], true)
@@ -504,6 +532,83 @@ static func apply_graphics() -> void:
 	tree.root.mesh_lod_threshold = VIEW_DISTANCE[view_distance][4]
 	for map: Node in tree.get_nodes_in_group(DRAWN_MAP_GROUP):
 		Look.fit_draw_distance(map as Node3D)
+
+
+## "Auto" render scale (`RENDER_SCALE_AUTO`): a node on the window's root
+## while it is picked. It times the graphics card's work on the main view
+## and every `WINDOW` seconds moves the scale a step (`next_step`). Each
+## change rebuilds the view's buffers, a small hitch, so after one it waits
+## `SETTLE` seconds and ignores that stretch. View only: nothing here
+## touches the game, and first and third person are drawn alike.
+class AutoScale extends Node:
+	const NODE_NAME := "AutoRenderScale"
+	const WINDOW := 1.5
+	const SETTLE := 2.0
+	var step := AUTO_SCALE_START
+	var _time := 0.0
+	var _gpu := 0.0
+	var _frames := 0
+	var _wait := SETTLE
+
+	## Draws the main view's 3D at `scale` of the window, sharpened up with FSR
+	## (plainly scaled on the OpenGL fallback, which has no FSR).
+	static func set_scale(view: Viewport, scale: float) -> void:
+		var full := RenderingServer.get_current_rendering_method() != "gl_compatibility"
+		view.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 1.0 and full else Viewport.SCALING_3D_MODE_BILINEAR
+		view.scaling_3d_scale = scale
+
+	## The `AUTO_SCALES` step "Auto" moves to from step `at`, after a stretch
+	## whose frames took the graphics card `gpu_ms` on average: a step smaller
+	## when over `AUTO_TARGET_MS` (two when far over), a step sharper when the
+	## sharper step's pixels would still fit well under it (the cost taken as
+	## growing with the pixels drawn, which overstates it), else the same.
+	static func next_step(at: int, gpu_ms: float) -> int:
+		var last := AUTO_SCALES.size() - 1
+		if gpu_ms <= 0.0:
+			return at
+		if gpu_ms > AUTO_TARGET_MS * 1.4:
+			return mini(at + 2, last)
+		if gpu_ms > AUTO_TARGET_MS:
+			return mini(at + 1, last)
+		if at > 0:
+			var grow := pow(AUTO_SCALES[at - 1] / AUTO_SCALES[at], 2.0)
+			if gpu_ms * grow < AUTO_TARGET_MS * 0.85:
+				return at - 1
+		return at
+
+	func _init() -> void:
+		name = NODE_NAME
+		process_mode = Node.PROCESS_MODE_ALWAYS
+
+	func _ready() -> void:
+		if DisplayServer.get_name() == "headless":
+			set_process(false)
+			return
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+
+	func _process(delta: float) -> void:
+		if _wait > 0.0:
+			_wait -= delta
+			return
+		var gpu := RenderingServer.viewport_get_measured_render_time_gpu(get_viewport().get_viewport_rid())
+		# No timing from the card (the OpenGL fallback gives none): the scale
+		# it started on stays.
+		if gpu <= 0.0:
+			return
+		_gpu += gpu
+		_frames += 1
+		_time += delta
+		if _time < WINDOW:
+			return
+		var next := next_step(step, _gpu / maxi(_frames, 1))
+		_time = 0.0
+		_gpu = 0.0
+		_frames = 0
+		if next == step:
+			return
+		step = next
+		set_scale(get_viewport(), AUTO_SCALES[step])
+		_wait = SETTLE
 
 
 ## A world's sun and atmosphere (`Look.atmosphere`) are in these groups, so
@@ -534,6 +639,7 @@ static func fit_atmosphere(atmosphere: WorldEnvironment) -> void:
 	if atmosphere == null or atmosphere.environment == null:
 		return
 	atmosphere.environment.ssao_enabled = ambient_occlusion
+	atmosphere.environment.glow_enabled = bloom
 
 
 ## A map whose props `Look` gave a draw distance (`Look._limit_draw_distance`)
@@ -623,9 +729,19 @@ static func load_settings() -> void:
 	if typeof(data) != TYPE_DICTIONARY:
 		push_warning("GameSettings: %s is unreadable, using defaults" % SAVE_PATH)
 		return
+	use_saved(data)
+
+
+## Takes the settings in `data` (as saved), without saving them again.
+static func use_saved(data: Dictionary) -> void:
 	var was_persisting := persist
 	persist = false
 	for key: String in to_dict():
 		if data.has(key):
 			set_value(key, data[key])
+	# A saved Graphics quality pick (not Custom) takes the pick's rows as
+	# they are now, so a player on Low gets what Low became since.
+	var pick := int(data.get("graphics", GRAPHICS_CUSTOM))
+	if pick >= 0 and pick < GRAPHICS_CUSTOM:
+		_use_graphics(pick)
 	persist = was_persisting

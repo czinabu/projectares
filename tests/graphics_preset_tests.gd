@@ -28,22 +28,24 @@ static func run(t: Node) -> void:
 						"graphics pick %s sets %s to a choice there is" % [row[0], key])
 
 	GameSettings.set_value("graphics", GameSettings.GRAPHICS_LOW)
-	var low := GameSettings.shadows == 2 and GameSettings.render_scale == 2 and GameSettings.view_distance == 2 \
-			and not GameSettings.ambient_occlusion and not GameSettings.ground_smoke
+	var low := GameSettings.shadows == 2 and GameSettings.render_scale == GameSettings.RENDER_SCALE_AUTO \
+			and GameSettings.view_distance == 2 and not GameSettings.ambient_occlusion \
+			and not GameSettings.ground_smoke and not GameSettings.bloom
 	t.check(low and GameSettings.graphics == GameSettings.GRAPHICS_LOW and GameSettings.to_dict().has("graphics"),
 			"picking Low sets the shadows, render scale, view distance and effects at once, and is saved")
 	GameSettings.set_value("shadows", 0)
-	t.check(GameSettings.graphics == GameSettings.GRAPHICS_CUSTOM and GameSettings.render_scale == 2,
+	t.check(GameSettings.graphics == GameSettings.GRAPHICS_CUSTOM
+			and GameSettings.render_scale == GameSettings.RENDER_SCALE_AUTO,
 			"changing one of them by hand reads Custom and keeps the rest")
 	GameSettings.set_value("graphics", GameSettings.GRAPHICS_CUSTOM)
-	t.check(GameSettings.shadows == 0 and GameSettings.render_scale == 2,
+	t.check(GameSettings.shadows == 0 and GameSettings.render_scale == GameSettings.RENDER_SCALE_AUTO,
 			"picking Custom changes nothing")
 	GameSettings.set_value("shadows", 2)
 	t.check(GameSettings.graphics == GameSettings.GRAPHICS_LOW,
 			"settings that match a pick again read as that pick")
 	GameSettings.set_value("graphics", GameSettings.GRAPHICS_LOWEST)
 	t.check(GameSettings.shadows == GameSettings.SHADOWS.size() - 1
-			and GameSettings.render_scale == GameSettings.RENDER_SCALE.size() - 1,
+			and is_equal_approx(GameSettings.RENDER_SCALE[GameSettings.render_scale][1], 0.5),
 			"Lowest has no shadows and the smallest render scale")
 	GameSettings.set_value("graphics", GameSettings.GRAPHICS_HIGH)
 	var root := t.get_tree().root
