@@ -12,6 +12,7 @@ const KEY_ACTIONS := {
 	"dash": KEY_ALT,
 	"crouch": KEY_C,
 	"kick": KEY_V,
+	"weapon_ability": KEY_O,
 	"interact": KEY_F,
 	"reload": KEY_R,
 	"heal": KEY_H,
@@ -44,6 +45,8 @@ const MOUSE_ACTIONS := {
 	"fire": MOUSE_BUTTON_LEFT,
 	"alt_fire": MOUSE_BUTTON_RIGHT,
 	"ping": MOUSE_BUTTON_MIDDLE,
+	# The thumb button, nearer to hand than O mid-fight.
+	"weapon_ability": MOUSE_BUTTON_XBUTTON1,
 }
 
 

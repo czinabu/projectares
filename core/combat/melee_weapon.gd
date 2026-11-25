@@ -196,6 +196,29 @@ var kick_damage := 6.0
 var kick_stamina := 15.0
 var kick_guard_stagger := 0.85
 var guard_break_stagger := 0.9
+## A weapon ability (`ActorCommand.weapon_ability_pressed`, a key of its
+## own), picked by the item's stats: "" for none. "ground_pound" (the
+## hammer): on the ground, the weapon goes up over the head for
+## `ability_windup`, longer than a heavy's so anyone near can read it and
+## dodge, block or step out, then is driven into the ground. A shock ring
+## reaches everyone on the ground within `ability_radius` for a little
+## damage (`ability_damage`, through `Combat.deal`, so a guard blocks it and
+## a parry staggers the pounder) and knocks them back off their feet: a
+## stagger (`ability_stagger`) and a shove out and up (`ability_knock`,
+## `ability_lift`, less at the ring's edge). Then it is spent for
+## `ability_cooldown` seconds, from the press.
+var ability := ""
+var ability_windup := 0.65
+var ability_recover := 0.7
+var ability_cooldown := 12.0
+var ability_radius := 5.0
+var ability_damage := 12.0
+var ability_stagger := 1.1
+var ability_knock := 10.0
+var ability_lift := 5.0
+var ability_stamina := 25.0
+## Who is higher above (or below) the pounder than this rides over the ring.
+const POUND_HEIGHT := 1.5
 var riposte_window := 1.6
 var riposte_mult := 1.5
 
@@ -316,6 +339,8 @@ var _back_shown := false
 ## The kind of the attack being shown ("light" or "heavy"), for its style.
 var _shown_kind := "light"
 var _hitstop_left := 0.0
+## Seconds until the weapon ability can be used again.
+var ability_left := 0.0
 
 
 func build_visual() -> Node3D:
@@ -384,7 +409,8 @@ static func mirror(dir: int) -> int:
 
 
 func controls_hint() -> String:
-	return "Tap left mouse to swing, hold it for a heavy (a dive slam in the air)   Right mouse just before a hit parries, a little earlier blocks cheaply; held, the guard drains stamina"
+	var pound := "   O or the mouse's thumb button: ground pound" if ability == "ground_pound" else ""
+	return "Tap left mouse to swing, hold it for a heavy (a dive slam in the air)" + pound + "   Right mouse just before a hit parries, a little earlier blocks cheaply; held, the guard drains stamina"
 
 
 func is_blocking() -> bool:
@@ -397,6 +423,7 @@ func is_winding_up() -> bool:
 
 func tick(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	ability_left = maxf(0.0, ability_left - delta)
 	if _combo_timer > 0.0:
 		_combo_timer -= delta
 		if _combo_timer <= 0.0:
@@ -413,6 +440,8 @@ func tick(delta: float) -> void:
 		if _windup_left <= 0.0:
 			if _windup_kind == "kick":
 				_kick_lands()
+			elif _windup_kind == "pound":
+				_pound_lands()
 			else:
 				_strike(_windup_damage, _windup_kind)
 			_windup_kind = ""
@@ -459,6 +488,11 @@ func handle_input(cmd: ActorCommand, delta: float) -> void:
 		_queued = false
 		kick()
 		return
+	if cmd.weapon_ability_pressed:
+		_charge = -1.0
+		_queued = false
+		weapon_ability()
+		return
 	if cmd.tertiary_pressed:
 		# A heavy asked for outright (bots, or a bound key).
 		_charge = -1.0
@@ -503,6 +537,67 @@ func kick() -> void:
 	_cooldown = kick_windup + kick_recover
 	_recover_total = 0.0
 	swung.emit("kick_windup")
+
+
+## True when the weapon has an ability and it is ready to use.
+func ability_ready() -> bool:
+	return ability != "" and ability_left <= 0.0
+
+
+## The weapon's ability (`ability`): the ground pound, on the ground only.
+func weapon_ability() -> void:
+	if ability != "ground_pound" or ability_left > 0.0 or not actor.is_on_floor():
+		return
+	if not actor.spend_stamina(ability_stamina):
+		return
+	ability_left = ability_cooldown
+	combo_step = 0
+	_cooldown = ability_windup + ability_recover
+	_begin_windup("pound", ability_damage, ability_windup)
+	attack_dir = Dir.OVERHEAD
+	swung.emit("pound_windup")
+
+
+## True while the ground pound is winding up or being shown.
+func is_pounding() -> bool:
+	return _shown_kind == "pound" and (_windup_left > 0.0 or _cooldown > 0.0)
+
+
+## The ground pound lands: a ring through everyone on the ground near.
+func _pound_lands() -> void:
+	swung.emit("pound")
+	_swing_time = SWING_TIME * TWO_HAND_SWING
+	_swing_left = _swing_time
+	_back_shown = false
+	_recover_total = _cooldown
+	Sfx.play("slam", null if actor.is_player else actor.global_position)
+	var forward := actor.get_aim_dir()
+	forward.y = 0.0
+	forward = forward.normalized() if forward.length() > 0.01 else Vector3.FORWARD
+	if actor.is_inside_tree():
+		var ground := actor.global_position + Vector3.UP * 0.08
+		Fx.ring(actor.get_parent(), ground, ability_radius, Color(1.0, 0.62, 0.3), 0.7, false)
+		Fx.puff(actor.get_parent(), ground + forward * 1.4, 1.3, Color(0.55, 0.5, 0.45, 0.7))
+	var seen := Combat.positions_seen_by(actor)
+	for other in _other_actors():
+		var at: Vector3 = seen.get(other, other.global_position)
+		var to := at - actor.global_position
+		if absf(to.y) > POUND_HEIGHT:
+			continue
+		to.y = 0.0
+		var dist := to.length()
+		if dist - HIT_ALLOWANCE > ability_radius:
+			continue
+		var info := DamageInfo.make(_windup_damage, actor, "melee", at)
+		info.direction = Dir.OVERHEAD
+		info.armor_pierce = armor_pierce
+		if not Combat.deal(other, info) or info.blocked or info.parried or other.is_dead:
+			continue
+		other.stagger(ability_stagger)
+		other.notice.emit("Knocked back")
+		var away := to / dist if dist > 0.1 else forward
+		var share := 1.0 - 0.5 * clampf(dist / maxf(ability_radius, 0.1), 0.0, 1.0)
+		other.add_impulse(away * ability_knock * share + Vector3.UP * ability_lift * share)
 
 
 ## True while a kick is winding up or just landed.
@@ -720,12 +815,16 @@ func status_text() -> String:
 		return "%s  dash strike" % display_name
 	if _slamming:
 		return "%s  dive slam" % display_name
+	if is_pounding():
+		return "%s  ground pound" % display_name
 	if _air_lunge and _windup_left > 0.0:
 		return "%s  air lunge" % display_name
 	if actor.riposte_left > 0.0:
 		return "%s  riposte ready" % display_name
 	if combo_step > 0:
 		return "%s  %s  combo %d" % [display_name, DIR_NAMES[stance], combo_step]
+	if ability != "" and ability_left > 0.0:
+		return "%s  %s  pound in %ds" % [display_name, DIR_NAMES[stance], ceili(ability_left)]
 	return "%s  %s" % [display_name, DIR_NAMES[stance]]
 
 
@@ -1115,8 +1214,11 @@ func swing_arc() -> float:
 		if _windup_left > _swing_lead or _swing_lead <= 0.0:
 			return -1.0
 		var into := 1.0 - _windup_left / _swing_lead
-		return 0.5 * into * into
+		# The pound is driven all the way down by the time it lands.
+		return into * into if _shown_kind == "pound" else 0.5 * into * into
 	if _swing_left > 0.0:
+		if _shown_kind == "pound":
+			return 1.0
 		var after := 1.0 - _swing_left / maxf(_swing_time, 0.001)
 		return 0.5 + 0.5 * (1.0 - (1.0 - after) * (1.0 - after))
 	return -1.0
