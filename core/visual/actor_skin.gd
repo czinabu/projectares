@@ -609,6 +609,7 @@ func _ready() -> void:
 		add_child(arm)
 		var fist: String = _anims.get("fist", _anims.get("idle_melee", ""))
 		arm.setup(def, _player.get_animation(fist) if _player and fist != "" else null)
+		_teach_arm.call_deferred()
 		if _player:
 			arm.calibrate(_player.get_animation(_anims["aim_gun"]) if _anims.has("aim_gun") else null,
 					_player.get_animation(_anims["idle_melee"]) if _anims.has("idle_melee") else null)
@@ -3713,6 +3714,9 @@ const FRAME_LOOKS := {"plate_light": "scrap", "frame_runner": "runner", "frame_t
 ## How far out armor of each weight holds the arms (`Locomotion.arm_clear`,
 ## metres at the elbow).
 const ARM_CLEAR := {"light": 0.025, "medium": 0.035, "heavy": 0.05}
+## How much thicker arm armor makes an upper arm and a forearm, for keeping
+## it out of the trunk (`_teach_arm`).
+const ARM_THICK := {"light": Vector2(0.02, 0.012), "medium": Vector2(0.03, 0.02), "heavy": Vector2(0.045, 0.03)}
 const WEIGHT_LOOKS := {"light": "runner", "medium": "trooper", "heavy": "bulwark"}
 
 
@@ -3786,6 +3790,7 @@ func _update_frame() -> void:
 		if is_instance_valid(part):
 			part.queue_free()
 	_frame_parts.clear()
+	_teach_arm.call_deferred()
 	if id == "" or _skeleton == null:
 		return
 	var height: float = _def.get("height", 1.8)
@@ -3813,6 +3818,17 @@ func _update_frame() -> void:
 				_frame_parts.append(held)
 	if _detail_every > 1:
 		_gear_shadows(false)
+
+
+## Shows the weapon arm the trunk and what is hung on it, so it keeps
+## the arms outside both through a swing (`WeaponArm.learn_trunk`). Arm
+## armor makes the arm itself thicker.
+func _teach_arm() -> void:
+	if arm == null or not is_instance_valid(arm) or not arm.has_method("learn_trunk"):
+		return
+	var weight := frame_weight(_frame_id.get_slice("|", 0)) if _frame_id != "" else ""
+	arm.learn_trunk(_frame_parts.filter(func(p: Variant) -> bool: return is_instance_valid(p)),
+			ARM_THICK.get(weight, Vector2.ZERO))
 
 
 ## Puts the worn backpack (`Actor.pack_id`) on the lower back, hung on the

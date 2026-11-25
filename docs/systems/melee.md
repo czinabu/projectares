@@ -99,7 +99,12 @@ date in the same PR.
   table grip (`Look._melee_model`). The Marsh
   Hookblade is a one-hander with a look of its own ("hookblade" tag, its
   `Look.MELEE_MODELS` row): the plain sword with its point curled back over
-  the spine into a hook (`Look._hook_bits`), held and swung like a sword. `swing_scale` draws a small weapon's keys in toward
+  the spine into a hook (`Look._hook_bits`), held and swung like a sword.
+  The keys are a bare body's; worn armor and the chest's lean are made
+  room for as the arms reach (`WeaponArm._keep_clear`, see
+  bodies-and-animation.md), so a technique never needs keys per frame
+  weight, and `--swing-clip-only` measures every swing in every frame for
+  arms through the armor. `swing_scale` draws a small weapon's keys in toward
   the middle (`swing_centre`). A new melee weapon picks a style, or a new
   technique gets a table; `view_match_tests.gd` (`_check_techniques`)
   checks that every weapon's strikes are in view and its guards show their
