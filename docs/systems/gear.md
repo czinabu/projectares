@@ -360,6 +360,12 @@ date in the same PR.
   stands (`HomeBase.PaintSwatch`, `paint_requested`, `show_paints`).
   Check by eye with
   `visual_check.tscn -- <dir> --armor-only`.
+- Flight rig models (`core/visual/rig_model.gd`) are one size for both
+  builds, hung snug by the fitter above. The plate a back rig rests on
+  (`RigModel.HARNESS`) is a mid grey, never the pack's dark trim: dark, it
+  reads as a gap between the back and the pack in a side view. Check by
+  eye with `GEAR_BUILD=m` and `f` on `--gear-only`, and run
+  `tools/armor_fit/gear_check.tscn` (0 clashes) after a rig model change.
 - Thruster trails (DESIGN.md "Thruster trails"): `RigTrail`
   (`core/visual/rig_trail.gd`) colours the flames of every rig worn, a
   glow and a core held in a safe range (`RigTrail.SAFE`), and never a stat
