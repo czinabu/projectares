@@ -25,17 +25,36 @@ const RigModel := preload("res://core/visual/rig_model.gd")
 ## `look` is a skin from `Look.SKINS`, `weapon` "gun" or "blade". Add a kind
 ## by adding a row; give a kind its own senses or way of fighting with the
 ## metas in docs/systems/bots.md ("sight", "fov", "reach", "burst", ...).
+## The rift's own enemy (Caleb's call: "own rosters"): the Crown's cult, the
+## Lord of the Crown's zealots, sharpshooters and Slag Brutes, and the lava
+## beasts they keep: the Magma Crawler here, which leaves burning ground
+## where it walks ("trail", `Raid._tick_trails`), and the Cinder Hounds in
+## their dens (`HOUND`, built for the map's "spawn_guard" markers of
+## faction "hound").
 const ROSTER := {
-	"grunt": {"name": "Rift Cutthroat", "look": "scavenger", "chance": 6.0, "health": 100.0, "armor": 0.0,
-			"walk": 4.8, "sprint": 7.4, "weapon": "gun", "gun": "Worn Rifle", "damage": 11.0, "spread": 3.2,
-			"interval": 0.16},
-	"marksman": {"name": "Spire Marksman", "look": "raider", "chance": 2.0, "health": 90.0, "armor": 20.0,
+	"grunt": {"name": "Crown Zealot", "look": "zealot", "chance": 6.0, "health": 100.0, "armor": 10.0,
+			"walk": 5.0, "sprint": 7.8, "weapon": "gun", "gun": "Ember Carbine", "damage": 10.0, "spread": 2.6,
+			"interval": 0.13, "metas": {"range": 14.0, "hunters": 1}},
+	"marksman": {"name": "Crown Sharpshooter", "look": "sharpshooter", "chance": 2.0, "health": 90.0, "armor": 20.0,
 			"walk": 4.2, "sprint": 6.6, "weapon": "gun", "gun": "Long Rifle", "damage": 28.0, "spread": 0.8,
 			"interval": 0.9, "metas": {"sight": 90.0, "range": 45.0, "burst": Vector2(0.1, 1.4)}},
 	"brute": {"name": "Slag Brute", "look": "slag_brute", "chance": 1.5, "health": 260.0, "armor": 40.0,
 			"walk": 5.0, "sprint": 8.6, "weapon": "blade", "blade": "Cleaver", "damage": 30.0, "windup": 0.55,
 			"reach": 2.6},
+	# Slow and armored, a heavy bash from the front, a soft rear behind (the
+	# marsh's shellback's way of fighting), and the ground burns behind it.
+	"crawler": {"name": "Magma Crawler", "look": "magma_crawler", "chance": 1.0, "health": 320.0, "armor": 60.0,
+			"walk": 2.6, "sprint": 3.8, "weapon": "blade", "blade": "Molten Bash", "damage": 26.0, "windup": 0.7,
+			"reach": 2.6, "height": 1.6, "rear": 2.0, "color": Color(0.2, 0.16, 0.14),
+			"metas": {"aim_turn": 90.0, "trail": {"every": 1.5, "radius": 1.8, "damage": 8.0, "seconds": 6.0,
+			"kind": "fire"}}},
 }
+## A Cinder Hound: a lean lava beast of the cult's, run in packs from the
+## dens on the outer stacks. Fast and fragile, it circles, feints and darts
+## in to bite.
+const HOUND := {"name": "Cinder Hound", "look": "cinder_hound", "health": 80.0, "armor": 10.0, "walk": 6.4,
+		"sprint": 10.0, "weapon": "blade", "blade": "Cinder Fangs", "damage": 12.0, "windup": 0.3, "reach": 2.3,
+		"color": Color(0.17, 0.14, 0.13), "metas": {"feint_chance": 0.35, "dash": 0.4, "hunters": 2}}
 ## The Sky Leviathan (DESIGN.md "Basalt Rift"): its weak spots at three
 ## heights, each a bot on one of the ship's seats (its "part", the bot's
 ## `boss` meta, built by `equip_bot`): four engine pods hung low under the
@@ -313,9 +332,11 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	if LEVIATHAN_PARTS.has(str(bot.get_meta("boss", ""))):
 		_make_leviathan_part(bot)
 		return
-	var kind := _roll_kind(rng)
-	var row: Dictionary = ROSTER[kind]
-	if bot.faction == "":
+	# A den's guard (the map's "spawn_guard" of faction "hound") is a
+	# Cinder Hound, and runs with the cult.
+	var kind := "hound" if bot.faction == "hound" else _roll_kind(rng)
+	var row: Dictionary = HOUND if kind == "hound" else ROSTER[kind]
+	if bot.faction == "" or kind == "hound":
 		bot.faction = FACTION
 	# On foot over lava: every step is checked to stay on the mesa.
 	bot.set_meta("edge_guard", true)
@@ -324,6 +345,11 @@ func equip_bot(bot: Actor, rng: RandomNumberGenerator) -> void:
 	bot.set_meta("look", row["look"])
 	bot.walk_speed = row["walk"]
 	bot.sprint_speed = row["sprint"]
+	if row.has("height"):
+		bot.set_stand_height(row["height"], 0.4)
+	if row.has("color"):
+		bot.body_color = row["color"]
+	bot.rear_damage_mult = float(row.get("rear", bot.rear_damage_mult))
 	# Further in is tougher (the Raid sets "zone" before this).
 	var tier := clampi(int(bot.get_meta("zone", 0)), 0, 2)
 	var tough := 1.0 + tier * 0.25

@@ -2216,6 +2216,10 @@ func _build_walker() -> void:
 const CREATURE_GLOW := Color(0.5, 1.0, 0.65)
 ## The lit parts of a beast of the ice: the cold's blue.
 const FROST_GLOW := Color(0.45, 0.85, 1.0)
+## The lit parts of the rift's lava beasts: the lava's own orange.
+const LAVA_GLOW := Color(1.0, 0.42, 0.1)
+## The lit eyes of a beast of the sand: a dim amber.
+const DUNE_GLOW := Color(1.0, 0.72, 0.3)
 ## A shellback's soft rear: pale, fleshy hide lit faintly from inside.
 const SOFT_REAR := Color(0.95, 0.66, 0.55)
 
@@ -2253,9 +2257,14 @@ func _build_creature(kind: String) -> void:
 	var lit: float = CREATURE_FRECKLES.get(kind, 0.05)
 	# A beast of the ice is dry fur, lit in the cold's blue.
 	var frost := kind == "feral"
-	var lit_color := FROST_GLOW if frost else CREATURE_GLOW
-	var hide := _creature_hide(actor.body_color, lit, 0.15 if frost else 0.6)
-	var dark := _creature_hide(actor.body_color.darkened(0.45), lit * 0.5, 0.1 if frost else 0.4)
+	# The rift's lava beasts are dry basalt lit in the lava's orange; a
+	# beast of the sand is dry hide with amber eyes.
+	var lava := kind in ["hound", "crawler"]
+	var sand := kind == "burrower"
+	var dry := frost or lava or sand
+	var lit_color := FROST_GLOW if frost else (LAVA_GLOW if lava else (DUNE_GLOW if sand else CREATURE_GLOW))
+	var hide := _creature_hide(actor.body_color, lit, 0.15 if dry else 0.6)
+	var dark := _creature_hide(actor.body_color.darkened(0.45), lit * 0.5, 0.1 if dry else 0.4)
 	for mat: ShaderMaterial in [hide, dark]:
 		mat.set_shader_parameter("glow", lit_color)
 	var bone := _solid(Color(0.78, 0.74, 0.62), 0.0)
@@ -2286,7 +2295,7 @@ func _build_creature(kind: String) -> void:
 	horn.radial_segments = 6
 	var h := actor.stand_height
 	match kind:
-		"stalker", "broodling", "feral":
+		"stalker", "broodling", "feral", "hound":
 			var low := body.y * 0.95
 			var trunk := Node3D.new()
 			_piece(trunk, "Torso", ball, hide, Vector3(0, low, 0.0), Vector3(0.46, 0.42, 1.15) * h / 1.6)
@@ -2328,7 +2337,7 @@ func _build_creature(kind: String) -> void:
 			# Gill fans flared behind the skull, lit along their ribs, and a
 			# row of short spines down the tail.
 			var frill := Node3D.new()
-			for side: float in ([] if frost else [-1.0, 1.0]):
+			for side: float in ([] if frost or lava else [-1.0, 1.0]):
 				for f in 3:
 					var vane := _piece(frill, "Gill", ball, fan, at + Vector3(side * (0.15 + f * 0.02), 0.04 + f * 0.05, 0.12 + f * 0.05) * h / 1.6,
 							Vector3(0.02, 0.2 - f * 0.03, 0.14) * h / 1.6)
@@ -2340,6 +2349,8 @@ func _build_creature(kind: String) -> void:
 				barb.rotation.x = 0.9
 			if frost:
 				_feral(trunk, at, low, h / 1.6, ball, horn, hide, dark)
+			if kind == "hound":
+				_cinder_hound(at, low, h / 1.6, ball, horn)
 			if kind == "broodling":
 				# Fresh from the egg: shards of shell still stuck to its back
 				# and eyes too big for its head.
@@ -2358,7 +2369,7 @@ func _build_creature(kind: String) -> void:
 					_piece(big, "Eye", ball, glow, at + Vector3(side * 0.12, 0.08, -0.1) * h / 1.6, Vector3(0.09, 0.08, 0.09) * h / 1.6)
 				_hang_at(big, "CreatureEyes", "Head", Vector3.ZERO)
 			_creature_legs(hide, Vector2(0.11, 0.13), bone)
-		"shellback", "elder":
+		"shellback", "elder", "crawler":
 			var dome := Node3D.new()
 			var mid := body.y * 0.82
 			_piece(dome, "Shell", ball, hide, Vector3(0, mid + 0.1 * h, 0), Vector3(1.5, 0.95, 1.9) * h / 1.6)
@@ -2375,7 +2386,7 @@ func _build_creature(kind: String) -> void:
 							Vector3(px * h / 1.6, mid + 0.1 * h + up * h / 1.6, pz * h / 1.6), Vector3(0.38, 0.09, 0.42) * h / 1.6)
 					plate.rotation = Vector3(-pz * 0.9, 0, -px * 1.2)
 			# The soft rear: pale hide between the back plates, lit from inside.
-			var soft := _solid(SOFT_REAR, 0.9)
+			var soft := _solid(Color(1.0, 0.78, 0.45), 2.4) if lava else _solid(SOFT_REAR, 0.9)
 			soft.metallic = 0.0
 			_piece(dome, "SoftRear", ball, soft, Vector3(0, mid + 0.05 * h, 0.86 * h / 1.6), Vector3(0.7, 0.5, 0.3) * h / 1.6)
 			_hang_at(dome, "CreatureShell", "Torso", Vector3.ZERO)
@@ -2393,6 +2404,10 @@ func _build_creature(kind: String) -> void:
 			var beak := _piece(face, "Beak", horn, bone, at + Vector3(0, -0.06, -0.3) * h / 1.6, Vector3(0.16, 0.24, 0.14) * h / 1.6)
 			beak.rotation.x = -2.0
 			_hang_at(face, "CreatureHead", "Head", Vector3.ZERO)
+			if kind == "crawler":
+				_magma_crawler(mid, h / 1.6, ball, horn, tube)
+				_creature_legs(dark, Vector2(0.24, 0.26), bone)
+				return
 			# What grows on an old shell: tufts of moss in the seams and a few
 			# small fungal caps, lit underneath.
 			var growth := Node3D.new()
@@ -2416,7 +2431,7 @@ func _build_creature(kind: String) -> void:
 			if kind == "elder":
 				_shellback_elder(at, mid, h / 1.6, ball, tube, horn, hide, dark, bone, soft_glow)
 			_creature_legs(dark, Vector2(0.24, 0.26), bone)
-		"lurker", "drowned":
+		"lurker", "drowned", "burrower":
 			# Long and flat, made to lie in the water: a broad, low trunk, a
 			# wide flat skull with a jaw half its length, a lit lure hung
 			# over the snout on a stalk and a heavy tail.
@@ -2433,7 +2448,7 @@ func _build_creature(kind: String) -> void:
 				_piece(trunk, "Tail", ball, hide, Vector3(0, low - 0.02 * i, (1.0 + i * 0.32) * k),
 						Vector3(0.36 - i * 0.07, 0.22 - i * 0.04, 0.5) * k)
 			# Fins along its flanks, which ripple the water as it lies there.
-			for side: float in [-1.0, 1.0]:
+			for side: float in ([] if sand else [-1.0, 1.0]):
 				for i in 4:
 					var fin := _piece(trunk, "Fin", ball, fan, Vector3(side * 0.4, low, (-0.4 + i * 0.34)) * k,
 							Vector3(0.3, 0.02, 0.2) * k)
@@ -2449,6 +2464,12 @@ func _build_creature(kind: String) -> void:
 					var fang := _piece(skull, "Tooth", horn, bone, at + Vector3(side * (0.24 - t * 0.03), -0.06, -0.12 - t * 0.09) * k,
 							Vector3(0.03, 0.09, 0.03) * k)
 					fang.rotation.x = PI
+			if sand:
+				# No lure and no barbels: a burrower feels for its prey.
+				_hang_at(skull, "CreatureHead", "Head", Vector3.ZERO)
+				_dune_burrower(at, low, k, ball, horn, dark, bone)
+				_creature_legs(dark, Vector2(0.15, 0.17), bone)
+				return
 			var stalk := _piece(skull, "LureStalk", tube, dark, at + Vector3(0, 0.3, -0.2) * k, Vector3(0.03, 0.42, 0.03) * k)
 			stalk.rotation.x = -0.7
 			_piece(skull, "Lure", ball, glow, at + Vector3(0, 0.44, -0.4) * k, Vector3(0.09, 0.09, 0.09) * k)
@@ -2593,6 +2614,110 @@ func _feral(trunk: Node3D, at: Vector3, low: float, k: float, ball: SphereMesh, 
 		var blade := _piece(spur, "Spur", horn, ice, shoulder + Vector3(side * 0.05, -0.2, -0.26) * k, Vector3(0.04, 0.42, 0.06) * k)
 		blade.rotation = Vector3(-2.3, 0.0, 0.0)
 		_hang_at(spur, "FeralSpur" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
+
+
+## A Cinder Hound (the look "cinder_hound"): the stalker's lean body under
+## basalt, lava glowing in the cracks between the plates down its back, a
+## burning maw, a ruff of basalt shards round the neck and a tail that ends
+## in an ember. Built on the stalker's own pieces (`k` its scale, `at` its
+## skull, `low` the line of its back).
+func _cinder_hound(at: Vector3, low: float, k: float, ball: SphereMesh, horn: CylinderMesh) -> void:
+	var basalt := _creature_hide(Color(0.09, 0.08, 0.08), 0.0, 0.05)
+	basalt.set_shader_parameter("glow", LAVA_GLOW)
+	var molten := _solid(LAVA_GLOW, 2.4)
+	var back := Node3D.new()
+	# The lava under the back, showing between the plates laid over it.
+	_piece(back, "Seam", ball, molten, Vector3(0, low + 0.16 * k, 0.0), Vector3(0.24, 0.06, 0.95) * k)
+	for i in 6:
+		for side: float in [-1.0, 1.0]:
+			var plate := _piece(back, "Plate", ball, basalt, Vector3(side * 0.07, low + 0.2, -0.38 + i * 0.15) * Vector3(k, 1.0, k),
+					Vector3(0.18, 0.07, 0.14) * k)
+			plate.rotation = Vector3(0.15, 0.0, -side * 0.35)
+	# A ruff of basalt shards round the neck.
+	for i in 7:
+		var a := (i - 3) * 0.42
+		var shard := _piece(back, "Shard", horn, basalt, Vector3(sin(a) * 0.2, low + 0.12 + cos(a) * 0.05, -0.44) * Vector3(k, 1.0, k),
+				Vector3(0.06, 0.24, 0.06) * k)
+		shard.rotation = Vector3(0.9, 0.0, -a * 0.8)
+	# The ember at the tail's end.
+	_piece(back, "Ember", ball, molten, Vector3(0, low - 0.04, 1.6 * k), Vector3(0.1, 0.1, 0.14) * k)
+	_hang_at(back, "HoundBack", "Torso", Vector3.ZERO)
+	# The maw burns inside, and the brow is a basalt ridge.
+	var face := Node3D.new()
+	_piece(face, "Maw", ball, molten, at + Vector3(0, -0.04, -0.2) * k, Vector3(0.14, 0.05, 0.34) * k)
+	_piece(face, "Brow", ball, basalt, at + Vector3(0, 0.1, -0.06) * k, Vector3(0.3, 0.08, 0.3) * k)
+	for side: float in [-1.0, 1.0]:
+		var spike := _piece(face, "BrowSpike", horn, basalt, at + Vector3(side * 0.1, 0.14, 0.12) * k, Vector3(0.04, 0.2, 0.04) * k)
+		spike.rotation = Vector3(1.2, 0.0, side * 0.3)
+	_hang_at(face, "HoundFace", "Head", Vector3.ZERO)
+
+
+## A Magma Crawler (the look "magma_crawler"): a shellback's body whose dome
+## is cooling basalt, lava running in the seams between its plates and out
+## of three chimneys on its back, dripping from under its skirt where it
+## burns the ground it walks on. Built on the shellback's own pieces
+## (`mid` the line of its middle, `k` its scale).
+func _magma_crawler(mid: float, k: float, ball: SphereMesh, horn: CylinderMesh, tube: CylinderMesh) -> void:
+	var molten := _solid(LAVA_GLOW, 2.4)
+	var basalt := _creature_hide(Color(0.1, 0.09, 0.085), 0.0, 0.05)
+	basalt.set_shader_parameter("glow", LAVA_GLOW)
+	var shell := Node3D.new()
+	var top := mid + 0.16 * k
+	# The dome's surface over a spot across (`px`) and along (`pz`) it.
+	var surface := func(px: float, pz: float) -> Vector3:
+		var up := 0.475 * sqrt(maxf(0.0, 1.0 - pow(px / 0.75, 2.0) - pow(pz / 0.95, 2.0)))
+		return Vector3(px * k, top + up * 1.03 * k, pz * k)
+	# Seams across the dome between the rows of plates, and down it between
+	# the columns, each a chain of short glowing tubes on its curve.
+	for pz: float in [-0.25, 0.25]:
+		for i in 8:
+			var a: Vector3 = surface.call(-0.7 + i * 0.175, pz)
+			var b: Vector3 = surface.call(-0.7 + (i + 1) * 0.175, pz)
+			_strand(shell, "Seam", tube, molten, a, b, 0.035 * k)
+	for px: float in [-0.21, 0.21]:
+		for i in 8:
+			var a: Vector3 = surface.call(px, -0.88 + i * 0.22)
+			var b: Vector3 = surface.call(px, -0.88 + (i + 1) * 0.22)
+			_strand(shell, "Seam", tube, molten, a, b, 0.035 * k)
+	# Chimneys of basalt, lava welling at their mouths.
+	for i in 3:
+		var foot: Vector3 = surface.call((i - 1) * 0.32, -0.05 + absf(i - 1) * 0.3)
+		_strand(shell, "Chimney", tube, basalt, foot, foot + Vector3(0, 0.22, 0.04) * k, 0.07 * k)
+		_piece(shell, "Vent", ball, molten, foot + Vector3(0, 0.23, 0.04) * k, Vector3(0.1, 0.05, 0.1) * k)
+	# Drips under the skirt.
+	for i in 6:
+		var a := i * TAU / 6.0 + 0.3
+		var drip := _piece(shell, "Drip", horn, molten, Vector3(cos(a) * 0.62, 0.0, sin(a) * 0.78) * k + Vector3(0, mid - 0.32 * k, 0),
+				Vector3(0.05, 0.14, 0.05) * k)
+		drip.rotation.x = PI
+	_hang_at(shell, "CrawlerMagma", "Torso", Vector3.ZERO)
+
+
+## A Dune Burrower (the look "dune_burrower"): a lurker's long, flat body in
+## a sand hide, with a shovel of horn for a snout, a ridge of digging spades
+## down its back and broad spade claws to dig with. Built on the lurker's
+## own pieces (`k` its scale, `at` its skull, `low` the line of its back).
+func _dune_burrower(at: Vector3, low: float, k: float, ball: SphereMesh, horn: CylinderMesh, dark: Material,
+		bone: Material) -> void:
+	var head := Node3D.new()
+	var shovel := _piece(head, "Shovel", ball, bone, at + Vector3(0, 0.02, -0.42) * k, Vector3(0.52, 0.06, 0.36) * k)
+	shovel.rotation.x = 0.15
+	_piece(head, "Crest", ball, dark, at + Vector3(0, 0.12, 0.05) * k, Vector3(0.3, 0.1, 0.4) * k)
+	for side: float in [-1.0, 1.0]:
+		var horn_piece := _piece(head, "Horn", horn, bone, at + Vector3(side * 0.22, 0.1, 0.18) * k, Vector3(0.05, 0.26, 0.05) * k)
+		horn_piece.rotation = Vector3(1.3, 0.0, side * 0.5)
+	_hang_at(head, "BurrowerHead", "Head", Vector3.ZERO)
+	var back := Node3D.new()
+	for i in 6:
+		var spade := _piece(back, "Spade", ball, bone, Vector3(0, low + 0.2 * k, (-0.5 + i * 0.24) * k),
+				Vector3(0.03, 0.2 - absf(i - 2.5) * 0.02, 0.18) * k)
+		spade.rotation.x = 0.4
+	_hang_at(back, "BurrowerBack", "Torso", Vector3.ZERO)
+	for side: float in [-1.0, 1.0]:
+		var arm := Node3D.new()
+		var claw := _piece(arm, "Spade", ball, bone, Vector3(side * 0.44, low - 0.12, -0.55) * Vector3(k, 1.0, k), Vector3(0.2, 0.04, 0.24) * k)
+		claw.rotation = Vector3(0.2, side * 0.4, -side * 0.3)
+		_hang_at(arm, "BurrowerClaw" + ("L" if side < 0.0 else "R"), "Chest", Vector3.ZERO)
 
 
 ## A brood mother (a keeper's body grown old and huge, `Look.SKINS`
@@ -2795,7 +2920,7 @@ func _creature_legs(mat: Material, size: Vector2, claw: Material) -> void:
 ## How many of a beast's hide cells carry a lit freckle, by kind.
 const CREATURE_FRECKLES := {
 	"feral": 0.03, "stalker": 0.08, "broodling": 0.04, "shellback": 0.03, "elder": 0.03, "drowned": 0.16, "lurker": 0.14, "keeper": 0.1, "bloater": 0.35,
-	"brood_mother": 0.12,
+	"brood_mother": 0.12, "hound": 0.1, "crawler": 0.12, "burrower": 0.0,
 }
 
 

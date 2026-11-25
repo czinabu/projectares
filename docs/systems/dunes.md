@@ -16,7 +16,13 @@ anything it covers, and keep it up to date in the same PR.
   at that size; bots walk open sand. Anything that stands on the playable
   sand is a solid (the hulks are `_box`es); the planet's props stand only
   past the field. Its enemies are the roster (`ROSTER` in
-  `worlds/dunes/world.gd`), built by `equip_bot`. You keep what you wear
+  `worlds/dunes/world.gd`), built by `equip_bot`: the raiders, with the
+  Salvage Runner (a knife, held as the item it is, row "item"). A Dune
+  Burrower (`BURROWER`) is built for the map's "spawn_guard" markers of
+  faction "burrower", one in every other wreck field; it lies low, feels
+  9 m round, and grows bolder in a sandstorm ("storm_bold",
+  `BotBrain.storm_boost`). It stays wild (faction "burrower"), and
+  `can_damage` keeps it and the raiders from fighting each other. You keep what you wear
   on death (`keep_gear_on_death`). The far ring past the walls
   (`Planet.horizon`) is built from that same ground (`far_land`), so it
   meets the sand at the map's edge, and drawn smoothed (`HORIZON_SMOOTH`);

@@ -171,6 +171,37 @@ const SKINS := {
 		"saturation": 0.6, "brightness": 0.72, "metal": 0.0, "rough": 0.9,
 		"anims": HUMAN_ANIMS, "frame": "heavy:bulwark", "paint": "ashen", "helmet": "thermal",
 	},
+	# The Basalt Rift's cult of the Crown: the Lord of the Crown's own, in
+	# the Crown's crimson. A Crown Zealot: light plate and a ceramic Ember
+	# helm, quick and close.
+	"zealot": {
+		"people": {"m": ["Punk", "Adventurer", "Casual_Hoodie"], "f": ["Punk", "Medieval", "Worker"]},
+		"height": 1.8, "tint": Color(0.84, 0.74, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "light:scrap", "paint": "crimson", "helmet": "thermal",
+	},
+	# A Crown Sharpshooter: the cult's long rifles in quilted heat-plate,
+	# soot-grey, bare-headed to sight down the barrel.
+	"sharpshooter": {
+		"people": {"m": ["Swat", "Adventurer"], "f": ["Soldier", "Adventurer"]},
+		"height": 1.8, "tint": Color(0.84, 0.74, 0.68), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.6, "brightness": 0.75, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "medium:thermal", "paint": "ashen",
+	},
+	# The Dune Sea's Salvage Runner: light runner's plate sanded to the
+	# desert's colour, bare-headed, a knife in hand.
+	"salvage_runner": {
+		"people": {"m": ["Punk", "Casual_2", "Beach"], "f": ["Punk", "Casual", "Worker"]},
+		"height": 1.76, "tint": Color(0.88, 0.78, 0.66), "grip_bone": "Middle1.R", "arm": HUMAN_ARM, "off_arm": HUMAN_OFF_ARM,
+		"spine": HUMAN_SPINE, "neck": "Neck", "lead_leg": HUMAN_LEAD_LEG, "trail_leg": HUMAN_TRAIL_LEG,
+		"back_bone": "Chest", "hip_bone": "Hips", "feet": HUMAN_FEET,
+		"saturation": 0.65, "brightness": 0.78, "metal": 0.0, "rough": 0.9,
+		"anims": HUMAN_ANIMS, "frame": "light:runner", "paint": "desert",
+	},
 	# Bosses: a body of their own, not a heavy with more health. Each is the
 	# tallest person on the field in full plate, with "regalia" built in
 	# code (`ActorSkin._build_regalia`). Ashfront's Warlord: black and gold
@@ -293,6 +324,28 @@ const SKINS := {
 	# spines down its back and hooked foreclaws for its blades.
 	"feral": {
 		"scenes": ["Leela.glb"], "height": 1.6, "hide": ["Leela"], "creature": "feral", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# The Basalt Rift's lava beasts, kept by the Crown's cult: lit by the
+	# lava ("creature" kinds of the planet's heat, `ActorSkin.LAVA_GLOW`).
+	# A Cinder Hound: the stalker's lean body under basalt plates, lava
+	# showing in the cracks between them, a jaw that glows inside.
+	"cinder_hound": {
+		"scenes": ["Leela.glb"], "height": 1.6, "hide": ["Leela"], "creature": "hound", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# A Magma Crawler: a shellback's build under a dome of cooling basalt,
+	# lava running in its seams and dripping from its belly, a soft rear
+	# that glows white-hot.
+	"magma_crawler": {
+		"scenes": ["Leela.glb"], "height": 1.6, "hide": ["Leela"], "creature": "crawler", "bare": true,
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
+	# The Dune Sea's Dune Burrower: a lurker's long, flat body in a sand
+	# hide, no lure, a ridge of digging spades down its back and a shovel
+	# snout; it lies under the sand ("lurks") until it comes up.
+	"dune_burrower": {
+		"scenes": ["Leela.glb"], "height": 1.4, "hide": ["Leela"], "creature": "burrower", "bare": true, "lurks": 0.9,
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
 	# A bloater: a swollen sac of spores on stubby legs, studded with lit

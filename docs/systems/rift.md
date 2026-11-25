@@ -129,5 +129,17 @@ Leviathan)", "(part three, built: the rig rewards)"). Check it with
 
 - Ashfront's death rule (`death_drops_scrip`): the fallen drop scrip, not
   gear. The starter kit carries the Mk1 jetpack.
-- The roster (`ROSTER` in `worlds/rift/world.gd`) does not fly; its
-  marksmen see far (90 m), since the rift is all long sight lines.
+- The roster (`ROSTER` in `worlds/rift/world.gd`) is the Crown's cult
+  (Caleb's call, DESIGN.md "Own rosters"): zealots, sharpshooters, Slag
+  Brutes and Magma Crawlers. None of it flies; its sharpshooters see far
+  (90 m), since the rift is all long sight lines. Every kind keeps to its
+  mesa (`edge_guard`).
+- A Magma Crawler leaves burning ground: its row's "trail" meta (a cloud
+  as `Raid.burst_cloud` takes it, kind "fire", and "every") makes the
+  Raid leave a cloud at its feet as it moves on (`Raid._tick_trails`,
+  authority only, never two on one spot), which hurts the other side
+  through `Combat.deal` like any cloud and is shown as a low ember haze.
+- Cinder Hounds are built by `equip_bot` for the map's "spawn_guard"
+  markers of faction "hound" (`HOUND`), three to a den on each outer
+  stack (`HOUND_PACK`), and fight for the cult (faction "rift"). They come
+  back like any guard (`guard_respawn_time`).

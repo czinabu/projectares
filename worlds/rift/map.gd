@@ -272,6 +272,10 @@ func _build_shelf() -> void:
 
 ## The strongpoints: a mesa each, with lower columns stood round it, cover
 ## on its top, a depot, a cache and the rift's soldiers posted on it.
+## How many Cinder Hounds run in each den's pack.
+const HOUND_PACK := 3
+
+
 func _build_sites() -> void:
 	for site: Dictionary in SITES:
 		var at: Vector2 = site["at"]
@@ -288,6 +292,16 @@ func _build_sites() -> void:
 		for i in 3:
 			var spot := at + Vector2.from_angle(i * TAU / 3.0 + 0.5) * radius * 0.4
 			_add_marker("spawn_bot", Vector3(spot.x, top, spot.y)).set_meta("faction", "rift")
+		# A den of Cinder Hounds on each outer stack (the world's
+		# `equip_bot` makes a guard of faction "hound" one): a pack of
+		# `HOUND_PACK` that keeps to its mesa and runs down whoever lands.
+		if at.x != 0.0:
+			var den := at + Vector2.from_angle(-0.8) * radius * 0.5
+			for i in HOUND_PACK:
+				var spot := den + Vector2.from_angle(i * TAU / HOUND_PACK) * 1.8
+				var hound := _add_marker("spawn_guard", Vector3(spot.x, top, spot.y))
+				hound.set_meta("faction", "hound")
+				hound.set_meta("radius", radius * 0.6)
 
 
 ## The Crown: the highest mesa, the warlord's, with the best caches

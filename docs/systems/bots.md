@@ -91,8 +91,13 @@ date in the same PR.
   never live tracking: a lost contact is searched for (`_lost`) and let go.
   A world gives a kind its own senses with metas set in `equip_bot`
   ("sight", "fov", "reach", "far_notice"; how it fires, "burst" and
-  "slots"; and how it hunts, "tracker", "preys_on_cold", "shuns_warmth";
-  DESIGN.md "The enemy AI pass"), never a second brain. A tracker follows
+  "slots"; and how it hunts, "tracker", "preys_on_cold", "shuns_warmth",
+  "storm_bold"; DESIGN.md "The enemy AI pass"), never a second brain. A
+  storm-bold kind (the Dune Sea's burrowers) is the one a storm helps: its
+  sight and leash grow by that share of the storm's strength where it
+  stands (`BotBrain.storm_boost`), and the storm never cuts its sight. A
+  "trail" meta makes the Raid leave a hurting cloud where the bot walks
+  (`Raid._tick_trails`, the Rift's Magma Crawlers). A tracker follows
   the freshest mark in `Raid.tracks` near it to where the mark was laid,
   never to the person (`BotBrain._sniff`, through `_sensed`), and a bot
   that shuns warmth neither targets anyone in a "warmth" ring nor walks
