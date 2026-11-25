@@ -27,7 +27,14 @@ const CELL := 0.01
 ## How far apart points are taken over a face.
 const STEP := 0.012
 ## How far apart points are taken over a box round a piece of gear.
-const BOX_STEP := 0.02
+const BOX_STEP := 0.03
+## How far apart the points `cloud` keeps are, at least.
+const THIN := 0.008
+## How many cells round each point of gear a gap reads the outside over:
+## enough to cover the space between box points however the box is turned
+## (a gun slung across the back), so no ridge slips between them. Points
+## as close as `cloud`'s need only 1.
+const SPREAD := 2
 const NEAR: Array[Vector3i] = [Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0),
 		Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
 
@@ -76,7 +83,10 @@ func _init(build: String, frame: String, body_scale: float, body_shift: Vector3,
 		for p: Vector3 in armor.call():
 			raw.append((p - shift) / scale)
 		_fill(maps["back"], maps["front"], maps["right"], maps["left"], maps["solid"], raw)
-		(maps["legs"] as PackedVector3Array).append_array(raw)
+		# A packed array is a value: append to a copy and put it back.
+		var legs: PackedVector3Array = maps["legs"]
+		legs.append_array(raw)
+		maps["legs"] = legs
 		_bases[key] = maps
 	base = _bases[key]
 
@@ -88,9 +98,9 @@ static func _measure(build: String) -> Dictionary:
 	var y := BodyFit.trunk_low()
 	var high := BodyFit.trunk_top(build)
 	while y <= high:
-		for i in 80:
-			points.append(BodyFit.trunk_point(build, y, TAU * i / 80.0))
-		y += 0.008
+		for i in 64:
+			points.append(BodyFit.trunk_point(build, y, TAU * i / 64.0))
+		y += 0.01
 	var legs := PackedVector3Array()
 	for out: float in [-1.0, 1.0]:
 		for part: String in ["UpperLeg", "LowerLeg"]:
@@ -98,9 +108,9 @@ static func _measure(build: String) -> Dictionary:
 			var length := BodyFit.limb_length(build, part)
 			var along := 0.0
 			while along <= length:
-				for i in 40:
-					legs.append(limb.frame * BodyFit.limb_point(build, part, along, TAU * i / 40.0, out))
-				along += 0.01
+				for i in 32:
+					legs.append(limb.frame * BodyFit.limb_point(build, part, along, TAU * i / 32.0, out))
+				along += 0.015
 	points.append_array(legs)
 	_fill(maps["back"], maps["front"], maps["right"], maps["left"], maps["solid"], points)
 	maps["legs"] = legs
@@ -131,6 +141,49 @@ static func sample(root: Node3D, xf: Transform3D, skip: Array = [], shown := fal
 	var out := PackedVector3Array()
 	_sample(root, xf, skip, out, shown)
 	return out
+
+
+## `sample`'s points of `root` in its own frame, thinned to one a few
+## millimetres apart, worked out once for each shape (a weapon model is the
+## same wherever it hangs). `root` should not be scaled itself.
+static func cloud(root: Node3D, skip: Array = []) -> PackedVector3Array:
+	var key := _shape_key(root, Transform3D.IDENTITY, skip, true)
+	if _clouds.has(key):
+		return _clouds[key]
+	var seen := {}
+	var out := PackedVector3Array()
+	for p in sample(root, Transform3D.IDENTITY, skip, true):
+		var cell := Vector3i(floori(p.x / THIN), floori(p.y / THIN), floori(p.z / THIN))
+		if not seen.has(cell):
+			seen[cell] = true
+			out.append(p)
+	_clouds[key] = out
+	return out
+
+
+static var _clouds := {}
+
+
+## What `sample` would read under `node`: each shown mesh and where it is.
+static func _shape_key(node: Node, xf: Transform3D, skip: Array, shown := false) -> String:
+	if str(node.name) in skip or (not shown and node is Node3D and not (node as Node3D).visible):
+		return ""
+	var key := ""
+	var mi := node as MeshInstance3D
+	if mi != null and mi.mesh != null:
+		# By its size and make, not the mesh itself: a model merged as it
+		# is hung is a new mesh on every body (the same shape all the same),
+		# and a freed mesh's id goes to the next one made.
+		key = "%s%s%s" % [mi.mesh.get_class(), mi.mesh.get_aabb(), xf]
+		var arrays := mi.mesh as ArrayMesh
+		if arrays != null:
+			for k in arrays.get_surface_count():
+				key += "," + str(arrays.surface_get_array_len(k))
+		key += ";"
+	for child in node.get_children():
+		var n3 := child as Node3D
+		key += _shape_key(child, xf * n3.transform if n3 else xf, skip)
+	return key
 
 
 static func _sample(node: Node, xf: Transform3D, skip: Array, out: PackedVector3Array, shown := false) -> void:
@@ -190,8 +243,9 @@ func _front_at(ix: int, iy: int) -> float:
 ## `x0` to `x1` at height `y`, plus `gap` that way; `z` when nothing is there.
 func surface_z(x0: float, x1: float, y: float, dir_z: float, gap: float, z: float) -> float:
 	var best := -INF
+	# Two cells up and down: the straps take a point every two centimetres.
 	for ix in range(floori(x0 / CELL), floori(x1 / CELL) + 1):
-		for dy in range(-1, 2):
+		for dy in range(-2, 3):
 			best = maxf(best, _back_at(ix, floori(y / CELL) + dy) if dir_z > 0.0 else _front_at(ix, floori(y / CELL) + dy))
 	return (best + gap) * dir_z if best > -INF else z
 
@@ -209,35 +263,44 @@ func _side_at(iy: int, iz: int, side: float) -> float:
 ## `clear` behind the outside, or how far they may come in when they are
 ## further out (negative): snug against it. 0 when nothing is in front of
 ## them.
-func back_gap(points: PackedVector3Array, clear: float) -> float:
+func back_gap(points: PackedVector3Array, clear: float, spread := SPREAD) -> float:
 	# Only the point furthest in over each cell matters.
 	var seen := {}
 	for p in points:
 		var key := Vector2i(floori(p.x / CELL), floori(p.y / CELL))
 		if not seen.has(key) or seen[key] > p.z:
 			seen[key] = p.z
+	# Each cell's own reach read once, then against the cells round it.
+	var reach := {}
 	var need := -INF
 	for key: Vector2i in seen:
-		for dx in range(-1, 2):
-			for dy in range(-1, 2):
-				var z := _back_at(key.x + dx, key.y + dy)
+		for dx in range(-spread, spread + 1):
+			for dy in range(-spread, spread + 1):
+				var at := Vector2i(key.x + dx, key.y + dy)
+				if not reach.has(at):
+					reach[at] = _back_at(at.x, at.y)
+				var z: float = reach[at]
 				if z > -INF:
 					need = maxf(need, z + clear - (seen[key] as float))
 	return need if need > -INF else 0.0
 
 
 ## The same out to one side: `side` 1 pushes along +X, -1 along -X.
-func side_gap(points: PackedVector3Array, side: float, clear: float) -> float:
+func side_gap(points: PackedVector3Array, side: float, clear: float, spread := SPREAD) -> float:
 	var seen := {}
 	for p in points:
 		var key := Vector2i(floori(p.y / CELL), floori(p.z / CELL))
 		if not seen.has(key) or seen[key] > p.x * side:
 			seen[key] = p.x * side
+	var reach := {}
 	var need := -INF
 	for key: Vector2i in seen:
-		for dy in range(-1, 2):
-			for dz in range(-1, 2):
-				var x := _side_at(key.x + dy, key.y + dz, side)
+		for dy in range(-spread, spread + 1):
+			for dz in range(-spread, spread + 1):
+				var at := Vector2i(key.x + dy, key.y + dz)
+				if not reach.has(at):
+					reach[at] = _side_at(at.x, at.y, side)
+				var x: float = reach[at]
 				if x > -INF:
 					need = maxf(need, x + clear - (seen[key] as float))
 	return need if need > -INF else 0.0
@@ -256,18 +319,29 @@ static func _boxes(node: Node, xf: Transform3D, skip: Array, out: PackedVector3A
 		return
 	var mi := node as MeshInstance3D
 	if mi != null and mi.mesh != null:
-		var box := mi.mesh.get_aabb()
-		var n := Vector3i(maxi(1, ceili(box.size.x / BOX_STEP)), maxi(1, ceili(box.size.y / BOX_STEP)), maxi(1, ceili(box.size.z / BOX_STEP)))
-		for i in n.x + 1:
-			for j in n.y + 1:
-				for k in n.z + 1:
-					# Only on the box's faces.
-					if i != 0 and i != n.x and j != 0 and j != n.y and k != 0 and k != n.z:
-						continue
-					out.append(xf * (box.position + box.size * Vector3(float(i) / n.x, float(j) / n.y, float(k) / n.z)))
+		box_points(mi.mesh.get_aabb(), xf, out)
 	for child in node.get_children():
 		var n3 := child as Node3D
 		_boxes(child, xf * n3.transform if n3 else xf, skip, out)
+
+
+## Points over the six faces of `box`, `xf` taking it to the actor's frame.
+static func box_points(box: AABB, xf: Transform3D, out: PackedVector3Array) -> void:
+	# Spaced in the actor's frame: a model is often scaled where it hangs.
+	var n := Vector3i.ZERO
+	for axis in 3:
+		n[axis] = maxi(1, ceili((xf.basis[axis] * box.size[axis]).length() / BOX_STEP))
+	for axis in 3:
+		var u := (axis + 1) % 3
+		var v := (axis + 2) % 3
+		for face: float in [0.0, 1.0]:
+			for i in n[u] + 1:
+				for j in n[v] + 1:
+					var f := Vector3.ZERO
+					f[axis] = face
+					f[u] = float(i) / n[u]
+					f[v] = float(j) / n[v]
+					out.append(xf * (box.position + box.size * f))
 
 
 ## Whether anything is in the cell `p` falls in or its neighbours.

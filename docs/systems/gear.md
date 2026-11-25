@@ -319,7 +319,11 @@ date in the same PR.
   a rig's rail moves with the rig, and a sidearm, a hip blade and a
   clipped helmet are pushed out to their side. Worked out once per kit
   and build from the body at rest, so a new piece of gear or a new place
-  for one needs no numbers of its own. `tools/armor_fit/gear_check.tscn`
+  for one needs no numbers of its own. Rigs and packs are read as points
+  over the boxes round their meshes, weapons and armor over their faces
+  (`WornFit.cloud`, thinned and kept per model), and the body and the
+  body in each frame are measured once each; a new kit costs a few tens
+  of milliseconds once, at most one a frame. `tools/armor_fit/gear_check.tscn`
   wears every frame (and none) with every kind of rig, the weapons put
   away, a backpack and a helmet on the belt on both builds, tests every
   piece of gear against the armor, the body and the other gear, and must
