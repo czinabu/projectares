@@ -67,6 +67,11 @@ var sprint_from := Vector2(1.08, 1.35)
 var gait_blend := 0.2
 var stand_blend := 0.35
 var cut_blend := 0.15
+## A knockdown (`_show_knocked_down`): the fall to the ground, the rise back
+## up at the end, and how far into the death clip the body goes down.
+var knock_fall_time := 0.4
+var knock_rise_time := 0.6
+var knock_depth := 1.0
 
 ## How far behind the back bone a back-worn rig sits, and how far the boots
 ## sit above and behind the ankle bone, in meters.
@@ -690,6 +695,18 @@ func _find_animation(wanted: String) -> String:
 
 ## Plays a clip at a speed, negative to play it backwards. Moving from one
 ## walk or run clip to another keeps the point in the stride.
+## Knocked off the feet (`Actor.knock_down`): the fall of the death clip,
+## held at the bottom, then played back up to stand. Timed by what is left
+## of the knockdown, so every view shows the same moment.
+func _show_knocked_down() -> void:
+	_play("death", 0.0)
+	var length := _player.current_animation_length
+	var since := actor.knocked_time - actor.knocked_left
+	var t := minf(clampf(since / maxf(knock_fall_time, 0.01), 0.0, 1.0),
+			clampf(actor.knocked_left / maxf(knock_rise_time, 0.01), 0.0, 1.0))
+	_player.seek(length * knock_depth * (1.0 - (1.0 - t) * (1.0 - t)), true)
+
+
 func _play(key: String, speed := 1.0) -> void:
 	if _player == null or not _anims.has(key):
 		return
@@ -900,6 +917,9 @@ func _update(delta: float) -> void:
 	ActionPose.of(actor).carry_wanted = false
 	if actor.is_dead:
 		_play("death")
+		return
+	if actor.knocked_left > 0.0 and _anims.has("death"):
+		_show_knocked_down()
 		return
 	if actor.dodge_left > 0.0 and actor.dodge_shown == "roll" and _anims.has("roll"):
 		# The evade with no rig: a roll along the ground, the clip timed to it.
