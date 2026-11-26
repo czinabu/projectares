@@ -11,23 +11,20 @@ date in the same PR.
   out is still loaded, so its items and old saves stay good, but it is
   never listed, offered or travelled to. The "Windows Dev" and "Linux Dev"
   presets have no tag and offer every world; CI exports them as workflow
-  artifacts only (`ProjectAresDev-windows-<commit>`,
-  `ProjectAresDev-linux-<commit>`).
+  artifacts (`ProjectAresDev-windows-<commit>`,
+  `ProjectAresDev-linux-<commit>`) and on the "dev-latest" release below.
   Both update themselves (`Updater`), each only from its own channel
   (`Updater.channel`: "release" for the playtest build, "dev" for any
   other exported build), and a manifest of the other channel is refused
   (`Updater.decide`), so the dev build is never swapped for the release,
-  nor the release for the dev build. Nothing of the dev build is public
-  (Caleb's call): it is never put on a release. Builds of main leave its
-  manifest and pack as workflow artifacts with fixed names
-  (`dev-update-manifest-<system>`, `dev-update-pack-<system>`,
-  `Updater.dev_artifact`), and a dev game fetches the newest one built
-  from main through the GitHub API with a read-only token its owner pastes
-  into the phone's Servers app (`Updater.set_dev_token`). The token stays
-  in `Updater.TOKEN_FILE` on that computer, never in the pack, the
-  settings or a bug snapshot, and is sent only to api.github.com: the
-  archive's redirect to GitHub's storage is followed without it. Its
-  downloads sit apart from the playtest build's (`Updater.DEV_DIR`). `--playtest` on the command line tries
+  nor the release for the dev build. The dev build has its own rolling
+  "dev-latest" pre-release (Caleb's call: public, so it updates with no
+  sign-in; it was token-gated artifacts first, too fiddly): every push to
+  main puts the dev zip and tarball there with `ProjectAresDev.pck` and
+  `update-dev.json`, `ProjectAresDev-linux.pck` and `update-dev-linux.json`
+  (`Updater.DEV_BASE`, `Updater.manifest_name`), never on "latest". Its
+  downloads sit apart from the playtest build's (`Updater.DEV_DIR`).
+  `--playtest` on the command line tries
   the playtest build from the editor. A world joins the list once it runs
   smoothly (the frame bench, `--world <id>`) and its core loop works;
   changing the list is Caleb's call. Never branch the code for a build:

@@ -31,16 +31,11 @@ extends Node
 ## Two channels, never mixed (`channel`). The playtest build (feature tag
 ## "playtest") is "release": the "latest" release and the manifests above.
 ## Any other exported, stamped build is the dev build (every world) and is
-## "dev". Nothing of the dev build is public (Caleb's call): every build of
-## main leaves its manifest and pack as private workflow artifacts
-## (`dev_artifact`), and a dev game fetches them through the GitHub API with
-## a read-only token its owner gave it in the phone's Servers app
-## (`set_dev_token`, kept in `TOKEN_FILE` on that computer, never in the pack,
-## the settings or a bug report). Without one it waits ("no_token"). It keeps
-## its downloads apart (`DEV_DIR`) and refuses a manifest of the other
-## channel (`decide`), so it is never swapped for the playtest build, nor
-## the playtest build for it. After the API the steps are the same: size,
-## SHA-256, the swap beside the exe.
+## "dev": it reads `update-dev.json` or `update-dev-linux.json` on its own
+## rolling "dev-latest" release (`DEV_BASE`, Caleb's call: public, no
+## sign-in), keeps its downloads apart (`DEV_DIR`), and refuses a manifest
+## of the other channel (`decide`), so it is never swapped for the playtest
+## build, nor the playtest build for it.
 ##
 ## It runs only in an exported game that was stamped with a build number by
 ## the release workflow (`BUILD_SETTING`), never in the editor, a test run, a
@@ -51,11 +46,9 @@ signal changed
 
 ## Where the release workflow publishes; `--update-from <url>` overrides it
 ## (a test of the whole loop against a local server).
-const RELEASE_BASE := "https://github.com/czinabu/projectares/releases/download/latest/"
-## The dev build's private updates: the repository's workflow artifacts.
-const DEV_API := "https://api.github.com/repos/czinabu/verge/actions/artifacts"
-const DEV_BRANCH := "main"
-const TOKEN_FILE := "user://dev_update_token"
+const RELEASE_BASE := "https://github.com/czinabu/verge/releases/download/latest/"
+## The dev build's own release, never the playtest build's.
+const DEV_BASE := "https://github.com/czinabu/verge/releases/download/dev-latest/"
 const MANIFEST := "update.json"
 ## Linux reads its own manifest: its pack is exported for Linux, and a
 ## Windows game reading `MANIFEST` must never be handed it.
@@ -86,9 +79,7 @@ var download_timeout := 600.0
 ## "current", "downloading", "verifying", "ready" (downloaded, goes in at the
 ## next start), "restarting", "reinstall" (the engine changed, or the pack is
 ## inside the exe), "stuck" (the game's folder would not take the new pack)
-## or "failed" (no answer; asked again later). The dev build also has
-## "no_token" (waiting for a token on the phone) and "token_refused" (GitHub
-## said no to it).
+## or "failed" (no answer; asked again later).
 var state := "off"
 ## The running build, and its commit.
 var build := 0
@@ -108,12 +99,6 @@ var update_channel := "release"
 
 var _base := RELEASE_BASE
 var _dir := DIR
-## The dev build asks the GitHub API (not with `--update-from`, which tests
-## the loop against plain files).
-var _dev_api := false
-var _token := ""
-var _dev_done := Callable()
-var _dev_dest := ""
 var _http: HTTPRequest
 var _recheck_left := 0.0
 var _hash_task := -1
@@ -126,11 +111,10 @@ func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	update_channel = channel(OS.has_feature("playtest"))
 	_dir = DEV_DIR if update_channel == "dev" else DIR
-	_dev_api = update_channel == "dev"
+	_base = DEV_BASE if update_channel == "dev" else RELEASE_BASE
 	var from := args.find(FROM_ARG)
 	if from >= 0 and from + 1 < args.size():
 		_base = args[from + 1].trim_suffix("/") + "/"
-		_dev_api = false
 	if not enabled(OS.has_feature("template"), build, args, DisplayServer.get_name(),
 			OS.has_feature("dedicated_server")):
 		set_process(false)
@@ -138,112 +122,8 @@ func _ready() -> void:
 	just_updated = UPDATED_ARG in args
 	if _install_pending():
 		return
-	if _dev_api:
-		_token = load_token()
-		if _token == "":
-			_set_state("no_token")
-			return
 	state = "idle"
 	check()
-
-
-## The dev build's token, as its owner gave it (empty without one).
-static func load_token() -> String:
-	if not FileAccess.file_exists(TOKEN_FILE):
-		return ""
-	return FileAccess.get_file_as_string(TOKEN_FILE).strip_edges()
-
-
-## Keeps the dev build's token on this computer (empty forgets it) and
-## checks with it at once. Only the dev build takes one.
-func set_dev_token(token: String) -> void:
-	if not _dev_api or state == "off":
-		return
-	token = token.strip_edges()
-	_token = token
-	if token == "":
-		DirAccess.remove_absolute(TOKEN_FILE)
-		_drop_request()
-		_set_state("no_token")
-		return
-	var file := FileAccess.open(TOKEN_FILE, FileAccess.WRITE)
-	if file != null:
-		file.store_string(token)
-		file.close()
-	if state in ["no_token", "token_refused", "failed", "current", "idle"]:
-		_set_state("idle")
-		check()
-
-
-## Whether this game takes a token for its updates (the dev build), and has one.
-func wants_token() -> bool:
-	return _dev_api and state != "off"
-
-
-func has_token() -> bool:
-	return _token != ""
-
-
-## The workflow artifact holding the dev build's `part` ("manifest" or
-## "pack") for `platform` (OS.get_name()).
-static func dev_artifact(part: String, platform: String) -> String:
-	return "dev-update-%s-%s" % [part, "linux" if platform.to_lower() == "linux" else "windows"]
-
-
-## The download address of the newest artifact in a listing from `DEV_API`
-## built from `branch`, or "" if none is there.
-static func pick_artifact(listing: Variant, branch: String) -> String:
-	if not listing is Dictionary or not listing.get("artifacts") is Array:
-		return ""
-	var best := {}
-	for artifact: Variant in listing["artifacts"]:
-		if not artifact is Dictionary or artifact.get("expired", true):
-			continue
-		var run: Variant = artifact.get("workflow_run")
-		if not run is Dictionary or str(run.get("head_branch", "")) != branch:
-			continue
-		if best.is_empty() or str(artifact.get("created_at", "")) > str(best.get("created_at", "")):
-			best = artifact
-	var url := str(best.get("archive_download_url", ""))
-	return url if url.begins_with("https://api.github.com/") else ""
-
-
-## Where a redirect points (its Location header), or "".
-static func redirect_location(headers: PackedStringArray) -> String:
-	for header in headers:
-		if header.to_lower().begins_with("location:"):
-			return header.substr(9).strip_edges()
-	return ""
-
-
-## The headers for asking the GitHub API with `token`.
-static func api_headers(token: String) -> PackedStringArray:
-	return PackedStringArray(["Authorization: Bearer " + token, "Accept: application/vnd.github+json",
-			"X-GitHub-Api-Version: 2022-11-28", "User-Agent: Verge-updater"])
-
-
-## Takes the one file ending in `suffix` out of the zip at `zip` (a workflow
-## artifact) into `dest`. Returns its bytes' size, or -1.
-static func unzip_one(zip: String, suffix: String, dest: String) -> int:
-	var reader := ZIPReader.new()
-	if reader.open(zip) != OK:
-		return -1
-	var bytes := PackedByteArray()
-	var found := false
-	for file in reader.get_files():
-		if file.ends_with(suffix) and not file.ends_with("/"):
-			bytes = reader.read_file(file)
-			found = true
-			break
-	reader.close()
-	if not found:
-		return -1
-	var out := FileAccess.open(dest, FileAccess.WRITE)
-	if out == null:
-		return -1
-	out.store_buffer(bytes)
-	out.close()
-	return bytes.size()
 
 
 ## Whether a game started like this keeps itself up to date.
@@ -331,10 +211,6 @@ func status_line() -> String:
 			return "Build %d could not be put in the game's folder. Install it fresh." % newest
 		"failed":
 			return "Build %d. Could not check for updates." % build
-		"no_token":
-			return "Dev build %d. Add a GitHub token in the phone's Servers app to keep it up to date." % build
-		"token_refused":
-			return "Dev build %d. GitHub refused its token: add a new one in the phone's Servers app." % build
 		"idle":
 			return "Build %d" % build
 	return ""
@@ -345,13 +221,7 @@ func status_line() -> String:
 func check() -> void:
 	if state in ["off", "checking", "downloading", "verifying", "restarting"]:
 		return
-	if _dev_api and _token == "":
-		_set_state("no_token")
-		return
 	_set_state("checking")
-	if _dev_api:
-		_dev_fetch(dev_artifact("manifest", OS.get_name()), _dir.path_join("manifest.zip"), _on_dev_manifest)
-		return
 	_http = _new_request(check_timeout)
 	_http.request_completed.connect(_on_manifest, CONNECT_ONE_SHOT)
 	if _http.request(_base + manifest_name(OS.get_name(), update_channel)) != OK:
@@ -366,13 +236,10 @@ func restart_now() -> void:
 	_install(int(latest.get("build", 0)))
 
 
-## The release page, for a fresh install (the dev build's are on the
-## workflow's runs, behind a sign-in).
+## The release page, for a fresh install: the dev build's own, or "latest".
 func open_downloads() -> void:
-	if update_channel == "dev":
-		OS.shell_open("https://github.com/czinabu/verge/actions/workflows/windows-client.yml?query=branch%3Amain")
-		return
-	OS.shell_open(RELEASE_BASE.trim_suffix("download/latest/") + "tag/latest")
+	var tag := "dev-latest" if update_channel == "dev" else "latest"
+	OS.shell_open(RELEASE_BASE.trim_suffix("download/latest/") + "tag/" + tag)
 
 
 func _process(delta: float) -> void:
@@ -428,102 +295,11 @@ func _download() -> void:
 	DirAccess.make_dir_recursive_absolute(_dir)
 	progress = 0.0
 	_set_state("downloading")
-	if _dev_api:
-		_dev_fetch(dev_artifact("pack", OS.get_name()), _dir.path_join("pack.zip"), _on_dev_pack)
-		return
 	_http = _new_request(download_timeout)
 	_http.download_file = _part()
 	_http.request_completed.connect(_on_downloaded, CONNECT_ONE_SHOT)
 	if _http.request(_base + str(latest.get("pack", ""))) != OK:
 		_fail()
-
-
-## The dev build's fetch of the newest artifact `artifact` into the zip
-## `dest`, then `done`: list it (with the token), ask for its archive (with
-## the token; GitHub answers with a short-lived address elsewhere), and
-## download that (without the token, which must not leave GitHub).
-func _dev_fetch(artifact: String, dest: String, done: Callable) -> void:
-	DirAccess.make_dir_recursive_absolute(_dir)
-	_dev_done = done
-	_dev_dest = dest
-	_http = _new_request(check_timeout)
-	_http.request_completed.connect(_on_dev_listed, CONNECT_ONE_SHOT)
-	if _http.request(DEV_API + "?name=%s&per_page=20" % artifact, api_headers(_token)) != OK:
-		_fail()
-
-
-func _on_dev_listed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	_drop_request()
-	if _dev_refused(result, code):
-		return
-	var url := pick_artifact(JSON.parse_string(body.get_string_from_utf8()), DEV_BRANCH)
-	if url == "":
-		_fail()
-		return
-	_http = _new_request(check_timeout)
-	_http.max_redirects = 0
-	_http.request_completed.connect(_on_dev_redirect, CONNECT_ONE_SHOT)
-	if _http.request(url, api_headers(_token)) != OK:
-		_fail()
-
-
-func _on_dev_redirect(result: int, code: int, headers: PackedStringArray, _body: PackedByteArray) -> void:
-	_drop_request()
-	if code == 401 or code == 403:
-		_dev_refused(HTTPRequest.RESULT_SUCCESS, code)
-		return
-	var location := redirect_location(headers)
-	if not code in [301, 302, 303, 307, 308] or not location.begins_with("https://"):
-		_fail()
-		return
-	_http = _new_request(download_timeout)
-	_http.download_file = _dev_dest
-	_http.request_completed.connect(_on_dev_zip, CONNECT_ONE_SHOT)
-	if _http.request(location) != OK:
-		_fail()
-
-
-func _on_dev_zip(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
-	_drop_request()
-	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
-		DirAccess.remove_absolute(_dev_dest)
-		_fail()
-		return
-	_dev_done.call()
-
-
-## A refused token waits for a new one; any other failure is asked again later.
-func _dev_refused(result: int, code: int) -> bool:
-	if result == HTTPRequest.RESULT_SUCCESS and code == 200:
-		return false
-	if code == 401 or code == 403:
-		_set_state("token_refused")
-	else:
-		_fail()
-	return true
-
-
-func _on_dev_manifest() -> void:
-	var json := _dir.path_join("manifest.json")
-	var size := unzip_one(_dev_dest, ".json", json)
-	DirAccess.remove_absolute(_dev_dest)
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(json)) if size > 0 else null
-	DirAccess.remove_absolute(json)
-	_take_manifest(parsed if parsed is Dictionary else {})
-
-
-## The pack's zip is in: out of it and hashed off the main thread, then the
-## same check as any download (`_on_hashed`).
-func _on_dev_pack() -> void:
-	_set_state("verifying")
-	_hash = ""
-	var zip := ProjectSettings.globalize_path(_dev_dest)
-	var part := ProjectSettings.globalize_path(_part())
-	var size := int(latest.get("size", -1))
-	_hash_task = WorkerThreadPool.add_task(func() -> void:
-		if unzip_one(zip, ".pck", part) == size:
-			_hash = FileAccess.get_sha256(part)
-		DirAccess.remove_absolute(zip))
 
 
 func _on_downloaded(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
