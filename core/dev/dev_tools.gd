@@ -1,8 +1,9 @@
 extends Node
 ## DEV MODE: dev tools for testing on Caleb's own machine, where a thread
 ## cannot measure anything (his graphics card, his frame rate). Two keys,
-## read only in an editor or debug run (`DevMode.available`), never in an
-## exported game, and never on a server or headless:
+## read only in an editor or debug run or the exported dev build
+## (`DevMode.available`), never in the release (playtest) build, and never on
+## a server or headless:
 ##   - F9, performance capture: `CAPTURE_SECONDS` of frame timings (frame,
 ##     process, physics, render CPU and GPU), draw calls, objects and
 ##     primitives, then one JSON file with a summary at the top, the
