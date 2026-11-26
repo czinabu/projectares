@@ -19,6 +19,12 @@ static func run(t: Node) -> void:
 	DevMode.persist = false
 	DevMode.enabled = false
 	t.check(DevMode.available(), "dev mode can be switched on in a debug run")
+	t.check(DevMode.available_in(true, false, false) and not DevMode.available_in(true, true, false)
+			and not DevMode.available_in(true, true, true) and not DevMode.available_in(false, false, false),
+			"the exported dev build has dev mode; the exported release build and its server never do")
+	t.check(DevMode.starts_on_in(true, false) and not DevMode.starts_on_in(true, true)
+			and not DevMode.starts_on_in(false, false) and not DevMode.starts_on(),
+			"the exported dev build starts with dev mode on; the editor and the tests keep the saved choice")
 	t.check(DevMode.raid_cheats().is_empty(), "with dev mode off a raid gets no cheats")
 
 	# The dev stash: every piece of gear, healing in bulk, max scrip.

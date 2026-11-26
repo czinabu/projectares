@@ -65,9 +65,12 @@ date in the same PR.
   logo is a placeholder in `assets/branding` (the window, exe and installer
   icon and the boot splash), made by its `make_logo.py`.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further
-  along): `core/dev/dev_mode.gd`, switched in the phone's Settings app and
-  only in a debug or editor run (`DevMode.available`), never in an exported
-  game. Solo, it puts `Profile` on a separate save
+  along): `core/dev/dev_mode.gd`, switched in the phone's Settings app in
+  a debug or editor run and in the exported dev build (`DevMode.available`),
+  never in the exported release (playtest) build or its server. The
+  exported dev build starts with it on at every launch, with nothing to
+  switch (`DevMode.starts_on`, Caleb's call); the editor keeps the choice
+  saved in `DevMode.SAVE_PATH`. Solo, it puts `Profile` on a separate save
   (`Profile.DEV_SAVE_PATH`) kept topped up with all gear and max scrip, and
   hands a solo `Raid` its cheats (`Raid.dev_cheats`: god mode, endless heat
   and ammo, no cooldowns); a server or client raid ignores them. Online, only
@@ -88,8 +91,9 @@ date in the same PR.
   `tests/visual/console.gd`. Dev mode also knows every blueprint
   (`DevMode.top_up_blueprints`).
 - Dev tools (DEV MODE, `core/dev/dev_tools.gd`, added by `Main`): two raw
-  keys read only in an editor or debug run with a window
-  (`DevTools.enabled`), never exported, headless or on a server. F9 records
+  keys read only in an editor or debug run or the exported dev build, with
+  a window (`DevTools.enabled`), never in the release (playtest) build,
+  headless or on a server. F9 records
   `CAPTURE_SECONDS` of frame timings (frame, process, physics, render CPU
   and GPU), draw calls, objects and primitives into one JSON under
   `user://dev` with its summary first, the machine and the graphics

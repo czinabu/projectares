@@ -20,7 +20,10 @@ extends RefCounted
 ##     no ability cooldowns.
 ## It never reaches online play: the server keeps its own stash
 ## (`StashService`) and a `Raid` only applies cheats in `Mode.SOLO`.
-## It is off and cannot be turned on in an exported game (`available`).
+## It cannot be turned on in the exported release (playtest) build or its
+## server (`available`). The exported dev build (no "playtest" tag, Caleb's
+## call) starts with it on every launch (`starts_on`); the editor keeps the
+## choice saved in `SAVE_PATH`.
 
 const StashRules := preload("res://core/account/stash_rules.gd")
 const Economy := preload("res://core/economy/economy.gd")
@@ -42,10 +45,29 @@ static var cheats := {"god": true, "heat": true, "ammo": true, "cooldowns": true
 static var _loaded := false
 
 
-## True only when running from the editor or a debug run, never in an
-## exported game. Dev mode cannot be turned on otherwise.
+## True in an editor or debug run and in the exported dev build, never in
+## the exported release (playtest) build. Dev mode cannot be turned on
+## otherwise.
 static func available() -> bool:
-	return OS.is_debug_build() and not OS.has_feature("template")
+	return available_in(OS.has_feature("template"), OS.has_feature("playtest"), OS.is_debug_build())
+
+
+## `available` for a program that is exported (`template`), carries the
+## release tag (`playtest`) and is a debug build (`debug`).
+static func available_in(template: bool, playtest: bool, debug: bool) -> bool:
+	if template:
+		return not playtest
+	return debug
+
+
+## True for the exported dev build: dev mode is on from the start of every
+## launch there, with nothing to switch (Caleb's call).
+static func starts_on() -> bool:
+	return starts_on_in(OS.has_feature("template"), OS.has_feature("playtest"))
+
+
+static func starts_on_in(template: bool, playtest: bool) -> bool:
+	return template and not playtest
 
 
 ## True when dev mode is on and allowed here.
@@ -58,6 +80,12 @@ static func ensure_loaded() -> void:
 	if _loaded:
 		return
 	_loaded = true
+	_load_saved()
+	if starts_on():
+		enabled = true
+
+
+static func _load_saved() -> void:
 	if not persist or not FileAccess.file_exists(SAVE_PATH):
 		return
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
