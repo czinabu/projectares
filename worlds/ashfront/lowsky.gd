@@ -13,6 +13,8 @@ extends Node3D
 ## (`battle.gd`), and drops its extras on that screen only; a wreck comes
 ## down past the rim, where nobody can stand. All tracers are one MultiMesh.
 
+const GameSettings := preload("res://core/settings/game_settings.gd")
+
 ## Seconds between gunship runs, fighter pairs and falling dropships, quiet
 ## and in all-out war.
 const GUNSHIP_GAP := Vector2(75.0, 16.0)
@@ -131,6 +133,8 @@ static func gunships_at(heat: float) -> int:
 
 func _ground(x: float, z: float) -> float:
 	var map := get_parent()
+	if map != null and map.has_method("scenery_height"):
+		return float(map.call("scenery_height", x, z))
 	if map != null and map.has_method("ground_height") and Vector2(x, z).length() < field:
 		return float(map.call("ground_height", x, z))
 	return floor_y
@@ -150,17 +154,17 @@ func _process(delta: float) -> void:
 	var clear := Look.weather_cover < 0.6
 	_next_gunship -= delta
 	if _next_gunship <= 0.0:
-		_next_gunship = gap_at(GUNSHIP_GAP, heat) * _rng.randf_range(0.7, 1.3)
+		_next_gunship = gap_at(GUNSHIP_GAP, heat) / GameSettings.war_share() * _rng.randf_range(0.7, 1.3)
 		if clear and _gunships.size() < gunships_at(heat):
 			send_gunship()
 	_next_pair -= delta
 	if _next_pair <= 0.0:
-		_next_pair = gap_at(FIGHTER_GAP, heat) * _rng.randf_range(0.6, 1.4)
+		_next_pair = gap_at(FIGHTER_GAP, heat) / GameSettings.war_share() * _rng.randf_range(0.6, 1.4)
 		if clear:
 			send_fighters()
 	_next_wreck -= delta
 	if _next_wreck <= 0.0:
-		_next_wreck = gap_at(WRECK_GAP, heat) * _rng.randf_range(0.7, 1.3)
+		_next_wreck = gap_at(WRECK_GAP, heat) / GameSettings.war_share() * _rng.randf_range(0.7, 1.3)
 		if clear and _wrecks.size() < 2:
 			drop_wreck()
 	_tick_gunships(delta, heat)

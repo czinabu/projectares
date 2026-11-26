@@ -83,14 +83,23 @@ const VIEW_DISTANCE_DEFAULT := 1
 ## last row, which sets nothing). A weak graphics card is spotted on the
 ## first launch and given a lower one (`detect_graphics`).
 const GRAPHICS := [
-	["High", 0, 0, 1, true, true, 2, true, true],
-	["Medium", 1, 1, 1, false, true, 2, true, true],
-	["Low (laptops)", 2, RENDER_SCALE_AUTO, 2, false, false, 1, true, false],
-	["Lowest", 3, 3, 3, false, false, 1, false, false],
+	["High", 0, 0, 1, true, true, 2, true, true, 0],
+	["Medium", 1, 1, 1, false, true, 2, true, true, 0],
+	["Low (laptops)", 2, RENDER_SCALE_AUTO, 2, false, false, 1, true, false, 1],
+	["Lowest", 3, 3, 3, false, false, 1, false, false, 2],
 	["Custom"],
 ]
 const GRAPHICS_KEYS := ["shadows", "render_scale", "view_distance", "ambient_occlusion", "ground_smoke",
-		"anti_aliasing", "edge_ink", "bloom"]
+		"anti_aliasing", "edge_ink", "bloom", "war_scenery"]
+## How busy a world's far, view-only war is (Ashfront's scenery army, flak,
+## low sky, the horde past the rim, the air's embers): [name on the phone,
+## share of the action kept]. Everything of it keeps happening on every
+## pick, only fewer at once, so a laptop still sees a war.
+const WAR_SCENERY := [
+	["Full", 1.0],
+	["Thinned", 0.6],
+	["Light", 0.35],
+]
 const GRAPHICS_HIGH := 0
 const GRAPHICS_MEDIUM := 1
 const GRAPHICS_LOW := 2
@@ -136,6 +145,8 @@ const SCHEMA := [
 			"label": "Battle smoke over the ground", "default": true},
 	{"key": "bloom", "tab": "view", "section": "PERFORMANCE", "kind": "toggle",
 			"label": "Glow around bright lights", "default": true},
+	{"key": "war_scenery", "tab": "view", "section": "PERFORMANCE", "kind": "choice",
+			"label": "Far battle scenery", "default": 0, "choices": WAR_SCENERY},
 	{"key": "field_of_view", "tab": "view", "section": "CAMERA", "kind": "slider",
 			"label": "Field of view, first person", "default": 80.0, "range": FOV_RANGE, "step": 1.0,
 			"format": "whole", "preview": true},
@@ -232,6 +243,19 @@ static var ground_smoke: bool:
 static var bloom: bool:
 	get: return _values["bloom"]
 	set(v): _values["bloom"] = v
+## An index into `WAR_SCENERY`.
+static var war_scenery: int:
+	get: return _values["war_scenery"]
+	set(v): _values["war_scenery"] = v
+
+
+## The share of the far, view-only war kept on this machine (`WAR_SCENERY`):
+## 1 on Full. Read by the scenery each time it decides how much to show, so
+## a change on the phone takes at once.
+static func war_share() -> float:
+	if not _values.has("war_scenery"):
+		return 1.0
+	return float(WAR_SCENERY[clampi(war_scenery, 0, WAR_SCENERY.size() - 1)][1])
 ## The watch's mission log: what the player took off the visor's objective
 ## block (a contract's id, or `TOUR_KEY` for the new player's tour). Every
 ## mission is tracked until it is picked off. View only.

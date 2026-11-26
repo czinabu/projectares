@@ -103,8 +103,11 @@ static func ground_material(type: PlanetType) -> Material:
 ## (0 to 1) averages each height over that share of the gap between rings,
 ## for a ground whose sharp, short features (dune slip faces, terraces)
 ## would otherwise fold into jagged sheets between samples tens of metres
-## apart.
-static func horizon(type: PlanetType, ground: PlanetTerrain, inner: float, smooth := 0.0) -> MeshInstance3D:
+## apart. `peaks_kept(x, z)`, when given, is the share (0 to 1) of the far
+## mountains raised at (x, z), so a map can keep ground it builds on out
+## there (Ashfront's battle shelves) at its own height.
+static func horizon(type: PlanetType, ground: PlanetTerrain, inner: float, smooth := 0.0,
+		peaks_kept := Callable()) -> MeshInstance3D:
 	var reach := float(type.horizon.get("reach", 2600.0))
 	var peaks := float(type.horizon.get("peaks", 120.0))
 	var rings := 64
@@ -134,6 +137,8 @@ static func horizon(type: PlanetType, ground: PlanetTerrain, inner: float, smoot
 						+ ground.height_at(x, z + blur) + ground.height_at(x, z - blur)) / 6.0
 			var far := smoothstep(start * 1.2, reach * 0.55, r)
 			var k := (ridge.get_noise_2d(x, z) + 1.0) * 0.5
+			if peaks_kept.is_valid():
+				far *= float(peaks_kept.call(x, z))
 			h += k * k * peaks * far
 			# Inside the square map, sink the ring under its ground.
 			if maxf(absf(x), absf(z)) < inner:
