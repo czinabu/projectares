@@ -4,14 +4,13 @@ name: Windows client build
 #   That preset is the playtest build (feature tag "playtest"): only the worlds
 #   in ares/release/playtest_worlds (core/world/world_registry.gd). The
 #   "Windows Dev" preset, every world, is exported beside it as a workflow
-#   artifact only, never on a release: nothing of it is public. On every
-#   push to main the dev build's own update goes up as private artifacts
-#   too, "dev-update-manifest-<system>" (update-dev.json, or
-#   update-dev-linux.json) and "dev-update-pack-<system>" (its pack), which
-#   an installed dev game fetches through the GitHub API with a read-only
-#   token its owner gave it on the phone (Updater, channel "dev"). Every dev
-#   manifest says "channel": "dev", which a playtest game refuses, and a dev
-#   game refuses any other, so the two builds never swap.
+#   artifact, and on every push to main on its own rolling "dev-latest"
+#   pre-release (Caleb's call: public, so it updates with no sign-in): the
+#   Windows zip and Linux tarball, and the dev build's own update,
+#   ProjectAresDev.pck with update-dev.json and ProjectAresDev-linux.pck with
+#   update-dev-linux.json (Updater, channel "dev"). It is never put on
+#   "latest". Every dev manifest says "channel": "dev", which a playtest game
+#   refuses, and a dev game refuses any other, so the two builds never swap.
 #   The "Linux Client" preset (the same playtest build, for Linux laptops) is
 #   exported beside it as ProjectAres-linux-<commit>.tar.gz on the same
 #   release, and updates itself the same way from its own pack and manifest
@@ -217,34 +216,6 @@ jobs:
         with:
           name: ${{ env.DEV_LINUX_NAME }}
           path: dist-dev-linux/*.tar.gz
-      # The dev build's private update (Updater.dev_artifact): fixed names, so
-      # the game asks for the newest by name; only builds of main.
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'push'
-        with:
-          name: dev-update-manifest-windows
-          path: dist-dev-update/update-dev.json
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'push'
-        with:
-          name: dev-update-pack-windows
-          path: dist-dev-update/ProjectAresDev.pck
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'push'
-        with:
-          name: dev-update-manifest-linux
-          path: dist-dev-update/update-dev-linux.json
-          retention-days: 30
-          if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'push'
-        with:
-          name: dev-update-pack-linux
-          path: dist-dev-update/ProjectAresDev-linux.pck
-          retention-days: 30
-          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.zip.outputs.name }}
@@ -266,6 +237,16 @@ jobs:
           gh release delete latest --cleanup-tag -y || true
           gh release create latest dist/ProjectAres-Setup.exe "$zip" "dist/${{ steps.linux.outputs.name }}.tar.gz" dist/ProjectAres.pck dist/update.json dist/ProjectAres-linux.pck dist/update-linux.json --prerelease --target "$GITHUB_SHA" \
             --title "Latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
+      - name: Update the rolling dev release
+        # The dev build (every world) updates from here, never from "latest".
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Dev build of newest main (every world, nothing held back), build $GITHUB_RUN_NUMBER. Not the playtest build: that is on the \"latest\" release. Windows: unzip ProjectAresDev-windows-*.zip somewhere you can write to and run ProjectAresDev.exe. Linux: unpack ProjectAresDev-linux-*.tar.gz somewhere you can write to and run ProjectAresDev.x86_64. Either keeps itself up to date from here, and only ever takes dev builds."
+          gh release delete dev-latest --cleanup-tag -y || true
+          gh release create dev-latest dist-dev/*.zip dist-dev-linux/*.tar.gz dist-dev-update/* --prerelease --latest=false \
+            --target "$GITHUB_SHA" --title "Dev build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release
         env:
