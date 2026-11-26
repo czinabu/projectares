@@ -56,9 +56,9 @@ static func _back_on(t: Node) -> void:
 	Raid.enemies = true
 	var raid := Raid.new()
 	t.add_child(raid)
-	raid.start(Worlds.get_world("marsh"), 77)
+	raid.start(Worlds.get_world("ashfront"), 77)
 	await t.frames(3)
-	t.check(raid.bots.size() >= Worlds.get_world("marsh").bot_count,
+	t.check(raid.bots.size() >= Worlds.get_world("ashfront").bot_count,
 			"switched on, the same world has its army back (%d bots)" % raid.bots.size())
 	raid.queue_free()
 	await t.frames(2)
@@ -79,8 +79,12 @@ static func _budget(t: Node) -> void:
 		t.add_child(raid)
 		raid.start(Worlds.get_world(id), 77)
 		await t.frames(3)
-		t.check(raid.bots.size() <= 16 and raid.bots.size() >= 8,
-				"%s starts within the cap (%d of %d its own)" % [id, raid.bots.size(), Worlds.get_world(id).bot_count])
+		# A world's own budget stands in for the project's (Ashfront's 24, the
+		# Marsh's 12); with the project's cap off there is none.
+		var cap := raid.enemy_budget()
+		t.check(cap == Worlds.get_world(id).enemy_cap, "%s keeps its own budget (%d)" % [id, cap])
+		t.check(raid.bots.size() <= cap and (id != "ashfront" or raid.bots.size() >= 8),
+				"%s starts within its cap (%d of %d)" % [id, raid.bots.size(), cap])
 		raid.war.intensity = 1.0
 		raid._reinforce_in = 0.0
 		raid._raider_in = 0.0
@@ -90,7 +94,7 @@ static func _budget(t: Node) -> void:
 			raid._tick_guards(1.0)
 			raid._tick_bosses(1.0)
 		raid.start_event("warlord")
-		t.check(raid.bots.size() <= 16, "%s stays within it in a hot war (%d)" % [id, raid.bots.size()])
+		t.check(raid.bots.size() <= cap, "%s stays within it in a hot war (%d)" % [id, raid.bots.size()])
 		# Everyone near the player: only the nearest 4 think every tick.
 		for k in raid.bots.size():
 			raid.bots[k].global_position = raid.player.global_position + Vector3(3.0 + k, 0.0, 0.0)

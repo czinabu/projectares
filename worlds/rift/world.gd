@@ -185,6 +185,13 @@ const CONTRACTS := {
 }
 
 
+## A mesa's post stands when a player comes this near (metres): past a
+## Crown Sharpshooter's sight. The rift is small, so most of it is near.
+const POCKET_WAKE := 110.0
+## The most enemies the rift holds at once (`WorldDef.enemy_cap`).
+const ENEMY_CAP := 12
+
+
 func _init() -> void:
 	# The planet first (DESIGN.md "Planet kit"): it sets the sky, ground and
 	# the rule defaults (cold, shot carry, grip) the lines below may change.
@@ -192,7 +199,12 @@ func _init() -> void:
 	id = "rift"
 	display_name = "Basalt Rift"
 	description = "Basalt columns over a sea of lava. Always-on PvP where flight rigs decide the fights: ride the updrafts above your rig's ceiling, and do not touch the lava. The fallen drop scrip, not gear."
-	bot_count = 14
+	# No army roams the rift: the cult holds its three mesas and the hounds
+	# their dens, as encounter pockets (Caleb's call, DESIGN.md "Enemy
+	# layout") that stand while a player is near, at most `enemy_cap` at once.
+	bot_count = 0
+	pocket_wake = POCKET_WAKE
+	enemy_cap = ENEMY_CAP
 	contract_tag = "rift"
 	# Ashfront's death rule (DESIGN.md "More worlds"): deaths drop scrip,
 	# not gear.

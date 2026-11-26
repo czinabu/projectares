@@ -198,6 +198,7 @@ static func _wildlife(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(marsh, 12)
+	t.stand_pockets(raid)
 	for bot in raid.bots:
 		bot.process_mode = Node.PROCESS_MODE_DISABLED
 	var kinds := {}
@@ -249,6 +250,7 @@ static func _clouds(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(marsh, 21)
+	t.stand_pockets(raid)
 	for bot in raid.bots:
 		bot.process_mode = Node.PROCESS_MODE_DISABLED
 	var me := raid.add_player(KIT, {}, "Cutter", "cutter")
@@ -305,6 +307,7 @@ static func _brood_and_lurkers(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(marsh, 21)
+	t.stand_pockets(raid)
 	for bot in raid.bots:
 		bot.process_mode = Node.PROCESS_MODE_DISABLED
 	var lurkers: Array = raid._guards.filter(func(g: Dictionary) -> bool: return g.bot != null and (g.bot as Actor).faction == "lurker")
@@ -361,7 +364,11 @@ static func _brood_and_lurkers(t: Node) -> void:
 	var spilled := brood.size()
 	raid._tick_brood(guard, 60.0)
 	t.check(brood.size() <= spilled, "a fallen keeper spills nothing more")
+	# A forest's pocket (`WorldDef.pocket_wake`) refills only with nobody
+	# right by the post: step back, still near enough to keep it awake.
+	me.global_position = (guard.marker as Node3D).global_position + Vector3(Raid.POCKET_REFILL_CLEAR + 5.0, 0.5, 0)
 	raid._tick_guards(marsh.guard_respawn_time + 1.0)
+	raid._tick_guards(0.1)
 	t.check(box.sealed != "", "and when a new keeper comes, the hive is sealed again")
 	raid.queue_free()
 	await t.frames(1)

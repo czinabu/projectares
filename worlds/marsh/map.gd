@@ -399,8 +399,9 @@ func _build_forests() -> void:
 		# Its stalker pack, round the heart; a bloater or two drifts at the edges.
 		if f < FORESTS.size() - 1:
 			for k in 3:
-				_bot_spot(_ground(centre + Vector2.from_angle(k * TAU / 3.0) * 10.0), "stalker", 0 if k == 0 else 3)
-			_bot_spot(_ground(centre + Vector2.from_angle(f * 1.3) * (radius - 4.0)), "bloater", 1)
+				_bot_spot(_ground(centre + Vector2.from_angle(k * TAU / 3.0) * 10.0), "stalker", 0 if k == 0 else 3,
+						FORESTS[f]["name"], radius)
+			_bot_spot(_ground(centre + Vector2.from_angle(f * 1.3) * (radius - 4.0)), "bloater", 1, FORESTS[f]["name"], radius)
 
 
 func _add_stalk(stalk: Dictionary) -> void:
@@ -471,8 +472,8 @@ func _build_stations() -> void:
 			_box(part[0], part[1], HUT, hut)
 		_add_marker("spawn_cache", base + Vector3(0, 0.1, 0)).set_meta("loot_source", "station")
 		_add_depot(_ground(at + Vector2(0, 9.0).rotated(-hut.rotation.y)), Vector2(0, 1.0).rotated(-hut.rotation.y))
-		_bot_spot(_ground(at + Vector2(16.0, 0).rotated(i * 2.0)), "shellback", 0 if i == 0 else 2)
-		_bot_spot(_ground(at + Vector2(-14.0, 6.0).rotated(i * 2.0)), "bloater", 4)
+		_bot_spot(_ground(at + Vector2(16.0, 0).rotated(i * 2.0)), "shellback", 0 if i == 0 else 2, station["name"], 20.0)
+		_bot_spot(_ground(at + Vector2(-14.0, 6.0).rotated(i * 2.0)), "bloater", 4, station["name"], 20.0)
 
 
 ## The Grey Matriarch's den: a clearing ringed by roots in the core forest.
@@ -491,7 +492,7 @@ func _build_den() -> void:
 	boss.set_meta("radius", DEN_RADIUS)
 	_add_marker("spawn_cache", at + Vector3(4.0, 0.1, -6.0)).set_meta("loot_source", "den")
 	for k in 2:
-		_bot_spot(_ground(DEN + Vector2(-8.0 + k * 16.0, 12.0)), "stalker", 1)
+		_bot_spot(_ground(DEN + Vector2(-8.0 + k * 16.0, 12.0)), "stalker", 1, "the Matriarch's den", DEN_RADIUS)
 
 
 ## The open marsh between the forests: hummocks with a cache now and then,
@@ -506,7 +507,7 @@ func _build_open() -> void:
 			continue
 		_add_marker("spawn_cache", _ground(at) + Vector3(0, 0.1, 0))
 		if placed % 3 == 0:
-			_bot_spot(_ground(at + Vector2(6.0, 0)), "shellback" if placed % 2 == 0 else "bloater", 2)
+			_bot_spot(_ground(at + Vector2(6.0, 0)), "shellback" if placed % 2 == 0 else "bloater", 2, "hummock%d" % placed, 20.0)
 		placed += 1
 
 
@@ -571,6 +572,7 @@ func _build_hives() -> void:
 		var guard := _add_marker("spawn_guard", _ground(spot + (centre - spot).normalized() * 5.0))
 		guard.set_meta("faction", "keeper")
 		guard.set_meta("hive", key)
+		guard.set_meta("pocket", forest["name"])
 		guard.set_meta("radius", 9.0)
 		for meta: String in BROOD:
 			guard.set_meta(meta, BROOD[meta])
@@ -619,8 +621,13 @@ func _near_forest(at: Vector2, margin: float) -> bool:
 	return false
 
 
-func _bot_spot(at: Vector3, faction: String, rank: int) -> void:
-	_bot_spots.append({"at": at, "faction": faction, "rank": rank, "order": _bot_spots.size()})
+## A beast of an encounter pocket (`WorldDef.pocket_wake`): a guard of
+## `faction` that keeps to `radius` metres round its spot and wakes with the
+## rest of `pocket` (a forest's, a station's or a hummock's), and a
+## "spawn_bot" marker where a world event comes in.
+func _bot_spot(at: Vector3, faction: String, rank: int, pocket: String, radius: float) -> void:
+	_bot_spots.append({"at": at, "faction": faction, "rank": rank, "order": _bot_spots.size(),
+			"pocket": pocket, "radius": radius})
 
 
 func _place_bot_spots() -> void:
@@ -628,6 +635,10 @@ func _place_bot_spots() -> void:
 		return a.rank < b.rank or (a.rank == b.rank and a.order < b.order))
 	for spot in _bot_spots:
 		_add_marker("spawn_bot", spot.at).set_meta("faction", spot.faction)
+		var guard := _add_marker("spawn_guard", spot.at)
+		guard.set_meta("faction", spot.faction)
+		guard.set_meta("pocket", spot.pocket)
+		guard.set_meta("radius", spot.radius)
 
 
 ## A depot whose uplink terminal stands on the `back` side of its pad (a

@@ -128,6 +128,13 @@ const CONTRACTS := {
 }
 
 
+## A yard or wreck field stands when a player comes this near (metres):
+## past a Dune Marksman's sight, so it is up before it can see you.
+const POCKET_WAKE := 180.0
+## The most enemies the sea holds at once (`WorldDef.enemy_cap`).
+const ENEMY_CAP := 12
+
+
 func _init() -> void:
 	# The planet first (DESIGN.md "Planet kit"): it sets the sky, ground and
 	# the rule defaults (cold, shot carry, grip) the lines below may change.
@@ -135,7 +142,12 @@ func _init() -> void:
 	id = "dunes"
 	display_name = "Dune Sea"
 	description = "A sea of dunes and wreck fields, three times Ashfront's width. Haul salvage crates home in your vehicle's cargo; keep what you wear when you die, lose the pack and every crate. Sandstorms bury the wreck fields and uncover others."
-	bot_count = 16
+	# No army walks the sea: its raiders are encounter pockets at the
+	# yards and wreck fields (Caleb's call, DESIGN.md "Enemy layout"), each
+	# standing only while a player is near, at most `enemy_cap` at once.
+	bot_count = 0
+	pocket_wake = POCKET_WAKE
+	enemy_cap = ENEMY_CAP
 	contract_tag = "dunes"
 	# You keep what you wear; the pack drops in a bag and every crate you
 	# haul falls where you die (Caleb's call).

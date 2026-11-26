@@ -414,6 +414,11 @@ var boss_respawn_time := 360.0
 var void_y := -30.0
 ## No world sets `void_y` higher than this.
 const VOID_Y_MAX := -30.0
+## This world's own enemy budget (`Raid.enemy_budget`): the most enemies it
+## holds at once, everything counted, in place of the project's
+## `ares/stability/enemy_cap` (0 keeps that). It applies only while that cap
+## is on. Ashfront's war wants more than a world of pockets.
+var enemy_cap := 0
 ## Seconds before a guard at a "spawn_guard" marker comes back after it dies.
 var guard_respawn_time := 240.0
 ## Encounter pockets (0 is off): the world's "spawn_guard" markers stand

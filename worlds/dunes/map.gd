@@ -264,7 +264,7 @@ func _build_sites() -> void:
 		_add_depot(_ground(at + Vector2(24.0, 0.0)))
 		_add_marker("spawn_cache", _ground(at + Vector2(-5.0, 5.0)) + Vector3(0, 0.1, 0))
 		for i in 3:
-			_add_marker("spawn_bot", _ground(at + Vector2.from_angle(i * TAU / 3.0) * 8.0)).set_meta("faction", "dunes")
+			_raider_post(_ground(at + Vector2.from_angle(i * TAU / 3.0) * 8.0), site["name"], 16.0)
 
 
 ## The wreck fields: buried haulers half sunk in the sand, salvage crates
@@ -295,8 +295,9 @@ func _build_wrecks() -> void:
 			var spot := at + Vector2.from_angle(lie + (i + 0.5) * TAU / hulks) * _rng.randf_range(5.0, 9.0)
 			_add_marker("spawn_crate", _ground(spot))
 		_add_marker("spawn_cache", _ground(at + Vector2.from_angle(lie + PI) * 3.0) + Vector3(0, 0.1, 0))
+		var pocket := "wreck%d" % index
 		for i in 2 + index / 3:
-			_add_marker("spawn_bot", _ground(at + Vector2.from_angle(lie + i * 2.1 + 1.0) * 18.0)).set_meta("faction", "dunes")
+			_raider_post(_ground(at + Vector2.from_angle(lie + i * 2.1 + 1.0) * 18.0), pocket, WRECK_RADIUS)
 		# Every other field has a Dune Burrower under its sand (the world's
 		# `equip_bot` makes a guard of faction "burrower" one), posted
 		# between the hulks where the crates are carried out.
@@ -304,6 +305,7 @@ func _build_wrecks() -> void:
 			var lair := _add_marker("spawn_guard", _ground(at + Vector2.from_angle(lie + PI * 1.5) * WRECK_RADIUS * 0.4))
 			lair.set_meta("faction", "burrower")
 			lair.set_meta("radius", 6.0)
+			lair.set_meta("pocket", pocket)
 		if index % 2 == 0:
 			var parked := _add_marker("spawn_vehicle", _ground(at + Vector2.from_angle(lie + PI * 0.5) * (WRECK_RADIUS + 6.0))
 					+ Vector3(0, 0.5, 0))
@@ -377,6 +379,18 @@ func _add_depot(at: Vector3, back := Vector2.ZERO) -> void:
 	if back != Vector2.ZERO:
 		zone.rotation.y = atan2(back.x, back.y)
 	add_child(zone)
+
+
+## A raider of an encounter pocket (`WorldDef.pocket_wake`): a guard who
+## keeps to `radius` metres round its post and wakes with the rest of
+## `pocket` (a yard's name, or a wreck field's), and a "spawn_bot" marker
+## where a world event comes in.
+func _raider_post(at: Vector3, pocket: String, radius: float) -> void:
+	_add_marker("spawn_bot", at).set_meta("faction", "dunes")
+	var guard := _add_marker("spawn_guard", at)
+	guard.set_meta("faction", "dunes")
+	guard.set_meta("pocket", pocket)
+	guard.set_meta("radius", radius)
 
 
 func _add_marker(group: String, at: Vector3) -> Marker3D:

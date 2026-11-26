@@ -200,7 +200,12 @@ date in the same PR.
   army (`army_size`), and a world of pockets may have no army
   (`_fields_enemies`); `--bots 0` turns pockets off too
   (`NetSession`). Everything stays on the authority: clients see guards
-  come and go as actors spawned and removed.
+  come and go as actors spawned and removed. Frostline, the Marsh, the
+  Dune Sea and the Rift are worlds of pockets (`bot_count` 0); a map
+  gives each guard of a group the same "pocket" (a place's name) and
+  keeps a "spawn_bot" marker by it for events. `tests/world_pockets_tests.gd`
+  holds each to pockets of 1 to 5 standing apart; `TestRunner.stand_pockets`
+  stands every pocket for checks that want the whole garrison up.
 - World events (`Raid.event`, `start_event`, `end_event`): one at a time, on
   a timer the war speeds up, tuned by `WorldDef.event_interval`,
   `event_lifetime` and `warlord_escort`. A supply pod is an ordinary

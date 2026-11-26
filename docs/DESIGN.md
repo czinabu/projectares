@@ -1118,7 +1118,7 @@ cover or a plan, and five should take at least six seconds to kill
 someone standing still. The duel rows above stay in their bands with this
 on (one attacker always has a slot).
 
-### Enemy layout (trial on Frostline; Caleb chose pockets that wake near players)
+### Enemy layout (Caleb's call: pockets in every world but Ashfront)
 
 The aim: a player meets one readable group at a time, picks the moment to
 engage, and wins when they play it well, while the frame rate stays high.
@@ -1144,10 +1144,30 @@ Warden), four Feral dens (3 each, now at least 85 m from each other and
 from any Warden pocket; two of the old five sat 30 and 45 m apart), the
 core at the Engine's foot (2 Wardens), and the Engine's garrison by
 section, which wakes at 50 m because its walls hide it. Still to decide
-after the trial: whether every world moves over, the per-world caps
-(proposed 8 on Ashfront, 12 elsewhere, each measured first), and whether
-bosses sleep too (they stand all the time today and take 2 of
-Frostline's 8).
+after the trial: whether bosses sleep too (they stand all the time today
+and take 2 of Frostline's 8).
+
+Every world but Ashfront (Caleb's call, 25 Nov: "Pockets, Ashfront keeps
+its war"). Each has no army and its own enemy budget of 12
+(`WorldDef.enemy_cap`, in place of the project's 8):
+
+- **The Marsh** wakes at 90 m (a small basin, close forests): a pack in
+  each forest (3 stalkers and a bloater, with the hive's keeper where
+  there is one), a shellback and a bloater at each survey station, two
+  stalkers before the Matriarch's den, a lone beast on six hummocks, a
+  lurker in each deep pool, and each Rootway's gallery as one garrison
+  under the ground. The forests and stations stand at least 74 m apart.
+- **The Dune Sea** wakes at 180 m (past a marksman's 70 m, and vehicles
+  are quick): three raiders at each salvage yard and two to four at each
+  wreck field, the burrower in every other field among them. At least
+  279 m between them.
+- **The Rift** wakes at 110 m (a small world, most of it near): the cult
+  holds each mesa, three on the Anvil, two on each outer stack with its
+  hound pack (five, one fight). The mesas are 85 m apart; the perches
+  stay empty, for events.
+- **Ashfront keeps its war**: its armies roam and fight as before, under
+  a budget of its own of 24, so a battle in view has both sides in it.
+- Frostline keeps the project's 8 for now.
 
 ### Own rosters for the Dune Sea and the Rift (Caleb's call)
 

@@ -176,7 +176,9 @@ static func _check_turret(t: Node, raid: Raid, ship: Node3D, turret: Actor) -> v
 	me.health.health = 99999.0
 	me.set_physics_process(false)
 	var fired := false
-	for i in 300:
+	# Alone up there it takes its time to notice someone (about five
+	# seconds); with the cult fighting round it, sooner.
+	for i in 600:
 		me.global_position = ship.global_position + Vector3(25.0, 16.0, 0.0)
 		me.velocity = Vector3.ZERO
 		await t.frames(1)

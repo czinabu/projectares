@@ -273,6 +273,21 @@ func check(condition: bool, what: String) -> void:
 		print("  FAIL  ", what)
 
 
+## Stands every guard of a world of encounter pockets (`WorldDef.pocket_wake`)
+## at once, as if a player stood by each, for checks that want the whole
+## garrison up (a server with nobody in it wakes none). `pocket_tests.gd`
+## checks the waking itself.
+func stand_pockets(raid: Raid) -> void:
+	for key: Variant in raid._pockets:
+		var pocket: Dictionary = raid._pockets[key]
+		pocket.awake = true
+		for i: int in pocket.guards:
+			var guard: Dictionary = raid._guards[i]
+			if guard.bot == null and guard.back_in <= 0.0:
+				guard.bot = raid._add_guard(guard.marker)
+	raid._seal_hives()
+
+
 func frames(count: int) -> void:
 	for i in count:
 		await get_tree().physics_frame

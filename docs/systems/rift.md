@@ -143,6 +143,10 @@ Leviathan)", "(part three, built: the rig rewards)"). Check it with
   markers of faction "hound" (`HOUND`), three to a den on each outer
   stack (`HOUND_PACK`), and fight for the cult (faction "rift"). They come
   back like any guard (`guard_respawn_time`).
+- No army roams: each mesa is an encounter pocket by the site's name
+  (`pocket_wake` 110 m, a budget of 12), three of the cult on the Anvil
+  and two on each outer stack, which shares its pocket with the den (five
+  in one fight). The perches keep "spawn_bot" markers for events only.
 - The Lord of the Crown is always one of the cult's people: `bot_allowed`
   turns away a crawler rolled as a warlord. The roster's numbers follow
   Ashfront's for the same roles (`BOT_SKILL`, `ZONE_TOUGH`, DESIGN.md

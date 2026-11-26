@@ -71,6 +71,7 @@ static func _built(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(marsh, 31)
+	t.stand_pockets(raid)
 	await t.frames(2)
 	for i in Rootway.ROOTWAYS.size():
 		await _built_way(t, raid, marsh, i)
@@ -209,6 +210,7 @@ static func _keeper(t: Node, i: int) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(marsh, 33)
+	t.stand_pockets(raid)
 	await t.frames(2)
 	var f := Rootway.frame(way)
 	var kind: String = way["keeper"]
@@ -317,6 +319,7 @@ static func _charge(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(marsh, 35)
+	t.stand_pockets(raid)
 	await t.frames(2)
 	var f := Rootway.frame(way)
 	var boss: Dictionary = raid._bosses.filter(func(entry: Dictionary) -> bool:
@@ -433,6 +436,7 @@ static func _dive(t: Node) -> void:
 	var raid := Raid.new()
 	t.add_child(raid)
 	raid.start_server(marsh, 37)
+	t.stand_pockets(raid)
 	await t.frames(2)
 	var f := Rootway.frame(way)
 	var boss: Dictionary = raid._bosses.filter(func(entry: Dictionary) -> bool:

@@ -322,6 +322,8 @@ static func _place_markers(map: Node3D, way: Dictionary, f: Transform3D) -> void
 		var marker: Marker3D = map.call("_add_marker", "spawn_guard", f * (guard[0] as Vector3))
 		marker.set_meta("faction", guard[1])
 		marker.set_meta("radius", guard[2])
+		# The gallery's garrison wakes as one (`WorldDef.pocket_wake`).
+		marker.set_meta("pocket", way["name"])
 	for spot: Vector3 in [Vector3(-14.5, FLOOR + 0.1, 46.5), Vector3(14.5, FLOOR + 0.1, 69.5)]:
 		(map.call("_add_marker", "spawn_cache", f * spot) as Marker3D).set_meta("loot_source", "rootway")
 	var boss: Marker3D = map.call("_add_marker", "spawn_boss", f * Vector3(BEND, CHAMBER_FLOOR + 0.1, CHAMBER_Z + 2.0))
