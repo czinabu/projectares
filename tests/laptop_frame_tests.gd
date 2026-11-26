@@ -117,3 +117,52 @@ static func run(t: Node) -> void:
 			if mesh != null and mesh.get_surface_count() > 0:
 				lods = (RenderingServer.mesh_get_surface(mesh.get_rid(), 0).get("lods", []) as Array).size()
 			t.check(lods > 0, "the suit's %s for build %s has levels of detail for far away" % [part, build])
+
+	# A shaped face and a cut of hair keep levels of detail.
+	var HeadShape := preload("res://core/visual/head_shape.gd")
+	var rig: Node3D = (load(Human.rig_path("m")) as PackedScene).instantiate()
+	var skeleton := rig.find_child("Skeleton3D", true, false) as Skeleton3D
+	var hair := HeadShape.dress(skeleton, "m", ["Hair_Long:bob"], "broad", Human.FACES["broad"][1])
+	var head := skeleton.find_child("PartHead", false, false) as MeshInstance3D
+	var cut := skeleton.find_child(hair[0], false, false) as MeshInstance3D if not hair.is_empty() else null
+	t.check(head != null and _lod_count(head.mesh) > 0 and cut != null and _lod_count(cut.mesh) > 0,
+			"a shaped face and a cut of hair keep levels of detail for far away")
+	rig.free()
+
+	# A gun attachment's alike parts become one mesh each; named parts stay.
+	var optic := Node3D.new()
+	for i in 6:
+		optic.add_child(Weapon.make_part(Vector3(0.01, 0.01, 0.01), Vector3(i * 0.02, 0, 0), Color(0.1, 0.11, 0.13)))
+	for i in 4:
+		optic.add_child(Weapon.make_part(Vector3(0.002, 0.002, 0.002), Vector3(0, i * 0.01, 0), Color(0.25, 0.9, 1.0), true))
+	var lens := Weapon.make_part(Vector3(0.01, 0.01, 0.001), Vector3.ZERO, Color.WHITE)
+	lens.name = "Lens"
+	optic.add_child(lens)
+	LookScript.merge_pieces(optic, true, true)
+	t.check(optic.get_child_count() == 3 and optic.has_node("Lens"),
+			"an attachment's parts set alike merge into one mesh per look, keeping its named lens")
+	optic.free()
+
+	# A big merged model (a vehicle) gets levels of detail; a few boxes do not.
+	var model := Node3D.new()
+	var mat := StandardMaterial3D.new()
+	for i in 4:
+		var wheel := MeshInstance3D.new()
+		var cylinder := CylinderMesh.new()
+		cylinder.radial_segments = 48
+		cylinder.rings = 4
+		cylinder.material = mat
+		wheel.mesh = cylinder
+		wheel.position = Vector3(i, 0, 0)
+		model.add_child(wheel)
+	LookScript.merge_pieces(model, true, false, true)
+	var merged := model.get_child(0) as MeshInstance3D
+	t.check(model.get_child_count() == 1 and merged != null and _lod_count(merged.mesh) > 0,
+			"a big merged model gets levels of detail for far away")
+	model.free()
+
+
+static func _lod_count(mesh: Mesh) -> int:
+	if mesh == null or mesh.get_surface_count() == 0:
+		return 0
+	return (RenderingServer.mesh_get_surface(mesh.get_rid(), 0).get("lods", []) as Array).size()

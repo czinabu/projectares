@@ -26,6 +26,9 @@ const HAIR_CENTRE := Vector3(0.0, 1.7, -0.01)
 const FACE_PARTS: Array[String] = ["jaw", "cheeks", "length", "chin", "chin_down", "brow"]
 ## How far from the neck's edge the skin starts to move, metres.
 const SEAM_FREE := 0.035
+## How far apart, in degrees, two faces' normals may be and still be merged
+## when the levels of detail are made (Godot's import default).
+const LOD_MERGE_ANGLE := 25.0
 
 ## "build/part/cut/face" -> ArrayMesh, made once.
 static var _made := {}
@@ -71,7 +74,10 @@ static func _mesh(build: String, node: MeshInstance3D, cut: String, face_id: Str
 		return _made[key]
 	var source := node.mesh
 	var bind: Variant = _head_bind(node.skin)
-	var mesh := ArrayMesh.new()
+	# Through an ImporterMesh to make its levels of detail again, as the
+	# pack's import did: without them a far head draws all its triangles.
+	# A few milliseconds, once per cut and face.
+	var made := ImporterMesh.new()
 	for s in source.get_surface_count():
 		var arrays := source.surface_get_arrays(s)
 		if cut != "":
@@ -80,10 +86,10 @@ static func _mesh(build: String, node: MeshInstance3D, cut: String, face_id: Str
 			var eye := String(source.surface_get_material(s).resource_name if source.surface_get_material(s) else "") \
 					.contains("Eye")
 			arrays[Mesh.ARRAY_VERTEX] = _shape(arrays[Mesh.ARRAY_VERTEX], bind, face, frame, eye)
-		mesh.add_surface_from_arrays(source.surface_get_primitive_type(s), arrays, [], {},
-				source.surface_get_format(s) & ~Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
-		mesh.surface_set_material(s, source.surface_get_material(s))
-		mesh.surface_set_name(s, source.surface_get_name(s))
+		made.add_surface(source.surface_get_primitive_type(s), arrays, [], {}, source.surface_get_material(s),
+				source.surface_get_name(s), source.surface_get_format(s) & ~Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
+	made.generate_lods(LOD_MERGE_ANGLE, 0.0, [])
+	var mesh := made.get_mesh()
 	_made[key] = mesh
 	return mesh
 

@@ -676,8 +676,13 @@ func fit_draw_distance(map: Node3D) -> void:
 ## (a cannon that turns), is left as it is. Pieces that differ in shadow
 ## casting or vertex format never share a mesh. With `keep_named`, a piece
 ## given a name of its own (a vehicle's "Thruster1", found by name and
-## moved) is left out too. View only.
-static func merge_pieces(root: Node3D, keep_named := false) -> void:
+## moved) is left out too. With `alike`, pieces whose plain materials
+## (`StandardMaterial3D`) are set the same share a mesh even when each was
+## given its own copy (a gun attachment's parts, `Gun.build_attachment`).
+## With `lods`, a merged mesh of more than `LOD_FROM` triangles is given
+## levels of detail (`_with_lods`), for a big model seen from far off (a
+## vehicle). View only.
+static func merge_pieces(root: Node3D, keep_named := false, alike := false, lods := false) -> void:
 	if root == null:
 		return
 	var groups := {}
@@ -692,7 +697,7 @@ static func merge_pieces(root: Node3D, keep_named := false) -> void:
 		var layout := _layout(piece.mesh.surface_get_arrays(0))
 		if mat == null or layout == "":
 			continue
-		var key := "%d:%d:%s" % [mat.get_instance_id(), piece.cast_shadow, layout]
+		var key := "%s:%d:%s" % [_material_key(mat) if alike else str(mat.get_instance_id()), piece.cast_shadow, layout]
 		if not groups.has(key):
 			groups[key] = []
 			order.append(key)
@@ -705,6 +710,8 @@ static func merge_pieces(root: Node3D, keep_named := false) -> void:
 		var mesh := _merged_mesh(pieces, _piece_material(first))
 		if mesh == null:
 			continue
+		if lods:
+			mesh = _with_lods(mesh)
 		var merged := MeshInstance3D.new()
 		merged.name = "Merged%d" % order.find(key)
 		merged.mesh = mesh
@@ -884,6 +891,46 @@ static func _merged_mesh(pieces: Array, mat: Material) -> ArrayMesh:
 
 
 ## What a one-surface piece is drawn in: its override, else its surface's.
+## A merged mesh needs more triangles than this to be given levels of
+## detail: a few boxes gain nothing from them.
+const LOD_FROM := 400
+## Merged meshes given levels of detail, by their points and material, so
+## every vehicle of a kind shares one and makes it once.
+static var _lod_meshes := {}
+
+
+## `mesh` (one surface) with levels of detail made for it, as Godot's import
+## makes them, or `mesh` itself when it is small. The same shape is made
+## once (`_lod_meshes`).
+static func _with_lods(mesh: ArrayMesh) -> ArrayMesh:
+	var arrays := mesh.surface_get_arrays(0)
+	var index: Variant = arrays[Mesh.ARRAY_INDEX]
+	if index == null or (index as PackedInt32Array).size() / 3 <= LOD_FROM:
+		return mesh
+	var mat := mesh.surface_get_material(0)
+	var key := hash([arrays[Mesh.ARRAY_VERTEX], index, mat.get_instance_id() if mat != null else 0])
+	if _lod_meshes.has(key):
+		return _lod_meshes[key]
+	var made := ImporterMesh.new()
+	made.add_surface(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, mat, "", mesh.surface_get_format(0))
+	made.generate_lods(25.0, 0.0, [])
+	var out := made.get_mesh()
+	_lod_meshes[key] = out
+	return out
+
+
+## A plain material by what it is set to (every stored property), so two
+## copies set alike give the same key; any other material by itself.
+static func _material_key(mat: Material) -> String:
+	if not mat is StandardMaterial3D:
+		return str(mat.get_instance_id())
+	var parts := PackedStringArray()
+	for prop: Dictionary in mat.get_property_list():
+		if int(prop["usage"]) & PROPERTY_USAGE_STORAGE and prop["name"] != "resource_name":
+			parts.append(var_to_str(mat.get(prop["name"])))
+	return "|".join(parts)
+
+
 static func _piece_material(piece: MeshInstance3D) -> Material:
 	if piece.material_override != null:
 		return piece.material_override
@@ -2333,6 +2380,12 @@ func mount_attachments(visual: Node3D) -> void:
 			var riser := Weapon.make_part(Vector3(0.026, rise, 0.07), Vector3(0, -rise * 0.5, 0), Color(0.1, 0.11, 0.13))
 			riser.name = "Riser"
 			optic.add_child(riser)
+	# Each attachment's plain parts as one mesh per look: an optic is some
+	# thirty boxes, a draw each in every pass for every gun in the world.
+	# Named parts (its "Lens") and markers are left as they are.
+	for part in fitted.get_children():
+		if part is Node3D:
+			merge_pieces(part as Node3D, true, true)
 
 
 ## Puts a "Muzzle" marker on the gun's visual where shots leave it: the front
@@ -4010,4 +4063,4 @@ func _dress_vehicle(vehicle: Node3D) -> void:
 	# a bike): its still pieces are one mesh per material now. Named pieces
 	# (thrusters, engines, the canopy) and anything under a moving part (a
 	# walker's legs, an airship's weak spots) stay as they are.
-	merge_pieces(model, true)
+	merge_pieces(model, true, false, true)
