@@ -7,6 +7,8 @@ extends Node3D
 ## hides it (`Look.weather_cover`). View only: the map adds it only where
 ## `Look` is on. Every tracer is one MultiMesh, so it costs one draw call.
 
+const GameSettings := preload("res://core/settings/game_settings.gd")
+
 ## How many flak batteries fire, quiet and in all-out war.
 const BATTERIES := Vector2i(1, 6)
 ## Rounds kept in flight per battery, and the time between them in a burst.
@@ -139,7 +141,7 @@ func _process(delta: float) -> void:
 
 func _fire_tracers(delta: float, heat: float, seen: float) -> void:
 	var multi := _tracers.multimesh
-	var live := batteries_at(heat)
+	var live := ceili(batteries_at(heat) * GameSettings.war_share())
 	var shown := 0
 	for b in _batteries.size():
 		var battery: Dictionary = _batteries[b]
@@ -187,7 +189,7 @@ func _fire_flak(delta: float, heat: float) -> void:
 		if float(_queued[i][0]) <= 0.0:
 			_burst(_queued[i][1])
 			_queued.remove_at(i)
-	if _rng.randf() >= flak_rate(heat) * delta:
+	if _rng.randf() >= flak_rate(heat) * GameSettings.war_share() * delta:
 		return
 	var target := Vector3.INF
 	var lead: Vector3 = giants.call("wing_lead") if giants != null else Vector3.INF

@@ -202,6 +202,11 @@ date in the same PR.
   timing from the card (the OpenGL fallback) it stays on 67%. The glow
   around bright things (`bloom`, the atmosphere's glow) is a row of its
   own, off on Low and Lowest: about a seventh of a laptop-class frame.
+  "Far battle scenery" (`war_scenery`, `WAR_SCENERY`) is one too: how
+  much of a world's far, view-only war is shown (`war_share`: Full,
+  Thinned on Low, Light on Lowest), read by each piece of it as it
+  decides how much to show, so a change takes at once; see
+  `marsh-and-ashfront.md`.
   A world's war mood (`Look.WarMood`) writes the sky only when it moved a
   visible step (`mood_moved`): any write to a sky material, even of the
   same value, has Godot redraw the sky's light map that frame. Every

@@ -1,6 +1,7 @@
 extends RefCounted
 ## Checks for Ashfront's scenery army (`worlds/ashfront/battle.gd`, DESIGN.md
-## "The battle around you"): fights are placed far from everyone, nothing of
+## "The battle around you"): fights stand only on the battle shelves past the
+## rim, where no one can go, and are seen over it; they are placed far from everyone, nothing of
 ## them is shown near a player, a fight a player walks up to ends, the war
 ## brings more of them, and a round or a shell drops an extra.
 ## Kept in its own file and called from the test runner.
@@ -19,9 +20,10 @@ static func run(t: Node) -> void:
 	var battle: Node3D = raid.map.call("make_battle")
 	raid.map.add_child(battle)
 	battle.set_process(false)
-	t.check(battle.field < 276.0 and not battle.avoid.is_empty(), "the map keeps the army off the rim and out of its landmarks")
+	t.check(not battle.shelves.is_empty() and not battle.flats.is_empty(), "the map gives the army its battle shelves")
 	var me: Vector3 = raid.player.global_position
 	_run(battle, raid, 0.0, 6.0)
+	_out_of_reach(t, raid, battle)
 	var quiet: int = battle.fight_list().size()
 	t.check(quiet >= 1 and quiet <= battle.fights.x, "a quiet war has a few fights")
 	var far := true
@@ -138,6 +140,42 @@ static func _low_sky(t: Node, raid: Raid, battle: Node3D) -> void:
 		sky._tick_wrecks(0.1)
 	t.check(sky._wrecks.is_empty(), "and its wreck burns out")
 	sky.queue_free()
+
+
+## Caleb's call: no fake soldier stands anywhere a player can go, so none
+## ever vanishes in front of one. Every extra is past the map's edge walls,
+## on the far land (`scenery_height`), and the shelves rise high enough to
+## be seen over the rim from the middle of the field.
+static func _out_of_reach(t: Node, raid: Raid, battle: Node3D) -> void:
+	var map: Node = raid.map
+	var walls := float(map.terrain.extent()) * 0.5 - 6.0
+	var outside := true
+	var grounded := true
+	for soldier: Dictionary in battle.soldiers():
+		var pos: Vector3 = soldier.pos
+		outside = outside and maxf(absf(pos.x), absf(pos.z)) > walls + 20.0
+		grounded = grounded and absf(pos.y - float(map.call("scenery_height", pos.x, pos.z))) < 0.5
+	t.check(not battle.soldiers().is_empty() and outside, "every extra stands past the map's walls, where no one can go")
+	t.check(grounded, "and stands on the far land")
+	# From eye height in the middle, over the rim's crest along each shelf.
+	var eye := float(map.call("ground_height", 0.0, 0.0)) + 1.7
+	var seen := true
+	for shelf: Dictionary in battle.shelves:
+		var out: Vector2 = shelf["out"]
+		var lateral: Vector2 = shelf["lateral"]
+		var along := Vector2(-out.y, out.x)
+		var l := (lateral.x + lateral.y) * 0.5
+		var crest := -INF
+		for d in range(200, int(walls) + 8, 2):
+			var p := out * d + along * l
+			var h := float(map.call("scenery_height", p.x, p.y))
+			if (h - eye) / d > crest:
+				crest = (h - eye) / d
+		for flat: Vector2 in battle.flats:
+			var mid := out * ((flat.x + flat.y) * 0.5) + along * l
+			var h := float(map.call("scenery_height", mid.x, mid.y)) + 1.0
+			seen = seen and (h - eye) / mid.length() > crest
+	t.check(seen, "every shelf's flats are seen over the rim from the middle of the field")
 
 
 static func _run(battle: Node3D, raid: Raid, heat: float, seconds: float) -> void:

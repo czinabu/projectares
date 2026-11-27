@@ -1206,10 +1206,11 @@ func apply_mood(m: Dictionary, env: Environment, sky_mat: ShaderMaterial, sun: D
 	env.adjustment_contrast = m.contrast
 	sun.light_color = m.sun_color
 	sun.light_energy = m.sun_energy
-	if _materials.has("trim:distant"):
-		var skyline := _materials["trim:distant"] as ShaderMaterial
-		skyline.set_shader_parameter("haze", m.fog_color)
-		skyline.set_shader_parameter("haze_amount", skyline_haze(float(m.fog_density)))
+	for key: String in ["trim:distant", "trim:distant_lit"]:
+		if _materials.has(key):
+			var skyline := _materials[key] as ShaderMaterial
+			skyline.set_shader_parameter("haze", m.fog_color)
+			skyline.set_shader_parameter("haze_amount", skyline_haze(float(m.fog_density)))
 
 
 ## How much haze the far skyline wears for a mood's far fog: a veil on a
@@ -1792,7 +1793,7 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## "slag" (molten metal), "lava" (a sea of it, crust and drifting seams), "crack" (a dimmer glow for cracks in the ground),
 ## "scorch" (charred ground), "track" (a packed gravel road), "rut" (a dark wheel rut), "hazard" (orange and black stripes),
 ## "sandbag", "halo" (a glow round a far light), "flash" (a far blast),
-## "beam" (a searchlight), "lance" (an orbital strike's column), "distant" (skyline silhouettes) and
+## "beam" (a searchlight), "lance" (an orbital strike's column), "distant" (skyline silhouettes), "distant_lit" (the same with lit windows and burning floors) and
 ## "horizon_glow" (fires past the rim, on a ring). Cached, so every piece
 ## shares one material.
 func trim(kind: String) -> Material:
@@ -1820,11 +1821,15 @@ func trim(kind: String) -> Material:
 		lava.set_shader_parameter("noise_tex", _noise_texture())
 		_materials[key] = lava
 		return lava
-	if kind == "distant" or kind == "horizon_glow":
+	if kind == "distant" or kind == "distant_lit" or kind == "horizon_glow":
 		# Shaded by hand, so they hold their own against the haze:
 		# `apply_mood` sets the silhouettes' haze from the mood.
+		# "distant_lit" is the same with a far city's life in it: scattered
+		# lit windows and burning floors, drawn in the shader, no lights.
 		var shaded := ShaderMaterial.new()
-		shaded.shader = SKYLINE_SHADER if kind == "distant" else HORIZON_GLOW_SHADER
+		shaded.shader = HORIZON_GLOW_SHADER if kind == "horizon_glow" else SKYLINE_SHADER
+		if kind == "distant_lit":
+			shaded.set_shader_parameter("lit", 1.0)
 		_materials[key] = shaded
 		return shaded
 	var mat := StandardMaterial3D.new()

@@ -204,6 +204,8 @@ const SKYFIRE := preload("res://worlds/ashfront/skyfire.gd")
 const BATTLE := preload("res://worlds/ashfront/battle.gd")
 const SUNSHAFTS := preload("res://worlds/ashfront/sunshafts.gd")
 const LOWSKY := preload("res://worlds/ashfront/lowsky.gd")
+const HORDE := preload("res://worlds/ashfront/horde.gd")
+const FLARES := preload("res://worlds/ashfront/flares.gd")
 ## The burning horizon: a ring of fire-glow this far out, behind the
 ## skyline, glowing this much when quiet and in all-out war.
 const GLOW_RING := 560.0
@@ -212,6 +214,24 @@ const GLOW_STRENGTH := Vector2(0.35, 0.75)
 ## ridges near the map, kept under the skyline's floor.
 const FAR_RIM := 26.0
 const FAR_RIDGES := 10.0
+## The battle shelves (Caleb's call: the scenery army fights only where no
+## one can go): past the rim on three sides the far land climbs in broad
+## steps, high enough to be seen over the rim from the field, and the
+## scenery army fights on their flats. Each shelf faces the field along one
+## of the map's sides ("out", a unit axis) and runs along it between two
+## "lateral" coordinates (along `Vector2(-out.y, out.x)`), clear of the
+## skyline's set pieces. `SHELF_STEPS` are the steps by distance out from
+## the middle along "out": [the rise's foot, its top, the flat's height];
+## each flat runs on to the next rise's foot (the last to `SHELF_END`).
+## `SHELF_EDGE` softens a shelf's ends into the land round it.
+const SHELVES := [
+	{"out": Vector2(1, 0), "lateral": Vector2(80, 270)},
+	{"out": Vector2(-1, 0), "lateral": Vector2(-260, -60)},
+	{"out": Vector2(0, -1), "lateral": Vector2(60, 250)},
+]
+const SHELF_STEPS := [Vector3(330, 352, 62), Vector3(402, 426, 79), Vector3(478, 502, 97)]
+const SHELF_END := 570.0
+const SHELF_EDGE := 34.0
 ## The planet's rocks stand this far past the field's edge, or further.
 const PROPS_PAST_FIELD := 12.0
 ## Flashes on the horizon a second: when quiet, and in all-out war.
@@ -264,6 +284,8 @@ var _flashes: Array[MeshInstance3D] = []
 var _flash_left: Array[float] = []
 var _searchlights: Array[Node3D] = []
 var _horizon_glow: ShaderMaterial
+## The far land past the rim, shelves and all (`_far_ground`).
+var _land: PlanetTerrain
 ## The distant war heard (view only; null where `Look` is off).
 var _soundscape: Soundscape
 
@@ -317,19 +339,30 @@ func _ready() -> void:
 		add_child(shafts)
 		var battle := make_battle()
 		add_child(battle)
+		add_child(make_horde())
+		add_child(FLARES.new())
 		add_child(make_low_sky(battle))
 	set_process(Look.enabled)
 
 
-## The scenery army (view only): kept off the field's rim, out of every
-## landmark and out of the Works.
+## The scenery army (view only): out on the battle shelves past the rim,
+## where no one can go (`SHELVES`).
 func make_battle() -> Node3D:
 	var battle: Node3D = BATTLE.new()
-	battle.field = FIELD - 22.0
-	for site: Dictionary in SITES:
-		battle.avoid.append([site["at"], float(site["radius"])])
-	battle.avoid.append([Vector2(0.0, (WORKS_FROM + WORKS_TO) * 0.5), (WORKS_FROM - WORKS_TO) * 0.5 + WORKS_REACH])
+	battle.field = SHELF_END + 60.0
+	battle.shelves = SHELVES
+	battle.flats = shelf_flats()
+	battle.ground_at = scenery_height
 	return battle
+
+
+## The horde on the battle shelves (view only, `horde.gd`).
+func make_horde() -> Node3D:
+	var horde: Node3D = HORDE.new()
+	horde.shelves = SHELVES
+	horde.flats = shelf_flats()
+	horde.ground_at = scenery_height
+	return horde
 
 
 ## The busy low sky (view only): gunships raking the scenery army, fighters
@@ -392,6 +425,65 @@ func bake_navigation() -> void:
 ## The height of the ground at a point on the map.
 func ground_height(x: float, z: float) -> float:
 	return terrain.height_at(x, z)
+
+
+## The ground anywhere, the far land past the map's own included (view
+## only: nothing out there collides). What the scenery army stands on.
+func scenery_height(x: float, z: float) -> float:
+	var half := terrain.extent() * 0.5 - CELL
+	if maxf(absf(x), absf(z)) < half:
+		return terrain.height_at(x, z)
+	return _far_ground().height_at(x, z)
+
+
+## The far land's height function (`FarLand`), made once.
+func _far_ground() -> PlanetTerrain:
+	if _land == null:
+		var recipe := planet.terrain.duplicate()
+		recipe["rim"] = FAR_RIM
+		recipe["ridge_amp"] = FAR_RIDGES
+		recipe["craters"] = 0
+		_land = FarLand.new(recipe, LAYOUT_SEED)
+	return _land
+
+
+## The flats of the battle shelves the scenery army fights on: [from, to]
+## distance out along a shelf's "out" (`SHELF_STEPS`), a little in from
+## each edge.
+static func shelf_flats() -> Array[Vector2]:
+	var flats: Array[Vector2] = []
+	for i in SHELF_STEPS.size():
+		var step: Vector3 = SHELF_STEPS[i]
+		var end := SHELF_END if i == SHELF_STEPS.size() - 1 else float((SHELF_STEPS[i + 1] as Vector3).x)
+		flats.append(Vector2(step.y + 6.0, end - 6.0))
+	return flats
+
+
+## The far land with Ashfront's battle shelves stepped into it.
+class FarLand extends PlanetTerrain:
+	func height_at(x: float, z: float) -> float:
+		var h := super.height_at(x, z)
+		var shelf := FarLand.shelf(x, z)
+		return lerpf(h, maxf(h, shelf.x), shelf.y)
+
+	## A shelf's height at (x, z) and how much of it shows there (0 off every
+	## shelf, 1 on one).
+	static func shelf(x: float, z: float) -> Vector2:
+		for entry: Dictionary in SHELVES:
+			var out: Vector2 = entry["out"]
+			var lateral: Vector2 = entry["lateral"]
+			var p := Vector2(x, z)
+			var d := p.dot(out)
+			var l := p.dot(Vector2(-out.y, out.x))
+			var w := smoothstep(lateral.x - SHELF_EDGE, lateral.x, l) * (1.0 - smoothstep(lateral.y, lateral.y + SHELF_EDGE, l))
+			w *= smoothstep(SHELF_STEPS[0].x - 20.0, SHELF_STEPS[0].x, d)
+			if w <= 0.0:
+				continue
+			var h := RIM_HEIGHT
+			for step: Vector3 in SHELF_STEPS:
+				h = lerpf(h, step.z, smoothstep(step.x, step.y, d))
+			return Vector2(h, w)
+		return Vector2.ZERO
 
 
 func _process(delta: float) -> void:
@@ -2466,10 +2558,12 @@ func _dress_horizon(art: Node3D) -> void:
 	var at := func(angle_deg: float, reach: float, up := 0.0) -> Vector3:
 		var a := deg_to_rad(angle_deg)
 		return Vector3(cos(a) * reach, floor_y + up, sin(a) * reach)
-	var put := func(size: Vector3, xform: Transform3D) -> void:
-		var node := _slab(size, Vector3.ZERO, hulk)
+	var put := func(size: Vector3, xform: Transform3D, material: Material = hulk) -> void:
+		var node := _slab(size, Vector3.ZERO, material)
 		node.transform = xform
 		art.add_child(node)
+	# The ruined city's blocks still have a little life in them.
+	var city := Look.trim("distant_lit")
 	# The capital ship, broadside to the field: nose buried in the west,
 	# hull rising away to the east.
 	var ship_at: Vector3 = at.call(-95.0, 490.0)
@@ -2528,23 +2622,36 @@ func _dress_horizon(art: Node3D) -> void:
 				near = true
 		if not near:
 			var width := _art_rng.randf_range(20.0, 48.0)
+			var reach := _art_rng.randf_range(400.0, 470.0)
 			var height := _art_rng.randf_range(30.0, 85.0)
-			var block_at: Vector3 = at.call(angle, _art_rng.randf_range(400.0, 470.0), height * 0.5)
+			var block_at: Vector3 = at.call(angle, reach, height * 0.5)
+			# The battle shelves stay open for the scenery army.
+			if FarLand.shelf(block_at.x, block_at.z).y > 0.0:
+				angle += _art_rng.randf_range(7.0, 11.0)
+				continue
 			var face := Basis(Vector3.UP, -deg_to_rad(angle))
-			put.call(Vector3(width, height, width * _art_rng.randf_range(0.5, 0.9)), Transform3D(face, block_at))
+			put.call(Vector3(width, height, width * _art_rng.randf_range(0.5, 0.9)), Transform3D(face, block_at), city)
 			# Some kept a mast or a stepped wing beside them.
 			var extra := _art_rng.randf()
 			if extra < 0.2:
 				put.call(Vector3(2.5, 34.0, 2.5), Transform3D(face, block_at + face * Vector3(width * 0.25, height * 0.5 + 17.0, 0)))
 			elif extra < 0.45:
 				var wing := height * _art_rng.randf_range(0.35, 0.6)
-				put.call(Vector3(width * 0.6, wing, width * 0.6), Transform3D(face, block_at + face * Vector3(width * 0.75, (wing - height) * 0.5, 0)))
+				put.call(Vector3(width * 0.6, wing, width * 0.6), Transform3D(face, block_at + face * Vector3(width * 0.75, (wing - height) * 0.5, 0)), city)
 			# Most blocks were shelled: a narrower broken storey left on one side.
 			if _art_rng.randf() < 0.6:
 				var side := _art_rng.randf_range(-0.3, 0.3) * width
 				var storey := _art_rng.randf_range(10.0, 26.0)
-				put.call(Vector3(width * 0.35, storey, width * 0.5), Transform3D(face, block_at + face * Vector3(side, (height + storey) * 0.5, 0)))
+				put.call(Vector3(width * 0.35, storey, width * 0.5), Transform3D(face, block_at + face * Vector3(side, (height + storey) * 0.5, 0)), city)
 		angle += _art_rng.randf_range(7.0, 11.0)
+	# Smoke off the battle shelves, one column each, where their fights are.
+	var flats := shelf_flats()
+	for shelf: Dictionary in SHELVES:
+		var out: Vector2 = shelf["out"]
+		var lateral: Vector2 = shelf["lateral"]
+		var flat: Vector2 = flats[_art_rng.randi() % flats.size()]
+		var spot := out * (flat.x + flat.y) * 0.5 + Vector2(-out.y, out.x) * _art_rng.randf_range(lateral.x + 30.0, lateral.y - 30.0)
+		art.add_child(_plume(Vector3(spot.x, scenery_height(spot.x, spot.y), spot.y), 6.0))
 
 
 ## A tall smoke plume for the skyline: the fire smoke, scaled up to be read
@@ -2565,13 +2672,10 @@ func _plume(at: Vector3, width: float) -> GPUParticles3D:
 ## than in it. The planet's rocks stand only on the rim's slope and out
 ## past it (`FIELD` plus `PROPS_PAST_FIELD`), never where anyone fights.
 func _far_land(art: Node3D) -> void:
-	var recipe := planet.terrain.duplicate()
-	recipe["rim"] = FAR_RIM
-	recipe["ridge_amp"] = FAR_RIDGES
-	recipe["craters"] = 0
-	var land := PlanetTerrain.new(recipe, LAYOUT_SEED)
+	var land := _far_ground()
 	var half := terrain.extent() * 0.5
-	art.add_child(Planet.horizon(planet, land, half))
+	art.add_child(Planet.horizon(planet, land, half, 0.0, func(x: float, z: float) -> float:
+		return 1.0 - FarLand.shelf(x, z).y))
 	var height_of := func(x: float, z: float) -> float:
 		return terrain.height_at(x, z) if maxf(absf(x), absf(z)) < half else land.height_at(x, z)
 	var clear := func(x: float, z: float) -> bool:

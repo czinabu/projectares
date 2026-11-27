@@ -12,17 +12,23 @@ extends Node3D
 ## plain mesh, simplified to a far copy (`_Baker`). Each frame every extra
 ## is drawn as one instance of its pose's mesh (a MultiMesh per pose).
 ##
-## Each fight is two squads facing across a line, placed toward the war's
-## centre and kept well away from every player (`keep_off`): an extra
-## dissolves before anyone could walk up to it, and a fight a player comes
-## near ends and starts again elsewhere. The hotter the war, the more fights.
+## Each fight is two squads facing across a line out on the battle shelves
+## past the rim (Caleb's call: fake soldiers only where no one can go, so
+## nothing ever vanishes in front of a player; on the field every soldier is
+## a real bot). A shelf is set by the map (`shelves`, `flats`); the fight
+## runs along it, placed toward the war's centre. `keep_off` still dissolves
+## an extra a flier gets near, as a last guard. The hotter the war, the more
+## fights.
 ## They run up in hops, kneel or stand to fire (tracers and muzzle flashes,
 ## heard as far gunfire once the sound arrives), fall, lie a while and
 ## fade, and fresh ones come up from behind. A round the player's own gun
 ## sends through one, or a shell landing by one, drops it, on that screen
 ## only and for nothing.
 
-## How many fights, quiet and in all-out war, and soldiers a side in each.
+const GameSettings := preload("res://core/settings/game_settings.gd")
+
+## How many fights, quiet and in all-out war, and soldiers a side in each,
+## both thinned by the "Far battle scenery" setting (`GameSettings.war_share`).
 var fights := Vector2i(2, 5)
 var squad := Vector2i(10, 16)
 ## Nothing of the scenery army is drawn nearer a player or the camera than
@@ -79,10 +85,17 @@ const FALLEN := 2
 static var baked := {}
 static var _baking := {}
 
-## Set by the map: the field's radius, and places the army keeps out of
-## ([Vector2 centre, radius] each: sites, the Works).
-var field := 260.0
-var avoid: Array = []
+## Set by the map: how far out the army can be (for culling), the battle
+## shelves ({"out": Vector2 axis, "lateral": Vector2 range}, see the map's
+## `SHELVES`), their flats ([from, to] along "out") and the ground out
+## there (`ground_at(x, z)`; the parent's `ground_height` if unset).
+var field := 620.0
+var shelves: Array = []
+var flats: Array = []
+var ground_at := Callable()
+## How far either side of a fight's line its soldiers spread, across the
+## shelf.
+var spread := 10.0
 
 var _raid: Raid
 var _rng := RandomNumberGenerator.new()
@@ -102,6 +115,7 @@ var _tracer_mesh: MultiMesh
 var _tracer_buffer := PackedFloat32Array()
 var _material: ShaderMaterial
 var _tracer_material: ShaderMaterial
+var _veil := 0.0
 
 
 func _ready() -> void:
@@ -161,15 +175,9 @@ func nearest_watcher(at: Vector3) -> float:
 	return best
 
 
-## Whether a fight may stand at `at`: on the field, out of the places kept
-## clear, far from everyone and from the other fights.
+## Whether a fight may stand at `at`: far from everyone and from the other
+## fights. (Where it can stand at all, on a shelf's flat, is `_place_fight`'s.)
 func spot_free(at: Vector3) -> bool:
-	var flat := Vector2(at.x, at.z)
-	if flat.length() > field:
-		return false
-	for entry: Array in avoid:
-		if flat.distance_to(entry[0]) < float(entry[1]) + 12.0:
-			return false
 	if nearest_watcher(at) < place_off:
 		return false
 	for fight in _fights:
@@ -182,23 +190,36 @@ func _place_fight() -> bool:
 	var centre := _war_centre()
 	var best := Vector3.INF
 	var best_score := -INF
+	var best_axis := Vector3.RIGHT
+	if shelves.is_empty() or flats.is_empty():
+		return false
 	for i in 28:
-		var r := sqrt(_rng.randf()) * field
-		var a := _rng.randf() * TAU
-		var at := Vector3(cos(a) * r, 0.0, sin(a) * r)
+		var shelf: Dictionary = shelves[_rng.randi() % shelves.size()]
+		var out: Vector2 = shelf["out"]
+		var along := Vector2(-out.y, out.x)
+		var lateral: Vector2 = shelf["lateral"]
+		var flat: Vector2 = flats[_rng.randi() % flats.size()]
+		# Room for the squads along the shelf, and the line across it.
+		var room := start_gap.y + 6.0
+		if lateral.y - lateral.x < room * 2.0:
+			continue
+		var l := _rng.randf_range(lateral.x + room, lateral.y - room)
+		var d := (flat.x + flat.y) * 0.5
+		var spot := out * d + along * l
+		var at := Vector3(spot.x, 0.0, spot.y)
 		if not spot_free(at):
 			continue
-		var score := -Vector2(at.x - centre.x, at.z - centre.z).length() + _rng.randf() * 90.0
+		var score := -Vector2(at.x - centre.x, at.z - centre.z).length() + _rng.randf() * 160.0
 		if score > best_score:
 			best_score = score
 			best = at
+			best_axis = Vector3(along.x, 0.0, along.y)
 	if not best.is_finite():
 		return false
-	var turn := _rng.randf_range(-0.6, 0.6)
-	var fight := {"centre": best, "axis": Vector3(cos(turn), 0.0, sin(turn)), "left": _rng.randf_range(fight_life.x, fight_life.y),
+	var fight := {"centre": best, "axis": best_axis, "left": _rng.randf_range(fight_life.x, fight_life.y),
 			"ending": false, "sound": _rng.randf_range(0.5, 2.0)}
 	_fights.append(fight)
-	var size := _rng.randi_range(squad.x, squad.y)
+	var size := maxi(5, int(round(_rng.randi_range(squad.x, squad.y) * GameSettings.war_share())))
 	for side in 2:
 		for i in size:
 			_soldiers.append(_new_soldier(fight, side, true))
@@ -210,7 +231,7 @@ func _new_soldier(fight: Dictionary, side: int, first: bool) -> Dictionary:
 	var axis: Vector3 = fight.axis
 	var across := Vector3(-axis.z, 0.0, axis.x)
 	var back := _rng.randf_range(start_gap.x, start_gap.y) * (_rng.randf_range(0.4, 1.0) if first else 1.0)
-	var at: Vector3 = fight.centre + axis * sign * back + across * _rng.randf_range(-22.0, 22.0)
+	var at: Vector3 = fight.centre + axis * sign * back + across * _rng.randf_range(-spread, spread)
 	var soldier := {"fight": fight, "side": side, "pos": _ground(at), "heading": 0.0, "state": RUN,
 			"goal": at, "wait": 0.0, "phase": _rng.randf(), "fade": 0.0, "shown": 0.0, "dead_for": 0.0,
 			"burst": 0, "next_shot": _rng.randf_range(0.5, 2.0), "scale": _rng.randf_range(0.95, 1.05),
@@ -228,13 +249,18 @@ func _next_goal(soldier: Dictionary) -> void:
 	var depth := (pos - (fight.centre as Vector3)).dot(axis) * sign
 	var front := _rng.randf_range(front_gap.x, front_gap.y)
 	var step := minf(_rng.randf_range(hop.x, hop.y), maxf(depth - front, 0.0))
-	var across := Vector3(-axis.z, 0.0, axis.x) * _rng.randf_range(-3.0, 3.0)
-	soldier.goal = pos - axis * sign * step + across
+	var across := Vector3(-axis.z, 0.0, axis.x)
+	var off := (pos - (fight.centre as Vector3)).dot(across)
+	# A little sideways each hop, kept on the shelf's flat.
+	var drift := clampf(off + _rng.randf_range(-3.0, 3.0), -spread, spread) - off
+	soldier.goal = pos - axis * sign * step + across * drift
 	soldier.state = RUN if step > 1.0 else HOLD
 	soldier.wait = _rng.randf_range(hold.x, hold.y)
 
 
 func _ground(at: Vector3) -> Vector3:
+	if ground_at.is_valid():
+		return Vector3(at.x, float(ground_at.call(at.x, at.z)), at.z)
 	var map := get_parent()
 	if map != null and map.has_method("ground_height"):
 		return Vector3(at.x, float(map.call("ground_height", at.x, at.z)), at.z)
@@ -251,7 +277,7 @@ func fell(soldier: Dictionary) -> void:
 
 func _tick(delta: float) -> void:
 	var heat := _war_heat()
-	var wanted := int(round(lerpf(fights.x, fights.y, heat)))
+	var wanted := maxi(1, int(round(lerpf(fights.x, fights.y, heat) * GameSettings.war_share())))
 	var live := 0
 	for fight in _fights:
 		if not fight.ending:
@@ -473,7 +499,7 @@ func _build_draws() -> void:
 			node.multimesh = multimesh
 			node.material_override = _material
 			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			node.custom_aabb = AABB(Vector3(-field - 60.0, -40.0, -field - 60.0), Vector3(field * 2.0 + 120.0, 160.0, field * 2.0 + 120.0))
+			node.custom_aabb = AABB(Vector3(-field - 60.0, -40.0, -field - 60.0), Vector3(field * 2.0 + 120.0, 220.0, field * 2.0 + 120.0))
 			add_child(node)
 			row.append(multimesh)
 			var buffer := PackedFloat32Array()
@@ -497,11 +523,20 @@ func _build_tracers() -> void:
 	node.multimesh = _tracer_mesh
 	node.material_override = _tracer_material
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.custom_aabb = AABB(Vector3(-field - 60.0, -40.0, -field - 60.0), Vector3(field * 2.0 + 120.0, 160.0, field * 2.0 + 120.0))
+	node.custom_aabb = AABB(Vector3(-field - 60.0, -40.0, -field - 60.0), Vector3(field * 2.0 + 120.0, 220.0, field * 2.0 + 120.0))
 	add_child(node)
 
 
 func _draw() -> void:
+	# An ash storm hides the far fights (the fog is off for them, see
+	# extras.gdshader).
+	var veil := snappedf(Look.weather_cover, 0.01)
+	if veil != _veil:
+		_veil = veil
+		if _material != null:
+			_material.set_shader_parameter("veil", veil)
+		if _tracer_material != null:
+			_tracer_material.set_shader_parameter("veil", veil)
 	if _draws.is_empty():
 		if baked.has(ARMIES[0]) and baked.has(ARMIES[1]):
 			_build_draws()

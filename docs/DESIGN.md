@@ -660,9 +660,10 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   low sky (gunships strafing, return fire, a dropship going down burning).
   The scenery army is view only and cannot be shot (Caleb's call), so it
   costs about what one real bot does. To keep the illusion it wears the
-  same soldier bodies and armor as the real bots, keeps 50 m or more from
-  every player (closer in, every soldier is a real bot), and a round that
-  reaches one drops it, on that screen only, for nothing.
+  same soldier bodies and armor as the real bots and fights only where no
+  player can go (Caleb's call, 26 Nov: an army that vanished as you walked
+  up to it broke the spell), on the battle shelves past the rim; on the
+  field every soldier is a real bot.
 - **Shelling (Caleb's call: real, and marked before it lands).** Every so
   often, sooner the hotter the war (`Shelling.every`, over
   `WorldDef.shelling`), a salvo is called down near the fighting: a line of
@@ -678,24 +679,54 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   when; the blast is a flash that lights the ground, a fireball throwing a
   fan of dirt and a column of smoke left drifting, heard and felt (the view
   jolts) once its sound arrives. Ashfront only for now.
-- **The scenery army (Caleb's call: view only, cannot be shot).** Squads of
-  both armies fight each other out in the mid distance, two to five fights
-  at once by how hot the war is, each two squads of 10 to 16 facing across
-  a line, placed toward the war's centre (`worlds/ashfront/battle.gd`, the
-  map's `make_battle`). They run up in hops, kneel or stand to fire
-  (orange Legion and cyan Tide tracers and muzzle flashes that cut through
-  the haze, heard as far gunfire once the sound arrives), fall, lie a
-  while and fade, and fresh ones come up from behind. They are the armies'
-  own riflemen: once per run of the game a dressed soldier of each army is
-  posed in a world of its own (a run cycle, aiming, kneeling, fallen) and
-  each pose is baked into a far copy of under 900 triangles, drawn one
-  MultiMesh per pose. Nothing of it is ever nearer a player or the camera
-  than `keep_off` (48 m; it dissolves in over the next 12 m), a fight is
-  placed at least 85 m from everyone, and one a player comes within 62 m
-  of ends and starts again elsewhere, so up close every soldier is a real
-  bot. A round from the player's own gun through an extra, or a shell
-  landing by it, drops it, on that screen only and for nothing. View only:
-  no collision, no `Combat.deal`, nothing sent online, none on a server.
+- **The scenery army (Caleb's call: view only, cannot be shot, and only
+  where no one can go).** Past the rim on three sides (east, west and
+  north, between the skyline's set pieces) the far land climbs in three
+  broad steps, 62, 79 and 97 m up, high enough to be seen over the rim
+  from the field: the battle shelves (the map's `SHELVES`, `FarLand`, the
+  far land's mountains kept off them). Squads of both armies fight each
+  other on the shelves' flats, two to five fights at once by how hot the
+  war is, each two squads of 10 to 16 facing each other along a shelf,
+  placed toward the war's centre (`worlds/ashfront/battle.gd`, the map's
+  `make_battle`). They run up in hops, kneel or stand to fire (orange
+  Legion and cyan Tide tracers and muzzle flashes, heard as far gunfire
+  once the sound arrives), fall, lie a while and fade, and fresh ones come
+  up from behind. They are the armies' own riflemen: once per run of the
+  game a dressed soldier of each army is posed in a world of its own (a
+  run cycle, aiming, kneeling, fallen) and each pose is baked into a far
+  copy of under 900 triangles, drawn one MultiMesh per pose; out there
+  each is grown to stay a few pixels tall and darkens to a silhouette
+  against the lit land, and its tracers stay a pixel or two thick
+  (`extras.gdshader`, `tracer_streak.gdshader`). The shelves are past the
+  map's edge walls, so no player ever reaches one; `keep_off` (48 m) still
+  dissolves an extra a flier gets near, as a last guard. Behind the fights
+  the shelves are crowded with the horde (`worlds/ashfront/horde.gd`): 2,400
+  far figures of both armies massed toward a line on each flat, surging
+  and firing in their army's colour with now and then a shell's blast,
+  all of it worked out on the graphics card (`horde.gdshader`,
+  `horde_fire.gdshader`), two draws and nothing a frame on the processor.
+  A smoke column stands over each shelf. A round from the player's own gun
+  through an extra, or a shell landing by it, drops it, on that screen only
+  and for nothing. View only: no collision, no `Combat.deal`, nothing sent
+  online, none on a server. An ash storm hides all of it.
+- **Far battle scenery follows the graphics setting.** The phone's "Far
+  battle scenery" row (`GameSettings.WAR_SCENERY`, `war_share`: Full,
+  Thinned 60%, Light 35%) thins the scenery army's fights and squads, the
+  horde, the flak batteries and bursts, the low sky's runs and the flares;
+  High and Medium keep Full, Low (laptops) picks Thinned and Lowest picks
+  Light. All of it keeps happening, only less at once.
+- **The ruined city has life in it.** The skyline's city blocks
+  (`Look.trim("distant_lit")`) keep a scattering of lit windows and a few
+  floors still burning, flickering, drawn in the skyline shader with no
+  lights and no extra draws; the haze takes them as it takes the blocks.
+- **Flares over the real fighting.** Where soldiers within 35 to 240 m of
+  the camera are trading fire, now and then one sends up an illumination
+  flare (`worlds/ashfront/flares.gd`): it bursts 55 to 75 m over the fight
+  and swings down under its chute for about 20 s, lighting the ground in a
+  flickering glare. Every 45 s in a quiet war down to every 12 s in
+  all-out war, at most two up at once (each one quad and one shadowless
+  light), none in a storm. View only: each screen sends up its own, from
+  what it already sees (`Gun.shots_fired`).
 - **The busy low sky (Caleb's call: view only).** Under the flak past the
   rim, the war is overhead too (`worlds/ashfront/lowsky.gd`, the map's
   `make_low_sky`). A gunship runs in 60 to 95 m up over one of the scenery

@@ -1,6 +1,6 @@
 # The Spore Marsh and Ashfront's scenery
 
-Rules for the Spore Marsh's wildlife, fouling, spores and Rootways, and Ashfront's scenery army and low sky. These are part of the rules in `CLAUDE.md` that must not be
+Rules for the Spore Marsh's wildlife, fouling, spores and Rootways, and Ashfront's scenery army, battle shelves, horde, flares and low sky. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -96,13 +96,29 @@ date in the same PR.
 - The scenery army (DESIGN.md "The scenery army", Caleb's call): Ashfront's
   far fights are view only (`worlds/ashfront/battle.gd`, added by the map's
   `make_battle` only where `Look` is on): no collision, no `Combat.deal`,
-  nothing sent online, and never nearer a player or the camera than
-  `keep_off`, so up close every soldier is a real bot. Its soldiers are far
-  copies of the armies' own riflemen (the world's `dress_extra`), baked
-  once per run in a world of their own (`_Baker`) into one mesh per pose
-  and drawn one MultiMesh per pose (`extras.gdshader`, dithered fade). A
-  round from the local player's gun or a shell drops one on that screen
-  only. Check by eye with `visual_check.tscn -- <dir> --battle-only` (with
+  nothing sent online. They fight only on the battle shelves past the rim
+  (Caleb's call: never anywhere a player can go, so nothing vanishes in
+  front of one): the map's `SHELVES` and `SHELF_STEPS`, stepped into the far
+  land by `FarLand` (the horizon keeps its mountains off them through
+  `Planet.horizon`'s `peaks_kept`), stood on through the map's
+  `scenery_height`, all past the map's edge walls. A new fight goes on a
+  shelf's flat (`shelf_flats`), never on the field; anything that must sit
+  out there (the low sky's targets, smoke, the horde) asks
+  `scenery_height`, not `ground_height`. `keep_off` stays as a last guard
+  for a flier. Its soldiers are far copies of the armies' own riflemen
+  (the world's `dress_extra`), baked once per run in a world of their own
+  (`_Baker`) into one mesh per pose and drawn one MultiMesh per pose
+  (`extras.gdshader`: dithered fade, grown to `min_px` on screen, no fog,
+  hidden by a storm through `veil`). A round from the local player's gun
+  or a shell drops one on that screen only. The horde behind them
+  (`worlds/ashfront/horde.gd`, the map's `make_horde`) is laid once and
+  moved only on the graphics card: keep it that way (no per-figure work a
+  frame). The flares over real fights (`worlds/ashfront/flares.gd`) look
+  at a few actors a second, never all of them, and keep at most `LIGHTS`
+  lights. Everything of the far war asks `GameSettings.war_share` for how
+  much of it to show (the "Far battle scenery" row each graphics pick
+  sets); a new piece of it does the same. Check by eye with
+  `visual_check.tscn -- <dir> --battle-only [--fov <deg>]` (with
   `--fixed-fps 60`). The busy low sky over it is view only too
   (`worlds/ashfront/lowsky.gd`, the map's `make_low_sky`): gunships rake
   only scenery fights (`may_rake`: as far from everyone as a fight is
