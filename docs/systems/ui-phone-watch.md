@@ -168,7 +168,9 @@ date in the same PR.
   (`PlazaView.tour_closed`), a squad portal, the watch's portal, joining a
   friend, a solo start). It hands out nothing, and a server never reads
   it, so the lock is the client's (the tour lives in the local profile). It names worlds by what they are (`Onboarding.names`),
-  never by id. A save from before it starts it only if nothing was played or
+  never by id, picking the launch's worlds first (`LaunchScope.worlds`:
+  Frostline to learn in, Ashfront for full loot, Caleb's call) in every
+  build that has them. A save from before it starts it only if nothing was played or
   equipped. Settings' System tab skips or replays it, and dev mode never
   runs it. A new step is an entry in `Onboarding.STEPS` and an event reported
   where the action happens.

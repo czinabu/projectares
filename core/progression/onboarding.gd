@@ -226,10 +226,22 @@ static func fill(text: String, p_names: Dictionary) -> String:
 ## The names a message can use, from the worlds this game has and the keys
 ## the player has bound: the safe zone, the first world that keeps gear on
 ## death (else the first raid world), the first full-loot world (else the
-## first raid world), and the watch and primary weapon keys.
+## first raid world), the launch's worlds ahead of the rest, and the watch
+## and primary weapon keys.
 static func names(watch_key := "X", primary_key := "1") -> Dictionary:
 	var plaza := Worlds.social_world()
-	var raids := Worlds.raid_worlds()
+	# The launch's worlds first (`LaunchScope.worlds`, Caleb's call: the tour
+	# names the worlds players will have at release, Frostline to learn in and
+	# Ashfront for full loot), in every build that offers them; a build
+	# without them falls back on the rest in order.
+	var launch := LaunchScope.worlds()
+	var raids: Array[WorldDef] = []
+	for world in Worlds.raid_worlds():
+		if world.id in launch:
+			raids.append(world)
+	for world in Worlds.raid_worlds():
+		if not world.id in launch:
+			raids.append(world)
 	var gentle: WorldDef = raids[0] if not raids.is_empty() else null
 	var harsh: WorldDef = gentle
 	for world in raids:

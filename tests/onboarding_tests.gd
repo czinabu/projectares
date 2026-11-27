@@ -54,9 +54,31 @@ static func _rules(t: Node) -> void:
 				and Onboarding.clean({"state": "skipped"}).state == Onboarding.SKIPPED,
 			"a saved tour is checked; anything odd counts as finished")
 	var names := Onboarding.names("X", "1")
+	var launch_names := names
+	Worlds.choose_offered(true)
+	if LaunchScope.on:
+		launch_names = Onboarding.names("X", "1")
+	Worlds.choose_offered(false)
+	var at_launch: Dictionary = {}
+	for world in Worlds.raid_worlds():
+		if world.id in LaunchScope.worlds():
+			at_launch[world.keep_gear_on_death] = at_launch.get(world.keep_gear_on_death, world)
+	t.check(at_launch.has(true) and names.gentle_id == at_launch[true].id
+				and at_launch.has(false) and names.harsh == at_launch[false].display_name,
+			"the tour sends you to the launch's worlds, %s to learn in and %s for full loot, in every build"
+			% [names.gentle, names.harsh])
+	t.check(launch_names.gentle == names.gentle and launch_names.harsh == names.harsh,
+			"and the release build names the same ones")
 	var gentle: WorldDef = null
 	var harsh: WorldDef = null
+	var ordered: Array[WorldDef] = []
 	for world in Worlds.raid_worlds():
+		if world.id in LaunchScope.worlds():
+			ordered.append(world)
+	for world in Worlds.raid_worlds():
+		if not world.id in LaunchScope.worlds():
+			ordered.append(world)
+	for world in ordered:
 		if world.keep_gear_on_death and gentle == null:
 			gentle = world
 		if world.gear_at_risk and not world.keep_gear_on_death and harsh == null:
