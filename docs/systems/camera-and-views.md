@@ -208,7 +208,12 @@ date in the same PR.
   body part keeps levels of detail for far away (the bodies' import makes
   them; `SuitShape` makes them again for the suit it reshapes, and
   `laptop_frame_tests` checks the baked parts have them): without them a
-  far body draws all its triangles, about a fifth of Ashfront's at Low. A window
+  far body draws all its triangles, about a fifth of Ashfront's at Low.
+  `HeadShape` makes them again for each face shape and haircut it builds
+  (a few ms, once per cut and face). A merged vehicle (`Look.merge_pieces`
+  with `lods`, over `LOD_FROM` triangles) gets them too, made once per
+  shape (`_with_lods`): Ashfront's 21 parked vehicles went from about 330k
+  triangles a frame to 23k. A window
   bigger than the screen it opens on is shrunk to
   fit (`fit_window_to_screen`). These are view only: a server, the
   simulation and first or third person are untouched. Compare the picks by

@@ -43,7 +43,10 @@ date in the same PR.
   `Gun.ads_zoom`, "quiet" suppresses, "model" picks the shape). They go in
   `gear_items`, so they drop and come home with the gun. `Gun.build_attachment`
   builds each shape with its origin at the mount; `Look.mount_attachments`
-  moves them onto the real model (`Look.GUN_MOUNTS`). An optic's "Sight"
+  moves them onto the real model (`Look.GUN_MOUNTS`) and merges each
+  attachment's unnamed parts that are set alike into one mesh per look
+  (`merge_pieces` with `alike`: an optic was some thirty draws on every
+  gun in the world); named parts (the scope's "Lens") and markers stay. An optic's "Sight"
   marker is the eye point: aiming brings it up to the model's eyes in both
   views, first person looks through it, and zooms by `Weapon.aim_zoom()`. Scopes are
   real geometry you look down, never a screen overlay, and picture in
