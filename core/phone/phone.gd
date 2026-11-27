@@ -228,6 +228,13 @@ var glass_inset := Vector4(22, 44, 22, 104)
 var notice_seconds := 4.5
 ## Seconds the pop-up that an update is waiting stays up.
 var update_notice_seconds := 9.0
+## Pop-ups come one at a time, in the order they were sent: one that
+## arrives while another is up waits its turn (`show_notice`). At most
+## this many wait; past it the oldest plain one is dropped.
+var notices_kept := 4
+## While true (the screen covered between places) the pop-up up now keeps
+## its time and nothing new comes up, so nothing is shown to nobody.
+var notices_paused := false
 
 ## The online session, or null when playing solo.
 var net: NetSession
@@ -329,6 +336,10 @@ var _raise := 0.0
 var _notice_panel: PanelContainer
 var _notice_label: Label
 var _notice_left := 0.0
+## The key of the pop-up up now ("" for a plain one) and those waiting
+## ({"text", "seconds", "key"}), oldest first.
+var _notice_key := ""
+var _notice_queue: Array[Dictionary] = []
 var _error: Label
 var _compose: LineEdit
 var _mirror_was_up := false
@@ -419,7 +430,7 @@ func remind_update() -> void:
 		return
 	_update_owed = false
 	Sfx.play("phone_buzz")
-	show_notice(update_notice(), update_notice_seconds)
+	show_notice(update_notice(), update_notice_seconds, "update")
 
 
 ## Whether the update's news is being kept until the player is somewhere quiet.
@@ -630,10 +641,7 @@ func _mirror_key(key: Key) -> bool:
 
 
 func _process(delta: float) -> void:
-	if _notice_left > 0.0:
-		_notice_left -= delta
-		_notice_panel.modulate.a = clampf(_notice_left / 0.6, 0.0, 1.0)
-		_notice_panel.visible = _notice_left > 0.0
+	_tick_notice(delta)
 	if is_open:
 		_update_status()
 		_keep_in_view()
@@ -1022,13 +1030,90 @@ func join_world(world_id: String) -> void:
 		join_world_requested.emit(world_id)
 
 
-## A short pop-up at the top of the screen, shown even while the phone is away.
-func show_notice(text: String, seconds := -1.0) -> void:
-	_notice_label.text = text
-	_notice_left = seconds if seconds > 0.0 else notice_seconds
+## A short pop-up at the top of the screen, shown even while the phone is
+## away, for `seconds` (else `notice_seconds`). Pop-ups never cover each other: one
+## sent while another is up waits until it has gone, in the order sent
+## (`notices_kept`), and the same words already up or waiting are not
+## queued twice. A `key` names a pop-up that a newer one with the same key
+## replaces, up or waiting, so news that went stale is never shown (the
+## new player's tour sends "tour", so only its current step is told).
+## `first` puts it ahead of the plain ones waiting.
+func show_notice(text: String, seconds := -1.0, key := "", first := false) -> void:
+	var entry := {"text": text, "seconds": seconds if seconds > 0.0 else notice_seconds, "key": key}
+	if key != "":
+		_notice_queue = _notice_queue.filter(func(q: Dictionary) -> bool: return q.key != key)
+		if _notice_left > 0.0 and _notice_key == key:
+			_show_notice_now(entry)
+			return
+	if (_notice_left > 0.0 and _notice_label.text == text) \
+			or _notice_queue.any(func(q: Dictionary) -> bool: return q.text == text):
+		return
+	if _notice_left <= 0.0:
+		_show_notice_now(entry)
+		return
+	if first:
+		var at := 0
+		while at < _notice_queue.size() and _notice_queue[at].key != "":
+			at += 1
+		_notice_queue.insert(at, entry)
+	else:
+		_notice_queue.append(entry)
+	while _notice_queue.size() > notices_kept:
+		var drop := 0
+		for i in _notice_queue.size():
+			if _notice_queue[i].key == "":
+				drop = i
+				break
+		_notice_queue.remove_at(drop)
+
+
+## The pop-ups waiting their turn, oldest first (their words).
+func notices_waiting() -> Array[String]:
+	var out: Array[String] = []
+	for q in _notice_queue:
+		out.append(str(q.text))
+	return out
+
+
+## The pop-up up now, or "" when none is.
+func notice_showing() -> String:
+	return _notice_label.text if _notice_left > 0.0 else ""
+
+
+## Takes the pop-up with `key` down, up or waiting.
+func drop_notice(key: String) -> void:
+	_notice_queue = _notice_queue.filter(func(q: Dictionary) -> bool: return q.key != key)
+	if _notice_left > 0.0 and _notice_key == key:
+		_notice_left = 0.0
+		_notice_panel.visible = false
+		_next_notice()
+
+
+func _show_notice_now(entry: Dictionary) -> void:
+	_notice_label.text = entry.text
+	_notice_key = entry.key
+	_notice_left = entry.seconds
 	_notice_panel.visible = true
 	_notice_panel.modulate.a = 1.0
 	refresh(false)
+
+
+func _next_notice() -> void:
+	if not _notice_queue.is_empty():
+		_show_notice_now(_notice_queue.pop_front())
+
+
+func _tick_notice(delta: float) -> void:
+	if notices_paused:
+		return
+	if _notice_left > 0.0:
+		_notice_left -= delta
+		_notice_panel.modulate.a = clampf(_notice_left / 0.6, 0.0, 1.0)
+		_notice_panel.visible = _notice_left > 0.0
+		if _notice_left <= 0.0:
+			_next_notice()
+	elif not _notice_queue.is_empty():
+		_next_notice()
 
 
 # ---------------------------------------------------------------- layout ----

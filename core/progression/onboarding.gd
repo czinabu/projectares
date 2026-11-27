@@ -15,8 +15,11 @@ extends RefCounted
 ##   - The handler's messages arrive in the phone's Messages app (offline
 ##     too), and the current step's short objective sits on the watch card
 ##     and the visor glass. There is no overlay (Caleb's immersion rule).
-##   - It is a view of the player's own progress, never a rule of the game:
-##     nothing is locked or handed out by it, and a server never reads it.
+##   - It is mostly a view of the player's own progress. The one rule it
+##     makes (Caleb's call): a full-loot world stays closed while the tour
+##     runs (`locks`), until it is finished or skipped, so a new player never
+##     loses their first gear by walking through the wrong gate. Nothing is
+##     handed out by it, and a server never reads it.
 ##   - The phone's Settings (System tab) skips it or plays it again.
 ##   - Dev mode never runs it (`main.gd` checks `DevMode.active()`).
 ##   - World names come from `Worlds`, by what each world is (the safe zone,
@@ -39,36 +42,47 @@ const DONE := "done"
 ##   banked     loot banked at a depot, or a sign-out finished in a world
 ##
 ## Each step: "id", "event" that finishes it, "objective" (the short line on
-## the watch and visor) and "message" (what the handler sends when it
-## starts). `{plaza}`, `{gentle}` and `{harsh}` are filled with world names.
+## the watch and visor), "message" (what the handler sends when it starts)
+## and "mark", what in the world the step points at (`main.gd` finds it
+## where the player is and stands the guide's light over it, `TourGuide`):
+##   gear      a weapon on show in the base that is not on yet
+##   lane      the test lane's plates
+##   door      the base's way out
+##   portal:<destination>   a safe zone's portal (`WorldDef`'s "portal"
+##             markers), `{gentle_id}` filled with the gentle world's id
+##   depot     the nearest depot or gate outpost
+##   ""        nothing to walk to: the step's "hint" (what to press) goes on
+##             the line under the crosshair instead.
+## `{plaza}`, `{gentle}` and `{harsh}` are filled with world names.
 const STEPS: Array[Dictionary] = [
 	{"id": "gear", "event": "equipped",
-		"objective": "Put on your gear in the armory",
+		"objective": "Put on your gear in the armory", "mark": "gear",
 		"message": "Welcome home, recruit. I'm your handler, and I'll walk you through the basics. "
 			+ "You've got nothing on yet. Your welcome crate is in the armory: walk up to the rifle on the rack "
 			+ "and use it to put it on. The frame on its stand and the helmet shelf work the same way."},
 	{"id": "watch", "event": "watch",
-		"objective": "Raise your watch",
+		"objective": "Raise your watch", "mark": "",
+		"hint": "Press {watch_key} to raise your watch",
 		"message": "Good, you're armed. Everything you do out there runs through your watch. "
 			+ "Raise it with {watch_key}. Its Summon tab holds your weapons and your bike."},
 	{"id": "lane", "event": "target",
-		"objective": "Hit a plate on the test lane",
+		"objective": "Hit a plate on the test lane", "mark": "lane",
 		"message": "Now try that weapon. The door in the back wall opens on your test lane. "
 			+ "Draw your gun with {primary_key} and hit one of the plates. Nothing in here is real damage."},
 	{"id": "plaza", "event": "plaza",
-		"objective": "Head out to {plaza}",
+		"objective": "Head out to {plaza}", "mark": "door",
 		"message": "Nice shooting. Time to meet people. The exit by the mirror goes out to {plaza}, "
 			+ "where everyone on the server gathers."},
 	{"id": "contract", "event": "contract",
-		"objective": "Take a job at the contract board",
+		"objective": "Take a job at the contract board", "mark": "portal:contracts",
 		"message": "This is {plaza}. Find the contract board and take a job. "
 			+ "Jobs pay scrip when you get home alive."},
 	{"id": "deploy", "event": "deployed",
-		"objective": "Go to {gentle}",
+		"objective": "Go to {gentle}", "mark": "portal:world:{gentle_id}",
 		"message": "Start in {gentle}. It's the place to learn: if you die there you keep the gear you wore, "
 			+ "and only your pack is lost. Walk through its gate, or open a portal from your watch."},
 	{"id": "bank", "event": "banked",
-		"objective": "Bank your loot at a depot",
+		"objective": "Bank your loot at a depot", "mark": "depot",
 		"message": "You're in. Grab what you can, then stand in a depot to bank it, "
 			+ "or sign out at a gate outpost. Either way it goes home to your stash."},
 ]
@@ -76,6 +90,10 @@ const STEPS: Array[Dictionary] = [
 ## Sent when the last step is done.
 const DONE_MESSAGE := ("That's the basics, and it's all yours now. {harsh} is open to you, but be warned: "
 		+ "it's full loot. Die there and everything you carried stays behind. Good luck out there.")
+## The pop-up for the ending, short enough for one line.
+const DONE_TITLE := "That's the basics. {harsh} is open to you"
+## Said when a full-loot world is closed to a player still on the tour.
+const LOCKED_MESSAGE := "{harsh} is full loot. Finish the basics first, or skip them in Settings (System)"
 ## Sent when the tour is skipped.
 const SKIP_MESSAGE := "Understood, you're on your own. If you want the tour again, it's in Settings."
 
@@ -154,6 +172,14 @@ static func catch_up(tour: Dictionary, fact: String) -> bool:
 	return false
 
 
+## True if `world` is closed to a player on this tour: a world where you
+## lose everything you carry on death (gear at risk, not kept on death)
+## while the tour still runs. Finished or skipped, everything is open.
+static func locks(tour: Dictionary, world: WorldDef) -> bool:
+	return world != null and is_active(tour) and not world.safe_zone \
+			and world.gear_at_risk and not world.keep_gear_on_death
+
+
 static func skip(tour: Dictionary) -> void:
 	tour.state = SKIPPED
 	tour.step = ""
@@ -181,6 +207,18 @@ static func objective(tour: Dictionary, p_names: Dictionary) -> String:
 	return fill(step.objective, p_names) if not step.is_empty() else ""
 
 
+## What the current step points at in the world (see `STEPS`), names
+## filled in, or "" when there is nothing to walk to.
+static func mark(tour: Dictionary, p_names: Dictionary) -> String:
+	var step := current(tour)
+	return fill(str(step.get("mark", "")), p_names) if not step.is_empty() else ""
+
+
+## What to press for a step with nothing to walk to, or "".
+static func hint(tour: Dictionary, p_names: Dictionary) -> String:
+	var step := current(tour)
+	return fill(str(step.get("hint", "")), p_names) if not step.is_empty() else ""
+
 static func fill(text: String, p_names: Dictionary) -> String:
 	return text.format(p_names)
 
@@ -205,6 +243,7 @@ static func names(watch_key := "X", primary_key := "1") -> Dictionary:
 	return {
 		"plaza": plaza.display_name if plaza != null else "the plaza",
 		"gentle": gentle.display_name if gentle != null else "a world",
+		"gentle_id": gentle.id if gentle != null else "",
 		"harsh": harsh.display_name if harsh != null else "the full-loot world",
 		"watch_key": watch_key,
 		"primary_key": primary_key,

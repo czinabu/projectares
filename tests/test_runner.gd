@@ -22,6 +22,10 @@ var _failed := 0
 
 func _ready() -> void:
 	Profile.persist = false
+	# A reset profile knows the game: the tour's lock on full-loot worlds is
+	# for new players (the tour's own checks turn it back on).
+	Profile.tour_on_reset = false
+	Profile.onboarding = Profile.Onboarding.finished()
 	# Most checks want a player ready to fight where they spawn, unhurt by the
 	# ground; the risk zone checks turn the gates and hazards back on.
 	Raid.zone_rules = false

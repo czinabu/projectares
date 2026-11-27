@@ -30,6 +30,9 @@ var routes := {}
 var world_status := {}
 ## The sign over each world doorway: world id -> Label3D.
 var heat_signs := {}
+## World ids the new player's tour keeps closed for now (`Onboarding.locks`),
+## set by `main.gd`; their gates say so.
+var tour_closed: Array = []
 ## How high over the doorway its sign hangs.
 var heat_sign_height := 6.9
 ## The gear of the player you look at, floating over them.
@@ -181,7 +184,7 @@ func _process(delta: float) -> void:
 	_notice.visible = _notice_left > 0.0
 
 	var portal := portal_at(raid, me.global_position)
-	_prompt.text = prompt_for(portal, routes)
+	_prompt.text = prompt_for(portal, routes, tour_closed)
 	_light_arch(portal)
 	if portal != null and Input.is_action_just_pressed("interact"):
 		var destination: String = portal.get_meta("destination", "")
@@ -264,12 +267,15 @@ static func is_open(destination: String, p_routes: Dictionary) -> bool:
 	return not destination.begins_with("world:") or p_routes.has(destination.trim_prefix("world:"))
 
 
-static func prompt_for(portal: Node3D, p_routes: Dictionary) -> String:
+static func prompt_for(portal: Node3D, p_routes: Dictionary, p_tour_closed: Array = []) -> String:
 	if portal == null:
 		return ""
 	var label: String = portal.get_meta("label", "Go")
-	if not is_open(portal.get_meta("destination", ""), p_routes):
+	var destination := str(portal.get_meta("destination", ""))
+	if not is_open(destination, p_routes):
 		return "%s  (closed: not running on this server)" % label
+	if destination.trim_prefix("world:") in p_tour_closed:
+		return "%s  (closed: full loot, finish the basics first)" % label
 	return "[F]  %s" % label
 
 
