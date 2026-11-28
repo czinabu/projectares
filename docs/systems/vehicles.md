@@ -55,6 +55,11 @@ date in the same PR.
   bike's lean (`ActorSkin.ride_frame`). The left hand keeps its grip; the
   right takes its grip only with nothing in it, holds a gun out toward the
   aim, and leaves a blade to its usual hold, so melee windups still show.
+  The phone works riding too (Caleb's bug: it was unusable on a vehicle):
+  with it out, the right hand leaves its grip to hold it, measured from the
+  seated neck, the left keeps the bar (`Locomotion.phone_pose`), and the
+  vehicle gets no throttle or steering, so it coasts
+  (`tests/ride_phone_tests.gd`).
   Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
   clamped to a back rig's rails stay in their clamps. Riding, the
   first-person eyes follow the seated head as posed (`ActorSkin._note_head`,

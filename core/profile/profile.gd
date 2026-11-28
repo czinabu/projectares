@@ -40,6 +40,13 @@ const GEAR_CRATES := {}
 ## upgrades and anything dev mode leaked in before the playtest.
 const FRESH_START := 1
 const FRESH_START_BACKUP := "user://profile_before_fresh_start.json"
+## Beside every solo save: the last save that read back whole
+## (`save`), loaded if the save itself cannot be read (`load_profile`).
+const BACKUP := ".bak"
+## Beside a save that could be read neither way: a copy of it, kept so a
+## fresh start never writes over the only copy of a broken save.
+const BROKEN := ".broken"
+const SafeFile := preload("res://core/account/safe_file.gd")
 
 ## Tests turn this off so they never touch a real save.
 var persist := true
@@ -420,11 +427,14 @@ func adopt_account(snapshot: Dictionary) -> void:
 func save() -> void:
 	if not persist:
 		return
-	var file := FileAccess.open(save_path, FileAccess.WRITE)
-	if file == null:
+	# The save on disk becomes the backup only if it reads back whole, so a
+	# broken file never pushes out the last good one.
+	if typeof(SafeFile.read_json(save_path)) == TYPE_DICTIONARY:
+		SafeFile.write(save_path + BACKUP, SafeFile.read(save_path))
+	# Whole or not at all: a crash mid-save leaves the old file (or its
+	# ".tmp") to load.
+	if not SafeFile.write(save_path, JSON.stringify(to_dict(), "\t")):
 		push_warning("Profile: could not write %s" % save_path)
-		return
-	file.store_string(JSON.stringify(to_dict(), "\t"))
 
 
 ## Everything the save holds, as plain data.
@@ -461,15 +471,20 @@ func to_dict() -> Dictionary:
 
 
 func load_profile() -> void:
-	if not persist or not FileAccess.file_exists(save_path):
+	if not persist or not (SafeFile.exists(save_path) or SafeFile.exists(save_path + BACKUP)):
 		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(save_path))
+	var data: Variant = SafeFile.read_json(save_path)
 	if typeof(data) != TYPE_DICTIONARY:
-		push_warning("Profile: save file is unreadable, starting fresh")
-		return
+		data = SafeFile.read_json(save_path + BACKUP)
+		if SafeFile.exists(save_path):
+			SafeFile.write(save_path + BROKEN, SafeFile.read(save_path))
+		if typeof(data) != TYPE_DICTIONARY:
+			push_warning("Profile: save file is unreadable, starting fresh (kept as %s)" % (save_path + BROKEN))
+			return
+		push_warning("Profile: save file is unreadable, loaded the backup")
 	load_dict(data)
 	if save_path == SAVE_PATH and fresh_start < FRESH_START:
-		DirAccess.copy_absolute(save_path, FRESH_START_BACKUP)
+		SafeFile.write(FRESH_START_BACKUP, JSON.stringify(data, "\t"))
 		start_fresh()
 
 
