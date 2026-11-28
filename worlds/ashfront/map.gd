@@ -171,6 +171,15 @@ const FORGE_TOWER := Vector2(3.0, 34.0)
 ## The furnace mouth in each face of the plinth: width, and how far up from
 ## the plinth's sunk foot its opening in the cladding goes.
 const FORGE_MOUTH := Vector2(2.8, 6.0)
+## The supply piles' kit models and the box each stands in (m, its foot at
+## the bottom): long sides along the pile.
+const CLUTTER := {
+	"Prop_Crate_Large": Vector3(3.46, 1.5, 1.5),
+	"Prop_Crate_Tarp_Large": Vector3(3.22, 1.56, 1.72),
+	"Prop_Crate_Tarp": Vector3(1.72, 1.56, 1.72),
+	"Prop_Crate": Vector3(1.56, 1.5, 1.5),
+	"Prop_Barrel1": Vector3(0.72, 1.11, 0.64),
+}
 ## A dropship wreck's engine, before its `big`.
 const WRECK_ENGINE := Vector3(1.3, 1.3, 2.6)
 ## The old front: which trench lines face across no man's land, so sandbags
@@ -271,6 +280,8 @@ const RUSTED := {"t1": "t1_rust", "t2": "t2_rust", "t3": "t3_rust"}
 ## The crashed carrier's hull, fin and wing boxes (`_boxes_since`), for the
 ## dressing to plate.
 var _carrier_boxes := []
+## Supply pile pieces, [kit model, transform at its foot], for the dressing.
+var _clutter := []
 ## The relay mast on Signal Hill, drawn as a lattice tower by the dressing.
 var _mast: StaticBody3D
 ## Every length of wall `_add_wall` built, for the dressing to plate.
@@ -1185,6 +1196,85 @@ func _build_field_kit() -> void:
 			var file: String = ["AC.glb", "AC_Side.glb", "AC_Stacked.glb", "Antenna_1.glb", "Antenna_2.glb", "Tank.glb"][roofs.randi() % 6]
 			var at := top + Vector3(roofs.randf_range(-0.35, 0.35) * size.x, 0, roofs.randf_range(-0.35, 0.35) * size.z)
 			SolidProp.place(nav_region, file, 3.2 if file == "Antenna_1.glb" else 1.5, at, roofs.randi() % 4 * PI / 2.0)
+	_add_clutter()
+
+
+## Supply piles: crates, tarped crates and barrels stacked behind each
+## army's tents and about the strongpoints, so the places look used. Solid
+## (a box cut to each piece, under the navigation region) and placed from
+## the layout alone with their own random numbers, so nothing else moves;
+## the dressing draws the kit models over the boxes (`_dress_clutter`).
+func _add_clutter() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = LAYOUT_SEED + 37
+	var piles: Array[Array] = []
+	for army: String in ARMIES:
+		var muster: Vector2 = ARMIES[army]["muster"]
+		var inward := -muster.normalized()
+		for k in [-1, 0, 1]:
+			piles.append([muster - inward * 15.0 + inward.orthogonal() * k * 10.0, inward.orthogonal()])
+	for site: Dictionary in SITES:
+		if site["kind"] == "foundry":
+			continue
+		var at: Vector2 = site["at"]
+		for n in 2:
+			var dir := Vector2.from_angle(rng.randf_range(0.0, TAU))
+			piles.append([at + dir * float(site["radius"]) * rng.randf_range(0.45, 0.7), dir.orthogonal()])
+	for pile: Array in piles:
+		var spot: Vector2 = pile[0]
+		if not _clutter_clear(spot, 4.0):
+			continue
+		var along: Vector2 = pile[1]
+		# The kit lays a crate's long side along its x.
+		var yaw := atan2(-along.y, along.x)
+		var x := -2.5
+		for i in rng.randi_range(2, 3):
+			var file: String = CLUTTER.keys()[rng.randi() % 4]
+			var size: Vector3 = CLUTTER[file]
+			# The third piece goes behind the first two, so a pile is a
+			# heap, not a wall.
+			var back := 0.0
+			if i == 2:
+				x = -2.0
+				back = 1.9
+			var place := spot + along * (x + size.x * 0.5) + along.orthogonal() * back
+			_add_clutter_piece(file, terrain.on_ground(place.x, place.y) + Vector3(0, -0.05, 0), yaw + rng.randf_range(-0.12, 0.12))
+			# A small crate stacked on a long one now and then.
+			if size.x > 3.0 and rng.randf() < 0.5:
+				_add_clutter_piece("Prop_Crate", terrain.on_ground(place.x, place.y) + Vector3(0, size.y - 0.05, 0), yaw + rng.randf_range(-0.3, 0.3))
+			x += size.x + 0.15
+		for b in rng.randi_range(0, 2):
+			var by := spot + along * (x + 0.5 + b * 0.8) + along.orthogonal() * rng.randf_range(-0.4, 0.4)
+			_add_clutter_piece("Prop_Barrel1", terrain.on_ground(by.x, by.y), rng.randf_range(0.0, TAU))
+
+
+func _add_clutter_piece(file: String, at: Vector3, yaw: float) -> void:
+	var size: Vector3 = CLUTTER[file]
+	var xform := Transform3D(Basis(Vector3.UP, yaw), at)
+	SolidProp.box(nav_region, size, xform * Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.5, 0)))
+	_clutter.append([file, xform])
+
+
+## Clear for a supply pile: on the field, off the roads, the Works and the
+## trenches, and nothing solid or marked within reach. Reserved open ground
+## (`_pads`) is not asked: a camp's own pad is where its stores belong.
+func _clutter_clear(at: Vector2, reach: float) -> bool:
+	if maxf(absf(at.x), absf(at.y)) > FIELD - 20.0 or _in_works(at, reach):
+		return false
+	if _road_distance(at) < reach + ROAD_CLEAR:
+		return false
+	for line in _trenches:
+		for i in line.size() - 1:
+			if at.distance_to(Geometry2D.get_closest_point_to_segment(at, line[i], line[i + 1])) < reach + 5.0:
+				return false
+	for solid in _solids:
+		if at.distance_to(solid["at"]) < float(solid["reach"]) + reach:
+			return false
+	for child in get_children():
+		var marker := child as Marker3D
+		if marker != null and at.distance_to(Vector2(marker.position.x, marker.position.z)) < reach + 2.0:
+			return false
+	return true
 
 
 func _add_wreck(at: Vector2, kind: int, yaw: float, big: float) -> void:
@@ -1724,6 +1814,7 @@ func _dress() -> void:
 	_dress_wrecks(art)
 	_dress_cover(art)
 	_dress_walls(art)
+	_dress_clutter(art)
 	_dress_cracks(art)
 	_dress_roads(art)
 	_dress_outposts(art)
@@ -2429,6 +2520,21 @@ func _dress_walls(art: Node3D) -> void:
 	looks.merge(KitMesh.trims(Color(0.82, 0.52, 0.36), "_rust"))
 	looks["beacon"] = Look.trim("beacon")
 	art.add_child(kit.node("WallClad", looks))
+
+
+## The supply piles drawn as the kit's crates and barrels in its own prop
+## textures, over the boxes `_add_clutter` stood them in, all in one mesh.
+func _dress_clutter(art: Node3D) -> void:
+	var kit := KitMesh.new()
+	for piece: Array in _clutter:
+		kit.add("" + piece[0], piece[1])
+	if kit.is_empty():
+		return
+	var looks := KitMesh.prop_trims(Color(0.72, 0.64, 0.55))
+	looks.merge(KitMesh.trims(Color(0.7, 0.64, 0.58)))
+	looks["glow"] = Look.trim("orange")
+	looks["dark"] = Look.surface("metal", {"tint": Color(0.3, 0.28, 0.27), "grime": 1.0, "scale": 0.1})
+	art.add_child(kit.node("ClutterClad", looks, [], true))
 
 
 ## Each barricade piece drawn over its plain box: a jersey barrier's sloped

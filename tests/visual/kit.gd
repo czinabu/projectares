@@ -49,6 +49,16 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 		camera.look_at_from_position(eye, aim)
 		await v._settle(40)
 		await v._shot(out_dir.path_join("kit_%s.png" % view[0]))
+	# A few supply piles, spread through the list, from a few metres off.
+	var clutter: Array = raid.map.get("_clutter")
+	if only == "" or "clutter".begins_with(only) or only.begins_with("clutter"):
+		for n in mini(3, clutter.size()):
+			var at: Vector3 = (clutter[n * clutter.size() / 3][1] as Transform3D).origin
+			var eye := at + Vector3(6.0, 0.0, 5.0)
+			eye.y = ground.call(eye.x, eye.z) + 2.0
+			camera.look_at_from_position(eye, at + Vector3(0, 0.8, 0))
+			await v._settle(40)
+			await v._shot(out_dir.path_join("kit_clutter_%d.png" % n))
 	# Up close to one wreck of each kind, from the side.
 	var seen := {}
 	for wreck: Dictionary in raid.map.get("_wrecks"):

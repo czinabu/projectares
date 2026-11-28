@@ -157,3 +157,8 @@ date in the same PR.
   close). Every wall `_add_wall` builds and every steel plate is faced
   in short kit panels (`_dress_walls`, `SHORT_PANELS`); the relay mast on
   Signal Hill is a box drawn as a lattice of pipe columns (`_mast`).
+  Supply piles (the kit's crates, tarped crates and barrels, `CLUTTER`)
+  are placed in the gameplay pass with their own seed (`_add_clutter`,
+  after everything else, asking nothing of `_pads`), each standing in a
+  `SolidProp.box` cut to it, and drawn by `_dress_clutter` in the kit's
+  prop textures (`KitMesh.prop_trims`).

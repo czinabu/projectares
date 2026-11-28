@@ -21,9 +21,12 @@ const KEYS_BY_NAME := [
 	["t1", ["MI_Trim_01"]],
 	["t2", ["MI_Trim_02", "MI_PaddedWall"]],
 	["t3", ["MI_Trim_03"]],
+	["crates", ["MI_Props_Crates"]],
+	["props", ["MI_Props_Batch1"]],
 ]
-## The kit's trim sheets, by key (`Look.kit_trim`).
-const SHEETS := {"t1": "01", "t2": "02", "t3": "03"}
+## The kit's texture sheets, by key (`Look.kit_trim`).
+const SHEETS := {"t1": "Trim_01", "t2": "Trim_02", "t3": "Trim_03"}
+const PROP_SHEETS := {"crates": "Props_Crates", "props": "Props_Batch1"}
 
 ## key -> [verts, normals, uvs, indices], in the order keys were first used.
 var _surfaces := {}
@@ -208,6 +211,14 @@ static func trims(tint: Color, suffix := "") -> Dictionary:
 	var out := {}
 	for key: String in SHEETS:
 		out[key + suffix] = Look.kit_trim(SHEETS[key], tint)
+	return out
+
+
+## Materials for the kit's prop sheets (crates, barrels), tinted `tint`.
+static func prop_trims(tint: Color) -> Dictionary:
+	var out := {}
+	for key: String in PROP_SHEETS:
+		out[key] = Look.kit_trim(PROP_SHEETS[key], tint, 0.8, 0.2)
 	return out
 
 

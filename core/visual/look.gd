@@ -1798,7 +1798,7 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## shares one material.
 ## A kit trim sheet (`assets/props/megakit/textures`, the Megakit's own
 ## panel textures) as a material for `KitMesh` surfaces, which keep the
-## kit's UVs: `sheet` is "01", "02" or "03", `tint` darkens and warms the
+## kit's UVs: `sheet` names it ("Trim_01", "Props_Crates"), `tint` darkens and warms the
 ## kit's clean grey to suit a world. Plain colour where Look is off.
 func kit_trim(sheet: String, tint: Color, rough := 0.75, metal := 0.45) -> Material:
 	var key := "kit_trim:%s:%s:%s:%s" % [sheet, tint, rough, metal]
@@ -1807,7 +1807,7 @@ func kit_trim(sheet: String, tint: Color, rough := 0.75, metal := 0.45) -> Mater
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = tint
 	if enabled:
-		var dir := "res://assets/props/megakit/textures/T_Trim_%s_" % sheet
+		var dir := "res://assets/props/megakit/textures/T_%s_" % sheet
 		mat.albedo_texture = load(dir + "BaseColor.png") as Texture2D
 		var bumps := load(dir + "Normal.png") as Texture2D
 		if bumps != null:
