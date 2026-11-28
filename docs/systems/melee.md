@@ -195,7 +195,9 @@ date in the same PR.
   interrupts it (`interrupt_stagger`); strikes landing together clash
   (`clashes_with`); the kick (`ActorCommand.kick_pressed`, V,
   `MeleeWeapon.kick`) goes through a guard and breaks it open but loses to
-  a swing; aim early in a heavy's windup feints it (`_try_feint`). The
+  a swing (the weapon is not cocked through it, `MeleeWeapon._animate`: the
+  leg is the tell; a carried two-hander leans with the chest instead,
+  `WeaponArm._keep_clear`); aim early in a heavy's windup feints it (`_try_feint`). The
   dodge is the dash (Alt, `Actor.dodge_style`: a roll with no rig, the
   rig's own dodge otherwise): swings pass through it (`evade_left`), rounds
   do not, and the weapon waits out `dodge_recover`. What a guarded strike,

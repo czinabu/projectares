@@ -44,7 +44,8 @@ broken; change this file in the same PR as the code. (Gun sounds are in
   inside the Engine) and the ice.
 - Music. `Sfx.music(track)` fades to `music_<track>.ogg` (or out, for "")
   on its own bus (`GameSettings.MUSIC_BUS`, made by `music_bus`), turned by
-  the phone's Music setting (`music_volume`) under the main Volume. The same
+  the phone's Music setting (`music_volume`, 80% by default) under the main
+  Volume; at full it plays at `Sfx.MUSIC_DB`. The same
   track again plays on where it is. A world picks its track with
   `WorldDef.music` (the Concourse "plaza"; the war worlds none, so the war
   is what you hear), `Raid._setup` asks for it, and the start screen and

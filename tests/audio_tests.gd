@@ -117,6 +117,8 @@ static func _music(t: Node) -> void:
 		if setting["key"] == "music_volume":
 			row = setting
 	t.check(row.get("tab", "") == "system" and row.get("kind", "") == "slider", "the phone has a Music volume of its own")
+	t.check(float(row.get("default", 0.0)) >= 0.8 and Sfx.MUSIC_DB >= -2.0,
+			"the music is up front by default (Caleb's ask), not tucked under the game")
 	var bus := GameSettings.music_bus()
 	t.check(bus > 0 and AudioServer.get_bus_name(bus) == GameSettings.MUSIC_BUS and GameSettings.music_bus() == bus,
 			"the music has its own bus, made once")
