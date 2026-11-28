@@ -19,7 +19,7 @@ const FAINT := Color(0.72, 0.76, 0.84, 0.9)
 ## The build number: small and dim, it is not what to look at.
 const DIM := Color(0.72, 0.76, 0.84, 0.4)
 ## Text on a lit (amber) button.
-const INK_DARK := Color(0.06, 0.05, 0.04)
+const INK_DARK := Color(0.02, 0.04, 0.06)
 
 var title_text := "VERGE"
 var tagline_text := "Take what you can carry. Get out alive."
@@ -43,7 +43,6 @@ var start_button: Button
 ## (`set_status`, from `core/start.gd`).
 var status_label: Label
 var _curtain: ColorRect
-var _rule: ColorRect
 var _reveal: Array[Control] = []
 var _started := false
 
@@ -118,7 +117,7 @@ func leave() -> void:
 	var tween := create_tween().set_parallel()
 	_curtain.color = Color(leave_color, 0.0)
 	tween.tween_property(_curtain, "color:a", 1.0, leave_time).set_delay(leave_delay).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-	for item: Control in _reveal + [_rule]:
+	for item: Control in _reveal:
 		tween.tween_property(item, "modulate:a", 0.0, leave_time * 0.5)
 	await tween.finished
 
@@ -141,13 +140,6 @@ func _build_title_block() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	_reveal.append(title)
-	# A short amber rule under the title: the one accent on the screen.
-	_rule = ColorRect.new()
-	_rule.color = UiTheme.ACCENT
-	_rule.custom_minimum_size = Vector2(72, 3)
-	_rule.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(_rule)
 	var tagline := _label(tagline_text, 24, QUIET, 1)
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(tagline)
@@ -161,13 +153,14 @@ func _build_title_block() -> void:
 	start_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	start_button.custom_minimum_size = Vector2(240, 52)
 	start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var dim := UiTheme.ACCENT
-	start_button.add_theme_stylebox_override("normal", _frame(Color(0.02, 0.025, 0.05, 0.75), dim, 2))
-	start_button.add_theme_stylebox_override("focus", _frame(Color(0, 0, 0, 0), dim, 2))
-	start_button.add_theme_stylebox_override("hover", _frame(dim, dim, 2))
-	start_button.add_theme_stylebox_override("hover_pressed", _frame(dim.lightened(0.2), dim, 2))
-	start_button.add_theme_stylebox_override("pressed", _frame(dim.lightened(0.2), dim, 2))
-	start_button.add_theme_stylebox_override("disabled", _frame(dim, dim, 2))
+	# Angular like the gates: two corners cut, lit in the systems cyan.
+	var lit := UiTheme.SYSTEM
+	start_button.add_theme_stylebox_override("normal", _cut_box(Color(0.02, 0.05, 0.08, 0.8), lit))
+	start_button.add_theme_stylebox_override("focus", _cut_box(Color(0, 0, 0, 0), lit.lightened(0.4)))
+	start_button.add_theme_stylebox_override("hover", _cut_box(lit, lit))
+	start_button.add_theme_stylebox_override("hover_pressed", _cut_box(lit.lightened(0.25), lit))
+	start_button.add_theme_stylebox_override("pressed", _cut_box(lit.lightened(0.25), lit))
+	start_button.add_theme_stylebox_override("disabled", _cut_box(lit, lit))
 	start_button.add_theme_font_override("font", _spaced(8))
 	start_button.add_theme_font_size_override("font_size", 28)
 	start_button.add_theme_color_override("font_color", INK)
@@ -191,17 +184,29 @@ func _play_intro() -> void:
 		item.modulate.a = 0.0
 		tween.tween_property(item, "modulate:a", item.get_meta("faint", 1.0), 0.7).set_delay(delay)
 		delay += reveal_step
-	_rule.custom_minimum_size.x = 0.0
-	tween.tween_property(_rule, "custom_minimum_size:x", 72.0, 0.8) \
-			.set_delay(reveal_delay + reveal_step).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
-func _frame(fill: Color, edge: Color, border: int) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = fill
-	box.border_color = edge
-	box.set_border_width_all(border)
-	box.set_corner_radius_all(2)
+## A button frame with its top left and bottom right corners cut at 45 degrees,
+## drawn into a small texture that stretches as a nine-patch.
+func _cut_box(fill: Color, edge: Color) -> StyleBoxTexture:
+	var size := 48
+	var cut := 14
+	var image := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var inside := func(x: int, y: int) -> bool:
+		return x >= 0 and y >= 0 and x < size and y < size and x + y >= cut and (size - 1 - x) + (size - 1 - y) >= cut
+	for y in size:
+		for x in size:
+			if not inside.call(x, y):
+				continue
+			var rim: bool = not (inside.call(x - 2, y) and inside.call(x + 2, y) and inside.call(x, y - 2) \
+					and inside.call(x, y + 2) and inside.call(x - 1, y - 1) and inside.call(x + 1, y + 1))
+			image.set_pixel(x, y, edge if rim else fill)
+	var box := StyleBoxTexture.new()
+	box.texture = ImageTexture.create_from_image(image)
+	box.texture_margin_left = 18
+	box.texture_margin_right = 18
+	box.texture_margin_top = 18
+	box.texture_margin_bottom = 18
 	box.content_margin_left = 28
 	box.content_margin_right = 28
 	return box

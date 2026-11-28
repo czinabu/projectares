@@ -77,5 +77,4 @@ if __name__ == "__main__":
     text = "V E R G E"
     tw = d.textlength(text, font=f)
     d.text(((W - tw) / 2, 540), text, font=f, fill=(240, 237, 230, 255))
-    d.rectangle([W / 2 - 36, 630, W / 2 + 36, 633], fill=AMBER + (255,))
     splash.convert("RGB").save(f"{out}/splash.png")
