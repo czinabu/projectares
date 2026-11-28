@@ -122,10 +122,15 @@ func _setup(vehicle) -> void:
 func _bike() -> Node3D:
 	var root := Node3D.new()
 	var dim := _glow(ENERGY, 1.4)  # a scrap build's rings run dim
-	for z: float in [-0.75, 0.75]:
-		_wheel_set(root, Vector3(0, 0.36, z), 0.36, 0.17, dim, 0.0)
+	# The fork, the front wheel and its beak, and the bars turn together
+	# about the steering head, raked along the fork.
+	var head := Vector3(0, 1.02, -0.55)
+	var fork := _pivot(root, "Steer", head, head - Vector3(0, 0.36, -0.75), 1.0, true)
+	var front := _wheel_set(fork, Vector3(0, 0.36, -0.75) - head, 0.36, 0.17, dim, 0.0)
+	front.name = "WheelFront"
+	_wheel_set(root, Vector3(0, 0.36, 0.75), 0.36, 0.17, dim, 0.0)
 	# Fenders: a beak over the front wheel, a hugger over the rear.
-	_add(root, _extrude(_arc(Vector2(-0.75, 0.36), 0.41, 0.455, 0.28 * PI, 0.72 * PI), 0.2, "x", paint))
+	_into(fork, _extrude(_arc(Vector2(-0.75, 0.36), 0.41, 0.455, 0.28 * PI, 0.72 * PI), 0.2, "x", paint))
 	_add(root, _extrude(_arc(Vector2(0.75, 0.36), 0.41, 0.45, 0.45 * PI, 0.82 * PI), 0.19, "x", trim))
 	# The shell, one side profile from the beak to the tail blade, cut into
 	# panels: fairing, tank, seat flanks and tail.
@@ -154,15 +159,15 @@ func _bike() -> Node3D:
 		root.add_child(_cyl(0.03, 0.03, 0.012, Vector3(side * 0.166, 0.66, -0.1), steel, Vector3(0, 0, PI / 2.0), 12))
 		root.add_child(_strut(Vector3(side * 0.163, 0.82, -0.66), Vector3(side * 0.163, 0.8, -0.24), Vector2(0.006, 0.022), seam))
 		# Fork legs down to the front hub, and the swing arm back to the rear.
-		root.add_child(_strut(Vector3(side * 0.1, 1.02, -0.55), Vector3(side * 0.1, 0.36, -0.75), Vector2(0.05, 0.05), steel))
+		_into(fork, _strut(Vector3(side * 0.1, 1.02, -0.55), Vector3(side * 0.1, 0.36, -0.75), Vector2(0.05, 0.05), steel))
 		root.add_child(_strut(Vector3(side * 0.12, 0.56, 0.12), Vector3(side * 0.12, 0.36, 0.75), Vector2(0.05, 0.08), trim))
 		# Foot pegs on stubs out of the frame.
 		root.add_child(_box(Vector3(0.15, 0.035, 0.06), Vector3(side * 0.21, 0.42, 0.04), steel))
 		root.add_child(_strut(Vector3(side * 0.12, 0.5, 0.1), Vector3(side * 0.16, 0.43, 0.04), Vector2(0.03, 0.03), trim))
 		# Grips on the clip-on bar.
-		root.add_child(_box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.24, 1.2, -0.3), trim))
-	root.add_child(_strut(Vector3(-0.27, 1.2, -0.3), Vector3(0.27, 1.2, -0.3), Vector2(0.032, 0.032), steel))
-	root.add_child(_strut(Vector3(0, 1.1, -0.45), Vector3(0, 1.19, -0.32), Vector2(0.06, 0.05), trim))
+		_into(fork, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.24, 1.2, -0.3), trim))
+	_into(fork, _strut(Vector3(-0.27, 1.2, -0.3), Vector3(0.27, 1.2, -0.3), Vector2(0.032, 0.032), steel))
+	_into(fork, _strut(Vector3(0, 1.1, -0.45), Vector3(0, 1.19, -0.32), Vector2(0.06, 0.05), trim))
 	# A short raked screen over the fairing.
 	var screen := _strut(Vector3(0, 1.1, -0.53), Vector3(0, 1.25, -0.4), Vector2(0.26, 0.012), glass)
 	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -210,18 +215,20 @@ func _hoverbike() -> Node3D:
 			var disc := _cyl(0.12, 0.12, 0.02, Vector3(x, b + 0.015, z), energy, Vector3.ZERO, 20)
 			disc.name = "Thruster%d" % root.get_child_count()
 			root.add_child(disc)
+		# The fin is a rudder: it swings with the steering about its root.
+		var rudder := _pivot(root, "Fin%d" % (0 if side < 0.0 else 1), Vector3(x, b + 0.2, 0.6),
+				Basis(Vector3.FORWARD, side * 0.25) * Vector3.UP, -0.5)
 		var fin := _extrude(RoundedPath.of([Vector2(0.55, b + 0.2), Vector2(0.86, b + 0.56),
 				Vector2(1.0, b + 0.56), Vector2(0.94, b + 0.18)], 0.02), 0.03, "x", paint)
 		fin.position = Vector3(x, 0, 0)
 		fin.rotation.z = -side * 0.25
-		root.add_child(fin)
+		_into(rudder, fin)
 		# Foot pads on the pontoons: the rider's, and the pillion's on a step.
 		root.add_child(_box(Vector3(0.12, 0.03, 0.14), Vector3(side * 0.37, b + 0.255, -0.04), trim))
 		root.add_child(_box(Vector3(0.1, 0.09, 0.1), Vector3(side * 0.37, b + 0.28, 0.5), trim))
 		# Grab rails for the pillion, on posts off the hull.
 		root.add_child(_strut(Vector3(side * 0.23, b + 0.66, 0.5), Vector3(side * 0.23, b + 0.66, 0.86), Vector2(0.035, 0.035), steel))
 		root.add_child(_strut(Vector3(side * 0.23, b + 0.66, 0.86), Vector3(side * 0.2, b + 0.56, 0.98), Vector2(0.035, 0.035), steel))
-		root.add_child(_box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.3, 1.3, -0.42), trim))  # grip
 		# A lit seam down the hull's flank.
 		root.add_child(_strut(Vector3(side * 0.203, b + 0.36, -1.15), Vector3(side * 0.203, b + 0.32, 0.4), Vector2(0.006, 0.022), seam))
 	# The arms that carry the pontoons: two swept plates under the hull.
@@ -251,8 +258,13 @@ func _hoverbike() -> Node3D:
 	var screen := _strut(Vector3(0, b + 0.6, -0.66), Vector3(0, b + 0.86, -0.52), Vector2(0.34, 0.012), glass)
 	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(screen)
-	root.add_child(_strut(Vector3(0, b + 0.6, -0.5), Vector3(0, 1.3, -0.43), Vector2(0.06, 0.05), trim))
-	root.add_child(_strut(Vector3(-0.34, 1.3, -0.42), Vector3(0.34, 1.3, -0.42), Vector2(0.032, 0.032), steel))
+	# The bars turn on their stem.
+	var stem := Vector3(0, b + 0.6, -0.5)
+	var bars := _pivot(root, "Steer", stem, Vector3(0, 1.3, -0.43) - stem, 1.0, true)
+	_into(bars, _strut(stem, Vector3(0, 1.3, -0.43), Vector2(0.06, 0.05), trim))
+	_into(bars, _strut(Vector3(-0.34, 1.3, -0.42), Vector3(0.34, 1.3, -0.42), Vector2(0.032, 0.032), steel))
+	for side: float in [-1.0, 1.0]:
+		_into(bars, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.3, 1.3, -0.42), trim))  # grip
 	return root
 
 
@@ -265,7 +277,7 @@ func _rover() -> Node3D:
 	var root := Node3D.new()
 	for x: float in [-1.0, 1.0]:
 		for z: float in [-1.35, 1.35]:
-			_wheel_set(root, Vector3(x, 0.52, z), 0.52, 0.4, energy, x * 0.21)
+			_wheel_set(root, Vector3(x, 0.52, z), 0.52, 0.4, energy, x * 0.21, z < 0.0)
 			# An armored pod over the wheel: an angular arch.
 			var pod := PackedVector2Array([Vector2(z - 0.8, 0.84), Vector2(z - 0.62, 1.12), Vector2(z - 0.32, 1.2),
 					Vector2(z + 0.32, 1.2), Vector2(z + 0.62, 1.12), Vector2(z + 0.8, 0.84), Vector2(z + 0.68, 0.84),
@@ -327,15 +339,21 @@ func _rover() -> Node3D:
 		for side: float in [-1.0, 1.0]:
 			root.add_child(_box(Vector3(0.05, 0.12, 0.4), Vector3(x + side * 0.24, 0.98, 0.28), trim))  # bolster
 	# The wheel faces the driver, its rim through the grips (`grip_points`).
+	# It turns on its column, the hands with it, a spoke across to show it.
+	var tilt := Basis(Vector3.RIGHT, PI / 2.0 - 0.45)
+	var hub := Vector3(-0.4, 1.27, -0.25)
+	var turner := _pivot(root, "SteerWheel", hub, tilt * Vector3.UP, 2.2, true)
 	var wheel := MeshInstance3D.new()
 	var wheel_mesh := TorusMesh.new()
 	wheel_mesh.inner_radius = 0.16
 	wheel_mesh.outer_radius = 0.2
 	wheel_mesh.material = trim
 	wheel.mesh = wheel_mesh
-	wheel.position = Vector3(-0.4, 1.27, -0.25)
-	wheel.rotation.x = PI / 2.0 - 0.45
-	root.add_child(wheel)
+	wheel.basis = tilt
+	turner.add_child(wheel)
+	var spoke := _box(Vector3(0.34, 0.03, 0.05), Vector3.ZERO, steel)
+	spoke.basis = tilt
+	turner.add_child(spoke)
 	root.add_child(_strut(Vector3(-0.4, 1.12, -0.6), Vector3(-0.4, 1.27, -0.25), Vector2(0.05, 0.05), steel))  # column
 	for x: float in [-0.52, -0.28]:
 		root.add_child(_box(Vector3(0.1, 0.04, 0.16), Vector3(x, 0.86, -0.5), steel))  # pedal
@@ -627,14 +645,38 @@ func _airship_turret(whole: Node3D, broken: Node3D, weak: Material) -> void:
 
 # --- Shared parts ----------------------------------------------------------------
 
-## A wheel at `at` (axle along X): a dark tyre, a recessed rim face, a lit
-## ring on each face and a steel hub. `out` pushes the outer ring out to
-## the tyre's outside face when the wheel stands off-centre (0 lights both).
-func _wheel_set(root: Node3D, at: Vector3, radius: float, width: float, ring_mat: Material, out: float) -> void:
+## A wheel at `at` (axle along X): a dark tyre, a recessed rim face crossed
+## by dark spokes (so its turning shows), a lit ring on each face and a
+## steel hub. `out` pushes the outer ring out to the tyre's outside face when
+## the wheel stands off-centre (0 lights both). It is a node of its own,
+## "Wheel...", that the vehicle spins with its speed (`Vehicle._turn_parts`)
+## and, with `steers`, turns with its steering; `Look` merges its pieces
+## into a draw per material ("merge"). Returns it.
+func _wheel_set(root: Node3D, at: Vector3, radius: float, width: float, ring_mat: Material, out: float,
+		steers := false) -> Node3D:
+	var wheel := Node3D.new()
+	wheel.name = "Wheel%d" % root.get_child_count()
+	wheel.position = at
+	wheel.set_meta("radius", radius)
+	wheel.set_meta("steers", steers)
+	wheel.set_meta("merge", true)
+	root.add_child(wheel)
 	var side := Vector3(0, 0, PI / 2.0)
-	root.add_child(_cyl(radius, radius, width, at, trim, side, 28))
-	root.add_child(_cyl(radius * 0.7, radius * 0.7, width + 0.02, at, steel, side, 24))
-	root.add_child(_cyl(radius * 0.3, radius * 0.3, width + 0.06, at, trim, side, 16))
+	# Everything round stays put (a draw for the dark tyre and rim face, one
+	# for the lit rings); only the steel spokes and hub spin ("Spin", one
+	# draw), which is all that shows the turning, and keeps the wheel's
+	# bounds round, never a turned box's corners below the ground.
+	wheel.add_child(_cyl(radius, radius, width, Vector3.ZERO, trim, side, 28))
+	wheel.add_child(_cyl(radius * 0.7, radius * 0.7, width + 0.02, Vector3.ZERO, trim, side, 24))
+	var spin := Node3D.new()
+	spin.name = "Spin"
+	spin.set_meta("merge", true)
+	wheel.add_child(spin)
+	for i in 3:
+		var spoke := _box(Vector3(width + 0.035, radius * 1.3, radius * 0.1), Vector3.ZERO, steel)
+		spoke.rotation.x = i * PI / 3.0
+		spin.add_child(spoke)
+	spin.add_child(_cyl(radius * 0.3, radius * 0.3, width + 0.06, Vector3.ZERO, steel, side, 16))
 	var ring := TorusMesh.new()
 	ring.inner_radius = radius * 0.62
 	ring.outer_radius = radius * 0.7
@@ -645,8 +687,33 @@ func _wheel_set(root: Node3D, at: Vector3, radius: float, width: float, ring_mat
 		node.mesh = ring
 		node.material_override = ring_mat
 		node.rotation.z = PI / 2.0
-		node.position = at + Vector3(face * (width * 0.5 + 0.012), 0, 0)
-		root.add_child(node)
+		node.position = Vector3(face * (width * 0.5 + 0.012), 0, 0)
+		wheel.add_child(node)
+	return wheel
+
+
+## A pivot for parts that turn with the steering (a bike's fork and bars, a
+## hoverbike's bars, a rover's wheel, a tail fin): a node at `at` turning
+## about `axis` (in the model's frame), by `share` of the steering. With
+## `grips` the rider's hands are on it (`Vehicle.posed_grips`). Pieces go in
+## with `_into`, which keeps them where they were built.
+func _pivot(root: Node3D, node_name: String, at: Vector3, axis: Vector3, share: float, grips := false) -> Node3D:
+	var pivot := Node3D.new()
+	pivot.name = node_name
+	pivot.position = at
+	pivot.set_meta("axis", axis.normalized())
+	pivot.set_meta("share", share)
+	pivot.set_meta("grips", grips)
+	pivot.set_meta("merge", true)
+	root.add_child(pivot)
+	return pivot
+
+
+## Puts `part` (built in the model's frame) under `pivot`, where it was.
+static func _into(pivot: Node3D, part: Node3D) -> Node3D:
+	part.position -= pivot.position
+	pivot.add_child(part)
+	return part
 
 
 ## `outline` (a side profile, in z and y) as a shell `width` wide centred

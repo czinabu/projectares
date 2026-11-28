@@ -1254,7 +1254,8 @@ func _ride_pose() -> void:
 		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
 		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, w))
 
-	var grips: Array = _ride_on.get("grip_points")
+	# The bars (or wheel) turn with the steering, and the hands with them.
+	var grips: Array = _ride_on.call("posed_grips") if _ride_on.has_method("posed_grips") else _ride_on.get("grip_points")
 	for i in _arms.size():
 		var arm: Array[int] = _arms[i]
 		var hand := _hands.x if i == 0 else _hands.y
