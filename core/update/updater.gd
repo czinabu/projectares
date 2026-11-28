@@ -1,13 +1,13 @@
 extends Node
 ## Keeps an installed game up to date by itself (the `Updater` autoload).
 ##
-## The game is installed once: `ProjectAres.exe` (the engine) and
-## `ProjectAres.pck` (everything else) side by side, or on Linux
-## `ProjectAres.x86_64` and its pack. Every merge to main publishes a new pack
+## The game is installed once: `Verge.exe` (the engine) and
+## `Verge.pck` (everything else) side by side, or on Linux
+## `Verge.x86_64` and its pack. Every merge to main publishes a new pack
 ## and a small manifest for each system on the rolling "latest" GitHub
 ## release (`.github/workflows/windows-client.yml`): `update.json` and
-## `ProjectAres.pck` for Windows, `update-linux.json` and
-## `ProjectAres-linux.pck` for Linux (`manifest_name`). On launch this asks
+## `Verge.pck` for Windows, `update-linux.json` and
+## `Verge-linux.pck` for Linux (`manifest_name`). On launch this asks
 ## for its system's manifest; a newer build is downloaded in the background,
 ## checked against the manifest's size and SHA-256, and kept under
 ## `user://updates`. If it is ready while the start screen is still up the game

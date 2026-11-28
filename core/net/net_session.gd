@@ -144,7 +144,7 @@ const BUILD_SETTING := "ares/build/number"
 ## 57: an army hunting you for a grudge is told to you (`_hunted`).
 ## Where an out-of-date game gets the latest build: the rolling "latest"
 ## release the Windows client workflow publishes (docs/hosting.md).
-const UPDATE_URL := "https://github.com/czinabu/projectares/releases/tag/latest"
+const UPDATE_URL := "https://github.com/czinabu/verge/releases/tag/latest"
 ## What `_back` says when the server is putting you back in your body.
 const BACK_IN_BODY := "body"
 ## Seconds a connection may take to sign in before it is dropped.

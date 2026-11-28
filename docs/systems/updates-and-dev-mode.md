@@ -11,8 +11,8 @@ date in the same PR.
   out is still loaded, so its items and old saves stay good, but it is
   never listed, offered or travelled to. The "Windows Dev" and "Linux Dev"
   presets have no tag and offer every world; CI exports them as workflow
-  artifacts (`ProjectAresDev-windows-<commit>`,
-  `ProjectAresDev-linux-<commit>`) and on the "dev-latest" release below.
+  artifacts (`VergeDev-windows-<commit>`,
+  `VergeDev-linux-<commit>`) and on the "dev-latest" release below.
   Both update themselves (`Updater`), each only from its own channel
   (`Updater.channel`: "release" for the playtest build, "dev" for any
   other exported build), and a manifest of the other channel is refused
@@ -20,8 +20,8 @@ date in the same PR.
   nor the release for the dev build. The dev build has its own rolling
   "dev-latest" pre-release (Caleb's call: public, so it updates with no
   sign-in; it was token-gated artifacts first, too fiddly): every push to
-  main puts the dev zip and tarball there with `ProjectAresDev.pck` and
-  `update-dev.json`, `ProjectAresDev-linux.pck` and `update-dev-linux.json`
+  main puts the dev zip and tarball there with `VergeDev.pck` and
+  `update-dev.json`, `VergeDev-linux.pck` and `update-dev-linux.json`
   (`Updater.DEV_BASE`, `Updater.manifest_name`), never on "latest". Its
   downloads sit apart from the playtest build's (`Updater.DEV_DIR`).
   `--playtest` on the command line tries
@@ -37,7 +37,7 @@ date in the same PR.
   off); the release workflow stamps each build's number into
   `ares/build/number` and publishes each system's pack and manifest (build,
   engine, platform, size, SHA-256) on the rolling "latest" release:
-  `ProjectAres.pck` and `update.json` for Windows, `ProjectAres-linux.pck`
+  `Verge.pck` and `update.json` for Windows, `Verge-linux.pck`
   and `update-linux.json` for Linux (`Updater.manifest_name`). A manifest
   for another system is ignored, so a pack never crosses systems. Only the
   pack is replaced, never the exe, so a renamed exe (its pack renamed to
@@ -60,10 +60,24 @@ date in the same PR.
   the Servers app wears a badge, held back out in a world, the arena or a
   race (`Phone.update_hold`) until the player is home or in the plaza,
   and told again each time they get home (`Phone.remind_update`). The installer
-  (`.github/installer/ProjectAres.nsi`, NSIS, built by the same workflow as
-  `ProjectAres-Setup.exe`) installs per user into
-  `%LOCALAPPDATA%\Programs\Project Ares`, never Program Files, so the game
-  can write its own pack, and adds desktop and Start menu shortcuts. The
+  (`.github/installer/Verge.nsi`, NSIS, built by the same workflow as
+  `Verge-Setup.exe`) installs per user into
+  `%LOCALAPPDATA%\Programs\Verge`, never Program Files, so the game
+  can write its own pack, and adds desktop and Start menu shortcuts.
+- The rename to Verge (players see only Verge; Caleb's call). The release
+  files are `Verge-Setup.exe`, `Verge-windows-<commit>.zip`,
+  `Verge-linux-<commit>.tar.gz`, `Verge.pck` and `Verge-linux.pck`; the
+  manifests keep their names (`update.json`, `update-linux.json`), and the
+  repository moved to `czinabu/verge` (GitHub sends the old address on).
+  An install from before (`ProjectAres.exe` and its pack) keeps updating
+  untouched, because a game downloads whatever pack its manifest names and
+  writes it over the pack beside its own exe (`pack_candidates`), whatever
+  either is called: never hard-code a pack name in the updater. The
+  installer moves an old install (`ProjectAres.exe` under the uninstall key
+  "ProjectAres") into `Programs\Verge` and removes its files, shortcuts and
+  key. The save folder stays `app_userdata/Project Ares`
+  (`custom_user_dir_name`) so no save moves; renaming it needs a copy on
+  first launch, done before anything opens `user://`. The
   logo is a placeholder in `assets/branding` (the window, exe and installer
   icon and the boot splash), made by its `make_logo.py`.
 - Dev mode is TEMPORARY (Caleb's call, to come out once the game is further

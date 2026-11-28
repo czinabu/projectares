@@ -1219,7 +1219,7 @@ func _build_screen() -> void:
 	clock_side.alignment = BoxContainer.ALIGNMENT_CENTER
 	clock_side.add_theme_constant_override("separation", -4)
 	clock_side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var brand := _label("ARES // LINK", 11, UiTheme.ACCENT)
+	var brand := _label("VERGE // LINK", 11, UiTheme.ACCENT)
 	brand.autowrap_mode = TextServer.AUTOWRAP_OFF
 	clock_side.add_child(brand)
 	_home_note = _label("", 12, DIM_INK)
@@ -3217,7 +3217,7 @@ class Chassis extends Control:
 		# The chin: the maker's mark and a vent either side of the keys.
 		var font := get_theme_default_font()
 		var chin := size.y - glass.w
-		var mark := "ARES  //  LINK-7"
+		var mark := "VERGE  //  LINK-7"
 		var mark_w := font.get_string_size(mark, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 		draw_string(font, Vector2((size.x - mark_w) * 0.5, chin + 20.0), mark, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
 				Color(0.55, 0.53, 0.5))

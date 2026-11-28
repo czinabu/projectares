@@ -87,8 +87,8 @@ curl -fsSL https://get.docker.com | sh
 ## 5. Get the game and start the server
 
 ```bash
-git clone https://github.com/czinabu/projectares.git
-cd projectares
+git clone https://github.com/czinabu/verge.git
+cd verge
 docker compose up -d --build
 ```
 
@@ -143,7 +143,7 @@ Keep the volume, and the certificate stays the same.
 
 ## Everyday tasks
 
-Log in with `ssh root@<address>` and `cd projectares` first.
+Log in with `ssh root@<address>` and `cd verge` first.
 
 | To | Run |
 | --- | --- |
@@ -318,7 +318,7 @@ server for now; they move to the service with one program per world.
 The **Windows client build** workflow exports the "Windows Client" preset on
 Godot 4.7 and zips it. It runs on every push to `main` and replaces the zip on
 the rolling **latest** pre-release on GitHub, so the newest merge is always one
-download away. The zip's name ends in the commit (`ProjectAres-windows-<sha>`):
+download away. The zip's name ends in the commit (`Verge-windows-<sha>`):
 the host and every friend must have the same one. If someone sees "The server
 runs a different version of the game", they download the latest zip again (and
 a host on their own PC pulls and relaunches). For a milestone, run the workflow

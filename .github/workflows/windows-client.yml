@@ -7,26 +7,26 @@ name: Windows client build
 #   artifact, and on every push to main on its own rolling "dev-latest"
 #   pre-release (Caleb's call: public, so it updates with no sign-in): the
 #   Windows zip and Linux tarball, and the dev build's own update,
-#   ProjectAresDev.pck with update-dev.json and ProjectAresDev-linux.pck with
+#   VergeDev.pck with update-dev.json and VergeDev-linux.pck with
 #   update-dev-linux.json (Updater, channel "dev"). It is never put on
 #   "latest". Every dev manifest says "channel": "dev", which a playtest game
 #   refuses, and a dev game refuses any other, so the two builds never swap.
 #   The "Linux Client" preset (the same playtest build, for Linux laptops) is
-#   exported beside it as ProjectAres-linux-<commit>.tar.gz on the same
+#   exported beside it as Verge-linux-<commit>.tar.gz on the same
 #   release, and updates itself the same way from its own pack and manifest
-#   (ProjectAres-linux.pck, update-linux.json): only the pack is replaced,
+#   (Verge-linux.pck, update-linux.json): only the pack is replaced,
 #   so the executable keeps its name and its executable bit.
 #   Pull requests that touch the preset or this file: build only, so a broken
 #   export is caught before it matters.
 #   Every push to main: builds and replaces the zip on the rolling "latest"
 #   pre-release, so the newest merge is always one download away. The zip's name
 #   carries the commit, which is how testers and the host check they match.
-#   The same release carries the game's own update: ProjectAres.pck (the zip
+#   The same release carries the game's own update: Verge.pck (the zip
 #   ships it beside the exe, not embedded) and update.json, which an installed
 #   game reads at launch to download the new pack and restart into it
-#   (core/update/updater.gd). ProjectAres-Setup.exe installs the same files
+#   (core/update/updater.gd). Verge-Setup.exe installs the same files
 #   for the current user, with desktop and Start menu shortcuts
-#   (.github/installer/ProjectAres.nsi). Each build is stamped with its number (the
+#   (.github/installer/Verge.nsi). Each build is stamped with its number (the
 #   workflow's run number) so a game knows which is newer.
 #   Run by hand (Actions > Windows client build > Run workflow): builds the
 #   branch picked and, if "release" is ticked, attaches the zip to a DRAFT
@@ -100,34 +100,34 @@ jobs:
       - name: Export
         run: |
           mkdir -p build/windows
-          "$GODOT" --headless --path . --export-release "Windows Client" build/windows/ProjectAres.exe
-          test -s build/windows/ProjectAres.exe
-          test -s build/windows/ProjectAres.pck
+          "$GODOT" --headless --path . --export-release "Windows Client" build/windows/Verge.exe
+          test -s build/windows/Verge.exe
+          test -s build/windows/Verge.pck
       - name: Zip
         id: zip
         run: |
-          name="ProjectAres-windows-$(git rev-parse --short HEAD)"
+          name="Verge-windows-$(git rev-parse --short HEAD)"
           mkdir -p "dist/$name"
-          cp build/windows/ProjectAres.exe build/windows/ProjectAres.pck "dist/$name/"
+          cp build/windows/Verge.exe build/windows/Verge.pck "dist/$name/"
           cp .github/playtest/PLAYTEST-README.txt "dist/$name/"
           echo "$name (commit $(git rev-parse HEAD))" > "dist/$name/BUILD.txt"
           (cd dist && zip -qr "$name.zip" "$name")
           echo "name=$name" >> "$GITHUB_OUTPUT"
       - name: Installer
         # A per-user install with desktop and Start menu shortcuts
-        # (.github/installer/ProjectAres.nsi), built with NSIS.
+        # (.github/installer/Verge.nsi), built with NSIS.
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq nsis > /dev/null
           makensis -V2 -DSRC="$PWD/dist/${{ steps.zip.outputs.name }}" -DICON="$PWD/assets/branding/icon.ico" \
-            -DBUILD="$GITHUB_RUN_NUMBER" -DOUTFILE="$PWD/dist/ProjectAres-Setup.exe" .github/installer/ProjectAres.nsi
-          test -s dist/ProjectAres-Setup.exe
+            -DBUILD="$GITHUB_RUN_NUMBER" -DOUTFILE="$PWD/dist/Verge-Setup.exe" .github/installer/Verge.nsi
+          test -s dist/Verge-Setup.exe
       - name: Update manifest
         run: |
-          pck=build/windows/ProjectAres.pck
-          cp "$pck" dist/ProjectAres.pck
+          pck=build/windows/Verge.pck
+          cp "$pck" dist/Verge.pck
           cat > dist/update.json <<EOF
           {"build": $GITHUB_RUN_NUMBER, "commit": "$(git rev-parse --short HEAD)", "godot": "$GODOT_VERSION",
-           "platform": "windows", "pack": "ProjectAres.pck",
+           "platform": "windows", "pack": "Verge.pck",
            "size": $(stat -c %s "$pck"), "sha256": "$(sha256sum "$pck" | cut -d ' ' -f 1)"}
           EOF
           python3 -c 'import json; print(json.load(open("dist/update.json")))'
@@ -135,13 +135,13 @@ jobs:
         id: linux
         run: |
           mkdir -p build/linux
-          "$GODOT" --headless --path . --export-release "Linux Client" build/linux/ProjectAres.x86_64
-          test -s build/linux/ProjectAres.x86_64
-          test -s build/linux/ProjectAres.pck
-          name="ProjectAres-linux-$(git rev-parse --short HEAD)"
+          "$GODOT" --headless --path . --export-release "Linux Client" build/linux/Verge.x86_64
+          test -s build/linux/Verge.x86_64
+          test -s build/linux/Verge.pck
+          name="Verge-linux-$(git rev-parse --short HEAD)"
           mkdir -p "dist-linux/$name"
-          cp build/linux/ProjectAres.x86_64 build/linux/ProjectAres.pck "dist-linux/$name/"
-          chmod +x "dist-linux/$name/ProjectAres.x86_64"
+          cp build/linux/Verge.x86_64 build/linux/Verge.pck "dist-linux/$name/"
+          chmod +x "dist-linux/$name/Verge.x86_64"
           cp .github/playtest/PLAYTEST-README-linux.txt "dist-linux/$name/PLAYTEST-README.txt"
           echo "$name (commit $(git rev-parse HEAD))" > "dist-linux/$name/BUILD.txt"
           tar -C dist-linux -czf "dist/$name.tar.gz" "$name"
@@ -150,22 +150,22 @@ jobs:
         # The Linux game's own update (Updater.LINUX_MANIFEST): its pack is
         # exported for Linux, so it never shares the Windows one.
         run: |
-          pck=build/linux/ProjectAres.pck
-          cp "$pck" dist/ProjectAres-linux.pck
+          pck=build/linux/Verge.pck
+          cp "$pck" dist/Verge-linux.pck
           cat > dist/update-linux.json <<EOF
           {"build": $GITHUB_RUN_NUMBER, "commit": "$(git rev-parse --short HEAD)", "godot": "$GODOT_VERSION",
-           "platform": "linux", "pack": "ProjectAres-linux.pck",
+           "platform": "linux", "pack": "Verge-linux.pck",
            "size": $(stat -c %s "$pck"), "sha256": "$(sha256sum "$pck" | cut -d ' ' -f 1)"}
           EOF
           python3 -c 'import json; print(json.load(open("dist/update-linux.json")))'
       - name: Export the dev build
         run: |
           mkdir -p build/windows-dev
-          "$GODOT" --headless --path . --export-release "Windows Dev" build/windows-dev/ProjectAresDev.exe
-          test -s build/windows-dev/ProjectAresDev.exe
-          name="ProjectAresDev-windows-$(git rev-parse --short HEAD)"
+          "$GODOT" --headless --path . --export-release "Windows Dev" build/windows-dev/VergeDev.exe
+          test -s build/windows-dev/VergeDev.exe
+          name="VergeDev-windows-$(git rev-parse --short HEAD)"
           mkdir -p "dist-dev/$name"
-          cp build/windows-dev/ProjectAresDev.exe build/windows-dev/ProjectAresDev.pck "dist-dev/$name/"
+          cp build/windows-dev/VergeDev.exe build/windows-dev/VergeDev.pck "dist-dev/$name/"
           (cd dist-dev && zip -qr "$name.zip" "$name")
           echo "DEV_NAME=$name" >> "$GITHUB_ENV"
       - name: Dev update manifests
@@ -180,14 +180,14 @@ jobs:
               "$(stat -c %s "$1")" "$(sha256sum "$1" | cut -d ' ' -f 1)" > "dist-dev-update/$4"
             python3 -c 'import json,sys; print(json.load(open(sys.argv[1])))' "dist-dev-update/$4"
           }
-          manifest build/windows-dev/ProjectAresDev.pck ProjectAresDev.pck windows update-dev.json
+          manifest build/windows-dev/VergeDev.pck VergeDev.pck windows update-dev.json
           if grep -q '^name="Linux Dev"' export_presets.cfg; then
-            if [ ! -s build/linux-dev/ProjectAresDev.pck ]; then
+            if [ ! -s build/linux-dev/VergeDev.pck ]; then
               mkdir -p build/linux-dev
-              "$GODOT" --headless --path . --export-release "Linux Dev" build/linux-dev/ProjectAresDev.x86_64
+              "$GODOT" --headless --path . --export-release "Linux Dev" build/linux-dev/VergeDev.x86_64
             fi
-            test -s build/linux-dev/ProjectAresDev.pck
-            manifest build/linux-dev/ProjectAresDev.pck ProjectAresDev-linux.pck linux update-dev-linux.json
+            test -s build/linux-dev/VergeDev.pck
+            manifest build/linux-dev/VergeDev.pck VergeDev-linux.pck linux update-dev-linux.json
           fi
           ls -l dist-dev-update
       - uses: actions/upload-artifact@v4
@@ -200,15 +200,15 @@ jobs:
         run: |
           # Another step (the dev update manifests) may have exported it.
           mkdir -p build/linux-dev
-          if [ ! -s build/linux-dev/ProjectAresDev.pck ]; then
-            "$GODOT" --headless --path . --export-release "Linux Dev" build/linux-dev/ProjectAresDev.x86_64
+          if [ ! -s build/linux-dev/VergeDev.pck ]; then
+            "$GODOT" --headless --path . --export-release "Linux Dev" build/linux-dev/VergeDev.x86_64
           fi
-          test -s build/linux-dev/ProjectAresDev.x86_64
-          test -s build/linux-dev/ProjectAresDev.pck
-          name="ProjectAresDev-linux-$(git rev-parse --short HEAD)"
+          test -s build/linux-dev/VergeDev.x86_64
+          test -s build/linux-dev/VergeDev.pck
+          name="VergeDev-linux-$(git rev-parse --short HEAD)"
           mkdir -p "dist-dev-linux/$name"
-          cp build/linux-dev/ProjectAresDev.x86_64 build/linux-dev/ProjectAresDev.pck "dist-dev-linux/$name/"
-          chmod +x "dist-dev-linux/$name/ProjectAresDev.x86_64"
+          cp build/linux-dev/VergeDev.x86_64 build/linux-dev/VergeDev.pck "dist-dev-linux/$name/"
+          chmod +x "dist-dev-linux/$name/VergeDev.x86_64"
           echo "$name (commit $(git rev-parse HEAD))" > "dist-dev-linux/$name/BUILD.txt"
           tar -C dist-dev-linux -czf "dist-dev-linux/$name.tar.gz" "$name"
           echo "DEV_LINUX_NAME=$name" >> "$GITHUB_ENV"
@@ -222,7 +222,7 @@ jobs:
           path: |
             dist/*.zip
             dist/*.tar.gz
-            dist/ProjectAres-Setup.exe
+            dist/Verge-Setup.exe
             dist/update.json
             dist/update-linux.json
       - name: Update the rolling latest release
@@ -231,22 +231,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           zip="dist/${{ steps.zip.outputs.name }}.zip"
-          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run ProjectAres-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (ProjectAres.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip). On Linux: unpack ProjectAres-linux-*.tar.gz somewhere you can write to and run ProjectAres.x86_64: it keeps itself up to date from here too (ProjectAres-linux.pck and update-linux.json)."
+          notes="Newest main, built automatically on every merge: ${{ steps.zip.outputs.name }} (build $GITHUB_RUN_NUMBER). Run Verge-Setup.exe once (or unzip the zip somewhere you can write to): it keeps itself up to date from here (Verge.pck and update.json are what it downloads). Then join the host from the phone's Servers app (P). Everyone, host included, must be on the same build (the name of the zip). On Linux: unpack Verge-linux-*.tar.gz somewhere you can write to and run Verge.x86_64: it keeps itself up to date from here too (Verge-linux.pck and update-linux.json). Installed it back when it was called Project Ares? It keeps updating as it is, saves and all; run Verge-Setup.exe once to move it to the new name."
           # Recreate the release every time: editing it in place keeps the
           # original publish date, so the page would look hours out of date.
           gh release delete latest --cleanup-tag -y || true
-          gh release create latest dist/ProjectAres-Setup.exe "$zip" "dist/${{ steps.linux.outputs.name }}.tar.gz" dist/ProjectAres.pck dist/update.json dist/ProjectAres-linux.pck dist/update-linux.json --prerelease --target "$GITHUB_SHA" \
-            --title "Latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
+          gh release create latest dist/Verge-Setup.exe "$zip" "dist/${{ steps.linux.outputs.name }}.tar.gz" dist/Verge.pck dist/update.json dist/Verge-linux.pck dist/update-linux.json --prerelease --target "$GITHUB_SHA" \
+            --title "Verge latest build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Update the rolling dev release
         # The dev build (every world) updates from here, never from "latest".
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="Dev build of newest main (every world, nothing held back), build $GITHUB_RUN_NUMBER. Not the playtest build: that is on the \"latest\" release. Windows: unzip ProjectAresDev-windows-*.zip somewhere you can write to and run ProjectAresDev.exe. Linux: unpack ProjectAresDev-linux-*.tar.gz somewhere you can write to and run ProjectAresDev.x86_64. Either keeps itself up to date from here, and only ever takes dev builds."
+          notes="Dev build of newest main (every world, nothing held back), build $GITHUB_RUN_NUMBER. Not the playtest build: that is on the \"latest\" release. Windows: unzip VergeDev-windows-*.zip somewhere you can write to and run VergeDev.exe. Linux: unpack VergeDev-linux-*.tar.gz somewhere you can write to and run VergeDev.x86_64. Either keeps itself up to date from here, and only ever takes dev builds."
           gh release delete dev-latest --cleanup-tag -y || true
           gh release create dev-latest dist-dev/*.zip dist-dev-linux/*.tar.gz dist-dev-update/* --prerelease --latest=false \
-            --target "$GITHUB_SHA" --title "Dev build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
+            --target "$GITHUB_SHA" --title "Verge dev build ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC'))" --notes "$notes"
       - name: Draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release
         env:
@@ -254,5 +254,5 @@ jobs:
         run: |
           gh release create "playtest-${{ steps.zip.outputs.name }}" "dist/${{ steps.zip.outputs.name }}.zip" \
             --draft --prerelease --target "$GITHUB_SHA" \
-            --title "Playtest build $(git rev-parse --short HEAD)" \
-            --notes "Windows client for playtests. Unzip, run ProjectAres.exe, join the host from the phone's Servers app (P). Everyone, host included, must be on this same build."
+            --title "Verge playtest build $(git rev-parse --short HEAD)" \
+            --notes "Windows client for playtests. Unzip, run Verge.exe, join the host from the phone's Servers app (P). Everyone, host included, must be on this same build."
