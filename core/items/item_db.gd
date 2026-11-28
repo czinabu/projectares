@@ -260,11 +260,11 @@ func _ready() -> void:
 	_rig_tier("jetpack_mk3", "Mk3 Jetpack", Rarity.EPIC, 2200, "jetpack_mk1", 3,
 			"The longest hover and the highest ceiling of any rig. Still the slowest cruise, loud and bright.")
 	register("boots_thruster", "Mk1 Thruster Boots", Rarity.UNCOMMON, 1000, ["flight_rig", "vendor"], BOOTS_MK1.duplicate(),
-			"Ground agility and stealth. 15% faster on foot, no fall damage, and 4 charges for kicks and dashes, each dash a brief window where rounds only graze. Hold Shift in the air to skate low over the ground at 18 m/s for as long as you like. Quiet and dim on scans, and they work indoors. Top out at 10 m.")
+			"Ground agility and stealth. 15% faster on foot, no fall damage, and 4 charges for kicks and dashes, each dash a brief window where rounds only graze. Hold Shift in the air to skate low over the ground at 18 m/s for about 20 seconds, cooling on the ground. Quiet and dim on scans, and they work indoors. Top out at 10 m.")
 	_rig_tier("boots_thruster_mk2", "Mk2 Thruster Boots", Rarity.RARE, 1300, "boots_thruster", 2,
-			"One more charge and a faster refill. Still top out at 10 m.")
+			"One more charge, a faster refill and a longer skate. Still top out at 10 m.")
 	_rig_tier("boots_thruster_mk3", "Mk3 Thruster Boots", Rarity.EPIC, 2200, "boots_thruster", 3,
-			"Two more charges than the Mk1 and the fastest refill. Still top out at 10 m.")
+			"Two more charges than the Mk1, the fastest refill and the longest skate. Still top out at 10 m.")
 	register("wings_glide", "Mk1 Glide Wings", Rarity.RARE, 1000, ["flight_rig"], WINGS_MK1.duplicate(),
 			"Distance and speed. Launch, then glide at 22 m/s and dive at 30, or hold Shift to soar level and climb slowly, for about a minute of glide stamina that refills on the ground, with two boosts a flight. The fastest across the map, but no hover, poor aim, sidearm only while spread, and they cannot open indoors.")
 	_rig_tier("wings_glide_mk2", "Mk2 Glide Wings", Rarity.RARE, 1400, "wings_glide", 2,
@@ -786,7 +786,8 @@ const JETPACK_MK1 := {
 
 ## Thruster boots: ground agility and stealth. No heat: 4 charges pay for
 ## kicks (up to a 10 m ceiling) and 14 m/s air dashes, one back every
-## 1.5 s. A 1.5 s skim per jump, and a free 18 m/s skate on held Shift. 15% faster on foot, no fall damage, a
+## 1.5 s. A 1.5 s skim per jump, and an 18 m/s skate on held Shift for about
+## 20 s of heat (`skate_heat`), cooled on the ground in 4 s. 15% faster on foot, no fall damage, a
 ## 0.2 s graze window on every dash, steady aim mid-dash, full use indoors,
 ## seen only 30 m away on scans and thermal.
 const BOOTS_MK1 := {
@@ -795,7 +796,7 @@ const BOOTS_MK1 := {
 	"skim_mid_heat": 0.0, "skim_high_heat": 0.0, "air_dash_speed": 14.0, "air_dash_time": 0.3,
 	"air_dash_heat": 0.0, "air_dash_cooldown": 0.25, "ground_speed_mult": 1.15, "flight_aim": 0.0,
 	"fall_damage_mult": 0.0, "graze_window": 0.2, "scan_range": 30.0, "indoor_mult": 1.0,
-	"ceiling": 10.0, "gust_mult": 0.25, "skate_speed": 18.0, "wall_kick": 9.0, "wall_kick_push": 7.0,
+	"ceiling": 10.0, "gust_mult": 0.25, "skate_speed": 18.0, "skate_heat": 5.0, "wall_kick": 9.0, "wall_kick_push": 7.0,
 	"noise_range": 12.0, "tier": 1, "weight": 2.0,
 }
 
@@ -825,6 +826,6 @@ const WINGS_MK1 := {
 ## a Mk3's boost keeps pace with one for a moment.
 const RIG_STRENGTH := {
 	"jetpack_mk1": ["-heat_per_sec", "cool_per_sec", "coast_cool", "ceiling"],
-	"boots_thruster": ["max_charges", "-charge_time"],
+	"boots_thruster": ["max_charges", "-charge_time", "-skate_heat"],
 	"wings_glide": ["glide_boost", "-glide_heat"],
 }

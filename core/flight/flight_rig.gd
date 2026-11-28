@@ -134,7 +134,9 @@ var load_heat := 1.0
 ## sinking up to `glide_dive_fall`, gaining `glide_dive_accel` m/s²), and
 ## looking up trades speed for height until you are down to the stall speed
 ## (`glide_stall` of `glide_speed`); each meter climbed costs speed
-## (`glide_climb_cost`, a little more than the dive gave).
+## (`glide_climb_cost`: about gravity's own, so a swoop gives back the
+## height a dive spent, and the speed a boost bought, but never more;
+## Caleb's call, so the wings climb out of a dive and a boost).
 ## Below glide speed you only pick speed back up slowly (`glide_recover`).
 var glide_turn_rate := 1.6
 var glide_dive_gain := 0.6
@@ -142,7 +144,11 @@ var glide_dive_fall := 10.0
 var glide_dive_accel := 5.0
 var glide_drag := 2.0
 var glide_stall := 0.6
-var glide_climb_cost := 15.0
+var glide_climb_cost := 10.0
+## A pull-up rising faster than would carry it to the glide's high point
+## (`Actor._glide_high`) is slowed at this many g, so a swoop never tops
+## where its dive began.
+var glide_climb_over := 3.0
 var glide_recover := 6.0
 var glide_lift_accel := 36.0
 ## How hard the wings catch a fall or a dive back to the glide's own sink, in
@@ -199,10 +205,14 @@ var skim_probe := 30.0
 ## its own sustained forward flight). A jetpack's is its boost
 ## (`boost_speed`, `boost_heat_mult`). Boots skate: held sprint within
 ## `skate_reach` meters of a surface flies you `skate_height` over it at
-## `skate_speed`, carving after the view at `skate_turn_rate`, for nothing
+## `skate_speed`, carving after the view at `skate_turn_rate`, building
+## `skate_heat` a second (Caleb's call: every rig has a fair limit, so a
+## Mk1 skates about 20 s from cold and then drops off it, overheated, until
+## the heat is back under `recover_heat`; it cools on the ground)
 ## (a kick hops you off it and you skate again once you are back down in
 ## reach). 0 speed: no skate.
 var skate_speed := 0.0
+var skate_heat := 0.0
 var skate_accel := 14.0
 var skate_height := 1.6
 var skate_reach := 4.0
@@ -335,6 +345,14 @@ func tick(wants_thrust: bool, delta: float, heat_mult := 1.0) -> float:
 			is_boosting = false
 		return thrust_accel
 	_since_thrust += delta
+	if is_skating and skate_heat > 0.0:
+		_since_thrust = 0.0
+		heat += _heat(skate_heat * delta)
+		if heat >= max_heat:
+			heat = max_heat
+			overheated = true
+			is_skating = false
+		return 0.0
 	if is_gliding and not in_updraft and (glide_cool > 0.0 or glide_heat > 0.0):
 		heat = maxf(0.0, heat + (_heat(glide_heat) - glide_cool) * delta)
 		if heat >= max_heat:

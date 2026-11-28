@@ -2808,7 +2808,7 @@ measures them.
 | Climb | 8 m/s | kicks (about 6 m/s on average) | none of their own |
 | Max height | 40 m | 10 m | their launch height |
 | Hover | 8 s | 1.5 s skim per jump | none |
-| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, cruise 0.18x (about 45 s, 720 m a bar) | 4 charges for kicks and dashes; the skate is free | about 62 s of glide stamina (gliding or soaring) |
+| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, cruise 0.18x (about 45 s, 720 m a bar) | 4 charges for kicks and dashes; the skate runs on heat, about 20 s from cold, cooled on the ground in 4 s (Caleb's call: every rig has a fair limit) | about 62 s of glide stamina (gliding or soaring) |
 | Recharge | 4 s on the ground (coasting cools too) | 1 charge per 1.5 s, anywhere | 5 s, on the ground only |
 | Cross Ashfront (550 m) | about 36 s cruising (measured 35) | about 32 s skating (measured 31) | about 25 s from a 30 m perch (measured 26) |
 | Air aim spread | +10% with the jets lit | +0% mid-dash or skimming low | +50% gliding |
@@ -2842,8 +2842,10 @@ Each rig flies with a character of its own, seen, heard and felt:
   wings sweep back and the arms tuck, the tips bend up in a hard turn, a
   stall shudders them, and the wingtips stream vapor when fast or pulling
   hard. Pulled up out of a dive, the speed past 22 m/s buys height back (a
-  swoop): a 30 m/s dive pulls back up about 20 m, never above where the
-  dive began, so the jetpack still owns height. A rush of air heard 30 m
+  swoop): a dive gives back all the height it spent (Caleb's call; a dive
+  from 35 m to 12 m swoops back to 35 m), never above where it began, and a
+  boost's speed swooped climbs a few metres above where the boost was
+  fired, so the jetpack still owns height. A rush of air heard 30 m
   away.
 
 On every rig the flyer leads and the rig answers (Caleb's ask): the
@@ -2898,7 +2900,7 @@ Strengths and weaknesses:
   is the slowest cruise of the three.
 - **Boots:** the fastest on foot, the only rig with a dodge, quiet, and they
   work anywhere, the Foundry's buildings included; their skate cruises low
-  for as long as you like. But they top out at 10 m, so jetpacks shoot down
+  for about 20 s on a bar of heat, then drops you until it cools. But they top out at 10 m, so jetpacks shoot down
   at them and wings outrun them.
 - **Wings:** the fastest across the map, great for flanking and escaping.
   But they cannot hover, they climb only slowly in a soar, aim is poor in

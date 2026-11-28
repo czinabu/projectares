@@ -37,8 +37,10 @@ date in the same PR.
   (Caleb's call, DESIGN.md "Cruising"): the jetpack's boost is its cruise;
   boots skate (`Actor._wants_skate`, `_skate_velocity`,
   `_simulate_skate`, `FlightRig.is_skating`: `skate_height` over whatever
-  the ray finds below, within `skate_reach`, at `skate_speed`, for
-  nothing; a skate that touches down lifts straight off again, back brakes
+  the ray finds below, within `skate_reach`, at `skate_speed`, building
+  `skate_heat` a second (about 20 s on a Mk1, Caleb's call that every rig
+  has a fair limit; overheated, the skate drops you until the heat is back
+  under `recover_heat`, and it cools on the ground); a skate that touches down lifts straight off again, back brakes
   out); wings soar (`FlightRig.is_soaring`, `soar_accel`, `soar_climb`:
   held sprint keeps a glide going with jump let go, level at glide speed,
   on glide stamina). All three are read from the command, so clients
@@ -68,7 +70,7 @@ date in the same PR.
   `sprint_out_time` as out of a sprint, and free look (E) holds the boost's
   heading (`_boost_yaw`) like the wings'; it is loud and clumsy under a roof;
   the boots are ground agility and stealth: no heat, `max_charges` pay for
-  kicks and dashes, a short skim (`skim_time`), a free skate, faster on foot
+  kicks and dashes, a short skim (`skim_time`), a skate on heat, faster on foot
   (`ground_speed_mult`), no fall damage, a graze window on every dash
   (`Actor.graze_left`, checked in `Actor.modify_incoming`), but a 10 m
   ceiling; the wings are distance and speed: a launch, a fast glide on glide
@@ -149,8 +151,12 @@ date in the same PR.
   heavy gunship, the boots a skater and free-runner, the wings a bird of
   prey. Gameplay, simulated from the command like the rest: a wing swoop
   (`Actor._glide_velocity`: pulled up with speed past the glide's, the
-  climb pays only `glide_climb_cost`, no drag on top, so a 30 m/s dive
-  pulls back up about 20 m and never above where the dive began; at the
+  climb pays only `glide_climb_cost` (10, about gravity's own: Caleb's
+  call for more height), no drag on top, so a dive gives back all the
+  height it spent, and never more: a pull-up rises no faster than would
+  carry it to `Actor._glide_high` (where the glide last flew at its own
+  speed, raised by what a boost bought) and is slowed past it at
+  `glide_climb_over` g; at the
   glide's speed a pull-up bleeds speed as before), and the boots' wall kick
   (`Actor._wall_kick`, `wall_beside`, `FlightRig.wall_kick` and
   `wall_kick_push`: jump in the air beside a wall kicks up and away from

@@ -393,6 +393,11 @@ var _glide_launch := true
 ## Wings: the first spread since leaving the ground has not happened yet, so
 ## the launch carries the glide all the way to cruise (see `_glide_velocity`).
 var _first_spread := true
+## Where a swoop may climb back to: the height the glide last flew at its
+## own speed (where a dive began), raised by what a boost bought. A pull-up
+## climbs on its speed up to it and is slowed past it (`glide_climb_over`),
+## so a swoop gives back the height a dive spent and never more.
+var _glide_high := -INF
 ## Boots: whether this time in the air has had its wall kick (`_wall_kick`).
 var _wall_kicked := false
 ## How far past the body's edge a wall still takes a boots' wall kick.
@@ -758,6 +763,7 @@ func _simulate_movement(delta: float) -> void:
 	_was_skating = flight.is_skating
 	flight.is_skimming = flight.skim_ready() and cmd.jump and not on_floor and not staggered and not flight.is_skating
 	if not flight.is_gliding:
+		_glide_high = -INF
 		if not _glide_launch:
 			_first_spread = false
 		_bank = 0.0
@@ -869,6 +875,13 @@ func _simulate_movement(delta: float) -> void:
 				if flight.is_soaring:
 					lift = minf(lift, flight.soar_climb)
 				caught = maxf(caught, minf(lift, velocity.y + (gravity + flight.glide_lift_accel) * delta))
+			if caught > 0.0 and not flight.is_soaring and _glide_high > -INF:
+				# A pull-up rises no faster than would carry it just up to the
+				# glide's high point: a swoop gives back what the dive spent
+				# (and a boost bought), never more.
+				var rise := sqrt(2.0 * gravity * maxf(_glide_high - global_position.y, 0.0))
+				if caught > rise:
+					caught = move_toward(caught, rise, gravity * flight.glide_climb_over * delta)
 			velocity.y = caught
 	_take_gusts(on_floor, delta)
 	velocity.y = maxf(velocity.y, -max_fall_speed)
@@ -1000,7 +1013,7 @@ func _simulate_hover(delta: float) -> void:
 ## in the air, or on from a skate that touched down, within `skate_reach`
 ## of a surface. Back held brakes out of it.
 func _wants_skate(on_floor: bool, staggered: bool) -> bool:
-	if not flight.can_skate() or staggered or not cmd.sprint or cmd.move.y < -0.1:
+	if not flight.can_skate() or flight.overheated or staggered or not cmd.sprint or cmd.move.y < -0.1:
 		return false
 	if on_floor and not _was_skating:
 		return false
@@ -1212,6 +1225,14 @@ func _air_dash(wish: Vector3, yaw_basis: Basis, on_floor: bool, staggered: bool,
 			return Vector3.ZERO
 		_air_dash_cd = flight.air_dash_time + flight.air_dash_cooldown
 		air_dash_side = 0.0
+		if boost != 0:
+			# What a boost buys may be climbed on: the high point a swoop
+			# rises to goes up by the height its push is worth.
+			var push := flight.glide_boost_climb if boost < 0 else flight.glide_boost
+			var flat := Vector2(velocity.x, velocity.z).length()
+			var worth := push * push / (2.0 * gravity) if boost < 0 \
+					else ((flat + push) * (flat + push) - flat * flat) / (2.0 * maxf(flight.glide_climb_cost, 1.0))
+			_glide_high = maxf(_glide_high, global_position.y) + worth
 		if boost < 0:
 			# Wings pulled up (back held): the boost climbs instead of going
 			# backwards (Caleb's call), keeping the airspeed like a pulse.
@@ -1340,6 +1361,7 @@ func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delt
 		if air_speed < cruise:
 			air_speed = move_toward(air_speed, cruise, flight.glide_recover * delta)
 	else:
+		var under_high := global_position.y < _glide_high
 		if velocity.y > 0.0:
 			# Height is paid for in speed.
 			air_speed -= flight.glide_climb_cost * velocity.y / maxf(air_speed, 1.0) * delta
@@ -1350,7 +1372,13 @@ func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delt
 		# pays for its height in the climb's cost alone, not in drag on top
 		# (Caleb's call, the style pass); at the glide's speed or under, a
 		# pull-up bleeds speed as before.
-		var swooping := pull > 0.0 and velocity.y > 0.0 and air_speed > cruise and not flight.is_soaring
+		var swooping := pull > 0.0 and velocity.y > 0.0 and air_speed > cruise and not flight.is_soaring \
+				and under_high
+		if not swooping and velocity.y <= 0.0 and air_speed <= cruise + 0.5:
+			# Gliding along at its own speed: the high point a later swoop
+			# may climb back to is where it is now (a glide's slow sink is
+			# never bought back).
+			_glide_high = global_position.y
 		if air_speed > hold and not swooping:
 			air_speed = move_toward(air_speed, hold, flight.glide_drag * delta)
 		elif pull <= 0.0:
