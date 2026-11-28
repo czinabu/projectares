@@ -28,9 +28,10 @@ and add a row for each new source.
 | `assets/textures` | Asphalt021, Bricks066, Concrete012, Grass007, Ground031, Ground037, Ground079L, Ground098, Ground110, Ice001, Metal063, Road001, MetalPlates015A, Rock051, Rock060, Snow008A, Snow008C (Color and NormalGL only, resized to 1K) | ambientCG | CC0 1.0 | https://ambientcg.com |
 | `assets/sky` | kloppenheim_06_puresky (2K HDRI) | Poly Haven | CC0 1.0 | https://polyhaven.com/a/kloppenheim_06_puresky |
 | `assets/sky` | qwantani_dusk_1_puresky (2K HDRI, the Concourse's dusk) | Poly Haven | CC0 1.0 | https://polyhaven.com/a/qwantani_dusk_1_puresky |
+| `assets/fonts` | Oxanium (variable, the title screen and splash), license in `assets/fonts/OFL-Oxanium.txt` | Severin Meyer | SIL OFL 1.1 | https://github.com/google/fonts/tree/main/ofl/oxanium |
 | `assets/fonts` | Rajdhani SemiBold | Indian Type Foundry | SIL OFL 1.1, see `assets/fonts/OFL.txt` | https://github.com/google/fonts/tree/main/ofl/rajdhani |
 
-`assets/branding` (the placeholder logo: `icon.png`, `icon.ico`, `splash.png`) was made for this project by `assets/branding/make_logo.py` and is CC0; the splash sets its name in Rajdhani.
+`assets/branding` (the placeholder logo: `icon.png`, `icon.ico`, `splash.png`) was made for this project by `assets/branding/make_logo.py` and is CC0; the splash sets its name in Oxanium.
 
 ## Sounds
 

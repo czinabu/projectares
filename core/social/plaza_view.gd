@@ -37,6 +37,10 @@ var tour_closed: Array = []
 var heat_sign_height := 10.25
 ## How long, in seconds, a pulse takes to run up a gate's panels.
 var gate_pulse_time := 1.4
+## Seconds you stand in an open world gate before it takes you through
+## (Caleb's ask: walk in like a teleporter, with a moment to step back out).
+## [F] still goes at once.
+var gate_walk_in_time := 1.2
 ## How often, in seconds, the gates look for someone stepping in.
 var gate_check_every := 0.2
 ## The gear of the player you look at, floating over them.
@@ -58,6 +62,13 @@ var _lit_portal: Node3D = null
 var _gate_counts := {}
 var _gate_pulses := {}
 var _gate_check_left := 0.0
+## The world gate you are counting down in, how long is left, and the gate
+## that already took you (it never fires again until you step out).
+var _walk_in_portal: Node3D = null
+var _walk_in_left := 0.0
+var _walk_in_done: Node3D = null
+## The countdown on the gate's face while you stand in it.
+var _walk_in_sign: Label3D
 
 
 func setup(p_raid: Raid, p_routes := {}, p_status := {}) -> void:
@@ -212,12 +223,22 @@ func _process(delta: float) -> void:
 	_prompt.text = prompt_for(portal, routes, tour_closed)
 	_light_arch(portal)
 	_tick_gates(delta)
-	if portal != null and Input.is_action_just_pressed("interact"):
+	var walked := step_walk_in(portal, delta)
+	_show_walk_in(portal)
+	if walked != "":
+		_prompt.text = ""
+		portal_used.emit(walked)
+	elif _walk_in_portal != null:
+		_prompt.text = "Deploying to %s...  step back to stay  ·  [F] go now" % \
+				str(portal.get_meta("label", "")).trim_prefix("Deploy to ")
+	if portal != null and walked == "" and Input.is_action_just_pressed("interact"):
 		var destination: String = portal.get_meta("destination", "")
 		if destination.begins_with("talk:"):
 			_talk(destination.trim_prefix("talk:"))
 		elif is_open(destination, routes):
 			_greet(portal)
+			_walk_in_portal = null
+			_walk_in_done = portal
 			portal_used.emit(destination)
 		else:
 			show_notice("That world is not running on this server.")
@@ -227,6 +248,64 @@ func _process(delta: float) -> void:
 	if target != null:
 		tag.text = gear_tag(target)
 		tag.global_position = target.global_position + Vector3(0, 2.35, 0)
+
+
+## Walking into an open world gate takes you through after
+## `gate_walk_in_time` seconds; stepping out first cancels it. Returns the
+## destination on the step it fires, otherwise "". A gate to a world this
+## server lacks, or one the tour keeps closed (`tour_closed`), never
+## counts down, and a gate that already fired waits for you to step out.
+func step_walk_in(portal: Node3D, delta: float) -> String:
+	var destination := str(portal.get_meta("destination", "")) if portal != null else ""
+	var walkable := destination.begins_with("world:") and is_open(destination, routes) \
+			and not destination.trim_prefix("world:") in tour_closed
+	if portal != _walk_in_done:
+		_walk_in_done = null
+	if not walkable or portal == _walk_in_done:
+		_walk_in_portal = null
+		return ""
+	if portal != _walk_in_portal:
+		_walk_in_portal = portal
+		_walk_in_left = gate_walk_in_time
+	_walk_in_left -= delta
+	if _walk_in_left > 0.0:
+		return ""
+	_walk_in_portal = null
+	_walk_in_done = portal
+	return destination
+
+
+## How far the walk-in countdown has run, 0 to 1, or -1 for none.
+func walk_in_progress() -> float:
+	if _walk_in_portal == null or gate_walk_in_time <= 0.0:
+		return -1.0
+	return clampf(1.0 - _walk_in_left / gate_walk_in_time, 0.0, 1.0)
+
+
+## The countdown on the gate's face, under its live line, and the gate's
+## glimpse brightening as it runs. Only where `Look` draws.
+func _show_walk_in(portal: Node3D) -> void:
+	if not Look.enabled:
+		return
+	if _walk_in_sign == null:
+		_walk_in_sign = Label3D.new()
+		_walk_in_sign.name = "WalkIn"
+		_walk_in_sign.font_size = 64
+		_walk_in_sign.pixel_size = 0.01
+		_walk_in_sign.outline_size = 20
+		_walk_in_sign.top_level = true
+		add_child(_walk_in_sign)
+	var progress := walk_in_progress()
+	_walk_in_sign.visible = progress >= 0.0
+	if progress < 0.0 or portal == null:
+		return
+	_walk_in_sign.global_transform = Transform3D(portal.global_basis,
+			portal.global_position + portal.global_basis * Vector3(0, 3.6, -1.2))
+	_walk_in_sign.text = "DEPLOYING  %.1f" % maxf(_walk_in_left, 0.0)
+	_walk_in_sign.modulate = Color(1.0, 1.0, 1.0).lerp(Color(1.0, 0.85, 0.4), progress)
+	var glimpse := portal.get_node_or_null("Glimpse") as GeometryInstance3D
+	if glimpse != null:
+		glimpse.set_instance_shader_parameter("lit", 1.0 + progress * 0.8)
 
 
 ## Talks to someone of the place: their line goes up over their head.
