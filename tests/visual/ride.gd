@@ -78,6 +78,7 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 		player.active_weapon_index = rows[row][0]
 		player._refresh_weapon_visuals()
 		bike.set_physics_process(rows[row][1] == 0.0)
+		bike.set_process(rows[row][1] == 0.0)
 		bike.lean = rows[row][1]
 		bike.get_node("Model").rotation = Vector3(0.0, 0.0, -bike.lean)
 		await v._settle(60)
@@ -102,6 +103,7 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 	player.active_weapon_index = -1
 	player._refresh_weapon_visuals()
 	bike.set_physics_process(true)
+	bike.set_process(true)
 	await v._settle(40)
 	var close := [[(-bike.global_basis.x * 2.4 + Vector3(0, 0.2, 0)) * frame_out, "ride_close_side.png"],
 		[(-bike.global_basis.z * 1.6 + bike.global_basis.x * 0.9 + Vector3(0, 1.0, 0)) * frame_out, "ride_close_front.png"]]
