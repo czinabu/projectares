@@ -10,6 +10,7 @@ extends RefCounted
 ## already saves it.)
 
 const SAVE_PATH := "user://settings.json"
+const SafeFile := preload("res://core/account/safe_file.gd")
 const SENSITIVITY_RANGE := Vector2(0.0005, 0.006)
 const FOV_RANGE := Vector2(60.0, 110.0)
 ## How far behind the character the third-person camera sits, in meters.
@@ -748,17 +749,15 @@ static func ink_shown() -> bool:
 static func save() -> void:
 	if not persist:
 		return
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if file == null:
+	# Whole or not at all, so a crash mid-save keeps the old settings.
+	if not SafeFile.write(SAVE_PATH, JSON.stringify(to_dict(), "\t")):
 		push_warning("GameSettings: could not write %s" % SAVE_PATH)
-		return
-	file.store_string(JSON.stringify(to_dict(), "\t"))
 
 
 static func load_settings() -> void:
-	if not persist or not FileAccess.file_exists(SAVE_PATH):
+	if not persist or not SafeFile.exists(SAVE_PATH):
 		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	var data: Variant = SafeFile.read_json(SAVE_PATH)
 	if typeof(data) != TYPE_DICTIONARY:
 		push_warning("GameSettings: %s is unreadable, using defaults" % SAVE_PATH)
 		return
