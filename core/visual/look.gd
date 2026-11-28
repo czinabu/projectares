@@ -1935,6 +1935,16 @@ func trim(kind: String) -> Material:
 
 
 ## A small light with no shadow, for lamps and fires.
+## The passage through a gate shown between places (`GateLook.transit`), and
+## pointing it at a destination's planet (`GateLook.aim_transit`).
+func gate_transit() -> ShaderMaterial:
+	return GateLook.transit()
+
+
+func aim_gate_transit(mat: ShaderMaterial, type: PlanetType) -> void:
+	GateLook.aim_transit(mat, type)
+
+
 ## A deploy gate's glimpse of the world it leads to, from that world's
 ## planet (`GateLook.window`): a sheet `size` metres facing +Z.
 func gate_window(type: PlanetType, size: Vector2, rim: Color, seed := 0.0) -> MeshInstance3D:

@@ -185,10 +185,16 @@ date in the same PR.
   them and refuses a full world there, by name. A world whose ground is
   slow to work out offers `WorldDef.prepare_map`, run on a worker thread:
   it may only compute plain data kept under a lock (heights, collision),
-  never touch the scene tree. The view goes dark at once and fades in
-  when the world stands (`Main._fade_travel`, the one cover allowed over
-  the view); the travel screen's text is only for a trip slower than
-  `travel_quiet`.
+  never touch the scene tree. Between places the view is the passage
+  through a gate (`Main._fade_travel`, `GateLook.transit`, the one cover
+  allowed over the view), never a dark or flat screen: from the first
+  frame a tunnel of light in the destination's gate colour streams past
+  with a window onto its planet at the far end (`_show_travel` is given
+  the world; with none, as on the way home, it is the plain gate colour),
+  and when the place stands the window opens to fill the view while the
+  world fades in behind it over `arrival_fade`, paced on drawn frames so
+  a long last frame cannot skip it. One small line at the foot of the view
+  says what a trip slower than `travel_quiet` waits for.
 - A sign-out through a portal to another place (`Portal.goes_on`) settles
   like any sign-out first: the server sends `run_finished` only after
   `stash.settle`, so the gear is home before the game goes on.

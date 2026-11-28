@@ -13,6 +13,7 @@ extends RefCounted
 const WINDOW_SHADER := preload("res://assets/shaders/gate_window.gdshader")
 const METER_SHADER := preload("res://assets/shaders/gate_meter.gdshader")
 const CREST_SHADER := preload("res://assets/shaders/gate_crest.gdshader")
+const TRANSIT_SHADER := preload("res://assets/shaders/gate_transit.gdshader")
 ## The gates' own orange, for a world with no planet.
 const DEFAULT_COLOR := Color(1.0, 0.6, 0.3)
 ## Each storm's colour on a gate: ice for snow, gold for sand, green for a
@@ -167,6 +168,33 @@ static func trim(strip: MeshInstance3D, color: Color, height: float) -> void:
 		_meter_mats[key] = mat
 	strip.material_override = mat
 	strip.set_instance_shader_parameter("filled", 1.0)
+
+
+## The passage through a gate (`gate_transit.gdshader`), for the full-view
+## rect shown between places. `aim_transit` points it at a destination.
+static func transit() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = TRANSIT_SHADER
+	aim_transit(mat, null)
+	return mat
+
+
+## Points the passage at a world on planet `type` (null: no world, as on the
+## way home): the tunnel takes the world's gate colour and the far window its
+## sky, rock and ground. The same colours as its gate on the terrace.
+static func aim_transit(mat: ShaderMaterial, type: PlanetType) -> void:
+	mat.set_shader_parameter("tint", world_color(type))
+	mat.set_shader_parameter("seed", float(hash(type.id if type != null else "")) / 4294967296.0 * 10.0)
+	if type == null:
+		mat.set_shader_parameter("zenith", Color(0.12, 0.16, 0.26))
+		mat.set_shader_parameter("horizon", Color(0.55, 0.5, 0.45))
+		mat.set_shader_parameter("rock", Color(0.2, 0.2, 0.22))
+		mat.set_shader_parameter("ground", Color(0.28, 0.27, 0.26))
+		mat.set_shader_parameter("glow_amount", 0.0)
+		return
+	var params := window_params(type)
+	for key: String in ["zenith", "horizon", "rock", "ground", "glow", "glow_amount"]:
+		mat.set_shader_parameter(key, params[key])
 
 
 static func _sheet(size: Vector2, mat: Material, name: String) -> MeshInstance3D:
