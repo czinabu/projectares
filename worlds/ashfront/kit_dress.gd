@@ -53,7 +53,7 @@ static func forge(kit: KitMesh, base: Vector3, tiers: Array, tower: Vector2, mou
 				for sz: float in [-1.0, 1.0]:
 					var post := 0.5
 					var at := base + Vector3(sx * (half - post * 0.5 + 0.2), y, sz * (half - post * 0.5 + 0.2))
-					kit.add("Column_Dark", Transform3D(Basis.IDENTITY.scaled(Vector3(post, height / 5.0, post)), at), {"plate": "dark"})
+					kit.add("Column_Dark", Transform3D(Basis.IDENTITY.scaled(Vector3(post, height / 5.0, post)), at), {"t1": "dark"})
 		y += height
 	# The corner towers wrapped in pipe-bundle columns, three high.
 	var plinth: Vector2 = tiers[0]

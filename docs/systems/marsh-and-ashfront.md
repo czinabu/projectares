@@ -140,7 +140,11 @@ date in the same PR.
   The field's greybox landmarks are clad in the same kit
   (`worlds/ashfront/kit_dress.gd`, called from the map's dressing): the
   map's plain boxes stay the collision, and the kit pieces are laid over
-  their faces, merged into one `KitMesh` node a landmark. A piece may
+  their faces, merged into one `KitMesh` node a landmark. Kit pieces keep
+  their UVs and wear the kit's own trim sheets (`Look.kit_trim`,
+  `KitMesh.trims`, the "t1" to "t3" keys), tinted per landmark; plain
+  boxes in the same mesh use `Look.surface`. The rim fort carries
+  `walk_through` (it stands past the edge walls). A piece may
   stand out from the box under it by at most `SKIN` (0.3 m, inside the
   collision check's own skin), so nothing you can see is a ghost: wall
   panels only from `FLAT_PANELS`, posts set into the corners, and

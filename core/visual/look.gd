@@ -1796,6 +1796,32 @@ func interior(parent: Node3D, ambient: Color, energy: float) -> void:
 ## "beam" (a searchlight), "lance" (an orbital strike's column), "distant" (skyline silhouettes), "distant_lit" (the same with lit windows and burning floors) and
 ## "horizon_glow" (fires past the rim, on a ring). Cached, so every piece
 ## shares one material.
+## A kit trim sheet (`assets/props/megakit/textures`, the Megakit's own
+## panel textures) as a material for `KitMesh` surfaces, which keep the
+## kit's UVs: `sheet` is "01", "02" or "03", `tint` darkens and warms the
+## kit's clean grey to suit a world. Plain colour where Look is off.
+func kit_trim(sheet: String, tint: Color, rough := 0.75, metal := 0.45) -> Material:
+	var key := "kit_trim:%s:%s:%s:%s" % [sheet, tint, rough, metal]
+	if _materials.has(key):
+		return _materials[key]
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = tint
+	if enabled:
+		var dir := "res://assets/props/megakit/textures/T_Trim_%s_" % sheet
+		mat.albedo_texture = load(dir + "BaseColor.png") as Texture2D
+		var bumps := load(dir + "Normal.png") as Texture2D
+		if bumps != null:
+			mat.normal_enabled = true
+			mat.normal_texture = bumps
+		mat.roughness = rough
+		mat.metallic = metal
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	else:
+		mat.albedo_color = tint * 0.5
+	_materials[key] = mat
+	return mat
+
+
 func trim(kind: String) -> Material:
 	var key := "trim:" + kind
 	if _materials.has(key):

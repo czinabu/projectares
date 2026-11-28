@@ -266,6 +266,11 @@ var terrain: Terrain
 var _rng := RandomNumberGenerator.new()
 ## Dressing has its own generator so art never shifts the gameplay layout.
 var _art_rng := RandomNumberGenerator.new()
+## Kit trim keys swapped for their rusted set, for a rusty box.
+const RUSTED := {"t1": "t1_rust", "t2": "t2_rust", "t3": "t3_rust"}
+## The crashed carrier's hull, fin and wing boxes (`_boxes_since`), for the
+## dressing to plate.
+var _carrier_boxes := []
 var _noise := FastNoiseLite.new()
 ## Flat ground: { at: Vector2, radius, height }.
 var _pads: Array[Dictionary] = []
@@ -939,6 +944,7 @@ func _build_breach(at: Vector2) -> void:
 ## The broken hull of something that fell out of the sky. Its upper decks
 ## count as rooftops.
 func _build_carrier(at: Vector2) -> void:
+	var first := nav_region.get_child_count()
 	var yaw := 0.5
 	var along := Vector2(sin(yaw), cos(yaw))
 	for i in 3:
@@ -958,6 +964,7 @@ func _build_carrier(at: Vector2) -> void:
 	# A wing, torn off and dug into the ground: a ramp onto the hull.
 	var wing := _box(Vector3(7.0, 0.6, 20.0), _ground(at - along.orthogonal() * 30.0) + Vector3(0, 2.6, 0), HULL_RUST)
 	wing.rotation = Vector3(0.28, yaw + PI * 0.5, 0.0)
+	_carrier_boxes = _boxes_since(first)
 	_add_marker("spawn_cache", _open(at + along.orthogonal() * 12.0))
 	_add_cover(_ground(at + along.orthogonal() * 14.0 + along * 6.0))
 
@@ -2165,11 +2172,10 @@ func _dress_forge(art: Node3D) -> void:
 	var clad_rng := RandomNumberGenerator.new()
 	clad_rng.seed = LAYOUT_SEED + 23
 	KIT_DRESS.forge(kit, base, FORGE_TIERS, FORGE_TOWER, FORGE_MOUTH, clad_rng)
-	art.add_child(kit.node("ForgeClad", {
-		"plate": Look.surface("metal", {"tint": Color(0.9, 0.8, 0.7), "grime": 1.0, "scale": 0.08}),
-		"dark": Look.surface("metal", {"tint": Color(0.46, 0.42, 0.39), "grime": 1.0, "scale": 0.08}),
-		"glow": Look.trim("orange"),
-	}, ["plate", "dark", "glow"]))
+	var forge_looks := KitMesh.trims(Color(0.66, 0.58, 0.52))
+	forge_looks["dark"] = Look.surface("metal", {"tint": Color(0.46, 0.42, 0.39), "grime": 1.0, "scale": 0.08})
+	forge_looks["glow"] = Look.trim("orange")
+	art.add_child(kit.node("ForgeClad", forge_looks, ["t1", "t2", "t3", "dark", "glow"]))
 	art.add_child(_slab(Vector3(plinth.x + 0.64, 0.7, plinth.x + 0.64), base + Vector3(0, plinth.y - 1.6, 0), Look.trim("hazard")))
 	for k in 4:
 		var face := Vector3.FORWARD.rotated(Vector3.UP, k * PI * 0.5)
@@ -2334,14 +2340,17 @@ func _dress_wrecks(art: Node3D) -> void:
 			art.add_child(tank)
 			continue
 		for part: Array in boxes:
-			KIT_DRESS.clad_box(kit, part[1], part[0], clad_rng, KIT_DRESS.HULL_PANELS, [], {"plate": "rust"} if part[2] else {})
+			KIT_DRESS.clad_box(kit, part[1], part[0], clad_rng, KIT_DRESS.HULL_PANELS, [], RUSTED if part[2] else {})
+	# The carrier: its decks plated, and its broken hull's ports still lit
+	# by the fires inside.
+	for part: Array in _carrier_boxes:
+		KIT_DRESS.clad_box(kit, part[1], part[0], clad_rng, KIT_DRESS.HULL_PANELS, KIT_DRESS.FLAT_PANELS.slice(3), RUSTED if part[2] else {})
 	if not kit.is_empty():
-		art.add_child(kit.node("WreckClad", {
-			"plate": Look.surface("metal", {"tint": Color(0.7, 0.66, 0.62), "grime": 1.0, "scale": 0.1}),
-			"rust": Look.surface("metal", {"tint": Color(0.85, 0.5, 0.34), "grime": 1.0, "scale": 0.12}),
-			"dark": Look.surface("metal", {"tint": Color(0.3, 0.28, 0.27), "grime": 1.0, "scale": 0.1}),
-			"glow": Look.trim("orange"),
-		}, ["plate", "rust", "dark", "glow"]))
+		var looks := KitMesh.trims(Color(0.7, 0.64, 0.58))
+		looks.merge(KitMesh.trims(Color(0.82, 0.52, 0.36), "_rust"))
+		looks["dark"] = Look.surface("metal", {"tint": Color(0.3, 0.28, 0.27), "grime": 1.0, "scale": 0.1})
+		looks["glow"] = Look.trim("orange")
+		art.add_child(kit.node("WreckClad", looks))
 	var furrows: Array[PackedVector2Array] = []
 	for wreck in _wrecks:
 		if not wreck.has("kind"):
