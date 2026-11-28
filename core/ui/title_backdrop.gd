@@ -34,6 +34,10 @@ var jump_fov := 100.0
 ## The slow sway of the view as it drifts, so it never feels on rails.
 var sway_roll := 2.2
 var sway_period := 11.0
+## How far the camera drifts off the lane's middle (m) and how fast the glow
+## breathes: a slow pulse so the screen is never still.
+var drift := Vector2(0.9, 0.5)
+var pulse_period := 7.0
 
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const CYAN := Color(0.3, 0.85, 1.0)
@@ -79,9 +83,10 @@ func _process(delta: float) -> void:
 	var sway := sin(_time * TAU / sway_period)
 	camera.rotation = Vector3(deg_to_rad(0.6) * sin(_time * TAU / (sway_period * 1.7)), 0.0,
 			deg_to_rad(sway_roll) * sway * (1.0 - jump_amount))
+	camera.position = Vector3(sin(_time * TAU / 17.0) * drift.x, cos(_time * TAU / 13.0) * drift.y, 0.0) * (1.0 - jump_amount)
 	camera.fov = lerpf(fov, jump_fov, ease(jump_amount, 2.4))
 	if _env:
-		_env.glow_intensity = lerpf(0.7, 2.6, jump_amount)
+		_env.glow_intensity = lerpf(0.7 + 0.15 * sin(_time * TAU / pulse_period), 2.6, jump_amount)
 
 
 ## Moves the lane `distance` metres past the camera. Gates and streaks that
@@ -171,9 +176,10 @@ func _build_gate(index: int) -> Node3D:
 	sign.name = "Sign"
 	sign.font = load(UiTheme.FONT_PATH) as Font
 	sign.font_size = 96
-	sign.pixel_size = 0.012
+	# Small and dim: a name glimpsed as the lane passes, not a label to read.
+	sign.pixel_size = 0.007
 	sign.outline_size = 0
-	sign.modulate = Color(color.r * 1.6, color.g * 1.6, color.b * 1.6)
+	sign.modulate = Color(color.r * 0.9, color.g * 0.9, color.b * 0.9, 0.55)
 	sign.shaded = false
 	sign.position = Vector3(-w * 0.5 + 0.4, h * 0.5 - 1.0, 0)
 	sign.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT

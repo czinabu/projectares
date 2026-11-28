@@ -1,7 +1,7 @@
 class_name StartScreen
 extends Control
 ## The first thing you see when the game launches: the title and Start,
-## centred in the lower third under the lane between worlds (`TitleBackdrop`, built
+## centred in the lower third (Enter or Space also start) under the lane between worlds (`TitleBackdrop`, built
 ## by `core/start.gd`).
 ##
 ## `start_pressed` fires once, then `leave()` fades out while the lane jumps,
@@ -16,6 +16,8 @@ const BACKDROP_COLOR := Color(0.035, 0.03, 0.04)
 const INK := Color(0.94, 0.93, 0.9)
 const QUIET := Color(0.84, 0.86, 0.9)
 const FAINT := Color(0.72, 0.76, 0.84, 0.9)
+## The build number: small and dim, it is not what to look at.
+const DIM := Color(0.72, 0.76, 0.84, 0.4)
 ## Text on a lit (amber) button.
 const INK_DARK := Color(0.06, 0.05, 0.04)
 
@@ -33,11 +35,11 @@ var leave_time := 0.8
 ## What the screen fades to on Start, after `leave_delay` seconds.
 var leave_color := Color.BLACK
 var leave_delay := 0.0
-## Side and bottom margins of the corner text and the hint, in pixels.
+## Side and bottom margins of the corner text, in pixels.
 var margin := Vector2(96, 36)
 
 var start_button: Button
-## The bottom left corner's line: what the game's updater is doing
+## The bottom left corner's line, small and dim: what the game's updater is doing
 ## (`set_status`, from `core/start.gd`).
 var status_label: Label
 var _curtain: ColorRect
@@ -72,12 +74,12 @@ func _ready() -> void:
 		corner.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		add_child(corner)
 		_reveal.append(corner)
-	status_label = _label("", 16, FAINT, 3)
+	status_label = _label("", 12, DIM, 2)
 	status_label.anchor_top = 1.0
 	status_label.anchor_bottom = 1.0
 	status_label.offset_left = margin.x
 	status_label.offset_right = margin.x + 760
-	status_label.offset_top = -margin.y - 22
+	status_label.offset_top = -margin.y - 16
 	status_label.offset_bottom = -margin.y
 	add_child(status_label)
 	_reveal.append(status_label)
@@ -177,38 +179,6 @@ func _build_title_block() -> void:
 	start_button.pressed.connect(press_start)
 	box.add_child(start_button)
 	_reveal.append(start_button)
-	# How to start, along the bottom: "PRESS [SPACE] OR CLICK START".
-	var hint := HBoxContainer.new()
-	hint.anchor_left = 0.0
-	hint.anchor_right = 1.0
-	hint.anchor_top = 1.0
-	hint.anchor_bottom = 1.0
-	hint.offset_top = -margin.y - 34
-	hint.offset_bottom = -margin.y
-	hint.alignment = BoxContainer.ALIGNMENT_CENTER
-	hint.add_theme_constant_override("separation", 12)
-	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(hint)
-	_reveal.append(hint)
-	# Kept faint: it is a reminder, the button is what to look at.
-	hint.set_meta("faint", 0.45)
-	var press := _label("PRESS", 16, QUIET, 3)
-	press.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hint.add_child(press)
-	var key := PanelContainer.new()
-	var cap := _frame(Color(0.02, 0.025, 0.05, 0.6), QUIET, 1)
-	cap.content_margin_left = 12
-	cap.content_margin_right = 12
-	cap.content_margin_top = 3
-	cap.content_margin_bottom = 3
-	key.add_theme_stylebox_override("panel", cap)
-	key.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	key.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	key.add_child(_label("SPACE", 16, INK, 3))
-	hint.add_child(key)
-	var or_click := _label("OR CLICK START", 16, QUIET, 3)
-	or_click.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hint.add_child(or_click)
 
 
 ## The title block comes in once the scene is up: the black lifts, then the
