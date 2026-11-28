@@ -219,13 +219,19 @@ var _prepared := {}      # world id -> true once its ground was worked out ahead
 var ahead_range := 16.0
 var ahead_linger := 20.0
 var ahead_retry := 30.0
-## Seconds a trip stays dark before the travel screen says what is taking
-## so long, and how long the new place takes to fade in.
+## Seconds a trip runs before the passage says what is taking so long, and
+## how long the new place takes to open out of it.
 var travel_quiet := 1.2
-var arrival_fade := 0.4
+var arrival_fade := 0.6
+## The passage through the gate (`GateLook.transit`) that fills the view
+## between places, the world it leads to, and the line saying what a slow
+## trip waits for.
 var _cover: ColorRect
+var _travel_to: WorldDef = null
+var _travel_text: Label
 var _travelling := false
-var _travel_began := 0
+## Seconds since the passage began (the trip, then the arrival).
+var _travel_time := 0.0
 ## Where the hand-off of your profile to a server you host waits for it.
 const HOST_PROFILE := "user://host_profile.json"
 ## The local player's last life, while they are down.
@@ -286,16 +292,34 @@ func _ready() -> void:
 	_travel.add_child(picture)
 	_travel.visible = false
 	add_child(_travel)
-	# The fade through a portal: dark the moment you step in, the new place
-	# fading in when you stand in it.
+	# The passage through a portal: the moment you step in, a tunnel of
+	# light in the colour of where you are going, its far end opening onto
+	# that place as you arrive.
 	var fade := CanvasLayer.new()
 	fade.name = "TravelFade"
 	fade.layer = 90
 	_cover = ColorRect.new()
+	_cover.name = "Passage"
 	_cover.color = Color(0.0, 0.0, 0.0, 0.0)
+	_cover.material = Look.gate_transit()
 	_cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_cover.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	fade.add_child(_cover)
+	_travel_text = Label.new()
+	_travel_text.name = "Status"
+	_travel_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_travel_text.add_theme_font_size_override("font_size", 18)
+	_travel_text.add_theme_constant_override("outline_size", 6)
+	_travel_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_travel_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_travel_text.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_travel_text.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_travel_text.offset_top = -72.0
+	_travel_text.offset_bottom = -44.0
+	_travel_text.visible = false
+	_cover.add_child(_travel_text)
+	hub.online_status_changed.connect(func(text: String) -> void:
+		_travel_text.text = text.to_upper())
 	add_child(fade)
 	hub.closed.connect(_on_station_closed)
 	hub.online_equip_requested.connect(func(slot: String, item_id: String) -> void:
@@ -356,23 +380,48 @@ func _process(delta: float) -> void:
 	_keep_mirror_view()
 
 
-## Between places the view goes dark at once and the next place fades in
-## (the fade through a portal). Only a trip that drags on shows the travel
-## screen, which says what it is waiting for.
+## Between places the view is the passage through the gate (never a dark
+## or flat screen): it streams past in the colour of where you are going,
+## and when the place stands its far end opens to fill the view while the
+## world fades in behind it. Only a trip that drags on says, in a small line
+## at the foot of the view, what it is waiting for.
 func _fade_travel(travelling: bool, delta: float) -> void:
 	if _cover == null:
 		return
+	var mat := _cover.material as ShaderMaterial
 	if travelling and not _travelling:
-		_travel_began = Time.get_ticks_msec()
+		_travel_time = 0.0
 		_cover.color.a = 1.0
+		if mat != null:
+			Look.aim_gate_transit(mat, _travel_to.planet_type() if _travel_to != null else null)
 	elif travelling:
-		if (Time.get_ticks_msec() - _travel_began) / 1000.0 > travel_quiet:
-			_cover.color.a = move_toward(_cover.color.a, 0.0, delta / 0.2)
+		_cover.color.a = 1.0
 	elif _travelling:
 		_cover.color.a = 1.0
 	else:
-		_cover.color.a = move_toward(_cover.color.a, 0.0, delta / maxf(arrival_fade, 0.01))
+		# A long frame (the new place's last pieces being built) must not
+		# skip the opening: it plays out over frames that are drawn.
+		_cover.color.a = move_toward(_cover.color.a, 0.0, minf(delta, 1.0 / 30.0) / maxf(arrival_fade, 0.01))
 	_travelling = travelling
+	# Out of the passage it is not drawn at all: no full-view shader in play.
+	_cover.visible = _cover.color.a > 0.0
+	_travel_time += delta
+	var since := _travel_time
+	_travel_text.visible = travelling and since > travel_quiet
+	if mat != null and _cover.color.a > 0.0:
+		mat.set_shader_parameter("t", since)
+		mat.set_shader_parameter("arrive", 0.0 if travelling else 1.0 - _cover.color.a)
+		var view := _cover.size
+		if view.y > 0.0:
+			mat.set_shader_parameter("aspect", view.x / view.y)
+
+
+## How far the passage has opened onto the new place: 0 while the trip runs,
+## 1 once the place stands and the passage is gone.
+func passage_open() -> float:
+	if _cover == null or _travelling:
+		return 0.0
+	return 1.0 - _cover.color.a
 
 
 func _notification(what: int) -> void:
@@ -605,7 +654,7 @@ func _outside_name() -> String:
 func head_out() -> void:
 	if raid != null or net != null or base == null or base.read_only:
 		return
-	_show_travel("Heading out to %s..." % _outside_name())
+	_show_travel("Heading out to %s..." % _outside_name(), Worlds.social_world())
 	_arrive_from = "home"
 	if Profile.home_server != "":
 		_door_fallback = true
@@ -790,8 +839,10 @@ func _on_station_closed() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-## Between places (connecting, travelling): no world, just the travel screen.
-func _show_travel(text: String) -> void:
+## Between places (connecting, travelling): no world, just the passage,
+## aimed at world `to` when the trip is to one (its colours), else plain.
+func _show_travel(text: String, to: WorldDef = null) -> void:
+	_travel_to = to
 	leave_base()
 	hub.set_online_status(text)
 	hub.show_travel()
@@ -1316,7 +1367,7 @@ func go_through_portal(destination: String) -> void:
 	else:
 		net.queue_free()
 		net = null
-	_show_travel("Travelling to %s..." % world.display_name)
+	_show_travel("Travelling to %s..." % world.display_name, world)
 	_begin_join(way[0], way[1], 3)
 
 
@@ -2856,7 +2907,7 @@ func use_portal(destination: String) -> void:
 		if _tour_refuses(world):
 			return
 		_leave_raid()
-		_show_travel("Travelling to %s..." % world.display_name)
+		_show_travel("Travelling to %s..." % world.display_name, world)
 		_gate_deploy = true
 		_begin_join(way[0], way[1], 3)
 	elif destination.begins_with("shop:"):
@@ -3307,14 +3358,14 @@ func _return_to_lobby(result: Dictionary) -> void:
 		else:
 			_gate_deploy = true
 			_portal_deploy = true
-			_show_travel("Travelling to %s..." % Portal.title_of(door))
+			_show_travel("Travelling to %s..." % Portal.title_of(door), Worlds.social_world() if door == Portal.PLAZA else Worlds.get_world(door))
 		_begin_join(onward[0], onward[1], 3)
 		return
 	# Back to the plaza if the server has one, else to the lobby. Through a
 	# portal home it is your base: this world's lobby, whose door leads back
 	# out to the plaza.
 	if _plaza_port >= 0 and result.get("door", "") != Portal.HOME:
-		_show_travel("Returning to %s..." % Worlds.social_world().display_name)
+		_show_travel("Returning to %s..." % Worlds.social_world().display_name, Worlds.social_world())
 		_arrive_from = came_from
 		_begin_join(_plaza_address, _plaza_port, 3)
 		return
@@ -3353,7 +3404,7 @@ func leave_server() -> void:
 	if _plaza_port >= 0 and not _at_plaza():
 		# Leaving a world's lobby (your base on this server) leads back to the
 		# plaza, out of the quarters door, not off the server.
-		_show_travel("Returning to %s..." % Worlds.social_world().display_name)
+		_show_travel("Returning to %s..." % Worlds.social_world().display_name, Worlds.social_world())
 		_arrive_from = "home"
 		_begin_join(_plaza_address, _plaza_port, 3)
 		return

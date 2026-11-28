@@ -4261,7 +4261,9 @@ PvP.
   (`WorldDef.prepare_map`: the heights and collision, the slow part of a
   map). The rest of the map and its art are still built on arrival, under
   the fade: building them ahead would freeze the place you are leaving.
-  The view goes dark at once and fades back in over 0.4 s when the world
-  stands (`Main._fade_travel`); the travel screen's text shows only if a
-  trip takes longer than 1.2 s. The bench's `--cluster` times it.
+  Between places you are in the gate's passage, never a dark screen: a
+  tunnel of light in the destination's gate colour with a window onto its
+  planet at the far end, which opens to fill the view as the world stands
+  (`Main._fade_travel`, `GateLook.transit`); a line saying what the trip
+  waits for shows only if it takes longer than 1.2 s. The bench's `--cluster` times it.
 - **A taken name asks for another one** on the phone, never just a refusal.
