@@ -576,13 +576,21 @@ static func pauldron(weight: String, style: Dictionary, out: float, build := "m"
 	var thick: float = {"light": 0.009, "medium": 0.012, "heavy": 0.014}[weight]
 	var spread: float = {"light": 1.3, "medium": 1.5, "heavy": 1.5}[weight]
 	var lateral := PI * 0.5 * out
+	# A slimmer arm than Build A's wears the pad stood off it by the
+	# difference (`arm_shortfall`), so the pad is as broad on every body
+	# instead of shrinking to hug a narrow shoulder (Caleb: Build B's pads
+	# read a third smaller).
+	var stand := arm_shortfall(build)
+	gap += stand
 	# The cap: over the top of the shoulder, from in past the joint out
 	# over the deltoid, swelling at its crown.
 	var cap_end: float = {"light": 0.2, "medium": 0.24, "heavy": 0.28}[weight]
 	# Clear of the straps and the gorget on the trunk, and ending short of
 	# the strap's run over the shoulder (`torso`) so it rides on it.
 	var joint := absf(BodyFit.bone(build, "UpperArm").x)
-	var t0 := -minf(0.16, (joint * 0.4 - 0.0275 - 0.015) / arm.length)
+	# A pad stood off a slim arm is broader at its inner end too, so it
+	# starts that much further out, clear of a heavy frame's collar.
+	var t0 := -minf(0.16, (joint * 0.4 - 0.0275 - 0.015 - stand) / arm.length)
 	plate(root, "Pad", arm.wrap(t0, cap_end, lateral, spread, gap, 0.004 + thick * 0.4, 0.0, 0.034, 0.6), thick, m.plate, 14, 9)
 	plate(root, "PadEdge", arm.wrap(cap_end - 0.025, cap_end, lateral, spread - 0.05, gap + thick + 0.002), 0.005,
 			m.plate2 if weight == "light" else m.metal, 14, 1)
@@ -599,6 +607,22 @@ static func pauldron(weight: String, style: Dictionary, out: float, build := "m"
 	if weight != "light":
 		plate(root, "Rerebrace", arm.wrap(0.5, 0.82, lateral, 1.3, gap * 0.6), thick * 0.8, m.plate, 10, 4)
 	return G.merge(root)
+
+
+## How much slimmer `build`'s upper arm is than Build A's ("m") round its
+## outside, near the shoulder, where a pad sits: 0 for Build A and for
+## anything as broad.
+static func arm_shortfall(build: String) -> float:
+	var own := BodyFit.build_of(build)
+	if own == "m":
+		return 0.0
+	var short := 0.0
+	var n := 0
+	for t: float in [0.05, 0.15, 0.25]:
+		for a: float in [PI * 0.1, PI * 0.3, PI * 0.5, PI * 0.7, PI * 0.9]:
+			short += BodyFit.limb_reach("m", "UpperArm", t, a, 1.0) - BodyFit.limb_reach(own, "UpperArm", t, a, 1.0)
+			n += 1
+	return maxf(short / n, 0.0)
 
 
 ## A forearm piece: an elbow cop and a guard down the back of the forearm

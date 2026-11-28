@@ -303,7 +303,11 @@ date in the same PR.
   metres and scaled with the body (`ActorSkin._body_scale`), and cached
   per build. Straps and collars go over the tops of the shoulders by a
   ray cast (`Trunk.cast`), a shoulder cap lifts off the trunk in every
-  stance its arm hangs in (`Limb.wrap` `clear`), a piece reaching past a
+  stance its arm hangs in (`Limb.wrap` `clear`), a shoulder pad on an
+  arm slimmer than Build A's stands off it by the difference
+  (`ArmorModel.arm_shortfall`), so it is as broad on every build instead
+  of shrinking to a slim shoulder (Caleb: Build B's read a third
+  smaller), and starts that much further out, clear of the collar; a piece reaching past a
   knee or elbow goes over the limb above it, and plates layer in a fixed
   order (carrier, then straps, then plates, then what is mounted on
   them) so none cuts through another. `tools/armor_fit/clip_check.tscn`
