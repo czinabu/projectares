@@ -28,6 +28,7 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const SkinScript := preload("res://core/visual/actor_skin.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const CrosshairScript := preload("res://core/ui/crosshair.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 ## The watch map's risk-zone grid is this many cells a side, how much room
 ## it leaves round what it shows, and the least half width it shows (metres).
@@ -85,7 +86,8 @@ var progress_ring: ProgressRing
 var _hurt_flash: ColorRect
 var _stance: StanceIndicator
 ## The aiming cross in the middle of the screen.
-var crosshair: Label
+## The aiming mark (`core/ui/crosshair.gd`): spread, target and reload state.
+var crosshair: Control
 var _prompt: Label
 var _messages: Array[Dictionary] = []
 ## The local player's last life, shown while they are down (see `show_death`).
@@ -142,8 +144,12 @@ func _ready() -> void:
 	root.add_child(_stance)
 	_place(_stance, 0.5, 0.5, Vector2(-70, -70), Vector2(140, 140))
 
-	crosshair = _label(root, "+", 22)
-	_place(crosshair, 0.5, 0.5, Vector2(-7, -17), Vector2(14, 30))
+	crosshair = CrosshairScript.new()
+	crosshair.name = "Crosshair"
+	crosshair.set("actor", raid.player)
+	crosshair.set("controller", controller)
+	root.add_child(crosshair)
+	_place(crosshair, 0.5, 0.5, Vector2(-60, -60), Vector2(120, 120))
 
 	_prompt = _label(root, "", 18)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -183,8 +189,9 @@ func _process(delta: float) -> void:
 	_stance.threat = incoming_side(p) if blade else -1
 	_update_ammo_counters(p)
 	if crosshair:
-		# Looking down an optic, its own reticle marks the middle.
-		crosshair.modulate.a = 0.0 if controller != null and is_instance_valid(controller) and controller.sighted else 1.0
+		# It fades itself out while the sight is up in first person.
+		crosshair.set("actor", p)
+		crosshair.set("controller", controller)
 	_update_heat_display(p)
 
 	var banking := raid.bank_progress()
@@ -1648,22 +1655,25 @@ class ProgressRing:
 			draw_arc(c, radius, -PI / 2.0, -PI / 2.0 + TAU * clampf(value, 0.0, 1.0), 64, color, 3.0, true)
 
 
-## Four diagonal ticks around the crosshair that flash when your attack lands.
+## Four blades round the crosshair that snap in when your attack lands, in
+## the crosshair's palette (`core/ui/crosshair.gd`).
 class HitMarker:
 	extends Control
 
 	## Each kind of hit has its own look, so a glance says what a hit did:
-	## [color, how long it shows, how big]. A head is gold and larger, a hit
-	## the plates soaked is steel blue, the hit that broke them a wide
-	## cyan, and a kill red and longest.
+	## [color, how long it shows, how big]. A plain hit is pale cyan, plates
+	## soaking it steel blue, plates breaking bright cyan with shards flying
+	## off, a head amber (a key mark) with a diamond in the middle, and a
+	## kill red, longest, with a diamond frame thrown out.
 	const KINDS := {
-		"hit": [Color.WHITE, 0.15, 1.0],
-		"armor": [Color(0.62, 0.78, 1.0), 0.15, 0.85],
-		"armor_break": [Color(0.35, 0.95, 1.0), 0.3, 1.35],
-		"head": [Color(1.0, 0.82, 0.25), 0.22, 1.3],
-		"guarded": [Color(0.6, 0.75, 1.0), 0.15, 0.75],
-		"kill": [Color(1.0, 0.25, 0.2), 0.35, 1.45],
+		"hit": [Color(0.86, 0.97, 1.0), 0.16, 1.0],
+		"armor": [Color(0.55, 0.72, 1.0), 0.16, 0.85],
+		"armor_break": [Color("4DD9FF"), 0.32, 1.2],
+		"head": [Color("FF9E38"), 0.26, 1.2],
+		"guarded": [Color(0.6, 0.68, 0.82), 0.16, 0.75],
+		"kill": [Color("FF4A3A"), 0.5, 1.35],
 	}
+	const OUTLINE := Color(0.0, 0.02, 0.04, 0.6)
 
 	var kind := ""
 	var _left := 0.0
@@ -1704,12 +1714,56 @@ class HitMarker:
 		if _left <= 0.0:
 			return
 		var c := size * 0.5
+		var t := 1.0 - clampf(_left / _duration, 0.0, 1.0)
+		# Snap in over the first quarter, hold, then fade.
+		var snap := ease(clampf(t * 4.0, 0.0, 1.0), 0.3)
+		var alpha := clampf((1.0 - t) / 0.6, 0.0, 1.0)
 		var color := _color
-		color.a = clampf(_left / _duration, 0.0, 1.0)
-		# The marks spring out a little as they fade.
-		var grow := _size * (1.0 + 0.25 * (1.0 - color.a))
-		for dir: Vector2 in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
-			draw_line(c + dir * 7.0 * grow, c + dir * 15.0 * grow, color, 2.5 * _size)
+		color.a = alpha
+		# The first moment of a kill burns white-hot.
+		if kind == "kill" and t < 0.12:
+			color = color.lerp(Color.WHITE, 0.7)
+		var inner := lerpf(15.0, 7.0, snap) * _size
+		var length := 8.0 * _size
+		for dir: Vector2 in [Vector2(1, 1).normalized(), Vector2(1, -1).normalized(), Vector2(-1, 1).normalized(),
+				Vector2(-1, -1).normalized()]:
+			_blade(c + dir * inner, c + dir * (inner + length), 1.0, 3.2 * _size, color)
+		match kind:
+			"head":
+				var r := (5.5 + 3.0 * (1.0 - snap)) * _size
+				_frame(c, r, color, 1.5)
+			"armor_break":
+				# Shards of the plates fly off square to the blades.
+				var out := lerpf(10.0, 30.0, t)
+				for dir: Vector2 in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
+					var side := Vector2(-dir.y, dir.x) * 3.0
+					_line(c + dir * out - side, c + dir * (out + 3.0) + side * 0.4, color, 1.5)
+			"kill":
+				# A diamond frame thrown out past the blades, and a second
+				# one inside that holds a moment longer.
+				_frame(c, lerpf(14.0, 34.0, ease(t, 0.5)) * _size, Color(color, alpha * 0.8), 2.0)
+				_frame(c, 6.0 * _size, Color(color, alpha), 1.5)
+
+	func _blade(tip: Vector2, back: Vector2, w_tip: float, w_back: float, color: Color) -> void:
+		var along := back - tip
+		var side := Vector2(-along.y, along.x).normalized()
+		var step := along.normalized()
+		var halo := PackedVector2Array([tip + side * (w_tip * 0.5 + 1.0) - step, back + side * (w_back * 0.5 + 1.0)
+				+ step, back - side * (w_back * 0.5 + 1.0) + step, tip - side * (w_tip * 0.5 + 1.0) - step])
+		draw_colored_polygon(halo, Color(OUTLINE, OUTLINE.a * color.a))
+		draw_colored_polygon(PackedVector2Array([tip + side * w_tip * 0.5, back + side * w_back * 0.5,
+				back - side * w_back * 0.5, tip - side * w_tip * 0.5]), color)
+
+	## A diamond outline of half-width `r`.
+	func _frame(c: Vector2, r: float, color: Color, width: float) -> void:
+		var pts := PackedVector2Array([c + Vector2(0, -r), c + Vector2(r, 0), c + Vector2(0, r), c + Vector2(-r, 0),
+				c + Vector2(0, -r)])
+		draw_polyline(pts, Color(OUTLINE, OUTLINE.a * color.a), width + 2.0, true)
+		draw_polyline(pts, color, width, true)
+
+	func _line(a: Vector2, b: Vector2, color: Color, width: float) -> void:
+		draw_line(a, b, Color(OUTLINE, OUTLINE.a * color.a), width + 2.0)
+		draw_line(a, b, color, width)
 
 ## A mark beside the crosshair on the side an enemy swing is coming from, so
 ## a blade out in first person reads a swing at the edge of the view. Guards

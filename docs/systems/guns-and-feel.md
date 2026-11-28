@@ -145,3 +145,24 @@ date in the same PR.
   and a round jolts the view (`PlayerController.bullet_flinch`), never the
   aim. Who shot you is not shown: that is the tactical visor's job.
   Check by eye with `visual_check.tscn -- <dir> --impacts-only`.
+  The hit marker is four tapered blades that snap in at the diagonals:
+  pale cyan for flesh, steel blue for plates soaking it, bright cyan with
+  shards flying off for plates breaking, amber with a diamond round the
+  middle for a head, and red for a kill, white-hot for a moment, with a
+  diamond frame thrown outward.
+- The crosshair (`core/ui/crosshair.gd`, on `Hud` and the base's HUD) is
+  the same in first and third person (Caleb's call), in the systems palette
+  (cyan `#4DD9FF`, amber `#FF9E38` for key marks only, red `#FF4A3A` for
+  hostile) and angular: a small diamond and four tapered blades whose tips
+  sit at the gun's real spread (`Gun.current_spread_deg` in pixels at the
+  camera's field of view), kicked out and flared a little per shot, so
+  moving, jumping, spraying and aiming open and close it by what they do to
+  the shots. It turns red with corner brackets over an enemy in range, goes
+  dim with each blade broken when what is under it is past `max_range` or
+  `falloff_end`, dim red with a hollow diamond when the magazine is out or
+  jammed, and becomes a ring of eight segments lighting in turn during a
+  reload (amber for a charge or a spin-up); a melee weapon gets the diamond
+  alone. It fades out when the sight is up in first person; in third
+  person aiming only closes it. It is view only: one ray along the aim
+  every `probe_interval`, nothing in the simulation. Never put text on it,
+  and every line on it must say something.
