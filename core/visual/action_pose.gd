@@ -670,6 +670,10 @@ var _watch_raise := 0.0
 ## How far the phone is up in the right hand (0..1), from the actor's
 ## command (`ActorCommand.phone`), so everyone who sees them agrees.
 var phone := 0.0
+## How far the phone is down at the hip for the Mirror's relaxed stand
+## (0..1, the held "mirror" pose, `Emotes.POSES`), so every view and
+## every machine shows you standing to be looked at.
+var phone_low := 0.0
 ## The helmet coming off onto the hip or going back on, as shown: the
 ## simulated `Actor.helmet_stow` (0 on the head, 1 on the hip) followed
 ## smoothly between ticks. `helmet_hand`, `helmet_carry` and `helmet_place`
@@ -820,6 +824,8 @@ func advance(delta: float) -> void:
 	# Riding too: the rider takes a hand off the bar for it (`Locomotion.phone_pose`).
 	var phone_wanted := actor.cmd != null and actor.cmd.phone and not actor.is_dead
 	phone = move_toward(phone, 1.0 if phone_wanted else 0.0, phone_rate * delta)
+	var at_hip := phone_wanted and Emotes.id_of(actor.cmd.emote) == "mirror"
+	phone_low = move_toward(phone_low, 1.0 if at_hip else 0.0, phone_rate * delta)
 	if actor.visor.enabled:
 		helmet = move_toward(helmet, actor.helmet_stow, 1.5 * delta / maxf(actor.helmet_stow_time, 0.01))
 	else:
@@ -1046,6 +1052,8 @@ func carry_bob() -> Vector3:
 ## command says, so a late packet never sits a body on a bike.
 func advance_emote(delta: float) -> void:
 	var wanted := Emotes.id_of(actor.cmd.emote) if actor.cmd != null else ""
+	if wanted in Emotes.POSES:
+		wanted = ""
 	if actor.is_dead or actor.vehicle != null or actor.airborne_time > 0.15 or (actor.cmd != null and actor.cmd.phone):
 		wanted = ""
 	if wanted != "" and wanted != emote_id:

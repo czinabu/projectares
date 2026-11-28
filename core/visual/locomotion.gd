@@ -211,6 +211,13 @@ var phone_rest_elbow := Vector3(-0.3, 0.0, 1.0)
 var phone_palm := 0.085
 var phone_look_down := 0.42
 var phone_chest := 0.06
+## The Mirror's relaxed stand (`ActionPose.phone_low`): the phone held low
+## by the right hip, the forearm a little forward, the elbow easy at the
+## side, and the head and chest up, so the face and the suit show.
+var phone_low_wrist := Vector3(0.2, 0.92, -0.12)
+var phone_low_elbow := Vector3(0.4, 0.0, 1.0)
+## How far the phone is down at the hip now (from `ActionPose.phone_low`).
+var phone_low := 0.0
 
 ## Clip key -> how the clip moves the body at playback speed 1, in the
 ## actor's space (x right, z back), m/s.
@@ -703,6 +710,7 @@ func update(delta: float) -> void:
 	var shared := ActionPose.of(actor)
 	shared.advance(delta)
 	phone_weight = shared.phone
+	phone_low = shared.phone_low
 	var fighting := actor.get_active_weapon() is MeleeWeapon and not actor.is_dead and actor.vehicle == null \
 			and actor.airborne_time <= 0.0 and actor.slide_low <= 0.001 and not (actor.cmd != null and actor.cmd.phone)
 	fight = move_toward(fight, 1.0 if fighting else 0.0, fight_rate * delta)
@@ -1300,12 +1308,13 @@ func phone_pose() -> void:
 	if phone_weight <= 0.0 or skeleton == null or actor == null:
 		return
 	var w := smoothstep(0.0, 1.0, phone_weight)
+	var low := smoothstep(0.0, 1.0, phone_low)
 	var to_skeleton := skeleton.global_transform.affine_inverse() * actor.global_transform
 	var right := (to_skeleton.basis * Vector3.RIGHT).normalized()
 	if not _spine.is_empty():
 		var chest := _spine[_spine.size() - 1]
 		var pose := skeleton.get_bone_global_pose(chest)
-		pose.basis = Basis(right, -phone_chest * w) * pose.basis
+		pose.basis = Basis(right, -phone_chest * w * (1.0 - low)) * pose.basis
 		skeleton.set_bone_global_pose(chest, pose)
 	# Seated, the hold is measured from where the neck is now (low and leant
 	# forward over the bars) instead of from a standing neck, and the left
@@ -1324,8 +1333,8 @@ func phone_pose() -> void:
 				_bend(arm, skeleton.get_bone_rest(arm[2]).origin, to_skeleton * phone_rest,
 						to_skeleton.basis * phone_rest_elbow, w)
 			continue
-		var wrist := to_skeleton * (phone_wrist + lift)
-		var elbow := to_skeleton.basis * phone_elbow
+		var wrist := to_skeleton * (phone_wrist.lerp(phone_low_wrist, low) + lift)
+		var elbow := to_skeleton.basis * phone_elbow.lerp(phone_low_elbow, low).normalized()
 		_bend(arm, skeleton.get_bone_rest(arm[2]).origin, wrist, elbow, w)
 		# The phone sits in the palm, a hand's length on from the wrist.
 		var to_actor := to_skeleton.affine_inverse()
@@ -1334,7 +1343,7 @@ func phone_pose() -> void:
 		phone_in_hand = wrist_now + (wrist_now - elbow_now).normalized() * phone_palm
 	if _neck >= 0:
 		var pose := skeleton.get_bone_global_pose(_neck)
-		pose.basis = Basis(right, -phone_look_down * w) * pose.basis
+		pose.basis = Basis(right, -phone_look_down * w * (1.0 - low)) * pose.basis
 		skeleton.set_bone_global_pose(_neck, pose)
 
 

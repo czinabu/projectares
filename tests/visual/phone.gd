@@ -144,6 +144,17 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 		cam.look_at_from_position(eye, me.global_position + Vector3(0, 1.15, 0))
 		await v._settle(40)
 		await v._shot(out_dir.path_join(view[0]))
+	# The Mirror's relaxed stand, as the glass and everyone else see it: the
+	# phone low at the hip, the head up (the dressing room's held pose).
+	controller.dressing_room = true
+	cam.make_current()
+	for view: Array in [["phone_mirror_pose.png", Vector3(0.0, 1.35, -2.4)], ["phone_mirror_pose_side.png", Vector3(2.2, 1.4, -0.9)]]:
+		var eye: Vector3 = me.global_position + facing * (view[1] as Vector3)
+		cam.look_at_from_position(eye, me.global_position + Vector3(0, 1.05, 0))
+		await v._settle(40)
+		await v._shot(out_dir.path_join(view[0]))
+	controller.dressing_room = false
+	cam.make_current()
 	# From the eyes, as first person shows the real body: a camera at the
 	# eye point looking where the head looks, past the head itself.
 	# The head is left out, as first person leaves it out of its camera.

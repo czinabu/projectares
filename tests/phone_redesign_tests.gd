@@ -18,6 +18,7 @@ static func run(t: Node) -> void:
 	await _rows_keep_buttons(t, phone)
 	await _notices_stay_in_the_world(t, phone)
 	await _keys_rebind(t, phone)
+	_mirror_stance(t)
 	phone.queue_free()
 	await t.frames(1)
 
@@ -119,3 +120,23 @@ static func _keys_rebind(t: Node, phone: CanvasLayer) -> void:
 			"saved keys come back when the settings load")
 	GameSettings.reset_bindings()
 	phone.close()
+
+
+## The Mirror's relaxed stand travels as a held stance after the emotes,
+## never on the wheel and never played as an emote.
+static func _mirror_stance(t: Node) -> void:
+	var number := Emotes.number_of("mirror")
+	t.check(number > Emotes.IDS.size() and number <= ActorCommand.MAX_EMOTE and Emotes.id_of(number) == "mirror"
+			and "mirror" not in Emotes.IDS,
+			"the Mirror's stand has a number of its own past the emotes, off the wheel")
+	var actor := Actor.new()
+	actor.cmd = ActorCommand.new()
+	actor.cmd.phone = true
+	actor.cmd.emote = number
+	var pose := ActionPose.new()
+	pose.actor = actor
+	for i in 30:
+		pose.advance_emote(1.0 / 30.0)
+	t.check(pose.emote_id == "" and pose.emote <= 0.0, "the stand never plays as an emote")
+	pose.free()
+	actor.free()

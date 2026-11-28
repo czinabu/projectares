@@ -65,7 +65,13 @@ date in the same PR.
   texture because the hologram shader takes four taps across each
   pixel's footprint (`Hud.Wrist.HOLO_SHADER`, a viewport texture has no
   mipmaps), and its scan lines are faint (`HoloScreen.line_depth`) so they
-  never dim a line of text. The Mirror app (Caleb's pick): in first person a
+  never dim a line of text. While the Mirror app is up (a mirror in first
+  person, the dressing room in third) the body stops reading the phone and
+  stands to be looked at (Caleb's call): the phone low at the right hip,
+  head and chest up (`Locomotion.phone_low_wrist`, `ActionPose.phone_low`),
+  sent as the held "mirror" stance after the emotes (`Emotes.POSES`,
+  `PlayerController.mirror_pose`), so every view, the glass and other
+  players see the same stand; the hologram stays where it is. The Mirror app (Caleb's pick): in first person a
   mirror stands square in front of the body, never along the camera, close
   enough that you stand large in it (`Mirror.distance`), and wide enough
   to fill the view behind both you and the phone's screen
@@ -135,7 +141,8 @@ date in the same PR.
   only: nothing in the simulation reads one. Moving, firing, drawing, the
   phone or watch, a vehicle or the air ends one, and starting one puts the
   weapon away (`PlayerController._tick_emote`). A new emote is an
-  `Emotes.IDS` entry and a pose; check by eye with `visual_check.tscn --
+  `Emotes.IDS` entry and a pose (a held stance off the wheel, like the
+  Mirror's, is an `Emotes.POSES` entry and never plays as an emote); check by eye with `visual_check.tscn --
   <dir> --emotes-only`. The emote key's quick wheel comes up without the
   watch (`PlayerController.open_emote_wheel`, `emote_wheel_open`; the
   mouse picks a slice, `wheel_slice`, and never turns the view while it is
