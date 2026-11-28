@@ -362,6 +362,8 @@ static func _heart(t: Node) -> void:
 	var keeper := boss.bot as Actor
 	t.check(keeper != null and keeper.display_name == "Heart Warden" and keeper.rear_damage_mult > 1.5
 			and keeper.body_height() > 3.5, "the Heart Warden stands there, tall, its back its weak spot")
+	t.check(keeper != null and keeper.get_meta("look", "") == "core_colossus",
+			"and it looks like a machine of its own, its core bared, not the Sentinel grown taller")
 	t.check(keeper.inventory.items.is_empty(), "it carries nothing: its vault pays")
 	t.check(int(raid.keepers.get(kind, -1)) == 1 and (raid.map.get_meta("keepers", {}) as Dictionary).get(kind) == 1,
 			"it starts standing, and the map is told")
