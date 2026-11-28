@@ -1964,7 +1964,11 @@ func add_player(p_kit: Array = [], p_mastery: Dictionary = {}, p_name := "Raider
 		actor.protected_left = world.spawn_protection
 	actor.died.connect(_on_actor_died)
 	actor.artifact.used.connect(func(_effect: String) -> void: _count(state, "artifacts"))
-	actor.health.damaged.connect(func(_info: DamageInfo) -> void: _mark_combat(state))
+	actor.health.damaged.connect(func(info: DamageInfo) -> void:
+		if info.source is Actor and info.source != actor and is_instance_valid(info.source):
+			state.last_hit_by = info.source.get_instance_id()
+			state.last_hit_at = clock
+		_mark_combat(state))
 	actor.hit_confirmed.connect(func(_target: Actor, _info: DamageInfo, _lethal: bool) -> void:
 		_mark_combat(state))
 	world.on_spawn(actor)
@@ -2207,6 +2211,42 @@ func cancel_sign_out(actor: Actor) -> void:
 	actor.set_sign_out_beacon(false)
 	actor.notice.emit("Sign-out cancelled")
 	sign_out_changed.emit(actor, -1.0)
+
+
+## Whether `actor` may abandon this life here (`abandon`): out in a world
+## where gear is at stake, alive, and still playing their body (not one a
+## dropped connection left standing).
+func can_abandon(actor: Actor) -> bool:
+	var state := state_for(actor)
+	return state != null and not state.finished and not state.sign_out_forced \
+			and is_instance_valid(actor) and not actor.is_dead \
+			and world != null and not world.safe_zone and world.gear_at_risk
+
+
+## The player gives this life up where they stand: a quick way out that is
+## never a way to leave with the loot. It is a death in every way (DESIGN.md
+## "Abandon"): what they carry falls in their bag (or as the world's death
+## rule says), the insured item is recalled and salvage paid, and if they
+## were hurt within the fight time their last attacker gets the kill, so it
+## never takes a kill or a bounty away from anyone. Authority only; the
+## result says "abandoned" so the game goes straight home. Returns false
+## where it cannot happen (`can_abandon`).
+func abandon(actor: Actor) -> bool:
+	if mode == Mode.CLIENT or not can_abandon(actor):
+		return false
+	var state := state_for(actor)
+	var killer: Actor = null
+	if clock - state.last_hit_at < world.combat_time:
+		var by := instance_from_id(state.last_hit_by) if state.last_hit_by != 0 else null
+		if by is Actor and is_instance_valid(by) and by != actor:
+			killer = by
+	# Quietly: the life is over, not a sign-out called off.
+	state.sign_out_left = -1.0
+	state.at_beacon = null
+	actor.set_sign_out_beacon(false)
+	state.abandoned = true
+	actor.kill("abandon", killer)
+	return true
 
 
 ## How far along an actor's sign-out is, 0..1, or below zero when there is none.
@@ -5675,6 +5715,9 @@ func _finish_player(state: PlayerState, outcome: String, cause: String, killed_b
 		"mastery_xp": state.mastery.report(),
 		# Contract counters (`_count`). Only a sign-out counts them.
 		"tally": state.tally.duplicate(),
+		# Given up on the watch (`abandon`): a death, but the game goes
+		# straight home instead of offering a new life.
+		"abandoned": state.abandoned and outcome == "died",
 	}
 	if left and state.sign_out_door != "":
 		# Through a portal out of the world: everything carried goes home as
@@ -5940,6 +5983,12 @@ class PlayerState:
 	var beacon_hum := 0.0
 	## `Raid.clock` when they last gave or took a hit.
 	var last_combat := -INF
+	## Who last hurt them (an instance id, 0 for none) and when, by
+	## `Raid.clock`: an abandon in a fight is that attacker's kill.
+	var last_hit_by := 0
+	var last_hit_at := -INF
+	## The life ended by abandoning it (`Raid.abandon`), not by a kill.
+	var abandoned := false
 	## Inside a gate outpost, under its shelter (`Raid._tick_outposts`).
 	var sheltered := false
 	## Walked out of an outpost and still protected: firing ends it.

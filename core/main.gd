@@ -376,12 +376,67 @@ func _fade_travel(travelling: bool, delta: float) -> void:
 
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and not get_tree().auto_accept_quit:
+		quit_game()
+		return
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
 		_stop_local_server()
 		for program in _cluster:
 			if int(program.get("pid", -1)) > 0:
 				OS.kill(int(program.pid))
 		_cluster.clear()
+
+
+# ------------------------------------------------------------- quitting ----
+
+## True while a solo quit waits for the body to finish its countdown.
+var quitting := false
+
+
+## Quits the game, from the phone's power button, Settings or the window's
+## close button. Online, or where nothing is at stake, it quits at once (a
+## server keeps a body standing for its countdown, `Raid.remove_player`).
+## Solo out in a world the same happens here before the game closes: the
+## body stands, helpless, for the sign-out time (longer after a fight), and
+## if it survives what it carries goes home; killed first, it is a death,
+## with the insured item recalled and salvage paid. Asked again meanwhile,
+## the game quits at once and what was carried is lost.
+func quit_game() -> void:
+	if quitting or not _solo_life_at_stake():
+		get_tree().quit()
+		return
+	quitting = true
+	if controller != null and is_instance_valid(controller):
+		# Hands off the body: it stands still, as a dropped connection's does.
+		controller.set_physics_process(false)
+		controller.set_process_unhandled_input(false)
+	if phone != null and phone.is_open:
+		phone.close()
+	raid.remove_player(raid.player)
+	if hud != null and is_instance_valid(hud):
+		var state := raid.state_for(raid.player)
+		hud.notify("Quitting: your body stands for %d s, then your gear goes home"
+				% ceili(state.sign_out_left if state != null else raid.world.sign_out_time))
+
+
+## What quitting would do to what you carry, for the phone (`Phone.quit_note`).
+func quit_note() -> String:
+	if quitting:
+		return "Your body is counting down. Quitting now loses what you carry."
+	if raid == null or not _out_in_a_world() or _is_down():
+		return ""
+	var wait := ceili(raid.world.sign_out_time)
+	if net != null:
+		return "Your body stays standing for %d s (longer after a fight). If it survives, what you carry goes home." % wait
+	return "Your body stands for %d s first (longer after a fight). If it survives, what you carry goes home." % wait
+
+
+## True while quitting solo would put the gear carried at stake: alive out
+## in a world where gear is at risk.
+func _solo_life_at_stake() -> bool:
+	return net == null and _out_in_a_world() and not _is_down() and raid.player != null \
+			and is_instance_valid(raid.player) and not raid.player.is_dead \
+			and raid.can_abandon(raid.player)
 
 
 # ------------------------------------------------------------- home base ----
@@ -955,6 +1010,7 @@ func _attach_player_view() -> void:
 		# The phone is held by this body's own hand, in every view.
 		phone.set_holder(controller.actor)
 	controller.sign_out_requested.connect(func() -> void: _on_sign_out_requested.call_deferred())
+	controller.abandon_requested.connect(func() -> void: _on_abandon_requested.call_deferred())
 	controller.redeploy_requested.connect(func() -> void: _on_redeploy_requested.call_deferred())
 	controller.drop_requested.connect(func(index: int) -> void: _on_drop_requested.call_deferred(index))
 	controller.toy_throw_requested.connect(_on_toy_throw_requested)
@@ -1043,9 +1099,14 @@ func _on_booth_changed(open: bool) -> void:
 
 ## One solo life ended. A death keeps you in the world; leaving goes home.
 func _on_solo_finished(_actor: Actor, result: Dictionary) -> void:
+	if quitting:
+		# The quit's countdown ended (home, or killed): saved, then gone.
+		Profile.save()
+		get_tree().quit()
+		return
 	_tour_life_ended(result)
 	_safety_net_news(result)
-	if result.get("outcome", "") == "died":
+	if result.get("outcome", "") == "died" and not result.get("abandoned", false):
 		_show_death(result)
 		return
 	# Leave a beat so the player sees what happened before going home.
@@ -1294,6 +1355,17 @@ func _on_sign_out_requested() -> void:
 		raid.begin_sign_out(raid.player)
 
 
+## The watch's Abandon was held: this life ends where it stands, as a death
+## (`Raid.abandon`), and the game goes straight home.
+func _on_abandon_requested() -> void:
+	if raid == null or raid.player == null or not is_instance_valid(raid.player) or _is_down():
+		return
+	if net:
+		net.abandon()
+	else:
+		raid.abandon(raid.player)
+
+
 func _show_hub(result: Dictionary) -> void:
 	_leave_raid()
 	hub.refresh(result)
@@ -1326,7 +1398,11 @@ func _setup_phone() -> void:
 	phone.opened_changed.connect(_on_phone_opened)
 	phone.settings_changed.connect(_apply_settings)
 	phone.dev_mode_changed.connect(_on_dev_mode_changed)  # DEV MODE
-	phone.quit_requested.connect(func() -> void: get_tree().quit())
+	phone.quit_requested.connect(quit_game)
+	phone.quit_note_for = quit_note
+	# Closing the window quits the same way, so a solo life's gear is never
+	# thrown away by the close button (`quit_game`).
+	get_tree().auto_accept_quit = false
 	phone.set_wardrobe(hub.character)
 	phone.mirror_changed.connect(_on_mirror_changed)
 	phone.dressing_dragged.connect(_on_dressing_dragged)
@@ -3188,9 +3264,10 @@ func _on_online_finished(result: Dictionary) -> void:
 	var finished: Array = result.get("contracts_finished", [])
 	if not finished.is_empty() and phone != null:
 		phone.show_notice("Contract done: %s   +%d scrip" % [", ".join(finished), int(result.get("contract_scrip", 0))])
-	if result.get("outcome", "") == "died":
+	if result.get("outcome", "") == "died" and not result.get("abandoned", false):
 		_show_death(result)
 		return
+	# Abandoned on the watch, or signed out: home after a beat.
 	await get_tree().create_timer(1.0).timeout
 	_return_to_lobby(result)
 

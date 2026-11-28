@@ -2256,6 +2256,7 @@ other place too, by way of a sign-out).
 | Heavy weapon chamber | Holds one heavy weapon (section 6). |
 | Artifact | Holds and uses your one artifact for the outing (section 6). |
 | Sign-out | Starting or cancelling a sign-out with a click on its icon (or L), and its countdown (section 7). |
+| Abandon | Held 3 seconds: ends the life where you stand, as a death, and goes home (section 7, "Quitting and abandoning"). |
 | Banking | Banking at a depot, and what this life has sent home so far, on the sign-out icon (section 7). |
 | Map and pings | A small holographic map on the Status tab (you and where you face, strongpoints and who holds them, depots, gate outposts, the war's hot zone, the risk zones and your side's pings; never other people), standing, and pings to your squad (the ping marks where you look, for your side only). |
 | Contract tracker | Your active contracts, on the Mission tab (section 10). |
@@ -3155,6 +3156,10 @@ Two complementary ways to secure loot.
   (30 seconds after a fight), as today. That wait does not grow for being
   in the air, and it raises no beacon. Nobody plays the body meanwhile: it
   stands still, a hit does not end the countdown, and it can be killed.
+  Solo it is the same: quitting out in a world keeps the game open while
+  the body counts down, then saves and closes (killed first, it is a
+  death, with insurance and salvage). Quitting again meanwhile closes at
+  once and loses what was carried.
 - After a dropped connection the game reconnects on its own. Back before the
   body's countdown runs out, you are in it again where it stands, with no
   deploy: the forced countdown ends, and a sign-out you had started yourself
@@ -3162,6 +3167,22 @@ Two complementary ways to secure loot.
   in a fight meanwhile. Too late, and the game says how that life ended (home
   or killed).
 - A gate outpost keeps its short sign-out. It does not switch to the air time.
+
+### Quitting and abandoning
+
+Caleb's call (28 November 2026): quitting the game is always easy, and
+getting out of a world with your loot stays earned.
+
+- **Quitting** is two taps on the phone from anywhere: the power button on
+  its status bar (or Settings, System tab), the first tap saying what
+  quitting does to what you carry there. Closing the window does the same.
+- **Abandon** is on the watch's Mission tab beside Sign out, held for 3
+  seconds. It ends the life where you stand, as a death: what you carry
+  drops as the world's death rule says (your bag, or a scrip pile), the
+  insured item is recalled and salvage paid, and if you were hurt in the
+  last few seconds your last attacker gets the kill, so it never takes a
+  kill or a bounty from anyone. Then you go straight home. What a depot
+  already banked is safe. Only out in a world where gear is at stake.
 
 Decided: the airborne sign-out is 25 seconds and a beacon column, not a rule
 that you must land. Time already spent is progress. The countdown fills at

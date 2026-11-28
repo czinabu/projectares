@@ -2149,6 +2149,18 @@ func _request_sign_out(start: bool) -> void:
 		raid.cancel_sign_out(actor)
 
 
+## In the world: give this life up where you stand (`Raid.abandon`).
+@rpc("any_peer", "call_remote", "reliable")
+func _request_abandon() -> void:
+	if not _allow("world"):
+		return
+	if not is_server or raid == null:
+		return
+	var actor: Actor = _peer_actor.get(_api.get_remote_sender_id())
+	if actor != null and is_instance_valid(actor):
+		raid.abandon(actor)
+
+
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _send_input(packet: PackedByteArray) -> void:
 	if not _allow("input"):
@@ -3172,6 +3184,12 @@ func ping() -> void:
 func sign_out(start := true) -> void:
 	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
 		_request_sign_out.rpc_id(1, start)
+
+
+## Asks the server to end this life where it stands (the watch's Abandon).
+func abandon() -> void:
+	if _is_connected() and my_actor_id >= 0 and not _can_redeploy:
+		_request_abandon.rpc_id(1)
 
 
 @rpc("authority", "call_remote", "reliable")

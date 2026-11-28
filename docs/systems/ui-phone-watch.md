@@ -93,6 +93,16 @@ date in the same PR.
   (`host_requested`, `join_requested`, `leave_server_requested`) and shows
   `Hub.set_online_status`'s line (`Phone.set_link_status`). Settings are grouped in `Phone.SETTINGS_TABS`, and the dev
   switches live only on the Dev tab.
+  Quitting the game is two taps from any page (Caleb's call): the status
+  bar's power button (`Phone.PowerButton`) and Settings' System tab both
+  go through `Phone.ask_quit`. The first tap arms it for
+  `quit_confirm_time` and says what quitting does to the gear carried
+  there (`Phone.quit_note`, read from `Main.quit_note`), the second asks
+  `Main.quit_game`. Closing the window goes through the same call
+  (`auto_accept_quit` is off in a game), so it never skips a solo
+  countdown. Solo out in a world `quit_game` leaves the body standing
+  as a server would (`Raid.remove_player`, hands off it) and closes once
+  the life is settled; asked again meanwhile, it quits at once.
   Settings live in
   `core/settings/game_settings.gd` (its own save file); a server never reads them.
   Each one is a row in `GameSettings.SCHEMA` (its tab, section, kind,
@@ -242,7 +252,13 @@ date in the same PR.
   three tabs (`Hud.Wrist.TABS`, `TAB_SLOTS`, `SLOTS`; DESIGN.md section 3):
   Summon (weapons, vehicles, artifacts, the pack, with the pack's line
   under it; the helmet left the watch once it had its own key, K),
-  Status (map, standing) and Mission (portal, contract, sign-out). Emotes
+  Status (map, standing) and Mission (portal, contract, sign-out,
+  abandon). The Abandon icon (`Hud.abandon_slot`) gives the life up where
+  you stand (`Raid.abandon`, online `NetSession.abandon`): fire held on it
+  for `PlayerController.abandon_hold` (3 s), from a click that began on
+  it (`tick_abandon`), so a stray click never costs a life. Its line says
+  what it would cost and what is already banked; it is an empty socket
+  wherever `Raid.can_abandon` is false. Emotes
   (the emote key's wheel) and the squad ping (its own key) left the watch
   (Caleb's call): a watch icon must do something no key already does.
   The contract icon is the mission log (Caleb's ask): opened, the wheel

@@ -270,6 +270,15 @@ var local_names := {}
 ## Whether the Settings app offers to skip the tour (it is running) or to
 ## play it again. `Main` sets it.
 var tour_running := false
+
+## The power button (status bar, on every page) and Settings' Quit button
+## take two taps: the first says what quitting does here, the second
+## within `quit_confirm_time` seconds asks to quit (`quit_requested`).
+var quit_confirm_time := 4.0
+## Says what quitting would do to your gear where you are, set by the game
+## (`Main.quit_note`); "" when nothing is at stake.
+var quit_note_for: Callable
+var _quit_armed_until := 0
 ## True while that row is open (like a watch icon, Caleb's call): the wheel
 ## then turns through its options instead of moving between rows. A click
 ## on a row opens it, a right click closes it.
@@ -1182,6 +1191,12 @@ func _build_screen() -> void:
 	_who = _label("", 14, DIM_INK)
 	_who.autowrap_mode = TextServer.AUTOWRAP_OFF
 	bar.add_child(_who)
+	# Quitting is always two taps away, from any page.
+	var power := PowerButton.new()
+	power.name = "Power"
+	power.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	power.tapped.connect(ask_quit)
+	bar.add_child(power)
 	column.add_child(bar)
 	var rule := ColorRect.new()
 	rule.color = Color(UiTheme.ACCENT, 0.35)
@@ -2529,6 +2544,28 @@ func open_settings_tab(tab: String) -> void:
 		refresh.call_deferred()
 
 
+## A tap on the power button or Settings' Quit: the first arms it and says
+## what quitting does here, a second within `quit_confirm_time` quits.
+func ask_quit() -> void:
+	if quit_armed():
+		_quit_armed_until = 0
+		quit_requested.emit()
+		return
+	_quit_armed_until = Time.get_ticks_msec() + int(quit_confirm_time * 1000.0)
+	show_notice("Tap the power button again to quit. " + quit_note(), quit_confirm_time, "quit", true)
+
+
+## True while a first tap on quit waits for its second.
+func quit_armed() -> bool:
+	return _quit_armed_until > 0 and Time.get_ticks_msec() < _quit_armed_until
+
+
+## What quitting would do where you are, in one line.
+func quit_note() -> String:
+	var note := str(quit_note_for.call()) if quit_note_for.is_valid() else ""
+	return note if note != "" else "Nothing you carry is at stake here."
+
+
 ## Settings, grouped in tabs: View first (fullscreen and the picture on
 ## top, then fields of view, camera and names), Input (mouse, melee, the key
 ## list), System (sound, quit) and, in a debug run, Dev.
@@ -2545,7 +2582,12 @@ func _draw_settings() -> void:
 			else:
 				_body.add_child(_button("Play the tour again", _ask_tour.bind("replay")))
 			_body.add_child(_section("GAME"))
-			_body.add_child(_button("Quit the game", func() -> void: quit_requested.emit()))
+			var armed := quit_armed()
+			_body.add_child(_button("Tap again to quit" if armed else "Quit the game", func() -> void:
+				ask_quit()
+				refresh.call_deferred()))
+			if armed:
+				_body.add_child(_label(quit_note(), 13, DIM_INK))
 		"dev":
 			_draw_dev_mode()  # DEV MODE
 
@@ -3077,6 +3119,37 @@ class Readout extends PanelContainer:
 
 ## The status bar's link strength: four stepped bars, lit by `strength`.
 ## Off the network they all stay dim; nothing flashes.
+## The status bar's power button: a ring broken at the top with a bar
+## through the gap. Two taps quit the game (`ask_quit`).
+class PowerButton extends Control:
+	signal tapped
+	var _hover := false
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(26, 26)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		tooltip_text = "Quit the game"
+		mouse_entered.connect(func() -> void:
+			_hover = true
+			queue_redraw())
+		mouse_exited.connect(func() -> void:
+			_hover = false
+			queue_redraw())
+
+	func _gui_input(event: InputEvent) -> void:
+		var button := event as InputEventMouseButton
+		if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			accept_event()
+			tapped.emit()
+
+	func _draw() -> void:
+		var ink := UiTheme.ACCENT.lightened(0.2) if _hover else Color(UiTheme.INK, 0.8)
+		var c := size * 0.5
+		var r := minf(size.x, size.y) * 0.36
+		draw_arc(c, r, -PI * 0.5 + 0.7, PI * 1.5 - 0.7, 20, ink, 2.0, true)
+		draw_line(c + Vector2(0, -r - 2.0), c + Vector2(0, -r * 0.15), ink, 2.0, true)
+
+
 class SignalBars extends Control:
 	var strength := 0:
 		set(value):

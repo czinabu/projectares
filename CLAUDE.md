@@ -38,7 +38,8 @@ when a PR closes a row.
   finished sign-out: everything carried goes home). After "died" the owner of
   the stash (`Main` solo, `NetSession` online) calls `add_player` again in the
   same raid. Loot reaches the stash mid-life only through a `Depot`
-  (`player_banked`). Never add a way to leave that skips `begin_sign_out`:
+  (`player_banked`). The watch's Abandon (`Raid.abandon`) is a death,
+  never a leave: it goes home only as "died". Never add a way to leave that skips `begin_sign_out`:
   a disconnect goes through `remove_player`, which leaves the body standing.
   A player whose connection dropped gets that body back if they sign in
   before its countdown ends: `NetSession._on_peer_connected` finds it
