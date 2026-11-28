@@ -421,6 +421,18 @@ line saying "warm" in warmth, frost creeping over the visor glass, breath
 fogging out of every mouth and a shivering hunch below a third of the bar.
 The numbers are placeholders for the playtest.
 
+Shelter (Caleb's call): the cold hurts only out in the open, so players
+push between buildings, warm up and fight over the warm rooms. Indoors it
+never hurts. A heated room (every hut) warms you anywhere inside at 5 a
+second, gentler than standing at its heater, so the frost wears off over a
+few seconds. Unheated ruins (four broken shacks on the shelves, a cache in
+each) still chill you at a quarter of the open cold. A fire or heater
+stops it completely. In a whiteout the storm's extra cold leaks in through
+doorways and broken walls (half of it into an open-fronted hut, 60% into a
+ruin), slowing even a heater. The visor's body heat cell says "SHELTER"
+and the watch's zone line "shelter". The Engine's inside keeps its own
+cold. Numbers are placeholders.
+
 The loot role (step 3): three new parts, Cryo Core (on the floor and from
 Wardens), Glacial Alloy (the rims, the glacier head and the relay) and
 Engine Coil (only the relay on the Engine's back). Every Mk2 craft needs a

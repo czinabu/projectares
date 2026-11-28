@@ -227,6 +227,10 @@ var ride_head_turn := 1.1
 ## Where the wrist sits behind the resting hand spot when a rider holds a gun
 ## out, in the actor's frame along the aim.
 var ride_gun_wrist := Vector3(0.0, -0.02, 0.1)
+## Stopped on a bike (slower than this, m/s) the rider puts the left foot
+## down, eased in and out at this rate a second.
+var foot_down_speed := 0.6
+var foot_down_rate := 3.0
 ## Riding, a weapon slung on the back rides this much higher up the back, so
 ## its lower end clears the seat and the bike's tail.
 var ride_sling_lift := 0.28
@@ -5203,6 +5207,72 @@ func _update_glide(delta: float) -> void:
 	var seated: Variant = ride_frame()
 	if seated != null and locomotion != null and locomotion.ride_weight > 0.0:
 		transform = transform.interpolate_with(seated, smoothstep(0.0, 1.0, locomotion.ride_weight))
+	_update_boarding(delta)
+
+
+## Getting on and off (view only). The actor is put on its seat, or off
+## beside the vehicle, at once; the body follows over `board_time` (on) or
+## `unboard_time` (off): it starts where the actor just was and moves across
+## with a hop over the seat (`board_hop`), while the riding pose eases in or
+## out at the same pace, so a leg swings over. The same body every view
+## sees: first person rides on the posed head. Only at a walk
+## (`board_max_speed`) and over a short step: a bail-out off a fast bike, or
+## a seat taken far off (a teleport, a reclaimed body), is left instant.
+## `boarding` is the share of it left (1 to 0, 0 when not), for sound.
+var board_time := 0.42
+var unboard_time := 0.32
+var board_hop := 0.28
+var board_max_speed := 4.0
+var board_max_step := 4.0
+var boarding := 0.0
+var _board_on: Node3D
+var _board_from := Vector3.ZERO
+var _board_mounting := false
+var _board_left := 0.0
+var _board_total := 0.0
+var _board_was: Node3D
+var _board_last := Vector3.INF
+var _board_rate := 0.0
+
+
+func _update_boarding(delta: float) -> void:
+	var on: Node3D = actor.vehicle if not actor.is_dead else null
+	if on != null and not is_instance_valid(on):
+		on = null
+	var was: Node3D = _board_was if _board_was != null and is_instance_valid(_board_was) else null
+	if on != was:
+		_board_left = 0.0
+		var by: Node3D = on if on != null else was
+		var slow := by != null and absf(float(by.get("speed"))) < board_max_speed
+		var near := _board_last != Vector3.INF and _board_last.distance_to(actor.global_position) < board_max_step
+		if slow and near and (on == null) != (was == null) and not actor.is_dead:
+			_board_on = by
+			_board_mounting = on != null
+			# Getting on, the start is kept on the vehicle (it may roll);
+			# getting off, in the world.
+			_board_from = by.global_transform.affine_inverse() * _board_last if _board_mounting else _board_last
+			_board_total = board_time if _board_mounting else unboard_time
+			_board_left = _board_total
+			if locomotion != null:
+				if _board_rate == 0.0:
+					_board_rate = locomotion.ride_rate
+				locomotion.ride_rate = 1.0 / _board_total
+	_board_was = on
+	_board_last = actor.global_position
+	if _board_left <= 0.0 or _board_on == null or not is_instance_valid(_board_on):
+		_board_left = 0.0
+		boarding = 0.0
+		if _board_rate > 0.0 and locomotion != null:
+			locomotion.ride_rate = _board_rate
+		return
+	_board_left = maxf(0.0, _board_left - delta)
+	var left := _board_left / maxf(_board_total, 0.01)
+	boarding = left
+	var from: Vector3 = _board_on.global_transform * _board_from if _board_mounting else _board_from
+	var offset := (from - actor.global_position) * smoothstep(0.0, 1.0, left) + Vector3.UP * board_hop * sin(PI * left)
+	var parent := get_parent() as Node3D
+	if parent != null:
+		transform.origin += parent.global_basis.inverse() * offset
 
 
 ## Tells the legs' riding pose what is being ridden and what the hands may do:
@@ -5218,6 +5288,11 @@ func _update_ride() -> void:
 		arm.ride_grip = locomotion.grip_hold().max(phone_grip)
 	if vehicle == null:
 		return
+	# Stopped on a bike, the rider puts a foot down (not a passenger).
+	var stopped: bool = absf(float(vehicle.get("speed"))) < foot_down_speed and str(vehicle.get("model")) in ["bike", "hoverbike"] \
+			and locomotion.ride == vehicle and float(vehicle.get("airborne_time")) <= 0.0
+	locomotion.ride_foot_down = move_toward(locomotion.ride_foot_down, 1.0 if stopped else 0.0,
+			foot_down_rate * get_process_delta_time())
 	var free := _in_hand == null and _plan.is_empty() and not phone_up()
 	locomotion.ride_hands = Vector2(1.0, 1.0 if free else 0.0)
 	# A gun in hand is held out toward the aim, where it would be on foot.

@@ -366,6 +366,9 @@ const WORLD_DIR := "res://assets/sounds/world/"
 ## takes played at random.
 const STEP_GROUNDS := ["hard", "dirt", "snow", "soft", "wood"]
 const WORLD_LOOPS := ["engine_ground", "engine_hover", "engine_air", "wind_cold", "music_plaza"]
+## How loud (dB) the music plays at full Music volume, before the slider
+## (Caleb's ask: louder than it started, -6).
+const MUSIC_DB := -1.0
 ## Seconds one track takes to fade into the next (or out to silence).
 const MUSIC_FADE := 2.5
 ## Footsteps heard at most a second, all bodies together, at full sound
@@ -458,7 +461,7 @@ func music(track: String) -> void:
 	if _music_tween != null:
 		_music_tween.kill()
 	_music_tween = create_tween()
-	_music_tween.tween_property(_music, "volume_db", -6.0, MUSIC_FADE)
+	_music_tween.tween_property(_music, "volume_db", MUSIC_DB, MUSIC_FADE)
 
 
 ## The track playing now ("" for none).

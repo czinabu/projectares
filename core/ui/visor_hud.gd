@@ -1636,13 +1636,16 @@ func vital_cells(p: Actor, ink: Color) -> Array[Dictionary]:
 		if p.warming:
 			label = "WARMING"
 			tint = WARMING_INK
+		elif raid != null and raid.indoors_at(p.global_position) != null:
+			# Out of the wind: still chilling, never hurting.
+			label = "SHELTER"
 		elif warmth <= 0.0:
 			label = "FREEZING"
 			tint = Color(1.0, 0.25, 0.15)
 		elif p.shivering:
 			label = "COLD"
 		cells.append({"kind": "body_heat", "share": warmth, "value": "%d%%" % roundi(warmth * 100.0),
-				"label": label, "ink": tint, "warn": p.shivering and not p.warming})
+				"label": label, "ink": tint, "warn": label == "COLD" or label == "FREEZING"})
 	var rig := p.flight
 	if rig.enabled:
 		var heat := rig.heat_fraction()

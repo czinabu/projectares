@@ -427,7 +427,7 @@ static func _run_mirror(t: Node) -> void:
 		var ahead := Basis(Vector3.UP, controller.yaw) * Vector3.FORWARD
 		var to_mirror := mirror.global_position - me.global_position
 		t.check(to_mirror.normalized().dot(ahead.normalized()) > 0.95 and to_mirror.length() > 1.0
-				and to_mirror.length() <= mirror.distance + mirror.side_offset and absf(to_mirror.y) < 0.2,
+				and to_mirror.length() <= mirror.distance + absf(mirror.side_offset) + 0.01 and absf(to_mirror.y) < 0.2,
 				"it stands on the floor in front of the player")
 		var probe := PhysicsRayQueryParameters3D.create(mirror.global_position + Vector3.UP,
 				mirror.global_position + Vector3.DOWN, Actor.LAYER_WORLD)
@@ -449,11 +449,15 @@ static func _run_mirror(t: Node) -> void:
 		square.y = 0.0
 		t.check(square.normalized().dot(-me.global_basis.z) > 0.95,
 				"the mirror stands square in front of the body, wherever the camera looks")
-	# The phone goes down so the mirror shows the whole kit (Caleb's call),
-	# and a click, a right click or Esc brings it back up.
+	# The phone stays up, its screen beside your reflection as in third
+	# person; it can go down to show the whole kit, and a click, a right
+	# click or Esc brings it back up.
+	t.check(not main.phone.mirror_lowered and main.phone.held() and controller.phone_out,
+			"with the mirror up the phone stays up, as the third-person dressing room has it")
+	main.phone.set_mirror_lowered(true)
 	t.check(main.phone.mirror_lowered and main.phone.is_open and not main.phone.held()
 			and not controller.phone_out and controller.input_blocked,
-			"with the mirror up the phone goes down, still open, so the whole kit shows")
+			"put down, it stays open and the whole kit shows")
 	await t.frames(2)
 	t.check(not me.cmd.phone, "the hand lowers it, which everyone sees")
 	for index: MouseButton in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
@@ -491,6 +495,23 @@ static func _run_mirror(t: Node) -> void:
 		var view_size: Vector2 = controller.camera.get_viewport().get_visible_rect().size
 		t.check(not controller.camera.is_position_behind(eye_seen) and spot.x > 0.0 and spot.x < view_size.x * 0.5
 				and spot.y > 0.0, "your reflection is framed left of the middle, clear of the hologram")
+		# Caleb's shot: the glass ended in a bright seam down the middle of
+		# the view. It reaches past the hologram on the right now, the
+		# dressing light leaves its frame alone, and the reflection is drawn
+		# at about the screen's sharpness, not stretched from a small picture.
+		var right_edge: Vector3 = mirror.global_transform * Vector3(mirror.width * 0.5, 0.12 + mirror.height * 0.5, 0.0)
+		var left_edge: Vector3 = mirror.global_transform * Vector3(-mirror.width * 0.5, 0.12 + mirror.height * 0.5, 0.0)
+		var edges := [controller.camera.unproject_position(right_edge).x, controller.camera.unproject_position(left_edge).x]
+		t.check(edges.all(func(x: float) -> bool: return x < view_size.x * 0.1 or x > view_size.x * 0.9),
+				"no edge of the glass runs down the middle of the view (%s of %d)" % [str(edges), view_size.x])
+		var light: OmniLight3D = main._dressing_light
+		t.check(light != null and light.light_specular == 0.0
+				and light.light_cull_mask & (1 << (MirrorScript.MIRROR_LAYER - 1)) == 0,
+				"the dressing light puts no glint on the mirror's frame")
+		var reflection: SubViewport = mirror.get_node_or_null("Reflection")
+		if reflection != null:
+			t.check(reflection.size.y >= mini(int(view_size.y), mirror.max_resolution),
+					"the reflection is drawn at least as tall as the screen (%d for %d)" % [reflection.size.y, view_size.y])
 		var body_fov := controller.camera.fov
 		main.phone.mirror_row = main.phone.wardrobe.pick_keys().find("eyes")
 		for i in 60:
