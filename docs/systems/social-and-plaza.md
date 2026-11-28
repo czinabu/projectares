@@ -28,6 +28,28 @@ date in the same PR.
   is a box in the same batch, never a node. The map asks the view to draw
   out to `VIEW_FAR` (its "view_far" meta). Check by eye with
   `visual_check.tscn -- <dir> --hub-only`.
+- The gate terrace (`worlds/plaza/map.gd` `_build_gates`, Caleb's yes to
+  "make the gates show their worlds"): an open arch carries only what reads
+  from across the plaza: its world's name, its risk (`gate_stakes`, read
+  from the world's rules alone: `weapons_free`, `players_allied`,
+  `keep_gear_on_death`, `gear_at_risk`, `death_drops_scrip`, so a new
+  world's gate needs no line) and the server's live line
+  (`PlazaView.heat_signs`, flat across the top of the doorway). The full
+  write-up is on a console beside each open gate (group "gate_console"),
+  drawn only up close. Where `Look` draws, the doorway shows a glimpse of
+  the world (`GateLook.window`, `gate_window.gdshader`): one unshaded sheet
+  that traces the eye's ray into a made-up scene from the world's
+  `PlanetType` (sky, ridges, ground, its air and storm drifting), so it
+  shifts like a window and never renders the world itself. A sealed arch
+  shows a hologram of an unknown planet (`GateLook.teaser`) and never
+  names a world held back (`LaunchScope`). The wall either side of every
+  arch carries a slatted panel (`GateLook.meter`) that `PlazaView` fills
+  from `world_status` (`gate_fill`) and pulses, with the fins' trims, when
+  someone steps into the gate (`_tick_gates`, a few looks a second over
+  the players, view only). Everything moving is in shaders and instance
+  uniforms, so the terrace costs a few dozen draws and no per-frame
+  script work beyond a running pulse. Check by eye with
+  `visual_check.tscn -- <dir> --gates-only [--playtest] [--low]`.
 - The War Room (DESIGN.md section 2, "Spectating screens"): the plaza's
   big screen is `WarRoom` (`core/social/war_room.gd`, view only, made by
   `PlazaView` only where `Look` is on, drawn into a `SubViewport` on the

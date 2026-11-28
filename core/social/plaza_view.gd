@@ -28,13 +28,17 @@ var routes := {}
 ## How each world on this server is doing (world id -> `Raid.status()`), as
 ## the server last told it. Shared with `NetSession.world_status`.
 var world_status := {}
-## The sign over each world doorway: world id -> Label3D.
+## The sign across the top of each world doorway: world id -> Label3D.
 var heat_signs := {}
 ## World ids the new player's tour keeps closed for now (`Onboarding.locks`),
 ## set by `main.gd`; their gates say so.
 var tour_closed: Array = []
-## How high over the doorway its sign hangs.
-var heat_sign_height := 6.9
+## How high up the doorway its sign runs, under the risk line.
+var heat_sign_height := 10.25
+## How long, in seconds, a pulse takes to run up a gate's panels.
+var gate_pulse_time := 1.4
+## How often, in seconds, the gates look for someone stepping in.
+var gate_check_every := 0.2
 ## The gear of the player you look at, floating over them.
 var tag: Label3D
 ## The people of the place (`PlazaLocals`), made only where `Look` draws.
@@ -49,6 +53,11 @@ var _notice: Label
 var _notice_left := 0.0
 ## The arch lit because you stand in it.
 var _lit_portal: Node3D = null
+## Per gate bay (its index in the map's `gate_bays`): how many stood in it at
+## the last look, and how long its pulse has left to run.
+var _gate_counts := {}
+var _gate_pulses := {}
+var _gate_check_left := 0.0
 
 
 func setup(p_raid: Raid, p_routes := {}, p_status := {}) -> void:
@@ -108,18 +117,24 @@ func refresh_heat() -> void:
 		if sign == null:
 			sign = Label3D.new()
 			sign.name = "Heat_%s" % id
-			sign.font_size = 56
-			sign.pixel_size = 0.006
-			sign.outline_size = 12
-			sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			sign.font_size = 48
+			sign.pixel_size = 0.01
+			sign.outline_size = 14
+			sign.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			sign.width = 7.6 / sign.pixel_size
+			sign.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 			sign.top_level = true
 			add_child(sign)
 			heat_signs[id] = sign
-		sign.global_position = portal.global_position + Vector3(0, heat_sign_height, 0)
+		# Flat on the gate's face, just in front of the doorway, under the
+		# risk line, and turned the way the gate faces.
+		sign.global_transform = Transform3D(portal.global_basis,
+				portal.global_position + portal.global_basis * Vector3(0, heat_sign_height, -1.2))
 		var status: Dictionary = world_status.get(id, {})
-		sign.text = heat_text(status)
+		sign.text = heat_text(status).to_upper()
 		sign.modulate = heat_color(float(status.get("war", 0.0)))
 		sign.visible = sign.text != ""
+	_fill_gates()
 	for node in raid.get_tree().get_nodes_in_group("wanted_board"):
 		var board := node as Label3D
 		if board != null and raid.map.is_ancestor_of(board):
@@ -171,6 +186,16 @@ static func heat_text(status: Dictionary) -> String:
 	return "   ".join(parts)
 
 
+## How full a world is, as a share of its places (0 to 1), from its status:
+## at least one slat lights for one player.
+static func gate_fill(status: Dictionary, max_players: int, slats: int) -> float:
+	var players := int(status.get("players", 0))
+	if players <= 0 or max_players <= 0 or slats <= 0:
+		return 0.0
+	var share := clampf(float(players) / float(max_players), 0.0, 1.0)
+	return maxf(share, 1.0 / float(slats))
+
+
 ## Pale when a world is quiet, towards red as its war heats up.
 static func heat_color(war: float) -> Color:
 	return Color(0.8, 0.9, 1.0).lerp(Color(1.0, 0.3, 0.2), clampf(war, 0.0, 1.0))
@@ -186,6 +211,7 @@ func _process(delta: float) -> void:
 	var portal := portal_at(raid, me.global_position)
 	_prompt.text = prompt_for(portal, routes, tour_closed)
 	_light_arch(portal)
+	_tick_gates(delta)
 	if portal != null and Input.is_action_just_pressed("interact"):
 		var destination: String = portal.get_meta("destination", "")
 		if destination.begins_with("talk:"):
@@ -219,8 +245,9 @@ func _greet(portal: Node3D) -> void:
 		locals.greet(keeper, world_status, account)
 
 
-## An arch you stand in lights up (its hidden "Lit" child), and goes dark
-## again when you step out. In place of the old glowing pads on the floor.
+## An arch you stand in lights up (its hidden "Lit" child, and its glimpse
+## of the world brightens), and goes dark again when you step out. In place
+## of the old glowing pads on the floor.
 func _light_arch(portal: Node3D) -> void:
 	if portal == _lit_portal:
 		return
@@ -228,11 +255,86 @@ func _light_arch(portal: Node3D) -> void:
 		var old := _lit_portal.get_node_or_null("Lit") as Node3D
 		if old != null:
 			old.visible = false
+		var old_glimpse := _lit_portal.get_node_or_null("Glimpse") as GeometryInstance3D
+		if old_glimpse != null:
+			old_glimpse.set_instance_shader_parameter("lit", 0.0)
 	_lit_portal = portal
 	if portal != null:
 		var lit := portal.get_node_or_null("Lit") as Node3D
 		if lit != null:
 			lit.visible = true
+		var glimpse := portal.get_node_or_null("Glimpse") as GeometryInstance3D
+		if glimpse != null:
+			glimpse.set_instance_shader_parameter("lit", 1.0)
+
+
+## The map's gate bays (`gate_bays`), or none.
+func _gate_bays() -> Array:
+	if raid == null or not is_instance_valid(raid) or raid.map == null or not raid.map.has_method("gate_bays"):
+		return []
+	return raid.map.gate_bays()
+
+
+## Fills the panels beside each open gate with how many are in its world.
+## View only: the panels exist only where `Look` draws.
+func _fill_gates() -> void:
+	if not Look.enabled:
+		return
+	for bay: Dictionary in _gate_bays():
+		var id := str(bay.get("world_id", ""))
+		if id == "":
+			continue
+		var status: Dictionary = world_status.get(id, {})
+		var slats := clampi(int(bay.get("max_players", 0)), 8, 24)
+		var fill := gate_fill(status, int(bay.get("max_players", 0)), slats)
+		for meter: Variant in bay.get("meters", []):
+			if is_instance_valid(meter):
+				(meter as GeometryInstance3D).set_instance_shader_parameter("filled", fill)
+
+
+## Who stands in each gate, a few times a second: when someone steps into
+## one, a pulse runs up the panels and fins either side of it, so a squad
+## heading out shows from across the plaza. One pass over the players for
+## every gate (a handful), and only where `Look` draws.
+func _tick_gates(delta: float) -> void:
+	if not Look.enabled:
+		return
+	var bays := _gate_bays()
+	if bays.is_empty():
+		return
+	_gate_check_left -= delta
+	if _gate_check_left <= 0.0:
+		_gate_check_left = gate_check_every
+		var players := RaidRoster.players_in(raid)
+		for i in bays.size():
+			var portal: Variant = bays[i].get("portal")
+			if portal == null or not is_instance_valid(portal):
+				continue
+			var radius: float = (portal as Node3D).get_meta("radius", 3.0)
+			var count := 0
+			for other: Variant in players:
+				if not is_instance_valid(other) or (other as Actor).is_dead:
+					continue
+				var gap: Vector3 = (other as Actor).global_position - (portal as Node3D).global_position
+				gap.y = 0.0
+				if gap.length() <= radius:
+					count += 1
+			if count > int(_gate_counts.get(i, 0)):
+				_gate_pulses[i] = gate_pulse_time
+			_gate_counts[i] = count
+	for i: int in _gate_pulses.keys():
+		var left: float = float(_gate_pulses[i]) - delta
+		var at := -1.0 if left <= 0.0 else 1.0 - left / gate_pulse_time
+		var parts: Array = []
+		parts.append_array(bays[i].get("meters", []))
+		parts.append_array(bays[i].get("fins", []))
+		for part: Variant in parts:
+			if is_instance_valid(part):
+				(part as GeometryInstance3D).set_instance_shader_parameter("pulse", at)
+		if left <= 0.0:
+			_gate_pulses.erase(i)
+		else:
+			_gate_pulses[i] = left
 
 
 ## A line shown for a few seconds under the prompt.

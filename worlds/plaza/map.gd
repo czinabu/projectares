@@ -216,6 +216,8 @@ const WARM := Color(1.0, 0.88, 0.72)
 var nav_region: NavigationRegion3D
 var _art_rng := RandomNumberGenerator.new()
 var _gates: Array[Dictionary] = []
+## Every arch on the gate terrace, open or sealed (see `gate_bays`).
+var _gate_bays: Array[Dictionary] = []
 ## Each shopfront: {id, at, yaw, color, door}: `at` is the middle of its
 ## front on the street, `door` where a window shopper stands.
 var _fronts: Array[Dictionary] = []
@@ -536,7 +538,12 @@ func _strut(a: Vector3, b: Vector3, thick: float, material: Material) -> void:
 ## One arch per raid world along the gate terrace, north of the spire, with
 ## the spare arches sealed for worlds to come. You walk into an arch to go:
 ## its light comes up while you stand in it (the portal's "Lit" child, shown
-## by `PlazaView`).
+## by `PlazaView`). Each open arch carries only what reads from across the
+## plaza: its world's name, how risky it is (`gate_stakes`) and, from the
+## server, how it is doing (`PlazaView.heat_signs`); the full write-up is on
+## a console beside it. Where `Look` draws, the doorway shows a glimpse of
+## the world, a sealed one a hologram, and the panels either side of an arch
+## show how full its world is (`gate_bays`, driven by `PlazaView`).
 func _build_gates() -> void:
 	var worlds := Worlds.raid_worlds()
 	var arches := maxi(GATE_ARCHES, worlds.size())
@@ -551,15 +558,25 @@ func _build_gates() -> void:
 	_solid(Vector3(wall_width + 2.0, 1.2, 6.0), Vector3(0, 14.6, -GATE_LINE - 2.4), DARK)
 	_part(self, Vector3(wall_width + 2.0, 0.2, 0.1), Vector3(0, 14.4, -GATE_LINE + 0.62), orange, true)
 	_sign("DEPLOY", Vector3(0, 17.2, -GATE_LINE - 2.0), 0.0, 3.0, Color(1.0, 0.65, 0.35))
-	# Fins between the arches, lit down their edges.
+	# Fins between the arches, lit down their edges: each trim its own strip,
+	# so a pulse can run up the two beside a gate someone steps into.
+	var fins := Node3D.new()
+	fins.name = "GateFins"
+	add_child(fins)
+	var trims: Array[MeshInstance3D] = []
 	for i in arches + 1:
 		var x := (float(i) - float(arches) * 0.5) * GATE_SPACING
 		_solid(Vector3(1.2, 14.0, 3.0), Vector3(x, 7.0, -GATE_LINE - 0.4), WALL)
-		_part(self, Vector3(0.12, 13.6, 0.1), Vector3(x, 7.0, -GATE_LINE + 1.15), orange, true)
+		_part(fins, Vector3(0.12, 13.6, 0.1), Vector3(x, 7.0, -GATE_LINE + 1.15), orange, true)
+		trims.append(fins.get_child(fins.get_child_count() - 1) as MeshInstance3D)
+	_gate_bays.clear()
 	for i in arches:
 		var at := Vector3((float(i) - float(arches - 1) * 0.5) * GATE_SPACING, 0, -GATE_LINE)
 		var open := i < worlds.size()
 		var color := Color(1.0, 0.6, 0.3) if open else Color(0.4, 0.42, 0.5)
+		var bay := {"at": at, "color": color, "world_id": "", "portal": null, "max_players": 0,
+				"fins": [trims[i], trims[i + 1]], "glimpse": null, "meters": []}
+		_gate_bays.append(bay)
 		_solid(Vector3(1.6, 12.0, 2.4), at + Vector3(-5.0, 6.0, 0), STEEL)
 		_solid(Vector3(1.6, 12.0, 2.4), at + Vector3(5.0, 6.0, 0), STEEL)
 		_solid(Vector3(11.6, 1.6, 2.4), at + Vector3(0, 12.8, 0), DARK)
@@ -568,12 +585,16 @@ func _build_gates() -> void:
 			_part(self, Vector3(0.12, 11.9, 0.12), at + Vector3(side * 4.15, 5.95, 1.25), color, true)
 		if not open:
 			_solid(Vector3(8.4, 12.0, 0.6), at + Vector3(0, 6.0, 0), DARK)
-			_sign("SEALED", at + Vector3(0, 6.0, 0.35), 0.0, 0.7, color)
+			_sign("SEALED", at + Vector3(0, 10.4, 0.4), 0.0, 0.9, color.lightened(0.3))
+			_sign("A NEW FRONT OPENS HERE SOON", at + Vector3(0, 9.5, 0.4), 0.0, 0.32, color.lightened(0.45))
 			continue
 		var world := worlds[i]
 		var portal := _add_portal("world:%s" % world.id, "Deploy to %s" % world.display_name,
 				at + Vector3(0, 0, 1.6), 3.2)
 		portal.set_meta("world_id", world.id)
+		bay["world_id"] = world.id
+		bay["portal"] = portal
+		bay["max_players"] = world.max_players
 		# The arch's light: a faint sheet always, bright while you stand in it.
 		_part(self, Vector3(8.2, 11.8, 0.04), at + Vector3(0, 5.95, -0.2), color.darkened(0.92), true)
 		var lit := Node3D.new()
@@ -584,11 +605,117 @@ func _build_gates() -> void:
 		_part(lit, Vector3(8.4, 0.08, 1.2), Vector3(0, 0.04, -1.1), color, true)
 		_gates.append({"at": at, "yaw": 0.0, "world": world})
 		_sign(world.display_name.to_upper(), at + Vector3(0, 12.8, 1.25), 0.0, 1.1, color)
-		_sign(world.description, at + Vector3(0, 10.6, 0.1), 0.0, 0.32, Color(0.9, 0.9, 0.9), 8.0)
+		var stakes := gate_stakes(world)
+		_sign(str(stakes[0]), at + Vector3(0, 11.05, 0.4), 0.0, 0.44, stakes[1])
+		_build_gate_console(world, at + Vector3(7.6, 0, 4.4), stakes)
+
 	# The dispatcher's desk at the terrace's west end.
 	var desk: Vector3 = TALKERS["marlo"][0]
 	_solid(Vector3(2.6, 1.05, 0.9), desk + Basis(Vector3.UP, float(TALKERS["marlo"][1])) * Vector3(0, 0.525, -0.9),
 			DARK, float(TALKERS["marlo"][1]))
+
+
+## What a gate says about its world's risk, short enough to read from
+## across the plaza: [text, colour]. Read from the world's rules, so a new
+## world's gate says the right thing with no line here: who you fight
+## (`players_allied`, `weapons_free`) and what a death costs
+## (`keep_gear_on_death`, `gear_at_risk`, `death_drops_scrip`). Red for high risk, amber for medium, blue for low.
+static func gate_stakes(world: WorldDef) -> Array:
+	if not world.weapons_free:
+		return ["NO RISK  ·  NOBODY FIGHTS", Color(0.55, 0.95, 0.75)]
+	var keeps := world.keep_gear_on_death or not world.gear_at_risk
+	var fight := "CO-OP" if world.players_allied else "PVP"
+	var loss := "KEEP GEAR" if keeps else ("LOSE YOUR KIT" if world.death_drops_scrip else "FULL LOOT")
+	var risk := 1
+	if not world.players_allied:
+		risk += 1
+	if not keeps:
+		risk += 1
+	var words: Array[String] = ["", "LOW RISK", "MEDIUM RISK", "HIGH RISK"]
+	var colors: Array[Color] = [Color.WHITE, Color(0.45, 0.85, 1.0), Color(1.0, 0.8, 0.3), Color(1.0, 0.38, 0.25)]
+	return ["%s  ·  %s  ·  %s" % [words[risk], fight, loss], colors[risk]]
+
+
+## A gate's console: a lectern beside the arch whose screen carries the
+## world's full write-up, close enough to read when you walk up to it and
+## not drawn from across the plaza.
+func _build_gate_console(world: WorldDef, at: Vector3, stakes: Array) -> void:
+	var tilt := deg_to_rad(-35.0)
+	_solid(Vector3(1.5, 1.0, 0.5), at + Vector3(0, 0.5, 0), DARK)
+	var head := Node3D.new()
+	head.name = "GateConsole_%s" % world.id
+	head.position = at + Vector3(0, 1.12, 0.05)
+	head.rotation.x = tilt
+	add_child(head)
+	head.add_to_group("gate_console")
+	head.set_meta("world_id", world.id)
+	_part(head, Vector3(1.6, 1.0, 0.06), Vector3.ZERO, DARK_GLASS)
+	_part(head, Vector3(1.6, 0.04, 0.07), Vector3(0, 0.5, 0), stakes[1], true)
+	var text := Label3D.new()
+	text.name = "Screen"
+	text.text = "%s\n%s\n\n%s" % [world.display_name.to_upper(), stakes[0], world.description]
+	text.pixel_size = 0.0022
+	text.font_size = 36
+	text.outline_size = 0
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.width = 1.42 / text.pixel_size
+	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	# A wrapped Label3D's block starts at its position, so it starts at the
+	# screen's left edge.
+	text.position = Vector3(-0.71, 0.44, 0.04)
+	text.modulate = Color(0.92, 0.95, 1.0)
+	text.visibility_range_end = 16.0
+	text.visibility_range_end_margin = 3.0
+	text.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	head.add_child(text)
+
+
+## The arches of the gate terrace, left to right: {at, color, world_id ("" for
+## a sealed one), portal, max_players, fins (the lit trims either side),
+## glimpse (the doorway's view, or null), meters (its two panels, or none)}.
+## The glimpse and meters exist only where `Look` draws.
+func gate_bays() -> Array[Dictionary]:
+	return _gate_bays
+
+
+## The gates come alive: each open doorway shows its world (from the
+## world's planet), each sealed one a hologram, and the dark wall either side
+## of every arch carries a slatted panel that `PlazaView` fills with how many
+## are in that world and pulses when someone steps through.
+func _dress_gates(art: Node3D) -> void:
+	var fin_color := Color(1.0, 0.55, 0.25)
+	var dressed := {}
+	for i in _gate_bays.size():
+		var bay: Dictionary = _gate_bays[i]
+		var at: Vector3 = bay["at"]
+		var color: Color = bay["color"]
+		for fin: MeshInstance3D in bay["fins"]:
+			if not dressed.has(fin):
+				Look.gate_trim(fin, fin_color, 13.6)
+				dressed[fin] = true
+		var portal: Node3D = bay["portal"]
+		var meters: Array = []
+		if portal != null:
+			var world := Worlds.get_world(str(bay["world_id"]))
+			var glimpse := Look.gate_window(world.planet_type() if world != null else null,
+					Vector2(8.2, 11.8), color, float(i) * 3.7)
+			glimpse.position = Vector3(0, 5.95, -1.74)
+			portal.add_child(glimpse)
+			bay["glimpse"] = glimpse
+		else:
+			var teaser := Look.gate_teaser(Vector2(8.4, 12.0), Color(0.45, 0.8, 1.0))
+			teaser.position = at + Vector3(0, 6.0, 0.32)
+			art.add_child(teaser)
+		var slats := clampi(int(bay["max_players"]), 8, 24) if portal != null else 16
+		for side: float in [-1.0, 1.0]:
+			var meter := Look.gate_meter(Vector2(3.0, 10.5), color, slats)
+			meter.position = at + Vector3(side * 8.1, 6.4, -1.37)
+			art.add_child(meter)
+			if portal == null:
+				meter.set_instance_shader_parameter("idle", 1.0)
+			meters.append(meter)
+		bay["meters"] = meters
 
 
 ## The shops this game has: [{id, name, blurb}, ...], or none.
@@ -1722,6 +1849,7 @@ func _dress() -> void:
 		var glow := Look.lamp(Color(1.0, 0.5, 0.2), 5.0, 16.0)
 		glow.position = gate["at"] + Vector3(0, 5.0, 2.0)
 		art.add_child(glow)
+	_dress_gates(art)
 	# Each shop lit warm inside, a touch of its colour.
 	for light: Array in _shop_lights:
 		var lamp := Look.lamp(WARM.lerp(light[1], 0.12), 6.5, 11.0)
