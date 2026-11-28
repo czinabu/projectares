@@ -1175,6 +1175,7 @@ func _build_field_kit() -> void:
 
 
 func _add_wreck(at: Vector2, kind: int, yaw: float, big: float) -> void:
+	var first := nav_region.get_child_count()
 	var base := _ground(at)
 	var turn := Basis(Vector3.UP, yaw)
 	var size := Vector3.ZERO
@@ -1237,8 +1238,25 @@ func _add_wreck(at: Vector2, kind: int, yaw: float, big: float) -> void:
 			fin.rotation = Vector3(-0.05, yaw + 0.12, 0.0)
 			for engine: Transform3D in _wreck_engines(base, yaw, size, big):
 				SolidProp.box(nav_region, WRECK_ENGINE * big, engine)
-	_wrecks.append({"at": base, "size": size, "burning": _rng.randf() < 0.4, "kind": kind, "yaw": yaw, "big": big})
+	_wrecks.append({"at": base, "size": size, "burning": _rng.randf() < 0.4, "kind": kind, "yaw": yaw, "big": big, "boxes": _boxes_since(first)})
 	_cover_spots.append(_ground(at + Vector2.from_angle(yaw) * (size.x * 0.5 + 2.0)))
+
+
+## The plain boxes `_box` built under the navigation region since it had
+## `first` children: [size, transform, rusty, its mesh] each, for the
+## dressing to clad.
+func _boxes_since(first: int) -> Array:
+	var found := []
+	for k in range(first, nav_region.get_child_count()):
+		var body := nav_region.get_child(k) as StaticBody3D
+		if body == null or body.get_child_count() < 2:
+			continue
+		var shown := body.get_child(1) as MeshInstance3D
+		if shown == null or not shown.mesh is BoxMesh:
+			continue
+		var box := shown.mesh as BoxMesh
+		found.append([box.size, body.transform, box.material == HULL_RUST, shown])
+	return found
 
 
 ## Where a dropship wreck's two engines hang off its broken tail.
@@ -2298,6 +2316,32 @@ func _slab(size: Vector3, at: Vector3, material: Material, shadow := false) -> M
 ## of a kind: a tank's dead teal running light along its hull, a strider's
 ## cockpit slit, a dropship's hazard-striped fin and the furrow it ploughed.
 func _dress_wrecks(art: Node3D) -> void:
+	# Every wreck's hull clad in kit plating, all in one mesh.
+	var kit := KitMesh.new()
+	var clad_rng := RandomNumberGenerator.new()
+	clad_rng.seed = LAYOUT_SEED + 29
+	for wreck in _wrecks:
+		var boxes: Array = wreck.get("boxes", [])
+		if int(wreck.get("kind", -1)) == 0 and not boxes.is_empty():
+			# A tank is the real thing: the boxes stay its collision, drawn
+			# as a burnt-out tank model sat the way the hull settled.
+			for part: Array in boxes:
+				(part[3] as MeshInstance3D).visible = false
+			var hull: Transform3D = boxes[0][1]
+			var big: float = wreck["big"]
+			var tank := Look.prop("Wreck_Tank.glb", 8.8 * big, 1.0)
+			tank.transform = Transform3D(hull.basis.orthonormalized() * Basis(Vector3.UP, PI * 0.5), Vector3(hull.origin.x, float(wreck["at"].y) - 0.3, hull.origin.z))
+			art.add_child(tank)
+			continue
+		for part: Array in boxes:
+			KIT_DRESS.clad_box(kit, part[1], part[0], clad_rng, KIT_DRESS.HULL_PANELS, [], {"plate": "rust"} if part[2] else {})
+	if not kit.is_empty():
+		art.add_child(kit.node("WreckClad", {
+			"plate": Look.surface("metal", {"tint": Color(0.7, 0.66, 0.62), "grime": 1.0, "scale": 0.1}),
+			"rust": Look.surface("metal", {"tint": Color(0.85, 0.5, 0.34), "grime": 1.0, "scale": 0.12}),
+			"dark": Look.surface("metal", {"tint": Color(0.3, 0.28, 0.27), "grime": 1.0, "scale": 0.1}),
+			"glow": Look.trim("orange"),
+		}, ["plate", "rust", "dark", "glow"]))
 	var furrows: Array[PackedVector2Array] = []
 	for wreck in _wrecks:
 		if not wreck.has("kind"):
@@ -2308,11 +2352,6 @@ func _dress_wrecks(art: Node3D) -> void:
 		var size: Vector3 = wreck["size"]
 		var turn := Basis(Vector3.UP, yaw)
 		match int(wreck["kind"]):
-			0:
-				for side: float in [-1.0, 1.0]:
-					var light := _slab(Vector3(0.08, 0.12, size.z * 0.7), base + turn * Vector3(side * (size.x * 0.5 + 0.03), size.y * 0.55, 0), Look.trim("teal"))
-					light.rotation.y = yaw
-					art.add_child(light)
 			1:
 				var slit := _slab(Vector3(size.x * 0.6, 0.25, 0.08), Vector3.ZERO, Look.trim("teal"))
 				slit.transform = Transform3D(Basis.from_euler(Vector3(0.0, yaw, 0.38)),
