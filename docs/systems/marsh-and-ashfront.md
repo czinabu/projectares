@@ -1,6 +1,6 @@
 # The Spore Marsh and Ashfront's scenery
 
-Rules for the Spore Marsh's wildlife, fouling, spores and Rootways, and Ashfront's scenery army, battle shelves, horde, flares, low sky and rim fort. These are part of the rules in `CLAUDE.md` that must not be
+Rules for the Spore Marsh's wildlife, fouling, spores and Rootways, and Ashfront's scenery army, battle shelves, horde, flares, low sky, rim fort and kit-clad landmarks. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -132,8 +132,17 @@ date in the same PR.
   of it may reach in past the edge walls, since a flier can get there and
   it has no collision: a long piece runs along the wall, never across it.
   It is merged once into one mesh a side with one surface a material
-  (`KEYS`); keep a new piece in those few surfaces (`_key`, or boxes
-  through `_append`), never a node of its own. Only the breaches' smoke
+  (`KEYS`, through `KitMesh`); keep a new piece in those few surfaces,
+  never a node of its own. Only the breaches' smoke
   is a node (the map's `_smoke`, through `smoke_maker`). Rubble on the
   slope stays on its steep top, as the planet's rocks do. Check with
   `--rim-only`, which ends looking up at two breaches.
+  The field's greybox landmarks are clad in the same kit
+  (`worlds/ashfront/kit_dress.gd`, called from the map's dressing): the
+  map's plain boxes stay the collision, and the kit pieces are laid over
+  their faces, merged into one `KitMesh` node a landmark. A piece may
+  stand out from the box under it by at most `SKIN` (0.3 m, inside the
+  collision check's own skin), so nothing you can see is a ghost: wall
+  panels only from `FLAT_PANELS`, posts set into the corners, and
+  anything deeper needs a solid of its own in the gameplay pass. Cladding
+  draws from its own RNG. Check with `--kit-only`.

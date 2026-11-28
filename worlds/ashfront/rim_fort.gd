@@ -20,8 +20,7 @@ extends Node3D
 ## whole ring costs at most `KEYS.size()` draw calls a side and nothing a
 ## frame; only the breaches' smoke moves.
 
-## Megakit pieces, in `assets/props/megakit`.
-const DIR := "res://assets/props/megakit/"
+## Megakit pieces, in `assets/props/megakit` (`KitMesh`).
 const WALLS := ["WallBand_Straight", "WallPipe_Straight", "WallWideBand_Straight"]
 const BROKEN := "WallBand_Straight_Broken"
 const STUB := "ShortWall_DarkMetal2_Straight"
@@ -42,11 +41,6 @@ const TOWER_SCALE := 3.6
 const SINK := 2.5
 ## Where the wall is kept low in front of a shelf, past its ends (m).
 const SHELF_MARGIN := 16.0
-## Which surfaces get which material, by the kit's material names. Anything
-## else (decals, collision shapes) is left out.
-const PLATE := ["MI_Trim_01", "MI_Trim_02", "MI_PaddedWall"]
-const GLOW := ["MI_Trim_03_Cables", "M_Glass"]
-const DARK := ["MI_Trim_03", "M_Black"]
 ## The surfaces a side's mesh may have, in draw order.
 const KEYS := ["plate", "dark", "glow", "beacon"]
 ## Breaches a side (where no shelf is), each two lengths wide.
@@ -68,12 +62,8 @@ var smoke_maker := Callable()
 var pieces: Array[Dictionary] = []
 ## Each breach's foot, the middle of the gap on the ground (for checks).
 var breaches: Array[Vector3] = []
-## Each surface's arrays, per side: side -> { key -> [verts, normals, indices] }.
+## Each side's pieces, merged as they are laid: side -> KitMesh.
 var _sides := {}
-## Each model's drawable surfaces, read once: file -> [[mesh, surface, key, xform], ...].
-static var _parts := {}
-## Each mesh surface's arrays, read once: "<id>:<surface>" -> arrays.
-static var _arrays := {}
 
 
 func _ready() -> void:
@@ -97,23 +87,7 @@ func build() -> void:
 		"beacon": Look.trim("beacon"),
 	}
 	for side: String in _sides:
-		var mesh := ArrayMesh.new()
-		for key: String in KEYS:
-			if not _sides[side].has(key):
-				continue
-			var parts: Array = _sides[side][key]
-			var arrays := []
-			arrays.resize(Mesh.ARRAY_MAX)
-			arrays[Mesh.ARRAY_VERTEX] = parts[0]
-			arrays[Mesh.ARRAY_NORMAL] = parts[1]
-			arrays[Mesh.ARRAY_INDEX] = parts[2]
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-			mesh.surface_set_material(mesh.get_surface_count() - 1, materials[key])
-		var node := MeshInstance3D.new()
-		node.name = "Side_" + side
-		node.mesh = mesh
-		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(node)
+		add_child((_sides[side] as KitMesh).node("Side_" + side, materials, KEYS))
 	_sides.clear()
 
 
@@ -286,100 +260,15 @@ func _ground(spot: Vector2) -> float:
 
 ## Adds every drawable surface of a kit model at `xform` to its side.
 func _add(side: String, file: String, xform: Transform3D, at: Vector3, stacked := false) -> void:
-	var box := AABB(at, Vector3.ZERO)
-	for part: Array in _model_parts(file):
-		var placed := xform * (part[3] as Transform3D)
-		box = box.merge(placed * (part[0] as Mesh).get_aabb())
-		_append(side, part[2], part[0], part[1], placed)
-	pieces.append({"file": file, "at": at, "side": side, "stacked": stacked, "box": box})
+	var box := _kit(side).add(file, xform)
+	pieces.append({"file": file, "at": at, "side": side, "stacked": stacked, "box": box.merge(AABB(at, Vector3.ZERO))})
 
 
 func _append(side: String, key: String, mesh: Mesh, surface: int, xform: Transform3D) -> void:
+	_kit(side).add_mesh(key, mesh, surface, xform)
+
+
+func _kit(side: String) -> KitMesh:
 	if not _sides.has(side):
-		_sides[side] = {}
-	if not _sides[side].has(key):
-		_sides[side][key] = [PackedVector3Array(), PackedVector3Array(), PackedInt32Array()]
-	var id := "%d:%d" % [mesh.get_instance_id(), surface]
-	if not _arrays.has(id):
-		_arrays[id] = mesh.surface_get_arrays(surface)
-	var arrays: Array = _arrays[id]
-	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
-	var placed := PackedVector3Array()
-	var turned := PackedVector3Array()
-	var turn := xform.basis.inverse().transposed()
-	for k in verts.size():
-		placed.append(xform * verts[k])
-		turned.append((turn * normals[k]).normalized() if k < normals.size() else Vector3.UP)
-	if indices.is_empty():
-		for k in verts.size():
-			indices.append(k)
-	_append_arrays(side, key, placed, turned, indices)
-
-
-## Adds ready-placed triangles to one of a side's surfaces.
-func _append_arrays(side: String, key: String, verts: PackedVector3Array, normals: PackedVector3Array, indices: PackedInt32Array) -> void:
-	if not _sides.has(side):
-		_sides[side] = {}
-	if not _sides[side].has(key):
-		_sides[side][key] = [PackedVector3Array(), PackedVector3Array(), PackedInt32Array()]
-	var into: Array = _sides[side][key]
-	var start: int = (into[0] as PackedVector3Array).size()
-	var v_out: PackedVector3Array = into[0]
-	var n_out: PackedVector3Array = into[1]
-	var i_out: PackedInt32Array = into[2]
-	v_out.append_array(verts)
-	n_out.append_array(normals)
-	for k in indices.size():
-		i_out.append(start + indices[k])
-	into[0] = v_out
-	into[1] = n_out
-	into[2] = i_out
-
-
-## A kit model's drawable surfaces with their place in the model, read once
-## a run: [mesh, surface, material key, transform].
-static func _model_parts(file: String) -> Array:
-	if _parts.has(file):
-		return _parts[file]
-	var found: Array = []
-	var scene := load(DIR + file + ".glb") as PackedScene
-	if scene == null:
-		push_warning("RimFort: missing model %s" % file)
-		_parts[file] = found
-		return found
-	var root := scene.instantiate() as Node3D
-	for node in root.find_children("*", "MeshInstance3D", true, false):
-		var piece := node as MeshInstance3D
-		if str(piece.name).contains("colonly") or piece.mesh == null:
-			continue
-		var xform := Transform3D.IDENTITY
-		var walk: Node = piece
-		while walk != root and walk is Node3D:
-			xform = (walk as Node3D).transform * xform
-			walk = walk.get_parent()
-		for s in piece.mesh.get_surface_count():
-			var key := _key(piece.mesh.surface_get_material(s))
-			if key != "":
-				found.append([piece.mesh, s, key, xform])
-	root.free()
-	_parts[file] = found
-	return found
-
-
-## Which of our materials a kit material becomes ("" to leave it out).
-static func _key(material: Material) -> String:
-	if material == null:
-		return ""
-	var named := material.resource_name
-	for prefix: String in GLOW:
-		if named.begins_with(prefix):
-			return "glow"
-	for prefix: String in DARK:
-		if named.begins_with(prefix):
-			return "dark"
-	for prefix: String in PLATE:
-		if named.begins_with(prefix):
-			return "plate"
-	return ""
+		_sides[side] = KitMesh.new()
+	return _sides[side]
