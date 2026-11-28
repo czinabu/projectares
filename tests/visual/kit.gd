@@ -2,7 +2,8 @@ extends RefCounted
 ## `--kit-only`, a mode `visual_check.gd` finds by itself. Ashfront's field
 ## landmarks clad in kit pieces (`worlds/ashfront/kit_dress.gd`), each from
 ## the field, near and far: name, from, toward, eye height over the ground,
-## aim height over the ground there.
+## aim height over the ground there. Then a few supply piles, a wreck of
+## each kind and the giants on the horizon (`--kit-only giants`).
 
 const VIEWS := [
 	["forge_far", Vector2(90, 70), Vector2(2, -2), 2.0, 30.0],
@@ -17,6 +18,9 @@ const VIEWS := [
 	["wrecks_far", Vector2(118, -80), Vector2(158, -106), 3.0, 2.0],
 	["wrecks_near", Vector2(146, -96), Vector2(160, -108), 1.7, 1.5],
 	["wrecks_air", Vector2(130, -140), Vector2(158, -106), 25.0, 0.0],
+	["skyline_city", Vector2(60, -60), Vector2(-300, 300), 90.0, 40.0],
+	["skyline_ship", Vector2(60, 60), Vector2(-40, -480), 90.0, 40.0],
+	["skyline_stacks", Vector2(60, 60), Vector2(-440, -30), 90.0, 40.0],
 ]
 
 
@@ -73,4 +77,33 @@ static func shoot(v: Node, out_dir: String, args: PackedStringArray) -> void:
 		camera.look_at_from_position(eye, at + Vector3(0, size.y * 0.4, 0))
 		await v._settle(40)
 		await v._shot(out_dir.path_join("kit_wreck_kind%d.png" % kind))
+	# The giants on the horizon, from the middle of the field: the Colossus
+	# and the capital ship, with the fog thinned so their shapes show.
+	var giants := raid.map.get_node_or_null("Giants") as Node3D
+	if giants != null and (only == "" or "giants".begins_with(only) or only.begins_with("giants")):
+		var eye := Vector3(0, ground.call(0.0, 0.0) + 90.0, 0)
+		var body := giants.get("_body") as Node3D
+		var ship := giants.get("_ship") as Node3D
+		for target: Array in [["colossus", body], ["ship", ship]]:
+			var at: Vector3 = (target[1] as Node3D).global_position
+			camera.fov = 22.0
+			camera.look_at_from_position(eye, at)
+			await v._settle(40)
+			await v._shot(out_dir.path_join("kit_giants_%s.png" % target[0]))
+			# And from closer, off to one side, as from the rim.
+			var side := (target[1] as Node3D).global_basis.x.normalized()
+			var near := at + side * 900.0 + (target[1] as Node3D).global_basis.z.normalized() * 300.0 - Vector3(0, 40, 0)
+			camera.fov = 40.0
+			camera.look_at_from_position(near, at)
+			await v._settle(10)
+			await v._shot(out_dir.path_join("kit_giants_%s_near.png" % target[0]))
+		camera.fov = 70.0
+		var dropship := (giants.get("_wing") as Array)[0] as Node3D
+		giants.set_process(false)
+		dropship.visible = true
+		dropship.global_transform = Transform3D(Basis.IDENTITY, eye + Vector3(0, 10, -60))
+		camera.look_at_from_position(eye + Vector3(25, 4, -30), dropship.global_position)
+		await v._settle(10)
+		await v._shot(out_dir.path_join("kit_giants_dropship.png"))
+		giants.set_process(true)
 	raid.queue_free()

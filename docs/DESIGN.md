@@ -634,7 +634,8 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   near 270 m tall, its legs arching over its back, striding round 750 m out
   with a searchlight sweeping ahead and smoke off its vents, each footfall
   heard after its delay; a capital ship riding at anchor 400 m up over the
-  west; and from it a wing of dropships every 75 s (more the hotter the
+  west, ribbed and turreted with rows of lit ports down its decks; and
+  from it a wing of dropships every 75 s (more the hotter the
   war) diving over where the fighting is (`war_centre`) and away. Flak in
   the sky (`worlds/ashfront/skyfire.gd`, view only): guns past the rim
   hosing tracer up into the smoke, more of them firing the hotter the war,

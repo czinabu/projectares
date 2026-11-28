@@ -162,3 +162,18 @@ date in the same PR.
   after everything else, asking nothing of `_pads`), each standing in a
   `SolidProp.box` cut to it, and drawn by `_dress_clutter` in the kit's
   prop textures (`KitMesh.prop_trims`).
+  The giants (`giants.gd`) gather each moving part's hull (the body,
+  head, each hip, knee and foot, the capital ship, each dropship) into
+  one `KitMesh` node named "Hull" (`_merge_hulls`): the big boxes that
+  give the shape, broken up by `_plated` (armour ribs proud of the top
+  and flanks, machinery blocks on the back, rows of lit ports), kit pipe
+  columns and vents, turrets, aerials and engine bells, from their own
+  RNG. All of it is far silhouette in the skyline's hand-hazed shading:
+  hull in `Look.trim("distant_relief")` (faintly lit by how a face
+  turns, so ribs and plates read), ports and engines in
+  `"distant_window"`. Lights and the eye stay nodes of their own, so
+  the weather and the fade still reach them. The skyline past the rim
+  (`_dress_horizon`) is one `KitMesh` node too ("Skyline", a surface for
+  the dark hulks and one for the lit city), its blocks given a broken
+  roofline (tanks, plant, aerials, hanging slabs) from their own seed.
+  Check with `--kit-only giants` and `--kit-only skyline`.
