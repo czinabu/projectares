@@ -307,7 +307,13 @@ date in the same PR.
   arm slimmer than Build A's stands off it by the difference
   (`ArmorModel.arm_shortfall`), so it is as broad on every build instead
   of shrinking to a slim shoulder (Caleb: Build B's read a third
-  smaller), and starts that much further out, clear of the collar; a piece reaching past a
+  smaller), and starts that much further out, clear of the collar.
+  Proportions by weight (Caleb's pass: the shoulders carry the
+  silhouette, and heavy reads heavy at a glance): every pad stands off
+  further and reaches further down the arm the heavier the frame, thigh
+  plates stay narrower than the leg is round on light and medium, and a
+  cuirass stands further off the chest than a medium frame's plates, its
+  back plate narrowed to keep clear of the pads; a piece reaching past a
   knee or elbow goes over the limb above it, and plates layer in a fixed
   order (carrier, then straps, then plates, then what is mounted on
   them) so none cuts through another. `tools/armor_fit/clip_check.tscn`

@@ -320,9 +320,11 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 	# heavier the frame.
 	# Out past the carrier (and the straps' ends) under it.
 	# (A cuirass a little further: its high neckline goes over the straps.)
-	var pg := 0.036 if heavy else 0.034
+	# Heavy plate stands further off again, so a cuirass is broader than a
+	# medium frame's plates, not just more of them.
+	var pg := 0.046 if heavy else 0.034
 	var pt: float = {"light": 0.012, "medium": 0.016, "heavy": 0.018}[weight]
-	var pw: float = {"light": 0.85, "medium": 0.98, "heavy": 1.12}[weight]
+	var pw: float = {"light": 0.85, "medium": 0.98, "heavy": 1.18}[weight]
 	var chest_low := 0.42 if heavy else 0.5
 	# Heavy is a cuirass with a keel down its middle, narrowing to the
 	# shoulders so it never reads as a box.
@@ -330,14 +332,14 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 			DRAPE), pt, m.plate, 20, 9)
 	# The back plate stays between the shoulder blades and narrows to the
 	# top, so from behind it never reads wider than the back.
-	var back_w: float = {"light": 0.68, "medium": 0.76, "heavy": 0.98}[weight]
+	var back_w: float = {"light": 0.68, "medium": 0.76, "heavy": 0.92}[weight]
 	plate(root, "Back", b.wrap(0.44 if heavy else 0.48, 0.9, PI - back_w, PI + back_w, pg, 0.03, 0.004, 0.2, 0.2), pt, m.plate, 20, 9)
 	_plate_lines(root, m, b, chest_low, pw, pg + pt, heavy, back_w)
 	if heavy:
 		# The cuirass closes down the sides, layered abdominal lames under it,
 		# each edged in steel.
 		for side: float in [-1.0, 1.0]:
-			plate(root, "SidePlate", b.wrap(0.44, 0.62, side * 1.5 - 0.26, side * 1.5 + 0.26, 0.048, 0.0, 0.0, 0.0, DRAPE), pt * 0.7, m.plate2, 8, 6)
+			plate(root, "SidePlate", b.wrap(0.44, 0.62, side * 1.5 - 0.26, side * 1.5 + 0.26, 0.056, 0.0, 0.0, 0.0, DRAPE), pt * 0.7, m.plate2, 8, 6)
 		# Edge to edge down from the chest plate, over the carrier; the
 		# lowest stops above the belt.
 		for k in 3:
@@ -580,11 +582,14 @@ static func pauldron(weight: String, style: Dictionary, out: float, build := "m"
 	# difference (`arm_shortfall`), so the pad is as broad on every body
 	# instead of shrinking to hug a narrow shoulder (Caleb: Build B's pads
 	# read a third smaller).
-	var stand := arm_shortfall(build)
+	# Stood off the arm and reaching further down it than the arm's own
+	# shape asks, by weight (Caleb's proportions pass: the shoulders carry
+	# the silhouette, and a heavy frame reads heavy from across a field).
+	var stand := arm_shortfall(build) + float({"light": 0.008, "medium": 0.013, "heavy": 0.022}[weight])
 	gap += stand
 	# The cap: over the top of the shoulder, from in past the joint out
 	# over the deltoid, swelling at its crown.
-	var cap_end: float = {"light": 0.2, "medium": 0.24, "heavy": 0.28}[weight]
+	var cap_end: float = {"light": 0.24, "medium": 0.29, "heavy": 0.34}[weight]
 	# Clear of the straps and the gorget on the trunk, and ending short of
 	# the strap's run over the shoulder (`torso`) so it rides on it.
 	var joint := absf(BodyFit.bone(build, "UpperArm").x)
@@ -668,10 +673,12 @@ static func thigh(weight: String, style: Dictionary, out: float, build := "m") -
 		"medium":
 			# Two plates down the front and outside, the lower one over the
 			# knee's top.
-			plate(root, "Tasset", leg.wrap(0.13, 0.52, centre, 1.15, 0.016, 0.006), 0.013, m.plate, 14, 5)
-			plate(root, "Tasset1", leg.wrap(0.53, 0.84, centre * 0.6, 1.05, 0.013, 0.005), 0.012, m.plate2, 12, 4)
+			# Narrower than the leg is round, so the pads, not the thighs,
+			# carry the frame's width.
+			plate(root, "Tasset", leg.wrap(0.13, 0.5, centre, 0.95, 0.016, 0.006), 0.013, m.plate, 14, 5)
+			plate(root, "Tasset1", leg.wrap(0.51, 0.8, centre * 0.6, 0.88, 0.013, 0.005), 0.012, m.plate2, 12, 4)
 		_:
-			plate(root, "Tasset", leg.wrap(0.13, 0.6, centre, 0.85, 0.012, 0.005), 0.009, m.plate, 12, 5)
+			plate(root, "Tasset", leg.wrap(0.13, 0.55, centre, 0.72, 0.012, 0.005), 0.009, m.plate, 12, 5)
 	if out > 0.0:
 		for k in 2:
 			var t := 0.32 + k * 0.2
