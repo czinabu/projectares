@@ -29,11 +29,20 @@ var name_every := 4
 ## Light streaks along the walls of the lane.
 var streak_count := 160
 var streak_length := 6.0
+## Dust motes drifting through the lane, and how fast they pass compared with the gates.
+var mote_count := 90
+var mote_speed := 0.55
+## The cut of a gate's corners (m): the gates are octagons, like the logo.
+var gate_chamfer := 2.6
 var fov := 52.0
 var jump_fov := 100.0
 ## The slow sway of the view as it drifts, so it never feels on rails.
 var sway_roll := 2.2
 var sway_period := 11.0
+## How far the camera drifts off the lane's middle (m) and how fast the glow
+## breathes: a slow pulse so the screen is never still.
+var drift := Vector2(0.9, 0.5)
+var pulse_period := 7.0
 
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const CYAN := Color(0.3, 0.85, 1.0)
@@ -47,6 +56,8 @@ var jump_amount := 0.0
 var _gates: Array[Node3D] = []
 var _streaks: MultiMeshInstance3D
 var _streak_spots: PackedVector3Array = []
+var _motes: MultiMeshInstance3D
+var _mote_spots: PackedVector3Array = []
 var _env: Environment
 var _time := 0.0
 var _jumping := false
@@ -70,18 +81,21 @@ func _ready() -> void:
 		add_child(gate)
 		_gates.append(gate)
 	_build_streaks()
+	_build_motes()
 	_build_rails()
 
 
 func _process(delta: float) -> void:
 	_time += delta
 	advance(delta * speed)
+	_drift_motes(delta)
 	var sway := sin(_time * TAU / sway_period)
 	camera.rotation = Vector3(deg_to_rad(0.6) * sin(_time * TAU / (sway_period * 1.7)), 0.0,
 			deg_to_rad(sway_roll) * sway * (1.0 - jump_amount))
+	camera.position = Vector3(sin(_time * TAU / 17.0) * drift.x, cos(_time * TAU / 13.0) * drift.y, 0.0) * (1.0 - jump_amount)
 	camera.fov = lerpf(fov, jump_fov, ease(jump_amount, 2.4))
 	if _env:
-		_env.glow_intensity = lerpf(0.7, 2.6, jump_amount)
+		_env.glow_intensity = lerpf(0.7 + 0.15 * sin(_time * TAU / pulse_period), 2.6, jump_amount)
 
 
 ## Moves the lane `distance` metres past the camera. Gates and streaks that
@@ -139,7 +153,8 @@ func _build_environment() -> void:
 	_env.glow_bloom = 0.05
 	_env.glow_hdr_threshold = 0.9
 	_env.fog_enabled = true
-	_env.fog_light_color = VOID
+	# The far end glows faintly, so the lane leads somewhere.
+	_env.fog_light_color = Color(0.015, 0.06, 0.1)
 	_env.fog_density = 1.0
 	_env.fog_mode = Environment.FOG_MODE_DEPTH
 	_env.fog_depth_begin = gate_spacing * 3.0
@@ -159,21 +174,35 @@ func _build_gate(index: int) -> Node3D:
 	var bar := 0.12
 	var lit := _glow(color, 0.9)
 	var dark := _glow(Color(0.04, 0.05, 0.08), 0.0)
+	var c := gate_chamfer
 	for side: float in [-1.0, 1.0]:
-		_bar(gate, Vector3(bar, h, bar), Vector3(side * w * 0.5, 0, 0), lit)
-		_bar(gate, Vector3(0.9, h + 1.4, 0.6), Vector3(side * (w * 0.5 + 0.55), 0, 0), dark)
-		_bar(gate, Vector3(w, bar, bar), Vector3(0, side * h * 0.5, 0), lit)
-		_bar(gate, Vector3(w + 2.0, 0.7, 0.6), Vector3(0, side * (h * 0.5 + 0.45), 0), dark)
-		# Short ticks inside the corners, the way the hub's arches are marked.
+		# Straight sides, shortened by the corner cuts, with a dark collar behind each.
+		_bar(gate, Vector3(bar, h - 2.0 * c, bar), Vector3(side * w * 0.5, 0, 0), lit)
+		_bar(gate, Vector3(0.9, h - 2.0 * c + 1.0, 0.6), Vector3(side * (w * 0.5 + 0.55), 0, 0), dark)
+		_bar(gate, Vector3(w - 2.0 * c, bar, bar), Vector3(0, side * h * 0.5, 0), lit)
+		_bar(gate, Vector3(w - 2.0 * c + 1.0, 0.7, 0.6), Vector3(0, side * (h * 0.5 + 0.45), 0), dark)
+		# The four corner cuts, set at 45 degrees.
 		for end: float in [-1.0, 1.0]:
-			_bar(gate, Vector3(1.2, 0.06, 0.06), Vector3(end * (w * 0.5 - 0.9), side * (h * 0.5 - 0.35), 0), lit)
+			var corner := Vector3(end * (w * 0.5 - c * 0.5), side * (h * 0.5 - c * 0.5), 0)
+			var cut := MeshInstance3D.new()
+			var box := BoxMesh.new()
+			box.size = Vector3(c * 1.4142, bar, bar)
+			cut.mesh = box
+			cut.material_override = lit
+			cut.position = corner
+			cut.rotation.z = deg_to_rad(45.0) * end * side * -1.0
+			gate.add_child(cut)
 	var sign := Label3D.new()
 	sign.name = "Sign"
-	sign.font = load(UiTheme.FONT_PATH) as Font
+	var face := FontVariation.new()
+	face.base_font = load(UiTheme.DISPLAY_FONT_PATH) as Font
+	face.variation_opentype = {2003265652: 600}
+	sign.font = face
 	sign.font_size = 96
-	sign.pixel_size = 0.012
+	# Small and dim: a name glimpsed as the lane passes, not a label to read.
+	sign.pixel_size = 0.007
 	sign.outline_size = 0
-	sign.modulate = Color(color.r * 1.6, color.g * 1.6, color.b * 1.6)
+	sign.modulate = Color(color.r * 0.9, color.g * 0.9, color.b * 0.9, 0.55)
 	sign.shaded = false
 	sign.position = Vector3(-w * 0.5 + 0.4, h * 0.5 - 1.0, 0)
 	sign.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -201,6 +230,14 @@ func _build_rails() -> void:
 		for y: float in [-1.0, 1.0]:
 			_bar(self, Vector3(0.05, 0.05, length), Vector3(x * (gate_size.x * 0.5 - 0.6), y * (gate_size.y * 0.5 - 0.6),
 					-length * 0.5), rail)
+	# Panel lines down the middle of the walls, floor and ceiling, dimmer still.
+	var panel := _glow(CYAN * 0.07, 0.0)
+	for x: float in [-1.0, 1.0]:
+		_bar(self, Vector3(0.04, 0.04, length), Vector3(x * (gate_size.x * 0.5 - 0.6), 0, -length * 0.5), panel)
+	for y: float in [-1.0, 1.0]:
+		_bar(self, Vector3(0.04, 0.04, length), Vector3(0, y * (gate_size.y * 0.5 - 0.6), -length * 0.5), panel)
+		for x: float in [-0.5, 0.5]:
+			_bar(self, Vector3(0.04, 0.04, length), Vector3(x * (gate_size.x * 0.5 - 0.6), y * (gate_size.y * 0.5 - 0.6), -length * 0.5), panel)
 
 
 ## Thin streaks of light along the walls, floor and ceiling of the lane.
@@ -226,6 +263,43 @@ func _build_streaks() -> void:
 	add_child(_streaks)
 	advance(0.0)
 
+
+
+## Dust motes through the whole cross-section of the lane, amber and cyan, dim.
+func _build_motes() -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.07, 0.07, 0.07)
+	mesh.material = _glow(Color(1.0, 0.75, 0.4) * 0.8, 0.6)
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = mesh
+	multimesh.instance_count = mote_count
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7311
+	var lane := gate_spacing * gate_count
+	for i in mote_count:
+		_mote_spots.append(Vector3(rng.randf_range(-1.0, 1.0) * gate_size.x * 0.42,
+				rng.randf_range(-1.0, 1.0) * gate_size.y * 0.42, -rng.randf() * lane))
+	_motes = MultiMeshInstance3D.new()
+	_motes.multimesh = multimesh
+	add_child(_motes)
+	_drift_motes(0.0)
+
+
+## The motes fall behind the camera slower than the gates do and wander a little.
+func _drift_motes(delta: float) -> void:
+	if _motes == null:
+		return
+	var lane := gate_spacing * gate_count
+	var multimesh := _motes.multimesh
+	for i in _mote_spots.size():
+		var spot := _mote_spots[i]
+		spot.z += delta * speed * mote_speed
+		while spot.z > 10.0:
+			spot.z -= lane
+		_mote_spots[i] = spot
+		var wander := Vector3(sin(_time * 0.4 + i) * 0.4, cos(_time * 0.33 + i * 1.7) * 0.3, 0.0)
+		multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, spot + wander))
 
 
 func _bar(parent: Node3D, size: Vector3, at: Vector3, material: Material) -> void:

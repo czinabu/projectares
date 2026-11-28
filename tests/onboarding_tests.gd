@@ -246,6 +246,21 @@ static func _solo_tour(t: Node) -> void:
 	t.check(main._tour_guide != null and main._tour_guide.target.is_equal_approx(main.base.door.global_position)
 				and main._tour_guide.words().contains("first"),
 			"a step out in a world, seen from home, leads to the way out first")
+	# With the firing range built the lane is gone: the guide stands on the
+	# range's targets instead.
+	Profile.onboarding = {"state": Onboarding.ACTIVE, "step": "lane"}
+	main._tour_show()
+	main.base.show_gear(main.hub.stash_items(), main.hub.current_loadout(), ["firing_range"])
+	await t.frames(2)
+	main._tour_show()
+	main._tour_guide_tick(0.1)
+	t.check(main.base.lane_targets.is_empty() and not main.base.targets.is_empty() and main._tour_guide != null
+				and main.base.targets.any(func(target: Variant) -> bool:
+					return is_instance_valid(target) and (target as Node3D).global_position.is_equal_approx(main._tour_guide.target))
+				and main._tour_guide.words().contains("firing range"),
+			"with the firing range built, the lane step's guide stands on the range's targets")
+	main.base.show_gear(main.hub.stash_items(), main.hub.current_loadout(), [])
+	await t.frames(2)
 	Profile.onboarding = {"state": Onboarding.ACTIVE, "step": "watch"}
 	main._tour_show()
 

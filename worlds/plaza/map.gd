@@ -597,6 +597,7 @@ func _build_gates() -> void:
 		lit.visible = false
 		portal.add_child(lit)
 		_part(lit, Vector3(8.2, 11.8, 0.04), Vector3(0, 5.95, -1.7), Color(color, 1.0).darkened(0.62), true)
+		lit.get_child(lit.get_child_count() - 1).name = "Sheet"
 		_part(lit, Vector3(8.4, 0.08, 1.2), Vector3(0, 0.04, -1.1), color, true)
 		_gates.append({"at": at, "yaw": 0.0, "world": world})
 		_sign(world.display_name.to_upper(), at + Vector3(0, 12.8, 1.25), 0.0, 1.1, color)
@@ -739,6 +740,11 @@ func _dress_gates(art: Node3D) -> void:
 			glimpse.position = Vector3(0, 5.95, -1.74)
 			portal.add_child(glimpse)
 			bay["glimpse"] = glimpse
+			# The greybox's lit sheet would stand in front of the glimpse
+			# while you are in the gate: the glimpse brightens instead.
+			var sheet := portal.get_node_or_null("Lit/Sheet")
+			if sheet != null:
+				sheet.free()
 			# The world's crest on each pillar, under the lintel.
 			var crest := Look.gate_crest(world.planet_type() if world != null else null, 1.55, color)
 			for side: float in [-1.0, 1.0]:

@@ -17,8 +17,9 @@ static func run(t: Node) -> void:
 static func _wanted(t: Node) -> void:
 	var was := OS.get_environment("ARES_ENEMIES")
 	OS.set_environment("ARES_ENEMIES", "")
-	t.check(not Raid.enemies_wanted(PackedStringArray()),
-			"by default (the project's stability pass) enemies are off")
+	t.check(Raid.enemies_wanted(PackedStringArray()),
+			"by default (the project setting, back on after the stability pass) enemies are on")
+	t.check(not Raid.enemies_wanted(PackedStringArray(["--no-enemies"])), "--no-enemies turns them off")
 	t.check(Raid.enemies_wanted(PackedStringArray(["--enemies"])), "--enemies turns them on")
 	t.check(Raid.enemies_wanted(PackedStringArray(["--bots", "40"])), "and asking for bots does too")
 	t.check(not Raid.enemies_wanted(PackedStringArray(["--bots", "40", "--no-enemies"])), "--no-enemies wins")

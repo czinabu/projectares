@@ -6,7 +6,9 @@ config_version=5
 
 [application]
 
-config/name="Project Ares"
+config/name="Verge"
+config/use_custom_user_dir=true
+config/custom_user_dir_name="Project Ares"
 config/description="Full-loot PvPvE extraction game with plug-in worlds."
 run/main_scene="res://scenes/start.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
@@ -17,7 +19,7 @@ boot_splash/image="res://assets/branding/splash.png"
 
 [ares]
 
-stability/enemies=false
+stability/enemies=true
 stability/enemy_cap=8
 stability/enemies_full_detail=12
 release/playtest_worlds=PackedStringArray("plaza", "rift", "marsh", "dunes", "frostline")

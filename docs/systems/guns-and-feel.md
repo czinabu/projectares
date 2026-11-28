@@ -24,8 +24,12 @@ date in the same PR.
   copy in `NetSession`), and comes out only by choice: a number key, Z, the
   wheel, or a pull of the trigger with empty hands, which only draws. While
   `Actor.weapons_locked` (a safe zone, a gate outpost, the base off the
-  range) a weapon in hand is put away and nothing can be drawn
-  (`Actor._simulate_weapons`). Headshots come from
+  range, no longer the base) a weapon in hand is put away and nothing can be drawn
+  (`Actor._simulate_weapons`). The home base is the exception (Caleb's call):
+  a weapon comes out anywhere there, but `Actor.fire_safe` (set off the
+  range by `HomeBase`) takes the trigger, swing, kick, abilities and healing
+  away; a pull clicks and shows a visor line (`Actor.safety_click`). The
+  base is a local scene, so no server is involved. Headshots come from
   `Combat.is_headshot` on a `Combat.trace` hit; a gun's `headshot_mult` scales them.
   Every gun has a range and a target it wins against (DESIGN.md "Gun
   roles"): each sets its own `headshot_mult` (more than 1 on every gun but
