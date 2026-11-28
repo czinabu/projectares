@@ -1,0 +1,105 @@
+name: Steam build
+
+# Exports the Steam builds and, once the game has a Steam app, uploads them.
+#   Run by hand only (Actions > Steam build > Run workflow): nothing here runs
+#   on a push, so it costs nothing until it is needed.
+#   The "Windows Steam" and "Linux Steam" presets are the release build
+#   (feature tag "playtest", so the launch scope applies) plus the tag "steam",
+#   so the game never updates itself there: Steam does (Updater.on_steam).
+#   Without the Steam settings below it only exports and keeps the builds as a
+#   workflow artifact, a check that the Steam export works. With them it
+#   uploads both depots with SteamCMD (.github/steam/*.vdf) and, if "live" is
+#   picked, sets the build live on that branch. docs/steam.md walks through
+#   setting it up once the Steamworks app is paid for.
+#
+#   Repository variables: STEAM_APP_ID, STEAM_DEPOT_WINDOWS, STEAM_DEPOT_LINUX.
+#   Repository secrets: STEAM_USERNAME (a build-only Steam account) and
+#   STEAM_CONFIG_VDF (that account's config.vdf, base64, from a SteamCMD login
+#   that passed Steam Guard once, so CI is not asked for a code).
+
+on:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Steam branch to set the build live on (empty uploads without setting it live)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: steam-build
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: "4.7"
+
+jobs:
+  steam:
+    name: Export and upload the Steam builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+      - name: Cache the export templates
+        id: templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-windows-linux-${{ env.GODOT_VERSION }}
+      - name: Download the export templates
+        if: steps.templates.outputs.cache-hit != 'true'
+        run: |
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -sSL --retry 4 -o "$RUNNER_TEMP/templates.tpz" "${base}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dest"
+          unzip -q -j "$RUNNER_TEMP/templates.tpz" templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe \
+            templates/linux_release.x86_64 templates/linux_debug.x86_64 templates/version.txt -d "$dest"
+      - name: Stamp the build
+        # The commit shows in the game's corner and in bug reports. No build
+        # number: the updater never runs in a Steam copy.
+        run: printf '\n[ares]\n\nbuild/commit="%s"\n' "$(git rev-parse --short HEAD)" >> project.godot
+      - name: Export
+        run: |
+          mkdir -p build/steam/windows build/steam/linux
+          "$GODOT" --headless --path . --export-release "Windows Steam" build/steam/windows/Verge.exe
+          "$GODOT" --headless --path . --export-release "Linux Steam" build/steam/linux/Verge.x86_64
+          test -s build/steam/windows/Verge.exe && test -s build/steam/windows/Verge.pck
+          test -s build/steam/linux/Verge.x86_64 && test -s build/steam/linux/Verge.pck
+          chmod +x build/steam/linux/Verge.x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Verge-steam-${{ github.sha }}
+          path: build/steam
+          retention-days: 7
+      - name: Upload to Steam
+        env:
+          APP_ID: ${{ vars.STEAM_APP_ID }}
+          DEPOT_WINDOWS: ${{ vars.STEAM_DEPOT_WINDOWS }}
+          DEPOT_LINUX: ${{ vars.STEAM_DEPOT_LINUX }}
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_CONFIG_VDF: ${{ secrets.STEAM_CONFIG_VDF }}
+          LIVE: ${{ inputs.live }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$DEPOT_WINDOWS" ] || [ -z "$DEPOT_LINUX" ] || [ -z "$STEAM_USERNAME" ] || [ -z "$STEAM_CONFIG_VDF" ]; then
+            echo "::notice::No Steam app set up yet (docs/steam.md): the builds were exported and kept as an artifact only."
+            exit 0
+          fi
+          if ! printf '%s' "$LIVE" | grep -Eq '^[A-Za-z0-9_-]*$'; then
+            echo "::error::Branch names are letters, digits, - and _"; exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/steamcmd" "$HOME/Steam/config"
+          curl -sSL --retry 4 https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar -xz -C "$RUNNER_TEMP/steamcmd"
+          echo "$STEAM_CONFIG_VDF" | base64 -d > "$HOME/Steam/config/config.vdf"
+          out="$RUNNER_TEMP/steam-out"
+          mkdir -p "$out" "$RUNNER_TEMP/vdf"
+          desc="$(git rev-parse --short HEAD) run $GITHUB_RUN_NUMBER"
+          for f in app_build depot_windows depot_linux; do
+            sed -e "s|STEAM_APP_ID|$APP_ID|" -e "s|WINDOWS_DEPOT_ID|$DEPOT_WINDOWS|" -e "s|LINUX_DEPOT_ID|$DEPOT_LINUX|" \
+              -e "s|BUILD_DESC|$desc|" -e "s|OUTPUT_DIR|$out|" -e "s|CONTENT_ROOT|$GITHUB_WORKSPACE/build/steam|" \
+              -e "s|SET_LIVE|$LIVE|" ".github/steam/$f.vdf" > "$RUNNER_TEMP/vdf/$f.vdf"
+          done
+          "$RUNNER_TEMP/steamcmd/steamcmd.sh" +login "$STEAM_USERNAME" +run_app_build "$RUNNER_TEMP/vdf/app_build.vdf" +quit

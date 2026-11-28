@@ -5,6 +5,7 @@ how the rest is held back without leaving the code. These are part of the
 rules in `CLAUDE.md` that must not be broken: read this file before changing
 anything it covers, and keep it up to date in the same PR.
 
+- What is left to do before the launch is in `docs/launch-checklist.md`.
 - The launch is the home base, the Concourse, Ashfront and Frostline (Caleb's
   call, 25 November 2026, DESIGN.md "More worlds"). Everything else that is
   built stays in the code for later updates, held back by one switch:

@@ -151,6 +151,9 @@ date in the same PR.
   only you see it, through walls), the objective and the distance written
   over it, its column fading as you get close (`_tour_guide_tick`,
   `_tour_mark_at`, looked for again every `TourGuide.LOOK_EVERY`). A step
+  done out in a world, seen from where that world is not, leads the way
+  there (`_tour_route`): from the base to its way out, from a safe zone to
+  the gentle world's gate, that leg written under the step. A step
   with nothing to walk to (raising the watch) says what to press instead,
   on the line under the crosshair while nothing else is offered there
   (`Onboarding.hint`, `Hud.tour_hint`, `BaseHud.tour_hint`). The handler's
