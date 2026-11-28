@@ -25,6 +25,11 @@ const MOVES := {
 	# A jetpack cruise set down on the ground: it runs out on its feet,
 	# braced in a skid (the wings' run-out is in `wings_glide_side`).
 	"jetpack_land_side": {"rig": "jetpack_mk1", "lift": 0.0, "ticks": 300, "side": true},
+	# The style pass: a hover that drifts off, stops, slides sideways and
+	# stops (the lean into the push, the limbs swinging on), and a wing
+	# swoop: a dive, a pull back up and a carve.
+	"jetpack_hover": {"rig": "jetpack_mk1", "lift": 0.0, "ticks": 330},
+	"wings_swoop": {"rig": "wings_glide", "lift": 30.0, "ticks": 360},
 }
 
 
@@ -64,7 +69,7 @@ static func _fly(v: Node, out_dir: String, move: String) -> void:
 	for tick in int(spec["ticks"]):
 		_controls(p.cmd, spec.get("as", move), tick)
 		# The cruises carve: the view swings left, then back right.
-		if not spec.get("side", false) and (move.ends_with("cruise") or move.ends_with("skate") or move.ends_with("soar")):
+		if not spec.get("side", false) and (move.ends_with("cruise") or move.ends_with("skate") or move.ends_with("soar") or move.ends_with("swoop")):
 			p.cmd.yaw = yaw0 - 0.5 * sin(float(tick - 180) / 120.0 * PI) * clampf((tick - 180) / 60.0, 0.0, 1.0)
 		if tick % 60 == 0:
 			print("%s t=%d pos=%s speed=%.1f h=%.1f heat=%.0f skate=%s soar=%s boost=%s glide=%s" % [move, tick,
@@ -156,6 +161,23 @@ static func _controls(cmd: ActorCommand, move: String, tick: int) -> void:
 			cmd.sprint_pressed = tick == 45
 			if tick >= 120 and tick < 240:
 				cmd.move = Vector2(0, -0.6)
+		"jetpack_hover":
+			# Up on held jump with aim held (the jets), then a drift ahead,
+			# a stop, a slide right and a stop.
+			cmd.secondary = tick >= 10
+			cmd.jump_pressed = tick == 10
+			cmd.jump = tick >= 10 and tick < 60
+			if tick >= 90 and tick < 170:
+				cmd.move = Vector2(0, 1.0)
+			elif tick >= 220 and tick < 280:
+				cmd.move = Vector2(1.0, 0.0)
+		"wings_swoop":
+			# Off a height: the glide, a dive for speed, a pull back up.
+			cmd.jump = tick >= 15
+			if tick >= 60 and tick < 160:
+				cmd.move = Vector2(0, 1.0)
+			elif tick >= 160 and tick < 250:
+				cmd.move = Vector2(0, -1.0)
 		"jetpack_land_side":
 			# A hop and the rocket cruise, set down onto the ground while it
 			# still cruises (`_fly`), as a cruise skimming into a rise does.
