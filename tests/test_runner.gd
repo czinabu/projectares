@@ -1949,7 +1949,7 @@ func _test_phone_view() -> void:
 	for child in phone._body.get_children():
 		if child is PanelContainer and child.find_children("*", "HSlider", true, false).size() > 0:
 			sliders += 1
-	check(phone.settings_tab == "view" and sliders == 4, "the View tab has the fields of view, the camera distance and the first-person pullback")
+	check(phone.settings_tab == "view" and sliders == 5, "the View tab has the fields of view, the camera distance, the first-person pullback and the flight camera motion (%d sliders)" % sliders)
 	phone.open_app("news")
 	check(not phone._tabs.visible, "other apps have no tabs")
 	phone.open_app("settings")
@@ -2439,7 +2439,7 @@ func _test_suit_up(base: HomeBase) -> void:
 		carried.append(weapon.item_id)
 	check(base.suited and base.loadout.get("primary", "") in carried and worn.gear_items.size() >= kit.size() - 1,
 			"you are already wearing your loadout in your base (%s)" % [carried])
-	check(worn.weapons_locked, "weapons locked: nobody fights at home")
+	check(not worn.weapons_locked and worn.fire_safe, "weapons may come out at home, with the safety on off the range")
 	# Change the loadout where you stand: it goes straight on, there, on the
 	# same body (a new one stopped you dead: the stutter on every equip).
 	worn.position = Vector3(-2.0, 0.1, 1.5)
@@ -2472,8 +2472,8 @@ func _test_suit_up(base: HomeBase) -> void:
 	check(dressed.position.distance_to(Vector3(-2.0, 0.1, 1.5)) < 0.3 and absf(dressed.cmd.yaw - 1.1) < 0.01
 			and moving_on == Vector3(3.0, 0.0, 1.0),
 			"right where you stand, facing the same way, still moving (%s)" % moving_on)
-	check(dressed.weapons_locked and dressed.gear_items.has("dmr_longshot") and not dressed.gear_items.has(kept.get("primary", "")),
-			"still locked, and the worn gear list follows the swap (%s)" % [dressed.gear_items])
+	check(dressed.fire_safe and dressed.gear_items.has("dmr_longshot") and not dressed.gear_items.has(kept.get("primary", "")),
+			"still on safety, and the worn gear list follows the swap (%s)" % [dressed.gear_items])
 	var still_shown := 0
 	for display in base.displays:
 		if kept_displays.has(display):
@@ -2534,7 +2534,28 @@ func _test_garage_and_range(base: HomeBase) -> void:
 	check(base.firing_line >= 6.0 and base.range_size.z >= 45.0 and base.range_size.x >= 10.0,
 			"the range is wide and long, with a clear lobby between the door and the firing line")
 	var p := base.player
-	check(p.weapons_locked, "weapons stay locked in the main room")
+	check(p.fire_safe and not p.weapons_locked, "weapons are not fireable in the main room")
+	# Anywhere in the base a weapon comes out, but its trigger only clicks.
+	p.cmd.switch_weapon = p.weapon_for_key(1)
+	await frames(3)
+	p.cmd.switch_weapon = -1
+	await frames(3)
+	var room_gun := p.get_active_weapon() as Gun
+	check(room_gun != null, "a weapon can be drawn in the main room")
+	var room_ammo := room_gun.ammo_in_mag if room_gun else 0
+	var room_shots := base.range_shots
+	p.cmd.primary_pressed = true
+	p.cmd.primary = true
+	await frames(1)
+	p.cmd.primary_pressed = false
+	p.cmd.primary = false
+	await frames(20)
+	check(room_gun != null and room_gun.ammo_in_mag == room_ammo and base.range_shots == room_shots,
+			"the trigger fires nothing off the range")
+	p.cmd.switch_weapon = ActorCommand.HOLSTER
+	await frames(3)
+	p.cmd.switch_weapon = -1
+	await frames(3)
 	# Walk down the corridor and through the range door.
 	p.global_position = base.to_global(Vector3(0, 0.1, -base.range_from() + 2.0))
 	p.velocity = Vector3.ZERO
@@ -2545,7 +2566,7 @@ func _test_garage_and_range(base: HomeBase) -> void:
 	p.cmd.move = Vector2.ZERO
 	await frames(2)
 	check(base.in_range(base.to_local(p.global_position)), "you can walk down the corridor into the range")
-	check(not p.weapons_locked, "past the line your weapons are free")
+	check(not p.fire_safe, "past the line your weapons are free to fire")
 	check(p.get_active_weapon() == null, "but stay away until you draw one")
 	p.cmd.switch_weapon = p.weapon_for_key(1)
 	await frames(2)
@@ -2579,7 +2600,7 @@ func _test_garage_and_range(base: HomeBase) -> void:
 	p.global_position = base.to_global(Vector3(0, 0.1, 2.0))
 	p.velocity = Vector3.ZERO
 	await frames(3)
-	check(p.weapons_locked, "weapons lock again back in the room")
+	check(p.fire_safe, "the safety is back on in the room")
 
 
 func _refit_summary(actor: Actor) -> Dictionary:

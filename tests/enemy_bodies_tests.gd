@@ -32,7 +32,7 @@ static func _skins(t: Node) -> void:
 			if scene in ROBOT_MODELS or (scene == "Stan.glb" and Look.SKINS[skin].get("chassis", "") != "android"):
 				stock.append(skin)
 	t.check(stock.is_empty(), "no skin wears a stock robot model (%s)" % ", ".join(stock))
-	for skin: String in ["sentinel", "colossus"]:
+	for skin: String in ["sentinel", "colossus", "core_colossus"]:
 		var def: Dictionary = Look.SKINS[skin]
 		t.check(def.get("chassis", "") == "android" and def.get("bare", false) and "Stan" in def.get("hide", []),
 				"the %s is an android built in code, its weapon in its arm" % skin)
@@ -47,6 +47,8 @@ static func _skins(t: Node) -> void:
 	for skin: String in ["warlord", "baron", "crown_lord"]:
 		regalia[Look.SKINS[skin].get("regalia", "")] = true
 	t.check(regalia.size() == 3 and not regalia.has(""), "each boss wears regalia of its own (%s)" % ", ".join(regalia.keys()))
+	t.check(Look.SKINS["core_colossus"].get("core_chassis", false) and not Look.SKINS["colossus"].get("core_chassis", false),
+			"the core colossus is its own machine, not the colossus grown taller")
 	t.check(Look.SKINS["feral"].get("creature", "") == "feral", "the Feral Stalker is a beast")
 	# A skin's own plates name their look; a bare weight keeps its own.
 	t.check(SkinScript.frame_look("skin:heavy:scrap") == "scrap" and SkinScript.frame_look("skin:heavy") == "bulwark"

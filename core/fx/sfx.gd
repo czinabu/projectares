@@ -70,6 +70,15 @@ func _ready() -> void:
 	_streams["ability"] = _tones([520.0, 1040.0, 1560.0], 0.3, 9.0, 0.4)
 	_streams["loot"] = _tones([660.0, 990.0], 0.14, 20.0, 0.3)
 	_streams["thrust"] = _thrust_loop(0.6)
+	# Each flight rig's own voice, heard by everyone near (`ActorSkin`, the
+	# style pass): a jetpack's deep roar with a crackle in it, the air
+	# tearing over spread wings, boots' soft hiss on a skate and the pop of
+	# a kick or a dash; and the wind rushing past your own ears at speed.
+	_streams["jet_roar"] = _air_loop(1.2, 0.08, 55.0, 0.18, 0.06)
+	_streams["wing_rush"] = _air_loop(2.0, 0.3, 0.0, 0.0, 0.0)
+	_streams["skate_hum"] = _air_loop(1.0, 0.6, 310.0, 0.08, 0.0)
+	_streams["boot_pop"] = _noise_burst(0.16, 26.0, 0.9, 140.0)
+	_streams["air_rush"] = _air_loop(3.0, 0.12, 0.0, 0.0, 0.0)
 	# A storm's wind around you (`WeatherView`): a low, slow howl.
 	_streams["wind"] = _wind_loop(3.0)
 	# A rain storm round you: a steady bright hiss with drops pattering in it.
@@ -366,6 +375,9 @@ const WORLD_DIR := "res://assets/sounds/world/"
 ## takes played at random.
 const STEP_GROUNDS := ["hard", "dirt", "snow", "soft", "wood"]
 const WORLD_LOOPS := ["engine_ground", "engine_hover", "engine_air", "wind_cold", "music_plaza"]
+## How loud (dB) the music plays at full Music volume, before the slider
+## (Caleb's ask: louder than it started, -6).
+const MUSIC_DB := -1.0
 ## Seconds one track takes to fade into the next (or out to silence).
 const MUSIC_FADE := 2.5
 ## Footsteps heard at most a second, all bodies together, at full sound
@@ -458,7 +470,7 @@ func music(track: String) -> void:
 	if _music_tween != null:
 		_music_tween.kill()
 	_music_tween = create_tween()
-	_music_tween.tween_property(_music, "volume_db", -6.0, MUSIC_FADE)
+	_music_tween.tween_property(_music, "volume_db", MUSIC_DB, MUSIC_FADE)
 
 
 ## The track playing now ("" for none).
@@ -592,6 +604,28 @@ func _thrust_loop(duration: float) -> AudioStreamWAV:
 		samples.append(low * 0.5 + sin(TAU * 70.0 * t) * 0.12)
 	# Crossfade the tail into the head so the loop has no click.
 	var fade := int(0.05 * RATE)
+	for i in fade:
+		var k := float(i) / fade
+		samples[i] = samples[i] * k + samples[count - fade + i] * (1.0 - k)
+	samples.resize(count - fade)
+	return _to_stream(samples, true)
+
+
+## A seamless loop of filtered noise (`smooth`: 0 dull .. 1 bright), with a
+## hum at `tone_hz` (`tone` of it) and random crackles (`crackle` a sample).
+func _air_loop(duration: float, smooth: float, tone_hz: float, tone: float, crackle: float) -> AudioStreamWAV:
+	var samples := PackedFloat32Array()
+	var count := int(duration * RATE)
+	var low := 0.0
+	var pop := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		low = lerpf(low, _rng.randf_range(-1.0, 1.0), smooth)
+		if crackle > 0.0 and _rng.randf() < crackle * 0.01:
+			pop = _rng.randf_range(-1.0, 1.0)
+		pop *= 0.96
+		samples.append(low * (0.9 - smooth * 0.5) + sin(TAU * tone_hz * t) * tone + pop * 0.4)
+	var fade := int(0.1 * RATE)
 	for i in fade:
 		var k := float(i) / fade
 		samples[i] = samples[i] * k + samples[count - fade + i] * (1.0 - k)

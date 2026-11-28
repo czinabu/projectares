@@ -409,6 +409,10 @@ const TRAIL_STEP := 0.5
 ## The map's warmth (heaters, vents; Marker3D in group "warmth") and the
 ## clock for the cold's once-a-second hurt.
 var warmth: Array[Node3D] = []
+## The map's rooms (Marker3D in group "indoors", see `WorldDef`'s "The
+## cold"): out of the open cold, heated or not. Every machine has them, so a
+## client's view can tell where its player stands (`indoors_at`).
+var rooms: Array[Node3D] = []
 var _cold_in := 1.0
 ## Footprints and wheel tracks in a world with `WorldDef.tracks`: laid down
 ## by the authority, copied to clients near them (`NetSession._send_tracks`).
@@ -602,6 +606,7 @@ func _setup(p_world: WorldDef, p_seed: int) -> void:
 	line_posts = _map_nodes("line_post")
 	beacons = _map_nodes("beacon")
 	warmth = _map_nodes("warmth")
+	rooms = _map_nodes("indoors")
 	_find_keepers()
 	tracks.clear()
 	tracks.lifetime = world.track_lifetime
@@ -3802,7 +3807,9 @@ func drop_spot_at(at: Vector3) -> Vector3:
 ## The cold (`WorldDef.cold`): out in the open a player's body heat drains
 ## by `cold_at` a second, and warmth (a heater or vent, `warmth_at`) fills
 ## it again. Once it is gone the cold hurts, once a second, through
-## `Combat.deal`. Authority only: the owner's game is sent the number and
+## `Combat.deal`, but only out in the open: in a room (`indoors_at`) it
+## drains by `WorldDef.indoor_chill` of that, nothing where the room is
+## heated, and a storm leaks in by the room's "leak". Authority only: the owner's game is sent the number and
 ## everyone else whether they shiver (`Actor.shivering`).
 ## The share of the cold an actor's worn frame keeps out (its "insulation"
 ## stat, 0 for none).
@@ -3823,13 +3830,26 @@ func _tick_cold(delta: float) -> void:
 		var actor := state.actor
 		if state.finished or not is_instance_valid(actor) or actor.is_dead:
 			continue
+		var at := actor.global_position
+		var room := indoors_at(at)
 		var warm := warmth_at(actor)
 		actor.warming = warm > 0.0
-		var change := warm if actor.warming else -world.cold_at(actor.global_position) * (1.0 - insulation_of(actor)) \
-				* weather.cold_at(actor.global_position)
+		var cold := world.cold_at(at) * (1.0 - insulation_of(actor))
+		var storm := weather.cold_at(at)
+		var change: float
+		if room == null:
+			change = warm if actor.warming else -cold * storm
+		else:
+			# Indoors: an unheated room still lets `indoor_chill` of the cold
+			# through, a heated one (or a fire inside) none, and a storm's
+			# extra bite leaks in through the doorways and broken walls by
+			# the room's "leak", slowing the warming even by a heater.
+			var leak := float(room.get_meta("leak", 0.0)) * maxf(storm - 1.0, 0.0)
+			change = warm - cold * ((0.0 if actor.warming else world.indoor_chill) + leak)
 		actor.body_heat = clampf(actor.body_heat + change * delta, 0.0, actor.max_body_heat)
 		actor.shivering = actor.body_heat < actor.max_body_heat * Actor.CHILL_SHARE
-		if hurt and actor.body_heat <= 0.0:
+		# The cold hurts only out in the open: indoors it chills, never harms.
+		if hurt and actor.body_heat <= 0.0 and room == null:
 			var info := DamageInfo.new()
 			info.amount = world.cold_damage
 			info.kind = "cold"
@@ -4042,6 +4062,9 @@ func _track_mark(body: Node3D, at: Vector3, kind: int, step: float) -> void:
 func warmth_at(actor: Actor) -> float:
 	var at := actor.global_position
 	var best := 0.0
+	var room := indoors_at(at)
+	if room != null:
+		best = float(room.get_meta("heat", 0.0))
 	for source in warmth:
 		if waits_on_keeper(source):
 			continue
@@ -4058,6 +4081,20 @@ func warmth_at(actor: Actor) -> float:
 					and vehicle.global_position.distance_squared_to(at) <= reach:
 				return world.engine_warmth
 	return best
+
+
+## The room (a map's "indoors" marker) a point stands in, or null out in the
+## open. A room is a box of the marker's meta "size" (metres, across, up,
+## deep) standing on the marker and turned with it. Works on clients.
+func indoors_at(at: Vector3) -> Node3D:
+	for room: Variant in rooms:
+		if not is_instance_valid(room):
+			continue
+		var size: Vector3 = room.get_meta("size", Vector3.ZERO)
+		var local: Vector3 = room.global_transform.affine_inverse() * at
+		if absf(local.x) <= size.x * 0.5 and absf(local.z) <= size.z * 0.5 and local.y >= -0.5 and local.y <= size.y:
+			return room
+	return null
 
 
 ## The risk zone someone is in as the watch says it: the tier's name, or the
@@ -4079,6 +4116,8 @@ func zone_label(actor: Actor) -> String:
 		label = "%s · beacon" % beacon_at(actor.global_position).get_meta("name", "Beacon")
 	elif label != "" and world.cold > 0.0 and actor.warming:
 		label += " · warm"
+	elif label != "" and world.cold > 0.0 and indoors_at(actor.global_position) != null:
+		label += " · shelter"
 	if label != "" and weather.strength_at(actor.global_position) >= 0.3:
 		label += " · " + world.weather_name.to_lower()
 	return label

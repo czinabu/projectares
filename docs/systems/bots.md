@@ -12,7 +12,8 @@ date in the same PR.
   weather and supply pods carry on. `Main` reads it at boot
   (`Raid.enemies_wanted`): `--enemies` / `--no-enemies`, then
   `ARES_ENEMIES`, then a `--bots` count over 0, then the project setting
-  `ares/stability/enemies` (false during the stability pass). The test
+  `ares/stability/enemies` (on; it was off during the stability pass and
+  came back on once each world had its own roster, pockets and budget). The test
   runner and the benches keep enemies on and set `ARES_ENEMIES` for the
   servers they start. In a solo world the dev console's `enemies on|off`
   flips it live. Never delete an enemy system to get a quiet world: gate it
@@ -30,8 +31,10 @@ date in the same PR.
   / `ARES_ENEMY_CAP`; 0 is no cap, and with no enemy cap there is no near
   cap either. A world may hold its own budget in place of the project's
   (`WorldDef.enemy_cap`, read through `Raid.enemy_budget()`, only while
-  the project's cap is on): 24 on Ashfront, 12 in the Marsh, Dune Sea and
-  Rift. The tests and benches run without a budget unless a bench is
+  the project's cap is on): 16 on Ashfront (frame bench on an RTX 5070,
+  seed 7: 63 fps at 8 bots, 55 at 16, 48 at 24, held back by the processor
+  at about 0.3 ms a bot, far ones too; back to 24 once far bots cost less),
+  12 in the Marsh, Dune Sea and Rift. The tests and benches run without a budget unless a bench is
   given `--enemy-cap`. Raise the cap only with a frame bench showing the
   frame steady at the new count.
 - Bot armies. A "spawn_bot" marker may name a faction (meta "faction");
@@ -88,8 +91,9 @@ date in the same PR.
   bench's `--group 2,3,5` (and `--slots off` to compare).
   Bots react only to what they sense (DESIGN.md "Enemy senses and squads",
   Caleb's "everyone converges on me"): sight, a person's noise (shots,
-  `Combat.noise`, told nearest first; footsteps, jets and engines,
-  `BotBrain.noise_of`), a hit and a squadmate's callout (`_call_out`, a
+  `Combat.noise`, told nearest first; footsteps, engines and a flight
+  rig at work as far as it carries, `BotBrain.noise_of`,
+  `FlightRig.noise`), a hit and a squadmate's callout (`_call_out`, a
   snapshot when the spotter raises its gun). What they learn is a place,
   never live tracking: a lost contact is searched for (`_lost`) and let go.
   A world gives a kind its own senses with metas set in `equip_bot`

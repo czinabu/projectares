@@ -46,7 +46,8 @@ const DONE := "done"
 ## and "mark", what in the world the step points at (`main.gd` finds it
 ## where the player is and stands the guide's light over it, `TourGuide`):
 ##   gear      a weapon on show in the base that is not on yet
-##   lane      the test lane's plates
+##   lane      the test lane's plates, or the firing range's targets once
+##             the range is built (it takes the lane's place)
 ##   door      the base's way out
 ##   portal:<destination>   a safe zone's portal (`WorldDef`'s "portal"
 ##             markers), `{gentle_id}` filled with the gentle world's id
@@ -66,9 +67,10 @@ const STEPS: Array[Dictionary] = [
 		"message": "Good, you're armed. Everything you do out there runs through your watch. "
 			+ "Raise it with {watch_key}. Its Summon tab holds your weapons and your bike."},
 	{"id": "lane", "event": "target",
-		"objective": "Hit a plate on the test lane", "mark": "lane",
-		"message": "Now try that weapon. The door in the back wall opens on your test lane. "
-			+ "Draw your gun with {primary_key} and hit one of the plates. Nothing in here is real damage."},
+		"objective": "Hit a target on the range", "mark": "lane",
+		"message": "Now try that weapon. The door in the back wall opens on your test lane "
+			+ "(or your firing range, once it's built). Draw your gun with {primary_key} and hit a target. "
+			+ "Follow the light if you can't find it. Nothing in here is real damage."},
 	{"id": "plaza", "event": "plaza",
 		"objective": "Head out to {plaza}", "mark": "door",
 		"message": "Nice shooting. Time to meet people. The exit by the mirror goes out to {plaza}, "

@@ -16,6 +16,7 @@ and add a row for each new source.
 | `assets/characters/humans` `rig_f` | Ultimate Modular Women (`Soldier`, repacked and kept the same way) | Quaternius | CC0 1.0 | https://quaternius.com/packs/ultimatemodularwomen.html |
 | `assets/characters/humans` `body_m` `body_f` and their textures | Universal Base Characters, Standard (`Superhero_Male` and `Superhero_Female` with the pack's hairstyles and eyebrows, rebuilt by `tools/human_rig` with textures shrunk to 2048 and 1024) | Quaternius | CC0 1.0 | https://quaternius.itch.io/universal-base-characters |
 | `assets/characters/humans` `body_m` `body_f` (animations) | Universal Animation Library, Source tier (bought; the Unreal-Godot `UAL1.glb`), and Universal Animation Library 2, Source tier (bought; `Unreal-Godot/UAL2.glb`) (clips carried onto the bodies by `tools/human_rig`) | Quaternius | CC0 1.0 | https://quaternius.itch.io/universal-animation-library |
+| `assets/characters/humans/ubc_source` (Regular male and female, heads, hairstyles, beards, textures; unedited glTF exports, hashes match the source copy) | Universal Base Characters, Source tier (bought by Quaternius's customers, re-shared with its own `License_Source.txt`, CC0 1.0 Universal) | Quaternius | CC0 1.0 | https://quaternius.itch.io/universal-base-characters |
 | `assets/weapons` `AR_*` `SMG_*` `Sniper_*` `Pistol_1` | Sci-Fi Modular Gun Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/scifimodularguns.html |
 | `assets/weapons` `Shotgun_1` `Knife` `Axe` | Survival Pack | Quaternius | CC0 1.0 | https://quaternius.com/packs/survival.html |
 | `assets/weapons` `Sword` `Hammer` | Modular Weapons Pack (`Sword.glb`, and `Hammer_Double.glb` renamed) | Quaternius | CC0 1.0 | https://quaternius.com/packs/medievalweapons.html |
@@ -63,6 +64,7 @@ license. The license terms are the authors' own, linked above.
 - Quaternius human packs (with their animations and the pack's CC0 `License.txt`): https://github.com/osman-1002/3D-3rd-Person-Godot-Game-With-GenAI-Integration at commit `108740b`, under `addons/`
 - ambientCG textures and the Poly Haven sky:
   https://github.com/petroulacl/fps-buildings-env-kit (commit 1dd8e93).
+- Universal Base Characters Source glTF exports: https://github.com/slopwarefactory/terra (`art/characters/quaternius/universal-base-characters`, files fetched through Git LFS and checked against its `SHA256SUMS`; `License_Source.txt` kept beside them).
 - Rajdhani: https://github.com/google/fonts
 - MetalPlates015A (Color, NormalGL, Roughness) and the qwantani_dusk_1_puresky sky were downloaded straight from ambientCG and Poly Haven.
 

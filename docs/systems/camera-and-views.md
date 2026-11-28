@@ -44,6 +44,17 @@ date in the same PR.
   out in flight lifts its head rather than folding it back), and gives
   way to the phone. View only, the
   same body in both views; first person's eyes simply ride the turned head.
+- Flight moves the first-person camera a little (the rigs' style pass,
+  Caleb's call): the view rolls with a third of the wings' bank and a
+  quarter of a skate's carve, sways with the skate's strides, jolts as a
+  jetpack boost lights and rumbles while it runs
+  (`PlayerController._update_flight_motion`, `flight_bank_roll`,
+  `skate_carve_roll`, `boost_rumble_deg`), read from the skin
+  (`ActorSkin.flight_bank`, `skate_carve`, `stride_phase`, `boost_push`).
+  Camera only and first person only (`_eyes_weight`): the body is the same
+  in both views and third person sees it roll. The phone's "Camera motion
+  in flight" slider (`GameSettings.flight_camera_motion`) scales it, down
+  to none.
 - Bodies are shown between physics ticks (Caleb plays at 144 Hz):
   `ShownMotion` (`core/visual/shown_motion.gd`, added by `Look` to every
   actor and vehicle it dresses, so a server has none) puts its parent

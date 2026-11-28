@@ -241,6 +241,11 @@ var stride_target := 1.0
 ## toward the left, so the rider looks where they aim.
 var ride: Node3D
 var ride_weight := 0.0
+## How far the left foot is down on the ground, stopped on a bike (0..1,
+## set by the skin), and where it goes: out from its peg (x, z) and its
+## height (y) in the vehicle's frame.
+var ride_foot_down := 0.0
+var foot_down_at := Vector3(-0.22, 0.1, -0.05)
 var ride_hands := Vector2.ONE
 var ride_turn := 0.0
 ## Where the right wrist goes when it is off its grip holding a gun (skeleton
@@ -1255,8 +1260,15 @@ func _ride_pose() -> void:
 			continue
 		var side := _side_of(leg[0])
 		var peg: Vector3 = pegs[0 if side < 0.0 else 1]
-		var ankle := to_skeleton * (peg + Vector3(ride_ankle.x * side, ride_ankle.y, ride_ankle.z))
-		var knee := to_skeleton.basis * Vector3(ride_knee.x * side, ride_knee.y, ride_knee.z)
+		var foot_at := peg + Vector3(ride_ankle.x * side, ride_ankle.y, ride_ankle.z)
+		var knee_way := Vector3(ride_knee.x * side, ride_knee.y, ride_knee.z)
+		if side < 0.0 and ride_foot_down > 0.0:
+			# Stopped: the left foot off its peg and down on the ground.
+			var down := smoothstep(0.0, 1.0, ride_foot_down)
+			foot_at = foot_at.lerp(Vector3(peg.x + foot_down_at.x, foot_down_at.y, peg.z + foot_down_at.z), down)
+			knee_way = knee_way.lerp(Vector3(-0.6, 0.4, -1.0), down)
+		var ankle := to_skeleton * foot_at
+		var knee := to_skeleton.basis * knee_way
 		_bend(leg, _foot_on_shin[leg[2]].origin, ankle, knee, w)
 		var foot := skeleton.get_bone_global_pose(leg[2])
 		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]

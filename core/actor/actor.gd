@@ -260,6 +260,14 @@ var is_dead := false
 ## Set in a safe zone: weapons can be drawn and shown but not used, and
 ## abilities and healing do nothing.
 var weapons_locked := false
+## Set in the home base off the shooting range (`HomeBase`): weapons can be
+## drawn, held, aimed and reloaded, but the trigger, the melee swing, the
+## kick, abilities, artifacts and healing do nothing. A pull of the trigger
+## only clicks (`safety_click`). It lives in `Actor`, so any machine that
+## simulates the actor enforces it the same way, in either view.
+var fire_safe := false
+## Seconds before the safety clicks again, so a held trigger is not a buzz.
+var _safety_left := 0.0
 ## Set for a blades bout in the arena (`Arena._apply_rules`, on every
 ## machine from the bout's rules): no gun may be drawn, and one in hand is
 ## put away for the blade, so a fighter brings only their melee weapon.
@@ -393,6 +401,10 @@ var _glide_launch := true
 ## Wings: the first spread since leaving the ground has not happened yet, so
 ## the launch carries the glide all the way to cruise (see `_glide_velocity`).
 var _first_spread := true
+## Boots: whether this time in the air has had its wall kick (`_wall_kick`).
+var _wall_kicked := false
+## How far past the body's edge a wall still takes a boots' wall kick.
+const WALL_KICK_REACH := 0.5
 ## Wings: seconds until a main gun can fire again after the wings fold.
 var _wing_stow := 0.0
 ## Jetpack: the trigger pulled in a boost brings you upright into a hover,
@@ -529,14 +541,14 @@ func _physics_process(delta: float) -> void:
 		_fit_body()
 	_simulate_weapons(delta)
 	ability.tick(delta)
-	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked:
+	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked and not fire_safe:
 		ability.activate()
 	artifact.tick(delta)
-	if cmd.artifact_pressed and stagger_left <= 0.0 and not weapons_locked:
+	if cmd.artifact_pressed and stagger_left <= 0.0 and not weapons_locked and not fire_safe:
 		artifact.activate()
 	_simulate_helmet(delta)
 	visor.tick(cmd, delta)
-	if not weapons_locked:
+	if not weapons_locked and not fire_safe:
 		_simulate_heal(delta)
 	# On a client of an online raid, using things is the server's decision.
 	if cmd.interact_pressed and Combat.authoritative:
@@ -737,6 +749,7 @@ func _simulate_movement(delta: float) -> void:
 	if on_floor:
 		flight.launched = false
 		_first_spread = true
+		_wall_kicked = false
 	flight.refill(delta, on_floor)
 	_measure_altitude(on_floor)
 	_measure_indoors(on_floor)
@@ -808,6 +821,8 @@ func _simulate_movement(delta: float) -> void:
 		var pulse := flight.try_pulse(flight.lift_cap(gravity))
 		if pulse > 0.0:
 			velocity.y = maxf(velocity.y, pulse)
+	elif cmd.jump_pressed and not staggered and not on_floor and _wall_kick():
+		pass  # Kicked off a wall: free, once a time in the air.
 	elif cmd.jump_pressed and not staggered:
 		var burst := flight.try_burst(flight.lift_cap(gravity))
 		if burst > 0.0:
@@ -1035,6 +1050,55 @@ func _simulate_skim(delta: float) -> void:
 		velocity.y = move_toward(velocity.y, -flight.descend_speed if cmd.descend else 0.0,
 				flight.skim_hold_accel * delta)
 	flight.skim(delta, height_above_ground(flight.skim_probe))
+
+
+## Boots kick off a wall (Caleb's call, the style pass: free-running): jump
+## pressed in the air with a wall beside you kicks you up (`wall_kick`, cut
+## to top out on the ceiling) and away from it (`wall_kick_push`), keeping
+## the speed you had along it, for no charge, once a time in the air. A
+## matter of the command and the map only, so a client predicts it.
+func _wall_kick() -> bool:
+	if flight.wall_kick <= 0.0 or _wall_kicked or not flight.working() or flight.is_skating:
+		return false
+	var up := minf(flight.wall_kick, flight.lift_cap(gravity))
+	if up < FlightRig.MIN_LIFT:
+		return false
+	var normal := wall_beside(BODY_RADIUS + WALL_KICK_REACH)
+	if normal == Vector3.ZERO:
+		return false
+	_wall_kicked = true
+	velocity.y = maxf(velocity.y, up)
+	var flat := Vector3(velocity.x, 0.0, velocity.z)
+	flat -= normal * minf(flat.dot(normal), 0.0)
+	flat += normal * flight.wall_kick_push
+	velocity.x = flat.x
+	velocity.z = flat.z
+	flight.burst_fired.emit()
+	return true
+
+
+## The level way out of the nearest wall within `reach` of the body's
+## middle (eight rays round it at waist height), or zero if there is none.
+func wall_beside(reach: float) -> Vector3:
+	if not is_inside_tree():
+		return Vector3.ZERO
+	var space := get_world_3d().direct_space_state
+	var from := global_position + Vector3(0.0, 0.9, 0.0)
+	var best := INF
+	var normal := Vector3.ZERO
+	for i in 8:
+		var dir := Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 8.0)
+		var query := PhysicsRayQueryParameters3D.create(from, from + dir * reach, LAYER_WORLD)
+		var hit := space.intersect_ray(query)
+		if hit.is_empty():
+			continue
+		var n: Vector3 = hit["normal"]
+		var level := Vector3(n.x, 0.0, n.z)
+		var dist := from.distance_to(hit["position"])
+		if level.length() > 0.7 and dist < best:
+			best = dist
+			normal = level.normalized()
+	return normal
 
 
 ## Tells the flight rig how high it is over the world's ground, for its
@@ -1290,7 +1354,12 @@ func _glide_velocity(horizontal: Vector3, _wish: Vector3, yaw_basis: Basis, delt
 		# Pulling up never gives speed back: held through a turn, it bleeds
 		# away into a stall.
 		var hold := cruise * lerpf(1.0, flight.glide_stall, pull)
-		if air_speed > hold:
+		# A swoop (pulled up, climbing on a dive's speed past the glide's)
+		# pays for its height in the climb's cost alone, not in drag on top
+		# (Caleb's call, the style pass); at the glide's speed or under, a
+		# pull-up bleeds speed as before.
+		var swooping := pull > 0.0 and velocity.y > 0.0 and air_speed > cruise and not flight.is_soaring
+		if air_speed > hold and not swooping:
 			air_speed = move_toward(air_speed, hold, flight.glide_drag * delta)
 		elif pull <= 0.0:
 			air_speed = move_toward(air_speed, hold, flight.glide_recover * delta)
@@ -1480,7 +1549,10 @@ func _simulate_weapons(delta: float) -> void:
 			gun.start_reload()
 			_reload_ask = 0.0
 		if not wings_block(weapon):
-			weapon.handle_input(cmd, delta)
+			if fire_safe:
+				_handle_input_safe(weapon, delta)
+			else:
+				weapon.handle_input(cmd, delta)
 		else:
 			weapon.drop_aim()
 		# A power weapon with nothing left is thrown away. The authority
@@ -1490,6 +1562,38 @@ func _simulate_weapons(delta: float) -> void:
 			Loadout.set_power(self, "")
 	elif weapon:
 		weapon.drop_aim()
+
+
+## The weapon's input with the safety on (`fire_safe`): the attack buttons
+## are taken off the command for this call and put back, so aim, block and
+## reload still work. A fresh pull of the trigger clicks instead.
+func _handle_input_safe(weapon: Weapon, delta: float) -> void:
+	_safety_left = maxf(0.0, _safety_left - delta)
+	if cmd.primary_pressed and _safety_left <= 0.0:
+		_safety_left = 0.35
+		safety_click()
+	var held := [cmd.primary, cmd.primary_pressed, cmd.tertiary_pressed, cmd.kick_pressed,
+			cmd.weapon_ability_pressed]
+	cmd.primary = false
+	cmd.primary_pressed = false
+	cmd.tertiary_pressed = false
+	cmd.kick_pressed = false
+	cmd.weapon_ability_pressed = false
+	weapon.handle_input(cmd, delta)
+	cmd.primary = held[0]
+	cmd.primary_pressed = held[1]
+	cmd.tertiary_pressed = held[2]
+	cmd.kick_pressed = held[3]
+	cmd.weapon_ability_pressed = held[4]
+
+
+## The cue for a pull with the safety on: the weapon's dry click, in the
+## world, and a short line on the visor. Silent on a headless server.
+func safety_click() -> void:
+	var gun := get_active_weapon() as Gun
+	if gun != null:
+		gun._reload_sound("dry_fire")
+	notice.emit("Safety on: fire on the range")
 
 
 ## See `primary_in_watch`.

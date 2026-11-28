@@ -576,13 +576,24 @@ static func pauldron(weight: String, style: Dictionary, out: float, build := "m"
 	var thick: float = {"light": 0.009, "medium": 0.012, "heavy": 0.014}[weight]
 	var spread: float = {"light": 1.3, "medium": 1.5, "heavy": 1.5}[weight]
 	var lateral := PI * 0.5 * out
+	# A slimmer arm than Build A's wears the pad stood off it by the
+	# difference (`arm_shortfall`), so the pad is as broad on every body
+	# instead of shrinking to hug a narrow shoulder (Caleb: Build B's pads
+	# read a third smaller).
+	# Stood off the arm and reaching further down it than the arm's own
+	# shape asks, by weight (Caleb's proportions pass: the shoulders carry
+	# the silhouette, and a heavy frame reads heavy from across a field).
+	var stand := arm_shortfall(build) + float({"light": 0.008, "medium": 0.013, "heavy": 0.01}[weight])
+	gap += stand
 	# The cap: over the top of the shoulder, from in past the joint out
 	# over the deltoid, swelling at its crown.
-	var cap_end: float = {"light": 0.2, "medium": 0.24, "heavy": 0.28}[weight]
+	var cap_end: float = {"light": 0.24, "medium": 0.29, "heavy": 0.34}[weight]
 	# Clear of the straps and the gorget on the trunk, and ending short of
 	# the strap's run over the shoulder (`torso`) so it rides on it.
 	var joint := absf(BodyFit.bone(build, "UpperArm").x)
-	var t0 := -minf(0.16, (joint * 0.4 - 0.0275 - 0.015) / arm.length)
+	# A pad stood off a slim arm is broader at its inner end too, so it
+	# starts that much further out, clear of a heavy frame's collar.
+	var t0 := -minf(0.16, (joint * 0.4 - 0.0275 - 0.015 - stand) / arm.length)
 	plate(root, "Pad", arm.wrap(t0, cap_end, lateral, spread, gap, 0.004 + thick * 0.4, 0.0, 0.034, 0.6), thick, m.plate, 14, 9)
 	plate(root, "PadEdge", arm.wrap(cap_end - 0.025, cap_end, lateral, spread - 0.05, gap + thick + 0.002), 0.005,
 			m.plate2 if weight == "light" else m.metal, 14, 1)
@@ -596,9 +607,30 @@ static func pauldron(weight: String, style: Dictionary, out: float, build := "m"
 	if "admin" in m.details or "stripe" in m.details:
 		# A unit patch on the cap.
 		on(root, "Patch", Vector3(0.036, 0.026, 0.004), m.glow, arm.at(0.12, lateral, gap + thick + 0.012), arm.at(0.12, lateral) - arm.at(0.12, lateral + PI))
-	if weight != "light":
+	if weight == "heavy":
+		# All the way round the upper arm, from under the lames to the
+		# elbow, its top flared out to meet them: the arm reads armored
+		# down its length, not a cap over a bare limb (Caleb).
+		plate(root, "Rerebrace", arm.wrap(0.55, 0.97, lateral, 1.4, 0.012, 0.0, gap - 0.014), thick * 0.8, m.plate, 14, 5)
+	elif weight != "light":
 		plate(root, "Rerebrace", arm.wrap(0.5, 0.82, lateral, 1.3, gap * 0.6), thick * 0.8, m.plate, 10, 4)
 	return G.merge(root)
+
+
+## How much slimmer `build`'s upper arm is than Build A's ("m") round its
+## outside, near the shoulder, where a pad sits: 0 for Build A and for
+## anything as broad.
+static func arm_shortfall(build: String) -> float:
+	var own := BodyFit.build_of(build)
+	if own == "m":
+		return 0.0
+	var short := 0.0
+	var n := 0
+	for t: float in [0.05, 0.15, 0.25]:
+		for a: float in [PI * 0.1, PI * 0.3, PI * 0.5, PI * 0.7, PI * 0.9]:
+			short += BodyFit.limb_reach("m", "UpperArm", t, a, 1.0) - BodyFit.limb_reach(own, "UpperArm", t, a, 1.0)
+			n += 1
+	return maxf(short / n, 0.0)
 
 
 ## A forearm piece: an elbow cop and a guard down the back of the forearm
@@ -612,9 +644,12 @@ static func forearm(weight: String, style: Dictionary, out: float, build := "m")
 	# The elbow: round the point of it, at the back in the rest pose.
 	plate(root, "Elbow", arm.wrap(-0.12, 0.12, PI, 1.2, 0.01, 0.014), thick, m.plate if weight == "heavy" else m.rubber, 10, 5)
 	var half: float = {"light": 1.3, "medium": 1.6, "heavy": 2.5}[weight]
-	plate(root, "Bracer", arm.wrap(0.3, 0.9, lateral, half, 0.013, 0.004, -0.005), thick, m.plate, 14, 6)
+	# A heavy vambrace starts at the elbow cop, so the forearm is armored
+	# its whole length.
+	var top := 0.13 if weight == "heavy" else 0.3
+	plate(root, "Bracer", arm.wrap(top, 0.9, lateral, half, 0.013, 0.004, -0.005), thick, m.plate, 14, 6)
 	if weight != "light":
-		plate(root, "BracerEdge", arm.wrap(0.3, 0.33, lateral, half - 0.05, 0.01 + thick), 0.004, m.metal, 14, 1)
+		plate(root, "BracerEdge", arm.wrap(top, top + 0.03, lateral, half - 0.05, 0.01 + thick), 0.004, m.metal, 14, 1)
 	if out < 0.0:
 		var at := arm.at(0.62, lateral, 0.012 + thick)
 		on(root, "Display", Vector3(0.04, 0.028, 0.004), m.dim, at, arm.at(0.62, lateral) - arm.at(0.62, lateral + PI), 0.001)
@@ -644,10 +679,12 @@ static func thigh(weight: String, style: Dictionary, out: float, build := "m") -
 		"medium":
 			# Two plates down the front and outside, the lower one over the
 			# knee's top.
-			plate(root, "Tasset", leg.wrap(0.13, 0.52, centre, 1.15, 0.016, 0.006), 0.013, m.plate, 14, 5)
-			plate(root, "Tasset1", leg.wrap(0.53, 0.84, centre * 0.6, 1.05, 0.013, 0.005), 0.012, m.plate2, 12, 4)
+			# Narrower than the leg is round, so the pads, not the thighs,
+			# carry the frame's width.
+			plate(root, "Tasset", leg.wrap(0.13, 0.5, centre, 0.95, 0.016, 0.006), 0.013, m.plate, 14, 5)
+			plate(root, "Tasset1", leg.wrap(0.51, 0.8, centre * 0.6, 0.88, 0.013, 0.005), 0.012, m.plate2, 12, 4)
 		_:
-			plate(root, "Tasset", leg.wrap(0.13, 0.6, centre, 0.85, 0.012, 0.005), 0.009, m.plate, 12, 5)
+			plate(root, "Tasset", leg.wrap(0.13, 0.55, centre, 0.72, 0.012, 0.005), 0.009, m.plate, 12, 5)
 	if out > 0.0:
 		for k in 2:
 			var t := 0.32 + k * 0.2

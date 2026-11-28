@@ -5,12 +5,29 @@ extends RefCounted
 ## lines), lit seams and glowing thrusters. Plain materials only, so a
 ## server and the watch's toys can build them; `Look` weathers them.
 ##
-## Every vehicle is one silhouette you can tell from far off:
-##   bike       the Scrapper: a low street bike with a beaked fairing and a
-##              kicked-up tail blade on two hubless wheels, patched with
-##              scrap plates, its power cell glowing through its flanks.
-##   hoverbike  the Raider: a long dart of a hull between two thruster
-##              pontoons, each with a fin, and no wheels anywhere.
+## Every vehicle is one silhouette you can tell from far off. A bike or a
+## hoverbike can wear one of several bodies (`BODIES`), picked by the item's
+## "body" stat (`Vehicle.body`), so a new bike is data, not code:
+##   bike       scrambler  a rat dirt bike: a bare tube frame, knobbly tyres,
+##                         a finned power drum, a number board with a caged
+##                         lamp, a long flat bench, a high pipe, a jerrycan.
+##                         The Scrapper.
+##              street     a low street bike with a beaked fairing and a
+##                         kicked-up tail blade, patched with scrap plates.
+##              fighter    a naked streetfighter whose glowing finned power
+##                         block is the engine, with stacked insect lamps and
+##                         a fat rear tyre on a one-sided swing arm.
+##              junker     a café racer welded from salvage: a drum tank, a
+##                         bullet nose, stacked cells, twin low pipes.
+##   hoverbike  ducted     one hull over two big open ducted fans whose rotors
+##                         spin ("Rotor*"), a tall rudder over the rear one.
+##                         The Raider.
+##              pontoon    a long dart of a hull between two thruster
+##                         pontoons, each with a fin.
+##              manta      a wide flat lifting wing with the seats on a raised
+##                         spine and fins at its tips.
+##              lancer     a needle nose over a slung lift pod, two engine
+##                         nacelles canted out behind.
 ##   rover      a wide, low wedge on four wheels in armored pods, open-topped
 ##              for four (two up front, two raised behind) under a roll cage
 ##              with a light bar on it.
@@ -37,7 +54,8 @@ extends RefCounted
 ## which `Look` leaves as they are. A lamp (a surface material that glows)
 ## is where `Look` hangs a headlight beam, so each model has one or two.
 ## Named children the vehicle uses: "Thruster*" (a hover's lift discs, which
-## burn brighter with speed) and "LegL"/"LegR" (a walker's legs, swung at
+## burn brighter with speed), "Rotor*" (a fan's rotor, which spins with
+## speed) and "LegL"/"LegR" (a walker's legs, swung at
 ## the hip, `Vehicle.LEG_HIP` up).
 
 const Self := preload("res://core/vehicle/vehicle_model.gd")
@@ -51,6 +69,13 @@ const TAIL := Color(1.0, 0.16, 0.08)
 ## How grimy `Look` paints each model (0 clean, 1 filthy): the Scrapper is
 ## made from scrap; the rest are kept up.
 const WEAR := {"bike": 0.75}
+
+## The bodies a bike or a hoverbike can wear (`Vehicle.body`); the first is
+## the one it gets when its item names none, or one this list lacks.
+const BODIES := {
+	"bike": ["scrambler", "street", "fighter", "junker"],
+	"hoverbike": ["ducted", "pontoon", "manta", "lancer"],
+}
 const WEAR_DEFAULT := 0.35
 
 ## The width of a panel line, and how deep the frame under the panels sits.
@@ -84,15 +109,26 @@ static func build(vehicle) -> Node3D:
 			root = maker._mech()
 		"jet":
 			root = maker._jet()
-		"hoverbike":
-			root = maker._hoverbike()
 		"airship":
 			root = maker._airship()
+		"bike", "hoverbike":
+			root = maker.call("_" + body_of(vehicle.model, vehicle.body))
+			root.set_meta("body", body_of(vehicle.model, vehicle.body))
 		_:
-			root = maker._bike()
+			root = maker.call("_" + body_of("bike", ""))
+			root.set_meta("body", body_of("bike", ""))
 	root.name = "Model"
 	root.set_meta("wear", WEAR.get(vehicle.model, WEAR_DEFAULT))
 	return root
+
+
+## The body `model` wears for the item's `body`: that one if `model` has
+## it, else its first.
+static func body_of(model: String, body: String) -> String:
+	var bodies: Array = BODIES.get(model, [])
+	if bodies.is_empty():
+		return ""
+	return body if body in bodies else str(bodies[0])
 
 
 func _setup(vehicle) -> void:
@@ -117,9 +153,10 @@ func _setup(vehicle) -> void:
 	glass.roughness = 0.05
 
 
-# --- Scrapper bike ----------------------------------------------------------------
+# --- Street (the first Scrapper) -------------------------------------------------
 
-func _bike() -> Node3D:
+## A low street bike with a beaked fairing and a kicked-up tail blade.
+func _street() -> Node3D:
 	var root := Node3D.new()
 	var dim := _glow(ENERGY, 1.4)  # a scrap build's rings run dim
 	# The fork, the front wheel and its beak, and the bars turn together
@@ -195,11 +232,12 @@ func _patch(root: Node3D, at: Vector3, size: Vector2, turn: float, side: float) 
 		root.add_child(_cyl(0.008, 0.008, 0.008, at + off + Vector3(side * 0.01, 0, 0), trim, Vector3(0, 0, PI / 2.0), 6))
 
 
-# --- Raider hoverbike ------------------------------------------------------------
+# --- Pontoon (the first Raider) ---------------------------------------------------
 
-## No cylinder here may lie on its side (a hover has no wheels, and a test
-## looks for them): rings round the pontoons are turned about X.
-func _hoverbike() -> Node3D:
+## A long dart of a hull between two thruster pontoons, each with a fin.
+## No cylinder on a hover body may lie on its side (a hover has no wheels,
+## and a test looks for them): rings round the pontoons are turned about X.
+func _pontoon() -> Node3D:
 	var root := Node3D.new()
 	var b: float = v.hover_height
 	for side: float in [-1.0, 1.0]:
@@ -265,6 +303,440 @@ func _hoverbike() -> Node3D:
 	_into(bars, _strut(Vector3(-0.34, 1.3, -0.42), Vector3(0.34, 1.3, -0.42), Vector2(0.032, 0.032), steel))
 	for side: float in [-1.0, 1.0]:
 		_into(bars, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.3, 1.3, -0.42), trim))  # grip
+	return root
+
+
+func _ring(at: Vector3, inner: float, outer: float, mat: Material, rot := Vector3.ZERO, rings := 24) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	var t := TorusMesh.new()
+	t.inner_radius = inner
+	t.outer_radius = outer
+	t.rings = rings
+	t.ring_segments = 8
+	node.mesh = t
+	node.position = at
+	node.rotation = rot
+	_paint(node, mat)
+	return node
+
+
+## Knobbly tread on a wheel from `_wheel_set`: its tyre is turned down and
+## `count` lugs stand round it out to `radius`, on the part that spins.
+func _lugs(wheel: Node3D, radius: float, width: float, count: int) -> void:
+	var tyre := (wheel.get_child(0) as MeshInstance3D).mesh as CylinderMesh
+	tyre.top_radius = radius - 0.03
+	tyre.bottom_radius = radius - 0.03
+	var spin := wheel.get_node("Spin")
+	for i in count:
+		var a := TAU * i / count
+		var lug := _box(Vector3(width + 0.02, 0.05, 0.07), Vector3(0, cos(a), sin(a)) * (radius - 0.03), trim)
+		lug.rotation.x = -a
+		spin.add_child(lug)
+
+
+# --- Scrapper A: the Scrambler --------------------------------------------------
+## A rat dirt bike: bare tube trellis, knobbly tyres, a tall beak of a
+## mudguard, a number board with a caged round lamp, a flat bench, a high
+## pipe, a jerrycan strapped on.
+func _scrambler() -> Node3D:
+	var root := Node3D.new()
+	var dim := _glow(ENERGY, 1.4)
+	var head := Vector3(0, 1.04, -0.52)
+	var fork := _pivot(root, "Steer", head, head - Vector3(0, 0.38, -0.76), 1.0, true)
+	var front := _wheel_set(fork, Vector3(0, 0.38, -0.76) - head, 0.38, 0.16, dim, 0.0)
+	front.name = "WheelFront"
+	_lugs(front, 0.38, 0.16, 16)
+	var rear := _wheel_set(root, Vector3(0, 0.38, 0.75), 0.38, 0.2, dim, 0.0)
+	_lugs(rear, 0.38, 0.2, 16)
+	# The frame: a bare steel trellis from the head to the swing-arm pivot
+	# and back up under the seat.
+	var pivot := Vector3(0, 0.5, 0.12)
+	for side: float in [-1.0, 1.0]:
+		var s := Vector3(side * 0.1, 0, 0)
+		for pair: Array in [[head + Vector3(0, 0.02, 0.05), Vector3(0, 0.95, 0.05)], [head + Vector3(0, -0.12, 0.03), pivot + Vector3(0, 0.05, 0)],
+				[Vector3(0, 0.95, 0.05), pivot + Vector3(0, 0.05, 0)], [Vector3(0, 0.95, 0.05), Vector3(0, 0.95, 0.86)],
+				[pivot + Vector3(0, 0.05, 0), Vector3(0, 0.95, 0.62)], [head + Vector3(0, -0.12, 0.03), Vector3(0, 0.45, -0.2)],
+				[Vector3(0, 0.45, -0.2), pivot]]:
+			root.add_child(_strut(pair[0] + s, pair[1] + s, Vector2(0.035, 0.035), steel))
+		# A box-section swing arm.
+		root.add_child(_strut(pivot + s * 1.2, Vector3(side * 0.13, 0.38, 0.75), Vector2(0.04, 0.07), trim))
+		# Fork legs with gaiters.
+		_into(fork, _strut(Vector3(side * 0.1, 1.06, -0.52), Vector3(side * 0.1, 0.38, -0.76), Vector2(0.045, 0.045), steel))
+		_into(fork, _strut(Vector3(side * 0.1, 0.72, -0.64), Vector3(side * 0.1, 0.5, -0.72), Vector2(0.07, 0.07), trim))
+		# Pegs.
+		root.add_child(_box(Vector3(0.16, 0.035, 0.07), Vector3(side * 0.21, 0.43, 0.04), steel))
+		# Shock.
+		root.add_child(_strut(Vector3(side * 0.12, 0.9, 0.5), Vector3(side * 0.13, 0.48, 0.66), Vector2(0.05, 0.05), dim))
+	# The power cell: a finned drum across the frame, glowing between fins.
+	root.add_child(_cyl(0.15, 0.15, 0.3, Vector3(0, 0.6, -0.1), trim, Vector3(0, 0, PI / 2.0), 16))
+	for i in 5:
+		root.add_child(_cyl(0.17, 0.17, 0.018, Vector3(-0.12 + i * 0.06, 0.6, -0.1), steel, Vector3(0, 0, PI / 2.0), 16))
+	root.add_child(_cyl(0.12, 0.12, 0.32, Vector3(0, 0.6, -0.1), dim, Vector3(0, 0, PI / 2.0), 12))
+	# A small dented tank and the long flat bench.
+	_paneled(root, RoundedPath.of([Vector2(-0.42, 0.96), Vector2(-0.3, 1.12), Vector2(0.0, 1.12), Vector2(0.08, 1.0),
+			Vector2(0.02, 0.88), Vector2(-0.36, 0.86)], 0.04), 0.3, 0.0, paint, [-0.18], 0.012)
+	_add(root, _extrude(RoundedPath.of([Vector2(0.0, 0.95), Vector2(0.05, 1.03), Vector2(0.84, 1.03), Vector2(0.9, 0.98),
+			Vector2(0.86, 0.95)], 0.02), 0.26, "x", trim))
+	# Side number plates under the bench.
+	for side: float in [-1.0, 1.0]:
+		var plate := _extrude(PackedVector2Array([Vector2(0.3, 0.92), Vector2(0.75, 0.94), Vector2(0.6, 0.66), Vector2(0.34, 0.7)]), 0.012, "x", paint)
+		plate.position.x = side * 0.15
+		root.add_child(plate)
+	# A tall beak of a mudguard on the fork, and a short tail guard behind.
+	_into(fork, _extrude(PackedVector2Array([Vector2(-1.18, 0.88), Vector2(-0.9, 0.86), Vector2(-0.62, 0.84),
+			Vector2(-0.48, 0.86), Vector2(-0.62, 0.9), Vector2(-0.95, 0.93)]), 0.2, "x", paint))
+	_add(root, _extrude(PackedVector2Array([Vector2(0.84, 0.97), Vector2(1.08, 1.1), Vector2(1.1, 1.06),
+			Vector2(0.86, 0.92)]), 0.18, "x", paint))
+	root.add_child(_box(Vector3(0.1, 0.035, 0.035), Vector3(0, 1.05, 1.06), tail))
+	# The number board on the fork with a round lamp in a wire cage.
+	_into(fork, _strut(Vector3(0, 1.08, -0.6), Vector3(0, 0.82, -0.68), Vector2(0.3, 0.014), paint))
+	_into(fork, _cyl(0.075, 0.075, 0.05, Vector3(0, 0.96, -0.66), lamp, Vector3(PI / 2.0 - 0.3, 0, 0), 16))
+	for k in 3:
+		_into(fork, _strut(Vector3(-0.08 + k * 0.08, 1.04, -0.69), Vector3(-0.08 + k * 0.08, 0.88, -0.74), Vector2(0.01, 0.01), steel))
+	# Wide bars on a tall clamp, with a cross brace.
+	_into(fork, _strut(Vector3(0, 1.08, -0.5), Vector3(0, 1.18, -0.34), Vector2(0.05, 0.05), trim))
+	_into(fork, _strut(Vector3(-0.3, 1.2, -0.3), Vector3(0.3, 1.2, -0.3), Vector2(0.03, 0.03), steel))
+	_into(fork, _strut(Vector3(-0.14, 1.25, -0.31), Vector3(0.14, 1.25, -0.31), Vector2(0.025, 0.025), steel))
+	for side: float in [-1.0, 1.0]:
+		_into(fork, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.24, 1.2, -0.3), trim))
+	# The high pipe on the right, up past the bench, with a glowing can.
+	root.add_child(_strut(Vector3(0.12, 0.55, -0.2), Vector3(0.2, 0.62, 0.2), Vector2(0.06, 0.06), steel))
+	root.add_child(_strut(Vector3(0.2, 0.62, 0.2), Vector3(0.21, 0.86, 0.5), Vector2(0.06, 0.06), steel))
+	root.add_child(_cyl(0.065, 0.065, 0.42, Vector3(0.22, 0.92, 0.72), trim, Vector3(PI / 2.0 - 0.25, 0, 0), 12))
+	root.add_child(_cyl(0.045, 0.045, 0.02, Vector3(0.22, 0.97, 0.93), dim, Vector3(PI / 2.0 - 0.25, 0, 0), 12))
+	# A jerrycan strapped on the left of the tail.
+	root.add_child(_box(Vector3(0.1, 0.24, 0.3), Vector3(-0.22, 0.8, 0.58), _mat(Color(0.32, 0.36, 0.22), 0.8, 0.2)))
+	root.add_child(_box(Vector3(0.115, 0.03, 0.31), Vector3(-0.22, 0.86, 0.58), trim))
+	_patch(root, Vector3(-0.152, 1.04, -0.2), Vector2(0.16, 0.08), 0.2, -1.0)
+	return root
+
+
+# --- Scrapper B: the Streetfighter ---------------------------------------------
+## Naked and mean: the power cell is the engine, a big finned block between
+## the wheels glowing through its fins; sharp shrouds flare off a muscular
+## tank, an insect face of two stacked lamps, a stub tail, a fat rear tyre on
+## a one-sided swing arm.
+func _fighter() -> Node3D:
+	var root := Node3D.new()
+	var dim := _glow(ENERGY, 1.8)
+	var head := Vector3(0, 1.0, -0.5)
+	var fork := _pivot(root, "Steer", head, head - Vector3(0, 0.35, -0.76), 1.0, true)
+	var front := _wheel_set(fork, Vector3(0, 0.35, -0.76) - head, 0.35, 0.16, dim, 0.0)
+	front.name = "WheelFront"
+	_wheel_set(root, Vector3(0, 0.36, 0.75), 0.36, 0.27, dim, 0.0)
+	# Upside-down fork: fat tubes on top, thin legs to the hub.
+	for side: float in [-1.0, 1.0]:
+		_into(fork, _strut(Vector3(side * 0.11, 1.06, -0.49), Vector3(side * 0.11, 0.7, -0.62), Vector2(0.075, 0.075), paint))
+		_into(fork, _strut(Vector3(side * 0.11, 0.72, -0.62), Vector3(side * 0.11, 0.35, -0.76), Vector2(0.045, 0.045), steel))
+		root.add_child(_box(Vector3(0.14, 0.035, 0.06), Vector3(side * 0.21, 0.44, 0.04), steel))
+		root.add_child(_strut(Vector3(side * 0.1, 0.52, 0.04), Vector3(side * 0.16, 0.45, 0.04), Vector2(0.04, 0.04), trim))
+	# The power block: dark, finned, glowing through the gaps.
+	root.add_child(_box(Vector3(0.3, 0.36, 0.5), Vector3(0, 0.56, -0.08), dim))
+	for i in 7:
+		root.add_child(_box(Vector3(0.34, 0.025, 0.54), Vector3(0, 0.4 + i * 0.052, -0.08), trim))
+	root.add_child(_box(Vector3(0.36, 0.06, 0.3), Vector3(0, 0.36, 0.0), steel))
+	# A beam frame from the head over the block to the swing-arm pivot.
+	for side: float in [-1.0, 1.0]:
+		root.add_child(_strut(Vector3(side * 0.12, 1.0, -0.46), Vector3(side * 0.15, 0.8, 0.2), Vector2(0.04, 0.1), steel))
+		root.add_child(_strut(Vector3(side * 0.15, 0.8, 0.2), Vector3(side * 0.13, 0.52, 0.2), Vector2(0.04, 0.1), steel))
+	# One-sided swing arm on the left; a short, chunky pipe on the right.
+	root.add_child(_strut(Vector3(-0.16, 0.52, 0.2), Vector3(-0.17, 0.36, 0.75), Vector2(0.06, 0.12), trim))
+	root.add_child(_cyl(0.1, 0.1, 0.06, Vector3(-0.19, 0.36, 0.75), steel, Vector3(0, 0, PI / 2.0), 16))
+	root.add_child(_box(Vector3(0.12, 0.12, 0.3), Vector3(0.14, 0.33, 0.32), trim))
+	root.add_child(_box(Vector3(0.1, 0.08, 0.02), Vector3(0.14, 0.33, 0.48), dim))
+	# The tank, and its shrouds flaring forward and down past the block.
+	_paneled(root, RoundedPath.of([Vector2(-0.4, 1.0), Vector2(-0.22, 1.14), Vector2(0.06, 1.1), Vector2(0.12, 0.96),
+			Vector2(-0.05, 0.86), Vector2(-0.4, 0.9)], 0.03), 0.36, 0.0, paint, [-0.1], 0.012)
+	for side: float in [-1.0, 1.0]:
+		var shroud := _extrude(PackedVector2Array([Vector2(-0.5, 1.0), Vector2(-0.18, 0.98), Vector2(0.02, 0.8),
+				Vector2(-0.06, 0.66), Vector2(-0.38, 0.78)]), 0.02, "x", paint)
+		shroud.position.x = side * 0.19
+		shroud.rotation.y = side * 0.12
+		root.add_child(shroud)
+		root.add_child(_strut(Vector3(side * 0.2, 0.96, -0.44), Vector3(side * 0.205, 0.74, -0.08), Vector2(0.006, 0.022), seam))
+	# The seat, stepped, and a short high stub of a tail with a thin lamp.
+	_add(root, _extrude(RoundedPath.of([Vector2(0.06, 0.96), Vector2(0.1, 1.0), Vector2(0.5, 1.0), Vector2(0.56, 0.96)], 0.02), 0.28, "x", trim))
+	_paneled(root, PackedVector2Array([Vector2(0.5, 0.94), Vector2(0.56, 1.04), Vector2(0.82, 1.14), Vector2(0.84, 1.1),
+			Vector2(0.7, 0.92), Vector2(0.3, 0.86)]), 0.24, 0.0, paint, [], 0.01)
+	root.add_child(_strut(Vector3(-0.08, 1.11, 0.835), Vector3(0.08, 1.11, 0.835), Vector2(0.02, 0.025), tail))
+	# The insect face: two stacked lamps under a tiny smoked screen.
+	_into(fork, _box(Vector3(0.22, 0.24, 0.1), Vector3(0, 1.02, -0.6), trim))
+	_into(fork, _box(Vector3(0.12, 0.05, 0.03), Vector3(0, 1.08, -0.655), lamp))
+	_into(fork, _box(Vector3(0.12, 0.05, 0.03), Vector3(0, 0.98, -0.655), _glow(Color(1.0, 0.9, 0.7), 2.0)))
+	var screen := _strut(Vector3(0, 1.14, -0.62), Vector3(0, 1.24, -0.54), Vector2(0.2, 0.012), glass)
+	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_into(fork, screen)
+	_into(fork, _extrude(_arc(Vector2(-0.76, 0.35), 0.39, 0.42, 0.3 * PI, 0.7 * PI), 0.18, "x", trim))
+	# Flat bars on risers.
+	_into(fork, _strut(Vector3(0, 1.06, -0.48), Vector3(0, 1.17, -0.32), Vector2(0.05, 0.05), trim))
+	_into(fork, _strut(Vector3(-0.28, 1.2, -0.3), Vector3(0.28, 1.2, -0.3), Vector2(0.03, 0.03), steel))
+	for side: float in [-1.0, 1.0]:
+		_into(fork, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.24, 1.2, -0.3), trim))
+	return root
+
+
+# --- Scrapper C: the Junker ----------------------------------------------------
+## A café racer welded out of salvage: a long drum for a tank, a hump
+## seat, a bullet nose cut from a pipe end with a round lamp and a bolted
+## armour plate, a stack of three glowing cells under it, twin low pipes,
+## laced wheels.
+func _junker() -> Node3D:
+	var root := Node3D.new()
+	var dim := _glow(ENERGY, 1.5)
+	var head := Vector3(0, 1.0, -0.52)
+	var fork := _pivot(root, "Steer", head, head - Vector3(0, 0.36, -0.78), 1.0, true)
+	var front := _wheel_set(fork, Vector3(0, 0.36, -0.78) - head, 0.36, 0.13, dim, 0.0)
+	front.name = "WheelFront"
+	var rear := _wheel_set(root, Vector3(0, 0.36, 0.75), 0.36, 0.17, dim, 0.0)
+	for wheel: Node3D in [front, rear]:
+		var spin := wheel.get_node("Spin")
+		for i in 8:
+			var spoke := _box(Vector3(0.012, 0.5, 0.012), Vector3.ZERO, steel)
+			spoke.rotation.x = i * PI / 8.0 + 0.1
+			spin.add_child(spoke)
+	for side: float in [-1.0, 1.0]:
+		_into(fork, _strut(Vector3(side * 0.09, 1.02, -0.51), Vector3(side * 0.09, 0.36, -0.78), Vector2(0.045, 0.045), steel))
+		# A twin-loop frame under the drum.
+		root.add_child(_strut(Vector3(side * 0.09, 0.96, -0.48), Vector3(side * 0.11, 0.38, -0.3), Vector2(0.035, 0.035), trim))
+		root.add_child(_strut(Vector3(side * 0.11, 0.38, -0.3), Vector3(side * 0.11, 0.4, 0.15), Vector2(0.035, 0.035), trim))
+		root.add_child(_strut(Vector3(side * 0.11, 0.4, 0.15), Vector3(side * 0.11, 0.92, 0.2), Vector2(0.035, 0.035), trim))
+		root.add_child(_strut(Vector3(side * 0.11, 0.92, 0.2), Vector3(side * 0.1, 0.92, 0.85), Vector2(0.035, 0.035), trim))
+		root.add_child(_strut(Vector3(side * 0.12, 0.45, 0.12), Vector3(side * 0.12, 0.36, 0.75), Vector2(0.04, 0.06), steel))
+		root.add_child(_strut(Vector3(side * 0.11, 0.92, 0.55), Vector3(side * 0.13, 0.42, 0.68), Vector2(0.04, 0.04), steel))
+		root.add_child(_box(Vector3(0.14, 0.035, 0.06), Vector3(side * 0.21, 0.44, 0.06), steel))
+		# Twin low megaphone pipes.
+		root.add_child(_strut(Vector3(side * 0.12, 0.5, -0.3), Vector3(side * 0.18, 0.34, 0.2), Vector2(0.05, 0.05), steel))
+		root.add_child(_cyl(0.05, 0.075, 0.5, Vector3(side * 0.19, 0.38, 0.48), steel, Vector3(PI / 2.0 - 0.15, 0, 0), 12))
+		root.add_child(_cyl(0.06, 0.06, 0.01, Vector3(side * 0.19, 0.42, 0.73), dim, Vector3(PI / 2.0 - 0.15, 0, 0), 12))
+	# Three cells stacked in the frame, their ends glowing.
+	for i in 3:
+		var y := 0.5 + i * 0.13
+		root.add_child(_cyl(0.06, 0.06, 0.2, Vector3(0, y, -0.12 + i * 0.03), steel, Vector3(0, 0, PI / 2.0), 12))
+		root.add_child(_cyl(0.045, 0.045, 0.22, Vector3(0, y, -0.12 + i * 0.03), dim, Vector3(0, 0, PI / 2.0), 12))
+	# The tank: a long drum with welded bands and a cap.
+	root.add_child(_capsule(0.15, 0.78, Vector3(0, 0.98, -0.2), paint, Vector3(PI / 2.0 - 0.1, 0, 0)))
+	for z: float in [-0.42, -0.2, 0.02]:
+		root.add_child(_cyl(0.155, 0.155, 0.02, Vector3(0, 0.98 - z * 0.1, z), trim, Vector3(PI / 2.0 - 0.1, 0, 0), 16))
+	root.add_child(_cyl(0.04, 0.04, 0.04, Vector3(0, 1.14, -0.32), steel))
+	# The seat and its hump.
+	_add(root, _extrude(RoundedPath.of([Vector2(0.14, 0.92), Vector2(0.16, 0.99), Vector2(0.48, 0.99), Vector2(0.52, 0.94)], 0.02), 0.26, "x", trim))
+	_paneled(root, RoundedPath.of([Vector2(0.48, 0.92), Vector2(0.52, 1.02), Vector2(0.64, 1.1), Vector2(0.82, 1.08),
+			Vector2(0.9, 0.98), Vector2(0.86, 0.9)], 0.03), 0.26, 0.0, paint, [], 0.01)
+	root.add_child(_cyl(0.035, 0.035, 0.02, Vector3(0, 1.0, 0.91), tail, Vector3(PI / 2.0, 0, 0), 12))
+	# The bullet nose: a pipe end round a lamp, an armour plate bolted on top.
+	_into(fork, _cyl(0.15, 0.13, 0.26, Vector3(0, 1.0, -0.6), paint, Vector3(PI / 2.0 + 0.15, 0, 0), 16))
+	_into(fork, _cyl(0.11, 0.11, 0.02, Vector3(0, 1.02, -0.735), lamp, Vector3(PI / 2.0 + 0.15, 0, 0), 16))
+	var plate := _box(Vector3(0.24, 0.012, 0.26), Vector3(0, 1.15, -0.62), steel)
+	plate.rotation.x = 0.2
+	_into(fork, plate)
+	for c: float in [-0.09, 0.09]:
+		_into(fork, _cyl(0.012, 0.012, 0.012, Vector3(c, 1.16, -0.68), trim, Vector3.ZERO, 6))
+	_into(fork, _extrude(_arc(Vector2(-0.78, 0.36), 0.4, 0.43, 0.35 * PI, 0.75 * PI), 0.15, "x", steel))
+	# Low clip-ons.
+	for side: float in [-1.0, 1.0]:
+		_into(fork, _strut(Vector3(side * 0.1, 1.1, -0.48), Vector3(side * 0.26, 1.18, -0.32), Vector2(0.03, 0.03), steel))
+		_into(fork, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.24, 1.18, -0.32), trim))
+	_patch(root, Vector3(0.155, 0.86, 0.6), Vector2(0.16, 0.08), 0.3, 1.0)
+	return root
+
+
+# --- Raider A: the Ducted ------------------------------------------------------
+## One hull over two big ducted fans, front and back, whose rotors spin;
+## short canards at the nose, one tall rudder, footboards on outriggers.
+func _ducted() -> Node3D:
+	var root := Node3D.new()
+	var b: float = v.hover_height
+	for z: float in [-0.78, 0.82]:
+		var rr := 0.42 if z < 0 else 0.46
+		var shell := _cyl(rr, rr, 0.2, Vector3(0, b + 0.12, z), paint, Vector3.ZERO, 28)
+		(shell.mesh as CylinderMesh).cap_top = false
+		(shell.mesh as CylinderMesh).cap_bottom = false
+		root.add_child(shell)
+		root.add_child(_ring(Vector3(0, b + 0.215, z), rr - 0.045, rr + 0.005, paint, Vector3.ZERO, 28))
+		var inner := _cyl(rr - 0.04, rr - 0.04, 0.2, Vector3(0, b + 0.12, z), trim, Vector3.ZERO, 28)
+		(inner.mesh as CylinderMesh).cap_top = false
+		(inner.mesh as CylinderMesh).cap_bottom = false
+		root.add_child(inner)
+		for k in 2:
+			var strut := _box(Vector3(0.03, 0.03, rr * 2.0 - 0.1), Vector3(0, b + 0.2, z), trim)
+			strut.rotation.y = PI / 4.0 + k * PI / 2.0
+			root.add_child(strut)
+		root.add_child(_ring(Vector3(0, b + 0.225, z), rr - 0.06, rr - 0.02, seam))
+		var disc := _cyl(rr - 0.1, rr - 0.1, 0.02, Vector3(0, b + 0.03, z), energy, Vector3.ZERO, 24)
+		disc.name = "Thruster%d" % root.get_child_count()
+		root.add_child(disc)
+		# The rotor spins with the speed (`Vehicle._turn_parts`) and is
+		# merged among itself, a draw per material.
+		var rotor := Node3D.new()
+		rotor.name = "Rotor%d" % root.get_child_count()
+		rotor.position = Vector3(0, b + 0.13, z)
+		rotor.set_meta("merge", true)
+		root.add_child(rotor)
+		for i in 5:
+			var turn := Basis(Vector3.UP, i * TAU / 5.0)
+			var blade := _box(Vector3(0.08, 0.012, rr - 0.12), turn * Vector3(0, 0, (rr - 0.12) * 0.5 + 0.04), steel)
+			blade.basis = turn * Basis(Vector3.BACK, 0.35)
+			rotor.add_child(blade)
+		rotor.add_child(_cyl(0.07, 0.07, 0.06, Vector3.ZERO, trim))
+	# The hull, long and narrow over the fans.
+	var hull := PackedVector2Array([Vector2(-1.3, b + 0.3), Vector2(-1.0, b + 0.5), Vector2(-0.6, b + 0.62),
+			Vector2(-0.28, b + 0.64), Vector2(-0.08, b + 0.5), Vector2(0.48, b + 0.5), Vector2(0.56, b + 0.58),
+			Vector2(1.0, b + 0.6), Vector2(1.3, b + 0.48), Vector2(1.32, b + 0.3), Vector2(1.0, b + 0.22),
+			Vector2(-1.0, b + 0.22)])
+	_paneled(root, hull, 0.34, 0.0, paint, [-0.7, -0.1, 0.5], 0.014)
+	_add(root, _extrude(RoundedPath.of([Vector2(-0.07, b + 0.5), Vector2(-0.04, b + 0.58), Vector2(0.42, b + 0.58),
+			Vector2(0.48, b + 0.5)], 0.02), 0.32, "x", trim))
+	_add(root, _extrude(RoundedPath.of([Vector2(0.57, b + 0.58), Vector2(0.6, b + 0.66), Vector2(0.94, b + 0.66),
+			Vector2(1.0, b + 0.6)], 0.02), 0.3, "x", trim))
+	for side: float in [-1.0, 1.0]:
+		# Outrigger footboards from the hull, and the pillion's steps.
+		root.add_child(_strut(Vector3(side * 0.16, b + 0.28, -0.04), Vector3(side * 0.42, b + 0.27, -0.04), Vector2(0.05, 0.06), trim))
+		root.add_child(_box(Vector3(0.16, 0.03, 0.2), Vector3(side * 0.37, b + 0.28, -0.04), paint))
+		root.add_child(_box(Vector3(0.12, 0.08, 0.12), Vector3(side * 0.36, b + 0.32, 0.5), trim))
+		root.add_child(_strut(Vector3(side * 0.16, b + 0.3, 0.5), Vector3(side * 0.36, b + 0.32, 0.5), Vector2(0.04, 0.05), trim))
+		# Canards at the nose.
+		var canard := _extrude(PackedVector2Array([Vector2(0.0, -1.0), Vector2(0.3, -0.86), Vector2(0.3, -0.74), Vector2(0.0, -0.7)]), 0.03, "y", paint)
+		canard.position = Vector3(0, b + 0.42, 0)
+		canard.scale.x = side
+		root.add_child(canard)
+		root.add_child(_strut(Vector3(side * 0.172, b + 0.36, -1.1), Vector3(side * 0.172, b + 0.33, 0.4), Vector2(0.006, 0.022), seam))
+	# One tall rudder over the rear fan.
+	var rudder := _pivot(root, "Fin0", Vector3(0, b + 0.6, 1.0), Vector3.UP, -0.5)
+	_into(rudder, _extrude(RoundedPath.of([Vector2(0.95, b + 0.58), Vector2(1.18, b + 1.02), Vector2(1.32, b + 1.02), Vector2(1.3, b + 0.5)], 0.02), 0.03, "x", paint))
+	var exhaust := _box(Vector3(0.22, 0.08, 0.02), Vector3(0, b + 0.38, 1.33), energy)
+	exhaust.name = "Exhaust"
+	root.add_child(exhaust)
+	root.add_child(_box(Vector3(0.14, 0.03, 0.03), Vector3(0, b + 0.33, -1.3), lamp))
+	var screen := _strut(Vector3(0, b + 0.62, -0.66), Vector3(0, b + 0.86, -0.52), Vector2(0.3, 0.012), glass)
+	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(screen)
+	var stem := Vector3(0, b + 0.6, -0.5)
+	var bars := _pivot(root, "Steer", stem, Vector3(0, 1.3, -0.43) - stem, 1.0, true)
+	_into(bars, _strut(stem, Vector3(0, 1.3, -0.43), Vector2(0.06, 0.05), trim))
+	_into(bars, _strut(Vector3(-0.34, 1.3, -0.42), Vector3(0.34, 1.3, -0.42), Vector2(0.032, 0.032), steel))
+	for side: float in [-1.0, 1.0]:
+		_into(bars, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.3, 1.3, -0.42), trim))
+	return root
+
+
+# --- Raider B: the Manta -------------------------------------------------------
+## A wide, flat lifting body, a manta seen from above, with the seats on a
+## raised spine, four lift thrusters under the wing, wingtip fins that turn
+## as rudders and two exhaust slots in the trailing edge.
+func _manta() -> Node3D:
+	var root := Node3D.new()
+	var b: float = v.hover_height
+	var wing := PackedVector2Array([Vector2(0.0, -1.42), Vector2(0.22, -1.12), Vector2(0.5, -0.5), Vector2(0.86, 0.3),
+			Vector2(0.9, 0.62), Vector2(0.6, 0.86), Vector2(0.3, 1.0), Vector2(0.18, 1.3), Vector2(-0.18, 1.3), Vector2(-0.3, 1.0),
+			Vector2(-0.6, 0.86), Vector2(-0.9, 0.62), Vector2(-0.86, 0.3), Vector2(-0.5, -0.5), Vector2(-0.22, -1.12)])
+	var deck := _extrude(wing, 0.06, "y", paint)
+	deck.position.y = b + 0.18
+	root.add_child(deck)
+	var under := _extrude(Geometry2D.offset_polygon(wing, -0.06)[0], 0.12, "y", trim)
+	under.position.y = b + 0.14
+	root.add_child(under)
+	# A lit seam round the leading edge.
+	for side: float in [-1.0, 1.0]:
+		root.add_child(_strut(Vector3(side * 0.03, b + 0.2, -1.4), Vector3(side * 0.23, b + 0.2, -1.1), Vector2(0.02, 0.02), seam))
+		root.add_child(_strut(Vector3(side * 0.23, b + 0.2, -1.1), Vector3(side * 0.85, b + 0.2, 0.28), Vector2(0.02, 0.02), seam))
+		for z: float in [-0.15, 0.55]:
+			root.add_child(_cyl(0.16, 0.16, 0.06, Vector3(side * 0.5, b + 0.08, z), trim, Vector3.ZERO, 20))
+			var disc := _cyl(0.13, 0.13, 0.02, Vector3(side * 0.5, b + 0.04, z), energy, Vector3.ZERO, 20)
+			disc.name = "Thruster%d" % root.get_child_count()
+			root.add_child(disc)
+		# Wingtip fins, swinging as rudders.
+		var fin := _pivot(root, "Fin%d" % (0 if side < 0.0 else 1), Vector3(side * 0.86, b + 0.22, 0.6), Vector3.UP, -0.5)
+		var blade := _extrude(RoundedPath.of([Vector2(0.3, b + 0.22), Vector2(0.62, b + 0.58), Vector2(0.76, b + 0.58), Vector2(0.8, b + 0.22)], 0.02), 0.03, "x", paint)
+		blade.position.x = side * 0.88
+		_into(fin, blade)
+		root.add_child(_box(Vector3(0.14, 0.04, 0.22), Vector3(side * 0.37, b + 0.25, -0.04), trim))
+		root.add_child(_box(Vector3(0.12, 0.1, 0.12), Vector3(side * 0.36, b + 0.29, 0.5), trim))
+		var slot := _box(Vector3(0.14, 0.05, 0.02), Vector3(side * 0.24, b + 0.2, 1.23), energy)
+		slot.name = "Exhaust%d" % root.get_child_count()
+		root.add_child(slot)
+	# The spine: nose cowl, the rider's seat, the raised pillion.
+	var spine := PackedVector2Array([Vector2(-1.25, b + 0.24), Vector2(-0.9, b + 0.42), Vector2(-0.5, b + 0.58),
+			Vector2(-0.24, b + 0.6), Vector2(-0.08, b + 0.5), Vector2(0.48, b + 0.5), Vector2(0.56, b + 0.6),
+			Vector2(1.0, b + 0.64), Vector2(1.15, b + 0.5), Vector2(1.1, b + 0.24)])
+	_paneled(root, spine, 0.3, 0.0, paint, [-0.62, -0.1, 0.52], 0.014)
+	_add(root, _extrude(RoundedPath.of([Vector2(-0.07, b + 0.5), Vector2(-0.04, b + 0.58), Vector2(0.42, b + 0.58),
+			Vector2(0.48, b + 0.5)], 0.02), 0.3, "x", trim))
+	_add(root, _extrude(RoundedPath.of([Vector2(0.57, b + 0.6), Vector2(0.6, b + 0.68), Vector2(0.94, b + 0.68),
+			Vector2(1.0, b + 0.62)], 0.02), 0.28, "x", trim))
+	root.add_child(_box(Vector3(0.3, 0.025, 0.03), Vector3(0, b + 0.24, -1.28), lamp))
+	var screen := _strut(Vector3(0, b + 0.58, -0.62), Vector3(0, b + 0.82, -0.5), Vector2(0.3, 0.012), glass)
+	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(screen)
+	var stem := Vector3(0, b + 0.58, -0.5)
+	var bars := _pivot(root, "Steer", stem, Vector3(0, 1.3, -0.43) - stem, 1.0, true)
+	_into(bars, _strut(stem, Vector3(0, 1.3, -0.43), Vector2(0.06, 0.05), trim))
+	_into(bars, _strut(Vector3(-0.34, 1.3, -0.42), Vector3(0.34, 1.3, -0.42), Vector2(0.032, 0.032), steel))
+	for side: float in [-1.0, 1.0]:
+		_into(bars, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.3, 1.3, -0.42), trim))
+	return root
+
+
+# --- Raider C: the Lancer ------------------------------------------------------
+## A long needle of a hull with a lift pod slung under the nose and two big
+## engine nacelles canted out behind the pillion, a blade keel under it.
+func _lancer() -> Node3D:
+	var root := Node3D.new()
+	var b: float = v.hover_height
+	var hull := PackedVector2Array([Vector2(-1.6, b + 0.36), Vector2(-1.2, b + 0.48), Vector2(-0.6, b + 0.6),
+			Vector2(-0.26, b + 0.62), Vector2(-0.08, b + 0.5), Vector2(0.48, b + 0.5), Vector2(0.56, b + 0.6),
+			Vector2(0.95, b + 0.62), Vector2(1.2, b + 0.5), Vector2(1.22, b + 0.3), Vector2(0.9, b + 0.22),
+			Vector2(-0.8, b + 0.24), Vector2(-1.4, b + 0.3)])
+	_paneled(root, hull, 0.3, 0.0, paint, [-0.9, -0.1, 0.52], 0.014)
+	_add(root, _extrude(RoundedPath.of([Vector2(-0.07, b + 0.5), Vector2(-0.04, b + 0.58), Vector2(0.42, b + 0.58),
+			Vector2(0.48, b + 0.5)], 0.02), 0.3, "x", trim))
+	_add(root, _extrude(RoundedPath.of([Vector2(0.57, b + 0.6), Vector2(0.6, b + 0.68), Vector2(0.92, b + 0.68),
+			Vector2(0.97, b + 0.62)], 0.02), 0.28, "x", trim))
+	# The nose pod: a ducted lift ring slung under the hull on a pylon.
+	root.add_child(_strut(Vector3(0, b + 0.3, -1.0), Vector3(0, b + 0.16, -0.95), Vector2(0.08, 0.2), trim))
+	root.add_child(_cyl(0.26, 0.26, 0.14, Vector3(0, b + 0.1, -0.95), paint, Vector3.ZERO, 24))
+	root.add_child(_cyl(0.22, 0.22, 0.16, Vector3(0, b + 0.1, -0.95), trim, Vector3.ZERO, 24))
+	var disc := _cyl(0.19, 0.19, 0.02, Vector3(0, b + 0.02, -0.95), energy, Vector3.ZERO, 20)
+	disc.name = "Thruster%d" % root.get_child_count()
+	root.add_child(disc)
+	for side: float in [-1.0, 1.0]:
+		# The nacelles: big engine pods canted out on swept pylons, an
+		# intake ring in front, a glowing nozzle behind, a lift disc under.
+		var at := Vector3(side * 0.52, b + 0.26, 0.6)
+		root.add_child(_strut(Vector3(side * 0.12, b + 0.34, 0.45), at + Vector3(-side * 0.08, 0.04, -0.1), Vector2(0.05, 0.18), trim))
+		# Built in the nacelle's own frame, then set into the model's, so
+		# its pieces merge with the rest.
+		var pod := Transform3D(Basis.from_euler(Vector3(0, -side * 0.06, side * 0.25)), at)
+		_set_in(root, pod, _capsule(0.16, 1.1, Vector3.ZERO, paint, Vector3(PI / 2.0, 0, 0)))
+		_set_in(root, pod, _cyl(0.17, 0.17, 0.05, Vector3(0, 0, -0.38), trim, Vector3(PI / 2.0, 0, 0), 16))
+		_set_in(root, pod, _cyl(0.12, 0.15, 0.16, Vector3(0, 0, 0.56), trim, Vector3(PI / 2.0, 0, 0), 16))
+		var noz := _cyl(0.11, 0.11, 0.02, Vector3(0, 0, 0.645), energy, Vector3(PI / 2.0, 0, 0), 16)
+		noz.name = "Exhaust%d" % root.get_child_count()
+		_set_in(root, pod, noz)
+		var lift := _cyl(0.11, 0.11, 0.02, Vector3(0, -0.16, 0.0), energy, Vector3.ZERO, 16)
+		lift.name = "Thruster%d" % root.get_child_count()
+		_set_in(root, pod, lift)
+		_set_in(root, pod, _strut(Vector3(side * 0.15, 0.03, -0.4), Vector3(side * 0.15, 0.03, 0.4), Vector2(0.008, 0.02), seam))
+		# Footboards and the pillion's steps.
+		root.add_child(_strut(Vector3(side * 0.14, b + 0.28, -0.04), Vector3(side * 0.42, b + 0.27, -0.04), Vector2(0.05, 0.06), trim))
+		root.add_child(_box(Vector3(0.16, 0.03, 0.2), Vector3(side * 0.37, b + 0.28, -0.04), paint))
+		root.add_child(_strut(Vector3(side * 0.152, b + 0.38, -1.4), Vector3(side * 0.152, b + 0.34, 0.4), Vector2(0.006, 0.022), seam))
+		# Rudders on the nacelles.
+		var fin := _pivot(root, "Fin%d" % (0 if side < 0.0 else 1), at + Vector3(side * 0.05, 0.12, 0.3), Basis(Vector3.FORWARD, side * 0.25) * Vector3.UP, -0.5)
+		var blade := _extrude(RoundedPath.of([Vector2(0.4, b + 0.36), Vector2(0.68, b + 0.7), Vector2(0.82, b + 0.7), Vector2(0.86, b + 0.36)], 0.02), 0.03, "x", paint)
+		blade.position.x = at.x - side * 0.03
+		_into(fin, blade)
+	# A blade keel under the hull.
+	_add(root, _extrude(PackedVector2Array([Vector2(-0.6, b + 0.24), Vector2(0.4, b + 0.24), Vector2(0.2, b + 0.1), Vector2(-0.4, b + 0.14)]), 0.04, "x", trim))
+	root.add_child(_box(Vector3(0.12, 0.03, 0.03), Vector3(0, b + 0.38, -1.6), lamp))
+	var screen := _strut(Vector3(0, b + 0.6, -0.66), Vector3(0, b + 0.86, -0.52), Vector2(0.3, 0.012), glass)
+	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(screen)
+	var stem := Vector3(0, b + 0.6, -0.5)
+	var bars := _pivot(root, "Steer", stem, Vector3(0, 1.3, -0.43) - stem, 1.0, true)
+	_into(bars, _strut(stem, Vector3(0, 1.3, -0.43), Vector2(0.06, 0.05), trim))
+	_into(bars, _strut(Vector3(-0.34, 1.3, -0.42), Vector3(0.34, 1.3, -0.42), Vector2(0.032, 0.032), steel))
+	for side: float in [-1.0, 1.0]:
+		_into(bars, _box(Vector3(0.12, 0.045, 0.045), Vector3(side * 0.3, 1.3, -0.42), trim))
 	return root
 
 
@@ -641,6 +1113,12 @@ func _airship_turret(whole: Node3D, broken: Node3D, weak: Material) -> void:
 				Vector2(0.22, 0.22), trim))
 	whole.add_child(_box(Vector3(1.2, 0.12, 0.1), Vector3(0, 1.6, -1.0), seam))
 	broken.add_child(_cyl(1.4, 1.5, 0.5, Vector3(0, 0.25, 0), trim, Vector3.ZERO, 12))
+
+
+## Puts `part` (built in a frame of its own) into `root`, through `frame`.
+static func _set_in(root: Node3D, frame: Transform3D, part: Node3D) -> void:
+	part.transform = frame * part.transform
+	root.add_child(part)
 
 
 # --- Shared parts ----------------------------------------------------------------

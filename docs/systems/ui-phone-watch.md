@@ -191,7 +191,7 @@ date in the same PR.
   drawn by `VisorHud._draw_objectives`), never an overlay. A new player
   has no helmet, so the tour also leads through the world (Caleb's "it
   doesn't follow the player"): each step names what it points at
-  (`STEPS[i].mark`, `Onboarding.mark`: a weapon on show, the test lane, the
+  (`STEPS[i].mark`, `Onboarding.mark`: a weapon on show, the test lane (or the firing range's targets once it is built), the
   base's way out, a safe zone's portal by destination, the nearest depot),
   and `main.gd` stands the guide's light on it (`Main.TourGuide`, view only,
   only you see it, through walls), the objective and the distance written

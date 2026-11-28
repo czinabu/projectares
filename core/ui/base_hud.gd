@@ -11,6 +11,7 @@ extends CanvasLayer
 ## Load with `preload("res://core/ui/base_hud.gd")`.
 
 const GameSettings := preload("res://core/settings/game_settings.gd")
+const CrosshairScript := preload("res://core/ui/crosshair.gd")
 var base: HomeBase
 ## Whose keys move the player; found under the base when not given.
 var controller: PlayerController
@@ -34,8 +35,9 @@ var tag: Label3D
 var _prompt: Label
 var _notice: Label
 var _notice_left := 0.0
-## The aiming cross in the middle of the screen.
-var crosshair: Label
+## The aiming mark in the middle of the screen (`core/ui/crosshair.gd`), as
+## in a raid, so the range reads the same.
+var crosshair: Control
 
 
 func setup(p_base: HomeBase, p_controller: PlayerController = null) -> void:
@@ -53,8 +55,10 @@ func _ready() -> void:
 	visor.setup_base(base, controller)
 	visor.hud = self
 	root.add_child(visor)
-	crosshair = _label(root, "+", 22, Color.WHITE)
-	_place(crosshair, 0.5, 0.5, Vector2(-7, -17), Vector2(14, 30))
+	crosshair = CrosshairScript.new()
+	crosshair.name = "Crosshair"
+	root.add_child(crosshair)
+	_place(crosshair, 0.5, 0.5, Vector2(-60, -60), Vector2(120, 120))
 	_prompt = _label(root, "", 20, Color.WHITE)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(_prompt, 0.5, 0.5, Vector2(-350, 40), Vector2(700, 30))
@@ -113,6 +117,9 @@ func _process(delta: float) -> void:
 		_prompt.text = tour_hint
 	_show_tag(target as HomeBase.Display, lines[1])
 	_update_wrist(delta)
+	if crosshair:
+		crosshair.set("actor", base.player)
+		crosshair.set("controller", controller)
 	if _notice_left > 0.0:
 		_notice_left -= delta
 		if _notice_left <= 0.0:

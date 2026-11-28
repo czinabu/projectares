@@ -389,7 +389,7 @@ static func _card(t: Node) -> void:
 	for i in 20:
 		controller.scroll(1)
 	await t.frames(2)
-	t.check(hud.wrist.card.focused_tab() == "mission" and hud.wrist.focused_id() == "leave", "and Mission, ending on sign-out")
+	t.check(hud.wrist.card.focused_tab() == "mission" and hud.wrist.focused_id() == "abandon", "and Mission, ending on Abandon (after sign-out)")
 	controller.back_watch()
 	controller.scroll(-1)
 	await t.frames(2)
