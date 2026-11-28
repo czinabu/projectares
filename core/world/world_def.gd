@@ -127,9 +127,18 @@ extends RefCounted
 ##   - Marker3D nodes in group "warmth": a heater, a vent, a fire. Metas
 ##     "radius" (metres) and "warmth" (body heat a second given back to
 ##     anyone within it, and within 3 m up or down).
+##   - Marker3D nodes in group "indoors": a room out of the open cold (a hut,
+##     a ruin), a box standing on the marker and turned with it. Metas
+##     "size" (Vector3: across, up, deep), "heat" (body heat a second the
+##     room gives back anywhere inside, 0 for an unheated one) and "leak"
+##     (the share of a storm's extra cold, `weather_cold`, that gets in
+##     through its doorways and broken walls). An unheated room still
+##     drains `indoor_chill` of the cold; a heated one, or a fire inside,
+##     stops it (`Raid.indoors_at`, `Raid._tick_cold`).
 ## A running vehicle's engine warms its riders and anyone close to it
 ## (`engine_warmth`). Body heat gone, the cold hurts by `cold_damage` a
-## second through `Combat.deal`.
+## second through `Combat.deal`, only out in the open: indoors it never
+## hurts.
 ##
 ## Warm beacons (DESIGN.md "Frostline"): a world with `sign_out_at_beacons`
 ## lets players sign out only at a beacon, and its map adds:
@@ -195,6 +204,9 @@ var planet_grip := 1.0
 var cold := 0.0
 ## Damage a second once body heat is gone, through `Combat.deal`.
 var cold_damage := 4.0
+## The share of the open cold an unheated room (an "indoors" marker with no
+## "heat") still lets through: a ruin chills you slowly, never hurts.
+var indoor_chill := 0.25
 ## Body heat a second a running vehicle gives back to its riders and anyone
 ## within `engine_warmth_radius` metres of it.
 var engine_warmth := 6.0

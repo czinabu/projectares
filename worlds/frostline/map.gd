@@ -283,6 +283,23 @@ const HUTS := [
 	{"z": -105.0, "side": 1.0},
 	{"z": -205.0, "side": -1.0},
 ]
+## Ruined shacks on the shelves, between the huts: four walls with a doorway
+## toward the valley, one wall broken open and the front of the roof fallen
+## in. Out of the wind but unheated, so they chill you slowly instead of
+## hurting (`WorldDef.indoor_chill`), and a whiteout leaks in.
+const RUINS := [
+	{"z": 150.0, "side": 1.0},
+	{"z": 30.0, "side": -1.0},
+	{"z": -55.0, "side": 1.0},
+	{"z": -120.0, "side": -1.0},
+]
+## The rooms (`WorldDef`'s "indoors" markers): how much a heated hut warms
+## anywhere inside (gentler than standing at its heater, so you thaw over a
+## few seconds), and how much of a whiteout's extra cold gets into an
+## open-fronted hut and into a broken ruin.
+const HUT_HEAT := 5.0
+const HUT_LEAK := 0.5
+const RUIN_LEAK := 0.6
 ## Warm vents on the valley floor, between the huts up on the shelves: the
 ## Engine's old heat lines still breathe here (z, and how far off the middle,
 ## clear of the frozen river).
@@ -379,6 +396,7 @@ func _ready() -> void:
 	_build_mouth()
 	_build_posts()
 	_build_huts()
+	_build_ruins()
 	_build_listening_posts()
 	_build_floor()
 	_build_engine()
@@ -738,6 +756,45 @@ func _add_hut(base: Vector3, facing: float, post: bool) -> void:
 	_huts.append({"at": base, "facing": facing, "height": height})
 	# Its heater warms the inside of the hut.
 	_add_warmth(base + hut.basis * Vector3(0, 0, -0.6), HEATER)
+	_add_room(base, hut.rotation.y, Vector3(6.1, height, 5.1), HUT_HEAT, HUT_LEAK)
+
+
+## Ruined shacks on the shelves (`RUINS`): out of the wind, no heater.
+func _build_ruins() -> void:
+	for ruin: Dictionary in RUINS:
+		var at := shelf_point(ruin["z"], ruin["side"])
+		var base := _ground(at)
+		var shack := Node3D.new()
+		shack.position = base
+		# The doorway faces the valley (local +Z, turned like a hut).
+		shack.rotation.y = PI / 2.0 * -float(ruin["side"])
+		nav_region.add_child(shack)
+		for part: Array in [
+				# The back wall and the whole left wall.
+				[Vector3(7.0, 3.2, 0.3), Vector3(0, 1.6, -3.0)],
+				[Vector3(0.3, 3.2, 6.0), Vector3(-3.5, 1.6, 0)],
+				# The right wall, broken open toward the front.
+				[Vector3(0.3, 1.2, 6.0), Vector3(3.5, 0.6, 0)],
+				[Vector3(0.3, 2.0, 2.8), Vector3(3.5, 2.2, -1.6)],
+				# The front wall either side of the doorway.
+				[Vector3(2.6, 3.2, 0.3), Vector3(-2.2, 1.6, 3.0)],
+				[Vector3(2.6, 3.2, 0.3), Vector3(2.2, 1.6, 3.0)],
+				# What is left of the roof, the front fallen in.
+				[Vector3(7.4, 0.3, 4.2), Vector3(0, 3.35, -1.1)]]:
+			_box(part[0], part[1], STEEL, shack)
+		_add_room(base, shack.rotation.y, Vector3(6.7, 3.2, 5.7), 0.0, RUIN_LEAK)
+		# Something worth the look, in the back corner.
+		_add_marker("spawn_cache", base + shack.basis * Vector3(-2.4, 0.1, -2.0))
+
+
+## A room out of the open cold (`WorldDef`'s "indoors"): a box `size` big
+## standing at `at`, turned by `yaw`.
+func _add_room(at: Vector3, yaw: float, size: Vector3, heat: float, leak: float) -> void:
+	var room := _add_marker("indoors", at)
+	room.rotation.y = yaw
+	room.set_meta("size", size)
+	room.set_meta("heat", heat)
+	room.set_meta("leak", leak)
 
 
 ## Old listening posts on the rims: a bunker and a mast, with the rooftop
