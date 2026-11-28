@@ -103,8 +103,33 @@ var lean_amount := 0.35
 ## The collision box of anything but the bike (the bike has its capsule),
 ## width, height and length, standing on the ground.
 var body_size := Vector3(0.7, 0.72, 2.0)
-## Tonnes, for what thin ice bears (`WorldDef.ice_holds`).
+## Tonnes, for what thin ice bears (`WorldDef.ice_holds`) and how hard a
+## bump with another vehicle throws each one (`_bump_vehicle`).
 var weight := 0.3
+
+# Hitting things (`_collide`). A low lip (a kerb, a rock, a plank) under
+# `step_height` is driven over. Into a wall, it keeps `bump_keep` of the speed
+# along the wall and bounces back with `bump_bounce` of the speed that went
+# into it; a hit off the nose's centre line swings the body round
+# (`bump_spin`). Another vehicle (or its rider) is a body that moves too: the
+# two trade speed by their `weight`, so a rider bumped in a race is shoved
+# aside and spun, not slowed. A person on foot is `person_weight`.
+## Height of a lip the wheels (or cushion) ride over without a bump (m).
+var step_height := 0.3
+## Share of the speed along a wall it keeps scraping past it.
+var bump_keep := 0.85
+## Share of the speed into a wall or another vehicle it bounces back with.
+var bump_bounce := 0.3
+## How readily a hit off centre spins the body (1 is a solid box's).
+var bump_spin := 0.1
+## The fastest a bump may spin it, radians per second.
+var max_spin := 2.0
+## How fast a shove sideways (and a spin) dies away, per second.
+var knock_decay := 3.0
+## Hits slower than this (m/s into the wall) only slide: no bounce or spin.
+var bump_min := 1.0
+## Tonnes a person on foot counts for when a vehicle runs into them.
+var person_weight := 0.09
 ## Turn rate in radians per second at a standstill. A walker turns on the
 ## spot; wheels cannot (0).
 var pivot_turn := 0.0
@@ -263,6 +288,11 @@ var speed := 0.0
 var _rest_at := Vector3.INF
 var _rest_heading := 0.0
 var airborne_time := 0.0
+## A shove sideways from a bump (m/s, flat), on top of the drive: it dies
+## away at `knock_decay`. Sent to clients with the ride (`NetSession`).
+var knock := Vector3.ZERO
+## A spin from a bump, radians per second on the heading, dying away the same.
+var spin := 0.0
 
 ## A vehicle carried on the watch is a toy this many times smaller.
 const TOY_SCALE := 0.12
@@ -424,7 +454,7 @@ func _ready() -> void:
 	# After the player controller (-10) writes the command, before Actors (0) tick.
 	process_physics_priority = -5
 	collision_layer = LAYER_VEHICLES
-	collision_mask = Actor.LAYER_WORLD | Actor.LAYER_ACTORS
+	collision_mask = Actor.LAYER_WORLD | Actor.LAYER_ACTORS | LAYER_VEHICLES
 	if floats:
 		# Afloat it passes through everything (its route is clear); going
 		# down, it comes to rest on the world (`_float`).
@@ -892,7 +922,8 @@ func _physics_process(delta: float) -> void:
 	# no move to make. A map has a dozen standing about, and the move is the
 	# dearest part of a tick. Anything that moves, turns or pushes it wakes it.
 	if rider == null and is_on_floor() and speed == 0.0 and velocity.is_zero_approx() and slip == 0.0 \
-			and _boost_left == 0.0 and global_position == _rest_at and heading == _rest_heading:
+			and _boost_left == 0.0 and knock == Vector3.ZERO and spin == 0.0 \
+			and global_position == _rest_at and heading == _rest_heading:
 		return
 	var on_floor := is_on_floor()
 	_turning = steer
@@ -915,6 +946,11 @@ func _physics_process(delta: float) -> void:
 		if _hanging(on_floor):
 			# The cushion still holds it level off the edge.
 			velocity.y = maxf(velocity.y, 0.0)
+	if (knock != Vector3.ZERO or spin != 0.0) and not floats:
+		# Off the ground the velocity is kept from tick to tick, the shove
+		# already in it; only a rebuilt one (driving, flying) takes it again.
+		_shake_off(on_floor or flying, delta)
+	var moving := Vector3(velocity.x, 0.0, velocity.z)
 	# The seated rider's body overlaps the bike. The collision exception keeps
 	# it out of the slide, but not out of every query the move makes (the
 	# floor snap found it under Jolt), so the rider leaves the actors layer
@@ -938,14 +974,10 @@ func _physics_process(delta: float) -> void:
 
 	# Where it is going: along the heading, or for a hover trailing it by `slip`.
 	var forward := Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
+	if get_slide_collision_count() > 0 and not floats:
+		_collide(moving, on_floor, delta)
+		forward = Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
-	if is_on_wall():
-		# Hitting something scrubs off the speed that went into it, and a
-		# drift that hits something is no clean exit.
-		var kept := horizontal.dot(forward)
-		speed = minf(speed, kept) if speed >= 0.0 else maxf(speed, kept)
-		drift_charge = 0.0
-		_boost_left = 0.0
 	if not is_on_floor():
 		# Off the ground the wheels hold nothing: no drift to carry on.
 		drifting = false
@@ -971,10 +1003,181 @@ func _physics_process(delta: float) -> void:
 		drifting = false
 		drift_charge = 0.0
 		_boost_left = 0.0
+		if knock.length() < 0.05 and absf(spin) < 0.02:
+			knock = Vector3.ZERO
+			spin = 0.0
 		velocity = Vector3.ZERO
 	_rest_at = global_position
 	_rest_heading = heading
 	_place_rider()
+
+
+## Leaving the world: a parked vehicle standing on this one (they bump and
+## stack now) would rest in the air, so those close by look again.
+func _exit_tree() -> void:
+	if not is_inside_tree():
+		return
+	for other in get_tree().get_nodes_in_group("vehicles"):
+		if other != self and is_instance_valid(other) and other is Node3D \
+				and (other as Node3D).global_position.distance_squared_to(global_position) < 36.0:
+			other.set("_rest_at", Vector3.INF)
+
+
+## A bump's shove and spin ride on top of the drive and die away.
+func _shake_off(rebuilt: bool, delta: float) -> void:
+	if rebuilt:
+		velocity += knock
+	heading += spin * delta
+	var fade := exp(-knock_decay * delta)
+	knock *= fade
+	spin *= fade
+	if knock.length() < 0.05:
+		knock = Vector3.ZERO
+	if absf(spin) < 0.02:
+		spin = 0.0
+
+
+## Where it is going, flat, as the drive and a bump see it (m/s): the speed
+## along the heading (and slip) plus any shove. The same on a client that
+## does not run the vehicle's physics.
+func moving_velocity() -> Vector3:
+	return Basis(Vector3.UP, heading + slip) * Vector3.FORWARD * speed + knock
+
+
+## What the move just hit, given the flat velocity it set out with. A low lip
+## is driven over; a wall scrapes, bounces and spins it; another vehicle or a
+## person is a body that moves too (`_bump_body`). Replaces the old rule that
+## any touch scrubbed off all the speed into it, which stopped a bike dead on
+## a pebble and slowed a racer bumped from the side.
+func _collide(moving: Vector3, on_floor: bool, delta: float) -> void:
+	var hit_bodies: Dictionary = {}
+	var wall := Vector3.ZERO
+	var wall_at := Vector3.ZERO
+	var deepest := 0.0
+	var low := true
+	for i in get_slide_collision_count():
+		var hit := get_slide_collision(i)
+		var n := hit.get_normal()
+		if n.y > cos(floor_max_angle) + 0.01 or n.y < -0.7:
+			continue
+		var flat := Vector3(n.x, 0.0, n.z)
+		if flat.length() < 0.01:
+			continue
+		flat = flat.normalized()
+		var other := _vehicle_of(hit.get_collider())
+		if other != null:
+			if not hit_bodies.has(other):
+				hit_bodies[other] = [flat, hit.get_position()]
+			continue
+		if hit.get_collider() is Actor:
+			if not hit_bodies.has(hit.get_collider()):
+				hit_bodies[hit.get_collider()] = [flat, hit.get_position()]
+			continue
+		if wall == Vector3.ZERO or -moving.dot(flat) > deepest:
+			wall = flat
+			wall_at = hit.get_position()
+			deepest = -moving.dot(flat)
+		low = low and hit.get_position().y - global_position.y < step_height
+	for other in hit_bodies:
+		_bump_body(other, hit_bodies[other][0], hit_bodies[other][1], moving)
+	if wall == Vector3.ZERO:
+		return
+	if low and on_floor and _step_over(moving, delta):
+		return
+	var into := -moving.dot(wall)
+	if into <= 0.0:
+		return
+	var along := moving + wall * into
+	var after := along * bump_keep if into >= bump_min else along
+	if into < bump_min:
+		# A scrape: it slides on along the wall, unspun.
+		_take(after, Vector3.ZERO, wall_at)
+		return
+	after += wall * into * bump_bounce
+	# A drift that hits something is no clean exit.
+	drift_charge = 0.0
+	_boost_left = 0.0
+	_take(after, after - moving, wall_at)
+
+
+## Drives over a lip under `step_height`: up, on by this tick's move, and
+## down onto whatever is there. False (nothing moved) if it does not fit.
+func _step_over(moving: Vector3, delta: float) -> bool:
+	if moving.length() < 0.5:
+		return false
+	var up := Vector3.UP * step_height
+	if test_move(global_transform, up):
+		return false
+	var raised := global_transform.translated(up)
+	var ahead := moving * delta
+	if test_move(raised, ahead):
+		return false
+	global_position += up + ahead
+	var keep := floor_snap_length
+	floor_snap_length = step_height + 0.1
+	apply_floor_snap()
+	floor_snap_length = keep
+	velocity = Vector3(moving.x, 0.0, moving.z)
+	return true
+
+
+## A bump with something that moves: another vehicle (by its `weight`) or a
+## person on foot (`person_weight`, and only this side changes). The two trade
+## speed along the line between them as bodies with `bump_bounce` of spring,
+## and each is spun by where the blow landed. Online only the authority moves
+## the other one; a client predicting its own ride changes only its own.
+func _bump_body(other: Node, n: Vector3, at: Vector3, moving: Vector3) -> void:
+	var is_vehicle := other.has_method("moving_velocity")
+	var theirs: Vector3 = other.call("moving_velocity") if is_vehicle else Vector3((other as Actor).velocity.x, 0.0, (other as Actor).velocity.z)
+	var closing := -(moving - theirs).dot(n)
+	if closing <= 0.05:
+		return
+	var mine_w := maxf(weight, 0.01)
+	var their_w := maxf(float(other.get("weight")), 0.01) if is_vehicle else person_weight
+	var push := (1.0 + bump_bounce) * closing / (1.0 / mine_w + 1.0 / their_w)
+	var change := n * push / mine_w
+	_take(moving + change, change, at)
+	if is_vehicle and (Combat.authoritative or local_only):
+		other.call("take_bump", -n * push / their_w, at)
+	if closing >= bump_min:
+		drift_charge = 0.0
+		_boost_left = 0.0
+
+
+## Takes a bump from another vehicle: `change` to its flat velocity at the
+## point `at`, split into its speed and a shove, and a spin.
+func take_bump(change: Vector3, at: Vector3) -> void:
+	_take(moving_velocity() + change, change, at)
+
+
+## Sets the flat velocity to `after`: the part along where it points stays
+## its speed, the rest a shove that dies away; `change` landing at `at` spins
+## it by how far off its centre the blow fell.
+func _take(after: Vector3, change: Vector3, at: Vector3) -> void:
+	var forward := Basis(Vector3.UP, heading + slip) * Vector3.FORWARD
+	speed = after.dot(forward)
+	knock = after - forward * speed
+	knock.y = 0.0
+	var arm := at - global_position
+	arm.y = 0.0
+	var twist := arm.cross(change).y
+	# A solid box's turn for a blow off its centre, scaled by `bump_spin`.
+	var size := body_size.x * body_size.x + body_size.z * body_size.z
+	spin = clampf(spin + twist * bump_spin * 12.0 / maxf(size, 0.5), -max_spin, max_spin)
+	velocity = Vector3(after.x, velocity.y, after.z)
+
+
+## The vehicle a collider belongs to: itself, or the one its rider sits on.
+func _vehicle_of(collider: Object) -> Node:
+	if collider == null or collider == self:
+		return null
+	if collider.has_method("moving_velocity"):
+		return collider as Node
+	if collider is Actor:
+		var on = (collider as Actor).vehicle
+		if on != null and is_instance_valid(on) and on != self:
+			return on
+	return null
 
 
 ## Flying: the throttle sets the speed (never under `stall_speed` while it is

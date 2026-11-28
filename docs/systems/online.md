@@ -81,7 +81,10 @@ date in the same PR.
   `Combat.trace`), never by reading other actors' `global_position` directly,
   so a lagging player hits what was on their screen. A vehicle the local
   player rides is predicted and corrected against `NetSession._ride_history`
-  like the player's own actor.
+  like the player's own actor: its position and heading eased in, its
+  `speed`, `slip` and a bump's `knock` and `spin` fixed at once (only the
+  server moves a vehicle yours runs into, so a bump is often first seen in
+  the correction).
 - The account service (DESIGN.md section 14): official servers share one
   set of accounts, kept by one headless program, `-- --account-service`
   (`core/account/account_service.gd`: the same `StashService` on SQLite,

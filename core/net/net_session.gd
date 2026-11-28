@@ -2294,12 +2294,14 @@ func _server_late_tick(_delta: float) -> void:
 					anyone = anyone or passenger != null
 				# A parked vehicle nobody rides is sent now and then, in turn
 				# (at once when someone just got off it).
-				var parked := not anyone and absf(float(vehicle.get("speed"))) < 0.05
+				var parked: bool = not anyone and absf(float(vehicle.get("speed"))) < 0.05 \
+						and vehicle.get("knock") == Vector3.ZERO
 				if parked and _vehicle_parked.get(id, false) and (snapshot + id) % PARKED_EVERY != 0:
 					continue
 				_vehicle_parked[id] = parked
 				rides.append([id, vehicle.global_position, vehicle.get("heading"), vehicle.get("speed"),
-						rider_id, _applied_seq.get(rider_id, 0), aboard, vehicle.get("slip")])
+						rider_id, _applied_seq.get(rider_id, 0), aboard, vehicle.get("slip"),
+						vehicle.get("knock"), vehicle.get("spin")])
 			for at in range(0, rides.size(), VEHICLES_PER_PACKET):
 				var part := rides.slice(at, at + VEHICLES_PER_PACKET)
 				for peer in _joined_peers:
@@ -3477,7 +3479,8 @@ func _vehicle_gone(id: int) -> void:
 
 
 ## Raise it when what a vehicle's entry carries changes (`NetManifest`).
-const WIRE_VEHICLE_STATE := 1
+## 2: the entry carries a bump's shove and spin (`Vehicle.knock`, `spin`).
+const WIRE_VEHICLE_STATE := 2
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
@@ -3521,6 +3524,10 @@ func _client_move_vehicles() -> void:
 		vehicle.rotation = Vector3(0.0, heading, 0.0)
 		vehicle.set("speed", entry[3])
 		vehicle.set("slip", entry[7])
+		# What a bump left it with, so one your ride runs into is a body
+		# moving the server's way.
+		vehicle.set("knock", entry[8])
+		vehicle.set("spin", entry[9])
 		if _seat_from_state(vehicle, "rider", int(entry[4]), false):
 			_ride_history.clear()
 			_ride_fix = Vector3.ZERO
@@ -3591,9 +3598,17 @@ func _correct_ride(vehicle: Node3D, entry: Array) -> void:
 	# A hover's drift carries on the same way.
 	var slip_miss := float(entry[7]) - float(then[3])
 	vehicle.set("slip", float(vehicle.get("slip")) + slip_miss)
+	# So do a bump's shove and spin (only the server moves the other one, so
+	# a bump is often first seen here).
+	var knock_miss: Vector3 = entry[8] - then[4]
+	vehicle.set("knock", vehicle.get("knock") + knock_miss)
+	var spin_miss := float(entry[9]) - float(then[5])
+	vehicle.set("spin", float(vehicle.get("spin")) + spin_miss)
 	for later: int in _ride_history:
 		_ride_history[later][2] += speed_miss
 		_ride_history[later][3] += slip_miss
+		_ride_history[later][4] += knock_miss
+		_ride_history[later][5] += spin_miss
 
 
 func _snap_ride(vehicle: Node3D, entry: Array) -> void:
@@ -3602,6 +3617,8 @@ func _snap_ride(vehicle: Node3D, entry: Array) -> void:
 	vehicle.rotation = Vector3(0.0, entry[2], 0.0)
 	vehicle.set("speed", entry[3])
 	vehicle.set("slip", entry[7])
+	vehicle.set("knock", entry[8])
+	vehicle.set("spin", entry[9])
 	_ride_history.clear()
 	_ride_fix = Vector3.ZERO
 	_ride_turn = 0.0
@@ -4334,7 +4351,8 @@ func _client_late_tick() -> void:
 		# A rider goes where their vehicle goes; the ride is what is compared.
 		_history.clear()
 		_ride_history[_seq] = [me.vehicle.global_position, float(me.vehicle.get("heading")),
-				float(me.vehicle.get("speed")), float(me.vehicle.get("slip"))]
+				float(me.vehicle.get("speed")), float(me.vehicle.get("slip")),
+				me.vehicle.get("knock"), float(me.vehicle.get("spin"))]
 		_ride_history.erase(_seq - HISTORY_TICKS)
 	else:
 		_ride_history.clear()
