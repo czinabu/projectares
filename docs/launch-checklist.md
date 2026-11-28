@@ -45,8 +45,10 @@ market come in later updates, and "1.0" waits until they are in.
 - [x] **Crash-safe solo saves.** The profile and settings are written whole
   (`SafeFile`), and the last good profile save is kept and loaded if the
   save is torn (`Profile.BACKUP`).
-- [ ] **Audio basics.** Footsteps, vehicles, world ambience and a menu
-  track. Only the guns have real sounds today.
+- [x] **Audio basics.** Footsteps by the ground, engines on ridden
+  vehicles, Frostline's cold wind beside Ashfront's distant war, and the
+  plaza's track on the start screen, at home and in the Concourse with its
+  own Music volume (`docs/systems/audio.md`). Worth a listen before launch.
 - [ ] **Laptop performance.** 60 fps on Low, checked with Caleb's F9
   recording from the laptop.
 
