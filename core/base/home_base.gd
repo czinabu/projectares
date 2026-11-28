@@ -3388,6 +3388,7 @@ func _build_wall_mirror() -> void:
 	wall_mirror = MirrorScript.new()
 	wall_mirror.name = "WallMirror"
 	wall_mirror.wall_mounted = true
+	wall_mirror.width = 1.5
 	wall_mirror.position = mirror_at()
 	wall_mirror.rotation.y = MIRROR_YAW
 	add_child(wall_mirror)

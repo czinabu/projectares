@@ -27,20 +27,31 @@ const HELD_LAYER := 17
 const HEAD_LAYER := 16
 const ALL_LAYERS := 0xFFFFF
 
-## Size of the glass in metres.
-var width := 1.5
+## Size of the glass in metres. The Mirror app's is wide, a dressing room's
+## glass, so in first person it fills the view: you on its left, the phone's
+## screen thrown up on its right, and no edge of it down the middle (Caleb's
+## shot: a narrow glass ended in a bright seam mid-view, and right of it was
+## just the room). A base's wall mirror sets its own.
+var width := 3.0
 var height := 2.3
 ## How far in front of the viewer it stands, and the least it may when a
 ## wall is close. Close enough that you stand large in it (Caleb's feedback:
 ## further out you were a small figure in the glass).
 var distance := 1.6
 var min_distance := 1.1
-## How far to the viewer's left it stands, clear of the phone on the right.
-var side_offset := 0.3
+## How far to the viewer's left its middle stands (negative: to the right).
+## The glass reaches further right than left, so it is still behind the
+## phone's screen thrown up beside your reflection.
+var side_offset := -0.45
 ## How thick the frame is round the glass.
 var frame_width := 0.035
-## Height of the reflection in pixels.
+## Height of the reflection in pixels at least. Close to the viewer it
+## follows how tall the glass stands on screen, up to `max_resolution`, so
+## the reflection is as sharp as the room around it (`_fit_resolution`; a
+## fixed 900 was stretched over more than the screen's height, which made
+## the reflected kit look rough beside third person's).
 var resolution := 900
+var max_resolution := 2048
 ## Seconds it takes to rise out of the floor.
 var rise_seconds := 0.3
 ## Hung on a wall (the home base's) instead of standing in front of the
@@ -171,6 +182,7 @@ func _build() -> void:
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_viewport.msaa_3d = Viewport.MSAA_2X
 	_viewport.world_3d = get_world_3d()
+	_match_main_view()
 	add_child(_viewport)
 	_camera = Camera3D.new()
 	_camera.projection = Camera3D.PROJECTION_FRUSTUM
@@ -306,8 +318,39 @@ func _aim_reflection() -> void:
 	if gap < 0.05:
 		# Standing behind the mirror: nothing to see.
 		return
+	_fit_resolution(gap)
 	var reflected := eye.global_position - 2.0 * gap * normal
 	var cam_basis := Basis(-basis.x, basis.y, -normal)
 	_camera.global_transform = Transform3D(cam_basis, reflected)
 	var local := cam_basis.inverse() * (centre - reflected)
 	_camera.set_frustum(height * scale.y, Vector2(local.x, local.y), maxf(gap, 0.05), 300.0)
+
+
+## The reflection drawn with the main view's edge smoothing and model detail
+## (`GameSettings.apply_graphics` sets them on the main view only), never
+## less than its own 2x smoothing.
+func _match_main_view() -> void:
+	var main := get_tree().root if is_inside_tree() else null
+	if main == null or _viewport == null:
+		return
+	_viewport.msaa_3d = maxi(main.msaa_3d, Viewport.MSAA_2X) as Viewport.MSAA
+	_viewport.screen_space_aa = main.screen_space_aa
+	_viewport.mesh_lod_threshold = main.mesh_lod_threshold
+
+
+## Sizes the reflection to about one of its pixels for each of the screen's
+## the glass covers, seen from `gap` metres through the viewer's camera: as
+## sharp as the room round it close up, and no bigger than it needs further
+## off. Resized only on a real change, since a resize clears the picture.
+func _fit_resolution(gap: float) -> void:
+	var main := get_tree().root
+	var shown := main.get_visible_rect().size.y
+	if shown <= 0.0 or eye.projection != Camera3D.PROJECTION_PERSPECTIVE:
+		return
+	var tall := shown * height * scale.y / (2.0 * maxf(gap, 0.05) * tan(deg_to_rad(eye.fov) * 0.5))
+	var want := clampi(roundi(tall), resolution, maxi(resolution, max_resolution))
+	var now := _viewport.size.y
+	if absi(want - now) < now / 8:
+		return
+	_viewport.size = Vector2i(roundi(want * width / height), want)
+	_match_main_view()
