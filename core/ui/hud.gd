@@ -1949,7 +1949,11 @@ void fragment() {
 	var tp_behind := 0.25
 	var tp_screen := 0.34
 	var tp_lift := 0.06
-	var tp_backing := 0.6
+	var tp_backing := 0.75
+	## From the eyes the card has a fainter dark glass of its own (Caleb's
+	## "a bit less transparent on both views"): the world still shows
+	## through, but a bright sky or a fire behind no longer washes it out.
+	var fp_backing := 0.4
 	## How far, in metres at the head, the card keeps clear of the head and
 	## helmet from the camera's view.
 	var head_clearance := 0.05
@@ -2233,7 +2237,7 @@ void fragment() {
 		var from_behind := third and cam != null and cam.global_position.distance_to(p.get_eye_position()) >= 0.7
 		_holo.material_override = _holo_behind if from_behind else _holo_over
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("open", open)
-		(_holo.material_override as ShaderMaterial).set_shader_parameter("backing", tp_backing if from_behind else 0.0)
+		(_holo.material_override as ShaderMaterial).set_shader_parameter("backing", tp_backing if from_behind else fp_backing)
 		_draw_beam(third, open)
 
 	## One card material: drawn over everything (`over`, from the eyes) or

@@ -171,6 +171,10 @@ const SCHEMA := [
 	{"key": "main_mission", "tab": "", "kind": "text", "default": ""},
 	# The graphics card `detect_graphics` last looked at ("" before the first).
 	{"key": "graphics_card", "tab": "", "kind": "text", "default": ""},
+	# Keys rebound on Settings › Input, only those that differ from
+	# `InputSetup`'s defaults, one "action=k:<physical key>" or
+	# "action=m:<mouse button>" per binding (`rebind`).
+	{"key": "key_binds", "tab": "", "kind": "list", "default": []},
 ]
 
 ## Tests turn this off so they never touch a real settings file.
@@ -269,6 +273,9 @@ static func war_share() -> float:
 static var untracked: Array[String]:
 	get: return _values["untracked"]
 	set(v): _values["untracked"] = v
+## The keys rebound on Settings › Input (`rebind`, `apply_bindings`).
+static var key_binds: Array[String]:
+	get: return _values["key_binds"]
 const TOUR_KEY := "tour"
 ## The one mission pinned as the main one (a key as in `untracked`, "" for
 ## none): listed first and lit on the visor. View only.
@@ -384,7 +391,9 @@ static func set_value(key: String, value: Variant) -> void:
 					if str(each) != "" and str(each) not in list:
 						list.append(str(each))
 			_values[key] = list
-	if key == "graphics":
+	if key == "key_binds":
+		apply_bindings()
+	elif key == "graphics":
 		_use_graphics(graphics)
 	elif key in GRAPHICS_KEYS:
 		_values["graphics"] = graphics_matching()
@@ -793,3 +802,116 @@ static func use_saved(data: Dictionary) -> void:
 	if pick >= 0 and pick < GRAPHICS_CUSTOM:
 		_use_graphics(pick)
 	persist = was_persisting
+
+
+# ------------------------------------------------------------- key binds ----
+
+const InputSetupScript := preload("res://core/input_setup.gd")
+
+
+## Puts every `InputSetup` action back to its defaults, then lays the
+## rebound keys (`key_binds`) over them.
+static func apply_bindings() -> void:
+	var saved := {}
+	for entry: String in _values.get("key_binds", []):
+		var parts := entry.split("=")
+		if parts.size() != 2:
+			continue
+		var event := _bind_event(parts[1])
+		if event != null:
+			if not saved.has(parts[0]):
+				saved[parts[0]] = []
+			saved[parts[0]].append(event)
+	for action: String in InputSetupScript.actions():
+		if not InputMap.has_action(action):
+			InputMap.add_action(action)
+		InputMap.action_erase_events(action)
+		for event: InputEvent in saved.get(action, InputSetupScript.default_events(action)):
+			InputMap.action_add_event(action, event)
+
+
+## Binds `event` (a key or a mouse button) to `action` in place of its
+## binding of that kind. An action already on it gets `action`'s old one,
+## so no two actions ever share a key. Saved at once.
+static func rebind(action: String, event: InputEvent) -> void:
+	var code := bind_code(event)
+	if code == "" or action not in InputSetupScript.actions():
+		return
+	var kind := code.left(1)
+	var old: InputEvent = null
+	for each: InputEvent in InputMap.action_get_events(action):
+		if bind_code(each).left(1) == kind:
+			old = each
+			break
+	for other: String in InputSetupScript.actions():
+		if other == action:
+			continue
+		for each: InputEvent in InputMap.action_get_events(other):
+			if bind_code(each) == code:
+				InputMap.action_erase_event(other, each)
+				if old != null:
+					InputMap.action_add_event(other, old)
+	if old != null:
+		InputMap.action_erase_event(action, old)
+	InputMap.action_add_event(action, _bind_event(code))
+	_save_bindings()
+
+
+## Every key back as it came.
+static func reset_bindings() -> void:
+	set_value("key_binds", [])
+
+
+## Whether any key differs from the defaults.
+static func bindings_changed() -> bool:
+	return not (_values.get("key_binds", []) as Array).is_empty()
+
+
+## "k:<physical key>" or "m:<mouse button>" for a binding, "" for anything else.
+static func bind_code(event: InputEvent) -> String:
+	if event is InputEventKey:
+		var key := event as InputEventKey
+		var physical := key.physical_keycode if key.physical_keycode != KEY_NONE else key.keycode
+		return "k:%d" % physical if physical != KEY_NONE else ""
+	if event is InputEventMouseButton:
+		return "m:%d" % (event as InputEventMouseButton).button_index
+	return ""
+
+
+static func _bind_event(code: String) -> InputEvent:
+	var number := code.substr(2).to_int()
+	if code.begins_with("k:") and number > 0:
+		var key := InputEventKey.new()
+		key.physical_keycode = number as Key
+		return key
+	if code.begins_with("m:") and number > 0:
+		var button := InputEventMouseButton.new()
+		button.button_index = number as MouseButton
+		return button
+	return null
+
+
+## Keeps the actions whose binding differs from the defaults.
+static func _save_bindings() -> void:
+	var out: Array[String] = []
+	for action: String in InputSetupScript.actions():
+		var now: Array[String] = []
+		for each: InputEvent in InputMap.action_get_events(action):
+			now.append(bind_code(each))
+		var was: Array[String] = []
+		for each: InputEvent in InputSetupScript.default_events(action):
+			was.append(bind_code(each))
+		var now_sorted := now.duplicate()
+		now_sorted.sort()
+		var was_sorted := was.duplicate()
+		was_sorted.sort()
+		if now_sorted != was_sorted:
+			for code in now:
+				out.append("%s=%s" % [action, code])
+	_values["key_binds"] = out
+	save()
+
+
+## The rebound keys as saved (`key_binds`).
+static func key_binds_saved() -> Array:
+	return _values.get("key_binds", [])

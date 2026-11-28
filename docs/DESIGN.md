@@ -3949,8 +3949,8 @@ the watch, the phone, a vehicle or a death.
 Caleb's ask (19 November 2026): keys that go straight to the watch icon or
 phone app you want, so the social tools are a press away. They only raise
 the same watch or take out the same phone, in the hand, never a menu of
-their own; each is an input action, so the Controls app names whatever it
-is bound to. B brings up the quick emote wheel (below) and N plays the
+their own; each is an input action, so Settings › Input names whatever it
+is bound to, and rebinds it. B brings up the quick emote wheel (below) and N plays the
 emote last picked (again to stop it); M raises it onto the map; the middle
 mouse button pings where you look with the watch down; Y takes the phone
 out at the squad's chat (Messages with no squad) and U at Contacts (friends,
