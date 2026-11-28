@@ -1185,7 +1185,7 @@ func _physics_process(delta: float) -> void:
 		stop_inspect()
 		cmd.inspect = false
 		stop_emote()
-		cmd.emote = 0
+		cmd.emote = Emotes.number_of("mirror") if mirror_pose() else 0
 		return
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if not is_nan(actor.turn_request):
@@ -1362,6 +1362,16 @@ func _tick_emote(cmd: ActorCommand, delta: float) -> void:
 	if cmd.switch_weapon != -1:
 		_emote_fresh = false
 	cmd.emote = Emotes.number_of(emote_playing) if emote_playing != "" else 0
+	if cmd.emote == 0 and mirror_pose():
+		cmd.emote = Emotes.number_of("mirror")
+
+
+## True while the Mirror app is up with the phone in hand (a mirror in
+## first person, the dressing room in third): the body takes the relaxed
+## stand, phone low at the hip (`Emotes.POSES`), the same in both views.
+func mirror_pose() -> bool:
+	return phone_out and not actor.is_dead and not is_riding() \
+			and (dressing_room or (phone_mirror != null and is_instance_valid(phone_mirror)))
 
 
 ## Takes the worn helmet off onto the hip, or puts it back on (the helmet

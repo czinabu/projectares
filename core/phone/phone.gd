@@ -79,14 +79,14 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Handheld := preload("res://core/phone/handheld.gd")
 
-const APPS := ["contacts", "messages", "invites", "news", "racing", "servers", "mirror", "controls", "settings", "report",
+const APPS := ["contacts", "messages", "invites", "news", "racing", "servers", "mirror", "settings", "report",
 		"console"]  # DEV MODE: "console"
 const APP_NAMES := {"contacts": "Contacts", "messages": "Messages", "invites": "Invites",
-		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror", "controls": "Controls",
+		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror",
 		"settings": "Settings", "report": "Report a bug", "console": "Dev console"}
 ## The names under the home screen's icons.
 const NAV_NAMES := {"contacts": "People", "messages": "Chat", "invites": "Invites",
-		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror", "controls": "Keys",
+		"news": "News", "racing": "Racing", "servers": "Servers", "mirror": "Mirror",
 		"settings": "Settings", "report": "Report", "console": "Console"}
 ## The screen's colours: the dark glass, the panels on it, and the dimmer
 ## ink for secondary text. The device's body is gunmetal.
@@ -94,6 +94,17 @@ const SCREEN_BG := Color(0.035, 0.04, 0.047)
 const PANEL_BG := Color(0.06, 0.065, 0.075, 0.92)
 const DIM_INK := Color(0.62, 0.62, 0.6)
 const CASE_COLOR := Color(0.12, 0.122, 0.13)
+## The approved palette (Caleb's): cyan for the device's systems (edges,
+## headings, switches, links), amber only for marks that ask for you (an
+## unread count, the notice light, a key waiting to be pressed) and red for a
+## warning (an error, a blocked player). Nothing else is coloured.
+const SYS := UiTheme.SYSTEM
+const MARK := UiTheme.ACCENT
+const WARN := Color(1.0, 0.29, 0.227)
+## A dark fill with a little of the cyan in it, for a hovered or pressed
+## control.
+const SYS_HOVER := Color(0.05, 0.11, 0.14)
+const SYS_PRESSED := Color(0.06, 0.2, 0.26)
 ## The Settings app's tabs, in order, and their names. "dev" is only shown
 ## where dev mode is available (DEV MODE).
 ## The display settings come first (Caleb's call): fullscreen and the
@@ -307,13 +318,12 @@ var _screen: SubViewport
 var _status: Label
 var _who: Label
 var _bars: SignalBars
-var _clock: Label
-var _home_note: Label
 var _home: Control
 var _page: Control
 var _title: Label
 var _body: VBoxContainer
 var _scroll: ScrollContainer
+var _dock: VBoxContainer
 ## The row the page scrolls to once laid out (`_keep_in_view`).
 var _follow: Control
 ## How much of the rows round the followed one stays in view, in pixels.
@@ -343,6 +353,11 @@ var _flat: TextureRect
 ## 0 put away, 1 held up.
 var _raise := 0.0
 var _notice_panel: PanelContainer
+## The pop-up's hologram while the phone is away (`NoticeHolo`).
+var notice_holo: NoticeHolo
+var _glass: Control
+## Unread messages or open invites, kept by `refresh` for the chin's light.
+var _news_waiting := false
 var _notice_label: Label
 var _notice_left := 0.0
 ## The key of the pop-up up now ("" for a plain one) and those waiting
@@ -461,6 +476,9 @@ static func update_notice() -> String:
 ## `_unhandled_input`.
 func _input(event: InputEvent) -> void:
 	if not is_open:
+		return
+	if _capture_rebind(event):
+		get_viewport().set_input_as_handled()
 		return
 	if mirror_lowered:
 		_input_lowered(event)
@@ -651,10 +669,26 @@ func _mirror_key(key: Key) -> bool:
 
 func _process(delta: float) -> void:
 	_tick_notice(delta)
+	_show_notice_holo()
+	if _chassis != null:
+		(_chassis as Chassis).lit = _notice_left > 0.0 or _news_waiting
 	if is_open:
 		_update_status()
 		_keep_in_view()
 	_hold(get_viewport().get_camera_3d())
+
+
+## The pop-up as a hologram beside you while the phone is away and you
+## have a body to stand it by; on the glass's banner otherwise.
+func _show_notice_holo() -> void:
+	if notice_holo == null:
+		return
+	var shown := _notice_panel.visible and not is_open and holder != null and is_instance_valid(holder) \
+			and holder.is_inside_tree() and holder.has_method("get_eye_position") \
+			and DisplayServer.get_name() != "headless"
+	notice_holo.visible = shown
+	if shown:
+		notice_holo.show_text(_notice_label.text, _notice_panel.modulate.a, holder, get_viewport().get_camera_3d())
 
 
 # ----------------------------------------------------------------- state ----
@@ -985,6 +1019,9 @@ func open_app(p_app: String) -> void:
 	app = p_app
 	chat_with = ""
 	mirror_picking = false
+	rebinding = ""
+	# Each app opens at its top (a chat scrolls itself to its newest).
+	_scroll.scroll_vertical = 0
 	_link_focus = ""
 	if app == "news":
 		for entry: Dictionary in news():
@@ -1144,6 +1181,7 @@ func _build_screen() -> void:
 	chassis.name = "Bezel"
 	chassis.glass = glass_inset
 	chassis.theme = screen_theme(text_scale)
+	chassis.mark_font = display_font()
 	chassis.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_screen.add_child(chassis)
 	_chassis = chassis
@@ -1163,6 +1201,7 @@ func _build_screen() -> void:
 	glass.offset_right = -glass_inset.z
 	glass.offset_bottom = -glass_inset.w
 	chassis.add_child(glass)
+	_glass = glass
 	var backdrop := Backdrop.new()
 	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	glass.add_child(backdrop)
@@ -1199,7 +1238,7 @@ func _build_screen() -> void:
 	bar.add_child(power)
 	column.add_child(bar)
 	var rule := ColorRect.new()
-	rule.color = Color(UiTheme.ACCENT, 0.35)
+	rule.color = Color(SYS, 0.35)
 	rule.custom_minimum_size = Vector2(0, 2)
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(rule)
@@ -1210,38 +1249,24 @@ func _build_screen() -> void:
 	_home.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_home.add_theme_constant_override("separation", 10)
 	column.add_child(_home)
-	var clock_row := HBoxContainer.new()
-	clock_row.add_theme_constant_override("separation", 12)
-	_clock = _label("", 40, UiTheme.INK)
-	_clock.autowrap_mode = TextServer.AUTOWRAP_OFF
-	clock_row.add_child(_clock)
-	var clock_side := VBoxContainer.new()
-	clock_side.alignment = BoxContainer.ALIGNMENT_CENTER
-	clock_side.add_theme_constant_override("separation", -4)
-	clock_side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var brand := _label("ARES // LINK", 11, UiTheme.ACCENT)
-	brand.autowrap_mode = TextServer.AUTOWRAP_OFF
-	clock_side.add_child(brand)
-	_home_note = _label("", 12, DIM_INK)
-	_home_note.autowrap_mode = TextServer.AUTOWRAP_OFF
-	_home_note.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	clock_side.add_child(_home_note)
-	clock_row.add_child(clock_side)
-	_home.add_child(clock_row)
-
-	var readouts := HBoxContainer.new()
-	readouts.add_theme_constant_override("separation", 8)
-	_home.add_child(readouts)
-	# Three across, so the apps below have room for three rows.
+	# The time, the link and your name are in the status bar above, said once.
+	# The link and the inbox side by side, then the newest headline across
+	# the whole glass so it reads whole.
+	var pair := HBoxContainer.new()
+	pair.add_theme_constant_override("separation", 8)
+	_home.add_child(pair)
 	for spec: Array in [["link", "LINK", "servers"], ["inbox", "INBOX", "messages"], ["news", "LATEST", "news"]]:
 		var widget := Readout.new(spec[1])
+		widget.heading.add_theme_font_override("font", display_font())
 		widget.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		widget.size_flags_stretch_ratio = 1.4 if spec[0] == "news" else 1.0
 		widget.custom_minimum_size.x = 10.0
-		widget.value.add_theme_font_size_override("font_size", 22)
-		widget.detail.add_theme_font_size_override("font_size", 16)
+		widget.value.add_theme_font_size_override("font_size", 24)
+		widget.detail.add_theme_font_size_override("font_size", 18)
 		widget.tapped.connect(open_app.bind(spec[2]))
-		readouts.add_child(widget)
+		if spec[0] == "news":
+			_home.add_child(widget)
+		else:
+			pair.add_child(widget)
 		_readouts[spec[0]] = widget
 
 	var grid := GridContainer.new()
@@ -1272,10 +1297,11 @@ func _build_screen() -> void:
 	back.focus_mode = Control.FOCUS_NONE
 	back.custom_minimum_size = Vector2(44, 44)
 	back.add_theme_font_size_override("font_size", 30)
-	back.add_theme_color_override("font_color", UiTheme.ACCENT)
+	back.add_theme_color_override("font_color", SYS)
 	back.pressed.connect(go_back)
 	head.add_child(back)
-	_title = _label("", 20, UiTheme.ACCENT)
+	_title = _label("", 20, SYS)
+	_title.add_theme_font_override("font", display_font())
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_title.uppercase = true
 	head.add_child(_title)
@@ -1283,12 +1309,17 @@ func _build_screen() -> void:
 	_tabs = HBoxContainer.new()
 	_tabs.add_theme_constant_override("separation", 4)
 	_page.add_child(_tabs)
-	_error = _label("", 12, Color(1.0, 0.55, 0.45))
+	_error = _label("", 12, WARN)
 	_page.add_child(_error)
 	_scroll = ScrollContainer.new()
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_page.add_child(_scroll)
+	# Under the page, kept in view whatever it scrolls to: a chat's typing box.
+	_dock = VBoxContainer.new()
+	_dock.name = "Dock"
+	_dock.add_theme_constant_override("separation", 4)
+	_page.add_child(_dock)
 	_body = VBoxContainer.new()
 	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_body.add_theme_constant_override("separation", 10)
@@ -1314,6 +1345,24 @@ func _build_screen() -> void:
 		keys.add_child(key)
 
 
+## The display face for headings and the maker's mark (Oxanium, as on the
+## start screen), the plain face when it is not imported yet.
+static var _display_font: Font
+
+
+static func display_font() -> Font:
+	if _display_font != null:
+		return _display_font
+	var face := load(UiTheme.DISPLAY_FONT_PATH) as Font
+	if face == null:
+		return ThemeDB.fallback_font
+	var weighted := FontVariation.new()
+	weighted.base_font = face
+	weighted.variation_opentype = {2003265652: 600}  # the "wght" axis
+	_display_font = weighted
+	return weighted
+
+
 ## The screen's look: dark panels with a thin accent edge, chamfered
 ## switches and sliders in the accent, and text at `scale` times the size
 ## asked for, so the device reads held small.
@@ -1324,20 +1373,20 @@ static func screen_theme(scale: float) -> Theme:
 	theme.set_constant("shadow_offset_y", "Label", 0)
 	theme.set_color("font_shadow_color", "Label", Color(0, 0, 0, 0))
 	for type: String in ["Button", "OptionButton"]:
-		theme.set_stylebox("normal", type, _flat_box(PANEL_BG, Color(UiTheme.ACCENT, 0.35), 2, 8))
-		theme.set_stylebox("hover", type, _flat_box(Color(0.14, 0.1, 0.06), UiTheme.ACCENT, 2, 8))
-		theme.set_stylebox("pressed", type, _flat_box(Color(0.3, 0.17, 0.05), UiTheme.ACCENT, 2, 8))
+		theme.set_stylebox("normal", type, _flat_box(PANEL_BG, Color(SYS, 0.35), 2, 8))
+		theme.set_stylebox("hover", type, _flat_box(SYS_HOVER, SYS, 2, 8))
+		theme.set_stylebox("pressed", type, _flat_box(SYS_PRESSED, SYS, 2, 8))
 		theme.set_stylebox("focus", type, StyleBoxEmpty.new())
 		theme.set_color("font_color", type, UiTheme.INK)
-		theme.set_color("font_hover_color", type, UiTheme.ACCENT.lightened(0.3))
+		theme.set_color("font_hover_color", type, SYS.lightened(0.3))
 		theme.set_color("font_focus_color", type, UiTheme.INK)
 		theme.set_color("font_pressed_color", type, Color.WHITE)
 	for type: String in ["CheckButton"]:
 		var row := _flat_box(PANEL_BG, Color(1, 1, 1, 0.06), 1, 10)
 		theme.set_stylebox("normal", type, row)
 		theme.set_stylebox("pressed", type, row)
-		theme.set_stylebox("hover", type, _flat_box(Color(0.1, 0.09, 0.08), Color(UiTheme.ACCENT, 0.5), 1, 10))
-		theme.set_stylebox("hover_pressed", type, _flat_box(Color(0.1, 0.09, 0.08), Color(UiTheme.ACCENT, 0.5), 1, 10))
+		theme.set_stylebox("hover", type, _flat_box(SYS_HOVER, Color(SYS, 0.5), 1, 10))
+		theme.set_stylebox("hover_pressed", type, _flat_box(SYS_HOVER, Color(SYS, 0.5), 1, 10))
 		theme.set_stylebox("focus", type, StyleBoxEmpty.new())
 		theme.set_color("font_color", type, UiTheme.INK)
 		theme.set_color("font_hover_color", type, UiTheme.INK)
@@ -1350,7 +1399,7 @@ static func screen_theme(scale: float) -> Theme:
 	track.content_margin_top = 3
 	track.content_margin_bottom = 3
 	theme.set_stylebox("slider", "HSlider", track)
-	var filled := _flat_box(Color(UiTheme.ACCENT, 0.85), Color(0, 0, 0, 0), 0, 0)
+	var filled := _flat_box(Color(SYS, 0.85), Color(0, 0, 0, 0), 0, 0)
 	theme.set_stylebox("grabber_area", "HSlider", filled)
 	theme.set_stylebox("grabber_area_highlight", "HSlider", filled)
 	theme.set_icon("grabber", "HSlider", grabber_icon(false))
@@ -1360,12 +1409,12 @@ static func screen_theme(scale: float) -> Theme:
 	lane.content_margin_right = 3
 	theme.set_stylebox("scroll", "VScrollBar", lane)
 	for state: String in ["grabber", "grabber_highlight", "grabber_pressed"]:
-		theme.set_stylebox(state, "VScrollBar", _flat_box(Color(UiTheme.ACCENT, 0.55 if state == "grabber" else 0.9), Color(0, 0, 0, 0), 0, 0))
-	theme.set_stylebox("normal", "LineEdit", _flat_box(Color(0.02, 0.025, 0.03), Color(UiTheme.ACCENT, 0.35), 2, 8))
-	theme.set_stylebox("focus", "LineEdit", _flat_box(Color(0, 0, 0, 0), UiTheme.ACCENT, 2, 8))
+		theme.set_stylebox(state, "VScrollBar", _flat_box(Color(SYS, 0.55 if state == "grabber" else 0.9), Color(0, 0, 0, 0), 0, 0))
+	theme.set_stylebox("normal", "LineEdit", _flat_box(Color(0.02, 0.025, 0.03), Color(SYS, 0.35), 2, 8))
+	theme.set_stylebox("focus", "LineEdit", _flat_box(Color(0, 0, 0, 0), SYS, 2, 8))
 	theme.set_stylebox("panel", "PanelContainer", _flat_box(PANEL_BG, Color(1, 1, 1, 0.07), 1, 10))
-	theme.set_stylebox("panel", "PopupMenu", _flat_box(Color(0.04, 0.045, 0.05), Color(UiTheme.ACCENT, 0.6), 2, 6))
-	theme.set_stylebox("hover", "PopupMenu", _flat_box(Color(0.3, 0.17, 0.05), Color(0, 0, 0, 0), 0, 4))
+	theme.set_stylebox("panel", "PopupMenu", _flat_box(Color(0.04, 0.045, 0.05), Color(SYS, 0.6), 2, 6))
+	theme.set_stylebox("hover", "PopupMenu", _flat_box(SYS_PRESSED, Color(0, 0, 0, 0), 0, 4))
 	theme.set_color("font_color", "PopupMenu", UiTheme.INK)
 	theme.set_font_size("font_size", "PopupMenu", roundi(14 * scale))
 	return theme
@@ -1395,11 +1444,11 @@ static func switch_icon(on: bool) -> ImageTexture:
 	var h := 32
 	var image := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
-	var edge := UiTheme.ACCENT if on else Color(0.45, 0.45, 0.45)
+	var edge := SYS if on else Color(0.45, 0.45, 0.45)
 	image.fill_rect(Rect2i(0, 0, w, h), edge)
-	image.fill_rect(Rect2i(2, 2, w - 4, h - 4), Color(0.25, 0.14, 0.04) if on else Color(0.05, 0.055, 0.06))
+	image.fill_rect(Rect2i(2, 2, w - 4, h - 4), SYS_PRESSED if on else Color(0.05, 0.055, 0.06))
 	var block := Rect2i(w - 28, 5, 23, h - 10) if on else Rect2i(5, 5, 23, h - 10)
-	image.fill_rect(block, UiTheme.ACCENT if on else Color(0.4, 0.4, 0.4))
+	image.fill_rect(block, SYS if on else Color(0.4, 0.4, 0.4))
 	for i in 3:
 		image.fill_rect(Rect2i(block.position.x + 7 + i * 4, block.position.y + 6, 2, block.size.y - 12),
 				Color(0, 0, 0, 0.35))
@@ -1409,7 +1458,7 @@ static func switch_icon(on: bool) -> ImageTexture:
 ## A slider's handle: an upright bar in the accent with a dark notch.
 static func grabber_icon(lit: bool) -> ImageTexture:
 	var image := Image.create(16, 30, false, Image.FORMAT_RGBA8)
-	image.fill(UiTheme.ACCENT.lightened(0.25) if lit else UiTheme.ACCENT)
+	image.fill(SYS.lightened(0.25) if lit else SYS)
 	image.fill_rect(Rect2i(7, 6, 2, 18), Color(0, 0, 0, 0.45))
 	return ImageTexture.create_from_image(image)
 
@@ -1562,21 +1611,31 @@ static func rounded_slab(size: Vector2, depth: float, radius: float, steps := 8)
 	return Handheld.rounded_slab(size, depth, radius, steps)
 
 
+## The pop-up is never flat on the view (the immersion rule): it drops in
+## as a banner across the top of the phone's own glass, read there while
+## the phone is out, and while it is away the same words are thrown up
+## as a small hologram beside you (`NoticeHolo`), view only, your own.
+## The chin's light shows amber while there is news.
 func _build_notice() -> void:
 	_notice_panel = PanelContainer.new()
+	_notice_panel.name = "Notice"
 	_notice_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_notice_panel.anchor_left = 1.0
 	_notice_panel.anchor_right = 1.0
-	_notice_panel.offset_left = -480.0
-	_notice_panel.offset_right = -60.0
-	_notice_panel.offset_top = 24.0
-	_notice_panel.offset_bottom = 70.0
+	_notice_panel.offset_left = 10.0
+	_notice_panel.offset_right = -10.0
+	_notice_panel.offset_top = 40.0
+	var box := _flat_box(Color(0.02, 0.03, 0.036, 0.97), Color(MARK, 0.9), 2, 12)
+	box.border_width_left = 5
+	_notice_panel.add_theme_stylebox_override("panel", box)
 	_notice_label = _label("", 16, UiTheme.INK)
-	_notice_label.add_theme_font_size_override("font_size", 16)
 	_notice_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_notice_panel.add_child(_notice_label)
 	_notice_panel.visible = false
-	add_child(_notice_panel)
+	_glass.add_child(_notice_panel)
+	notice_holo = NoticeHolo.new()
+	notice_holo.name = "NoticeHolo"
+	notice_holo.visible = false
+	add_child(notice_holo)
 
 
 func _status_text() -> String:
@@ -1594,8 +1653,6 @@ func _update_status() -> void:
 	_status.text = clock
 	_bars.strength = 4 if online() else 0
 	_who.text = str(net.account.get("name", "")).left(16) if online() else "Solo"
-	_clock.text = clock
-	_home_note.text = ("Online as %s" % net.account.get("name", "")) if online() else "Offline, solo"
 
 
 ## The home screen's readings: the link (who is about), the inbox and the
@@ -1634,6 +1691,7 @@ func refresh(redraw := true) -> void:
 			"news": badge = unseen_news()
 			"servers": badge = 1 if update_waiting() else 0
 		_icons[app_name].badge = badge
+	_news_waiting = unread_count() > 0 or not invites().is_empty()
 	_icons["console"].visible = DevMode.active()  # DEV MODE
 	_icons["racing"].visible = not LaunchScope.holds("races")
 	_update_readouts()
@@ -1650,9 +1708,10 @@ func refresh(redraw := true) -> void:
 		_compose = null
 	var keep_draft := _compose.text if _compose != null and is_instance_valid(_compose) else ""
 	var had_focus := keep_draft != "" or (_compose != null and is_instance_valid(_compose) and _compose.has_focus())
-	for child in _body.get_children():
-		_body.remove_child(child)
-		child.queue_free()
+	for page: Control in [_body, _dock]:
+		for child in page.get_children():
+			page.remove_child(child)
+			child.queue_free()
 	match app:
 		"contacts": _draw_contacts()
 		"messages": _draw_messages(keep_draft)
@@ -1661,11 +1720,11 @@ func refresh(redraw := true) -> void:
 		"racing": _draw_racing()
 		"servers": _draw_servers()
 		"mirror": _draw_mirror()
-		"controls": _draw_controls()
 		"settings": _draw_settings()
 		"report": _draw_report()
 		"console": _draw_console()  # DEV MODE
 	fit_to_glass(_body)
+	fit_to_glass(_dock)
 	if had_focus and _compose != null:
 		_compose.grab_focus()
 		_compose.caret_column = _compose.text.length()
@@ -1682,7 +1741,41 @@ static func fit_to_glass(root: Control) -> void:
 			(node as OptionButton).clip_text = true
 			(node as OptionButton).text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		else:
-			(node as Button).autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			var button := node as Button
+			button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			# A wrapping button asks for no width, so beside a name or another
+			# button a row squeezed it to a sliver a letter wide (Join, Accept,
+			# Leave squad). In a row (or a row that wraps, which a page of
+			# buttons uses) it keeps its words on one line, up to
+			# `ROW_BUTTON_MOST`, and only a longer one wraps.
+			var parent := button.get_parent()
+			if (parent is HBoxContainer or parent is FlowContainer) and button.custom_minimum_size.x <= 0.0:
+				button.custom_minimum_size.x = minf(one_line_width(button), ROW_BUTTON_MOST)
+
+
+## The widest a button in a row asks to be, so the rest of the row keeps room.
+const ROW_BUTTON_MOST := 220.0
+
+
+## How wide `button` is with its text on one line, padding included.
+static func one_line_width(button: Button) -> float:
+	var font := button.get_theme_font("font")
+	var font_size := button.get_theme_font_size("font_size")
+	var pad := button.get_theme_stylebox("normal").get_minimum_size().x
+	var widest := 0.0
+	for line in button.text.split("\n"):
+		widest = maxf(widest, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
+	return ceilf(widest + pad + 2.0)
+
+
+## A short reading beside a name in a row (where someone is): one line,
+## right aligned, cut short with "..." rather than pushing the row past
+## the glass.
+static func _fit_beside(label: Label) -> void:
+	label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 
 func _offline_note() -> void:
@@ -1710,12 +1803,13 @@ func _draw_contacts() -> void:
 				_place_text(entry) if entry.online else "Offline")
 		if entry.get("friend", false) and not entry.blocked:
 			place = "Friend · " + place
-		var place_label := _label(place, 13, Color(0.5, 0.9, 0.55) if entry.online and not entry.blocked else Color(0.6, 0.6, 0.6))
-		place_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		var place_label := _label(place, 13, WARN if entry.blocked else (SYS if entry.online else Color(0.6, 0.6, 0.6)))
+		_fit_beside(place_label)
 		head.add_child(place_label)
 		box.add_child(head)
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 4)
+		var row := HFlowContainer.new()
+		row.add_theme_constant_override("h_separation", 4)
+		row.add_theme_constant_override("v_separation", 4)
 		if not entry.blocked:
 			if entry.online or entry.saved:
 				row.add_child(_button("Message", open_chat.bind(entry.id)))
@@ -1726,16 +1820,18 @@ func _draw_contacts() -> void:
 		box.add_child(row)
 		if not entry.blocked and entry.online:
 			# Playing together: a squad, and a friend's world to go to.
-			var row3 := HBoxContainer.new()
-			row3.add_theme_constant_override("separation", 4)
+			var row3 := HFlowContainer.new()
+			row3.add_theme_constant_override("h_separation", 4)
+			row3.add_theme_constant_override("v_separation", 4)
 			if not entry.get("squad", false):
 				row3.add_child(_button("Invite to squad", send_invite.bind(entry.id, "squad")))
 			if str(entry.get("world", "")) != "":
 				row3.add_child(_button("Join", join_world.bind(str(entry.world))))
 			if row3.get_child_count() > 0:
 				box.add_child(row3)
-		var row2 := HBoxContainer.new()
-		row2.add_theme_constant_override("separation", 4)
+		var row2 := HFlowContainer.new()
+		row2.add_theme_constant_override("h_separation", 4)
+		row2.add_theme_constant_override("v_separation", 4)
 		if not entry.blocked:
 			row2.add_child(_button("Remove contact" if entry.saved else "Save contact",
 					change_contact.bind("remove" if entry.saved else "add", entry.id)))
@@ -1771,14 +1867,15 @@ func _draw_squad() -> void:
 				UiTheme.INK if member.online else Color(0.6, 0.6, 0.6))
 		shown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(shown)
-		var where := _label(_place_text(member) if member.online else "Offline", 12, Color(0.5, 0.9, 0.55))
-		where.autowrap_mode = TextServer.AUTOWRAP_OFF
+		var where := _label(_place_text(member) if member.online else "Offline", 12, SYS if member.online else Color(0.6, 0.6, 0.6))
+		_fit_beside(where)
 		row.add_child(where)
 		if not you and str(member.get("world", "")) != "":
 			row.add_child(_button("Join", join_world.bind(str(member.world))))
 		box.add_child(row)
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 4)
+	var actions := HFlowContainer.new()
+	actions.add_theme_constant_override("h_separation", 4)
+	actions.add_theme_constant_override("v_separation", 4)
 	actions.add_child(_button("Squad chat", open_chat.bind(SocialService.SQUAD_CHAT)))
 	actions.add_child(_button("Leave squad", leave_squad))
 	box.add_child(actions)
@@ -1819,15 +1916,17 @@ func _draw_messages(draft: String) -> void:
 	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(who)
 	_body.add_child(head)
+	var last_from := ""
 	for message: Dictionary in conversation_with(chat_with):
 		var mine: bool = message.from == my_id()
-		var bubble := _label(message.text, 16, Color(1.0, 0.85, 0.65) if mine else UiTheme.INK)
-		bubble.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if mine else HORIZONTAL_ALIGNMENT_LEFT
-		var stamp := _label("%s  %s" % ["You" if mine else str(message.from_name),
-				_local_time(float(message.get("time", 0)))], 11, Color(0.55, 0.55, 0.55))
-		stamp.horizontal_alignment = bubble.horizontal_alignment
-		_body.add_child(stamp)
-		_body.add_child(bubble)
+		# The name and time over a run of messages from one person, once.
+		if str(message.from) != last_from:
+			var stamp := _label("%s  %s" % ["You" if mine else str(message.from_name),
+					_local_time(float(message.get("time", 0)))], 11, DIM_INK)
+			stamp.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if mine else HORIZONTAL_ALIGNMENT_LEFT
+			_body.add_child(stamp)
+			last_from = str(message.from)
+		_body.add_child(_bubble(str(message.text), mine))
 	if local_names.has(chat_with):
 		# Someone who lives on this phone only does not read replies.
 		_compose = null
@@ -1847,12 +1946,40 @@ func _draw_messages(draft: String) -> void:
 	_compose.text_submitted.connect(func(_t: String) -> void: send.call())
 	row.add_child(_compose)
 	row.add_child(_button("Send", send))
-	_body.add_child(row)
 	if squad_chat and squad().is_empty():
-		_body.add_child(_label("You are not in a squad now. Invite someone from Contacts.", 12, Color(0.6, 0.6, 0.6)))
+		_dock.add_child(_label("You are not in a squad now. Invite someone from Contacts.", 12, DIM_INK))
 	elif not squad_chat and not info.get("online", false):
-		_body.add_child(_label("They are offline. They will see it when they next sign in here.", 12, Color(0.6, 0.6, 0.6)))
+		_dock.add_child(_label("They are offline. They will see it when they next sign in here.", 12, DIM_INK))
+	_dock.add_child(row)
 	_scroll.set_deferred("scroll_vertical", 1 << 20)
+
+
+## The widest a chat bubble grows, pixels on the glass.
+const BUBBLE_MOST := 300.0
+
+
+## One message in a chat: yours on the right in a cyan-edged bubble,
+## theirs on the left in a plain one, each as wide as its words up to
+## `BUBBLE_MOST`.
+func _bubble(text: String, mine: bool) -> Control:
+	var row := HBoxContainer.new()
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var panel := PanelContainer.new()
+	var box := _flat_box(SYS_HOVER if mine else PANEL_BG, Color(SYS, 0.6) if mine else Color(1, 1, 1, 0.08), 1, 10)
+	panel.add_theme_stylebox_override("panel", box)
+	var words := _label(text, 16, UiTheme.INK)
+	panel.add_child(words)
+	var font_size := roundi(16 * text_scale)
+	var wide := ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	panel.custom_minimum_size.x = minf(ceilf(wide) + 24.0, BUBBLE_MOST)
+	if mine:
+		row.add_child(spacer)
+		row.add_child(panel)
+	else:
+		row.add_child(panel)
+		row.add_child(spacer)
+	return row
 
 
 func _draw_invites() -> void:
@@ -1875,7 +2002,7 @@ func _draw_invites() -> void:
 			where = "the raid in %s" % world.display_name if world else "their raid"
 		box.add_child(_label("%s invites you to %s." % [invite.from_name, where], 17, UiTheme.INK))
 		box.add_child(_label("Open for %d more seconds." % maxi(0, int(float(invite.expires) - now)), 12, Color(0.6, 0.6, 0.6)))
-		var row := HBoxContainer.new()
+		var row := HFlowContainer.new()
 		row.add_child(_button("Accept", answer_invite.bind(int(invite.id), true)))
 		row.add_child(_button("Decline", answer_invite.bind(int(invite.id), false)))
 		box.add_child(row)
@@ -1887,7 +2014,7 @@ func _draw_news() -> void:
 		var card := _card()
 		var box: VBoxContainer = card.get_child(0)
 		box.add_child(_label(str(entry.get("date", "")), 12, Color(0.6, 0.6, 0.6)))
-		box.add_child(_label(str(entry.title), 19, UiTheme.ACCENT))
+		box.add_child(_label(str(entry.title), 19, SYS))
 		box.add_child(_label(str(entry.get("body", "")), 15, UiTheme.INK))
 		_body.add_child(card)
 
@@ -1909,13 +2036,13 @@ func _draw_racing() -> void:
 	var league := int(state.league)
 	var card := _card()
 	var box: VBoxContainer = card.get_child(0)
-	box.add_child(_label("%s LEAGUE" % RaceLeague.league_name(league).to_upper(), 22, UiTheme.ACCENT))
+	box.add_child(_label("%s LEAGUE" % RaceLeague.league_name(league).to_upper(), 22, SYS))
 	var next := RaceLeague.next_from(league)
 	box.add_child(_label("%d rating%s" % [int(state.rating), " · next league at %d" % next if next >= 0
 			else " · the top league"], 17, UiTheme.INK))
 	if RaceLeague.at_gate(state):
 		box.add_child(_label("Beat %s in a race to move up." % RaceLeague.rival_name(RaceLeague.top_rival(league)),
-				15, UiTheme.ACCENT))
+				15, SYS))
 	box.add_child(_label("%d races · %d wins · %d podiums" % [int(state.races), int(state.wins), int(state.podiums)],
 			14, DIM_INK))
 	var paid := int(state.paid) if int(state.day) == Contracts.today() else 0
@@ -1928,7 +2055,7 @@ func _draw_racing() -> void:
 		var row_box: VBoxContainer = row.get_child(0)
 		var rec := RaceLeague.record_against(state, id)
 		row_box.add_child(_label(RaceLeague.rival_name(id) + ("  · top rival" if id == top else ""), 17,
-				UiTheme.ACCENT if id == top else UiTheme.INK))
+				SYS if id == top else UiTheme.INK))
 		row_box.add_child(_label("You %d · them %d%s" % [int(rec[0]), int(rec[1]),
 				" · they rate you now" if RaceLeague.humbled(state, id) else ""], 14, DIM_INK))
 		_body.add_child(row)
@@ -2068,7 +2195,7 @@ func _draw_report() -> void:
 	box.add_child(_button("Sending..." if report_sending else "Send report", send_report))
 	_body.add_child(card)
 	if report_status != "":
-		_body.add_child(_label(report_status, 14, UiTheme.ACCENT))
+		_body.add_child(_label(report_status, 14, SYS))
 
 
 ## Sends what the Report app holds (its Send button and Enter).
@@ -2189,13 +2316,13 @@ func _draw_servers() -> void:
 		var card := _card()
 		var box: VBoxContainer = card.get_child(0)
 		if net.account.is_empty():
-			box.add_child(_label("Connecting%s..." % (" to " + link_where if link_where != "" else ""), 19, UiTheme.ACCENT))
+			box.add_child(_label("Connecting%s..." % (" to " + link_where if link_where != "" else ""), 19, SYS))
 			if link_status != "":
 				box.add_child(_label(link_status, 14, DIM_INK))
 			box.add_child(_button("Stop", leave_server))
 			_body.add_child(card)
 			return
-		box.add_child(_label("Connected as %s" % str(net.account.get("name", "")), 19, UiTheme.ACCENT))
+		box.add_child(_label("Connected as %s" % str(net.account.get("name", "")), 19, SYS))
 		if link_where != "":
 			box.add_child(_label("On %s" % link_where, 15, UiTheme.INK))
 		var world := Worlds.get_world(net.world_id)
@@ -2207,7 +2334,7 @@ func _draw_servers() -> void:
 				+ "It is separate from your solo stash.", 13, DIM_INK))
 		_body.add_child(card)
 		if link_status != "":
-			_body.add_child(_label(link_status, 14, UiTheme.ACCENT))
+			_body.add_child(_label(link_status, 14, SYS))
 		if Updater.state != "off":
 			_draw_game_updates()
 		_body.add_child(_button("Leave the server", leave_server))
@@ -2216,11 +2343,11 @@ func _draw_servers() -> void:
 	_body.add_child(_label("Play online: host a server here for your friends, or join theirs by its address.",
 			15, Color(0.75, 0.75, 0.75)))
 	if link_status != "":
-		_body.add_child(_label(link_status, 14, UiTheme.ACCENT))
+		_body.add_child(_label(link_status, 14, SYS))
 	if update_needed:
 		var update_card := _card()
 		var update_box: VBoxContainer = update_card.get_child(0)
-		update_box.add_child(_label("Update needed", 17, UiTheme.ACCENT))
+		update_box.add_child(_label("Update needed", 17, SYS))
 		update_box.add_child(_label("That server runs a newer version of the game. Get the latest build, "
 				+ "start it, and join again.", 13, DIM_INK))
 		if Updater.state != "off":
@@ -2232,7 +2359,7 @@ func _draw_servers() -> void:
 	if not server_changed.is_empty():
 		var changed_card := _card()
 		var changed_box: VBoxContainer = changed_card.get_child(0)
-		changed_box.add_child(_label("This server changed", 17, UiTheme.ACCENT))
+		changed_box.add_child(_label("This server changed", 17, SYS))
 		changed_box.add_child(_label("%s shows a different identity from the last time you joined. "
 				% str(server_changed.get("host", "")).left(64)
 				+ "Its host may have reset it, or someone may be pretending to be it. "
@@ -2371,7 +2498,7 @@ func _mirror_row(key: String, selected: bool) -> PanelContainer:
 	var style := StyleBoxFlat.new()
 	var open := selected and mirror_picking
 	style.bg_color = Color(0.2, 0.15, 0.08, 0.97) if open else Color(0.12, 0.11, 0.1, 0.95) if selected else Color(0.08, 0.075, 0.07, 0.9)
-	style.border_color = UiTheme.ACCENT if selected else Color(0.2, 0.19, 0.17)
+	style.border_color = SYS if selected else Color(0.2, 0.19, 0.17)
 	style.set_border_width_all(4 if open else 2)
 	style.set_corner_radius_all(8)
 	style.set_content_margin_all(6)
@@ -2404,7 +2531,7 @@ func _mirror_row(key: String, selected: bool) -> PanelContainer:
 	row.add_child(middle)
 	var at: Array = wardrobe.pick_position(key)
 	var head := _label("%s   %d / %d" % [wardrobe.pick_title(key).to_upper(), at[0] + 1, at[1]], 12,
-			UiTheme.ACCENT if selected else Color(0.6, 0.6, 0.6))
+			SYS if selected else Color(0.6, 0.6, 0.6))
 	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	middle.add_child(head)
 	var value := _label(wardrobe.pick_label(key), 19, UiTheme.INK)
@@ -2425,26 +2552,107 @@ func _mirror_row(key: String, selected: bool) -> PanelContainer:
 
 
 ## Every control, read from the input map as it is now.
+## Settings › Input's keys (the Keys app before, Caleb's call to keep
+## them in one place): every row of `CONTROLS`, each `{action}` in it a key
+## cap you click and then press the new key or mouse button on (Esc keeps
+## the old one). `GameSettings.rebind` swaps it with any action already on
+## that key, so no two share one.
 func _draw_controls() -> void:
-	_body.add_child(_label("What every key does right now.", 14, Color(0.7, 0.7, 0.7)))
+	_body.add_child(_section("KEYS"))
+	_body.add_child(_label("Click a key, then press the new key or mouse button. Esc or a left click keeps it as it was.", 13, DIM_INK))
+	if GameSettings.bindings_changed():
+		_body.add_child(_button("Put every key back", func() -> void:
+			rebinding = ""
+			GameSettings.reset_bindings()
+			refresh.call_deferred()))
 	for section: Array in CONTROLS:
-		_body.add_child(_label(section[0], 15, UiTheme.ACCENT))
+		_body.add_child(_section(section[0]))
 		for row: Array in section[1]:
-			var line := HBoxContainer.new()
-			line.add_theme_constant_override("separation", 10)
-			var what := _label(row[0], 14, UiTheme.INK)
-			what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			what.size_flags_stretch_ratio = 1.3
-			line.add_child(what)
-			var keys := _label(controls_text(row[1]), 14, Color(1.0, 0.85, 0.65))
-			keys.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			var line := VBoxContainer.new()
+			line.add_theme_constant_override("separation", 2)
+			line.add_child(_label(row[0], 14, UiTheme.INK))
+			var keys := HFlowContainer.new()
+			keys.alignment = FlowContainer.ALIGNMENT_END
+			keys.add_theme_constant_override("h_separation", 6)
+			keys.add_theme_constant_override("v_separation", 4)
+			for part: Array in controls_parts(row[1]):
+				if part[0] == "action":
+					keys.add_child(_key_cap(part[1]))
+				elif str(part[1]).strip_edges() != "":
+					var words := _label(str(part[1]).strip_edges(), 13, DIM_INK)
+					words.autowrap_mode = TextServer.AUTOWRAP_OFF
+					words.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+					keys.add_child(words)
 			line.add_child(keys)
-			# Clear of the scroll bar.
-			var pad := Control.new()
-			pad.custom_minimum_size = Vector2(4, 0)
-			line.add_child(pad)
 			_body.add_child(line)
+
+
+## A key cap for `action`: its keys now, or "Press a key" while it waits.
+func _key_cap(action: String) -> Button:
+	var waiting := rebinding == action
+	var cap := _button("Press a key" if waiting else key_name(action), _start_rebind.bind(action))
+	cap.name = "Key_" + action
+	cap.focus_mode = Control.FOCUS_NONE
+	cap.add_theme_font_size_override("font_size", roundi(13 * text_scale))
+	cap.add_theme_color_override("font_color", MARK if waiting else SYS)
+	return cap
+
+
+## A `CONTROLS` key spec split into its words and its actions, in order:
+## ["text", "Hold "], ["action", "jump"].
+static func controls_parts(spec: String) -> Array:
+	var out := []
+	var at := 0
+	while at < spec.length():
+		var open := spec.find("{", at)
+		var end := spec.find("}", open) if open >= 0 else -1
+		if open < 0 or end < 0:
+			out.append(["text", spec.substr(at)])
+			break
+		if open > at:
+			out.append(["text", spec.substr(at, open - at)])
+		out.append(["action", spec.substr(open + 1, end - open - 1)])
+		at = end + 1
+	return out
+
+
+## The action waiting for its new key ("" when none is).
+var rebinding := ""
+
+
+func _start_rebind(action: String) -> void:
+	rebinding = "" if rebinding == action else action
+	refresh.call_deferred()
+
+
+## While a key cap waits: the next key or mouse button pressed is the new
+## binding, Esc keeps the old. Returns true when it took the event.
+func _capture_rebind(event: InputEvent) -> bool:
+	if rebinding == "":
+		return false
+	var key := event as InputEventKey
+	var button := event as InputEventMouseButton
+	if key != null:
+		if not key.pressed or key.echo:
+			return true
+		if key.physical_keycode != KEY_ESCAPE and key.keycode != KEY_ESCAPE:
+			GameSettings.rebind(rebinding, key)
+	elif button != null:
+		if not button.pressed or button.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN,
+				MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]:
+			return false
+		if button.button_index == MOUSE_BUTTON_LEFT:
+			# The left button is how the phone is used: a click anywhere lets
+			# the key cap go and does what it would have done.
+			rebinding = ""
+			refresh.call_deferred()
+			return false
+		GameSettings.rebind(rebinding, button)
+	else:
+		return false
+	rebinding = ""
+	refresh.call_deferred()
+	return true
 
 
 ## A `CONTROLS` key spec with each `{action}` replaced by its bound keys.
@@ -2518,8 +2726,8 @@ func _build_tabs() -> void:
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.add_theme_font_size_override("font_size", roundi(13 * text_scale))
 		if tab == settings_tab:
-			button.add_theme_color_override("font_color", UiTheme.ACCENT)
-			button.add_theme_stylebox_override("normal", _flat_box(Color(0.2, 0.12, 0.04), UiTheme.ACCENT, 2, 6))
+			button.add_theme_color_override("font_color", SYS)
+			button.add_theme_stylebox_override("normal", _flat_box(SYS_PRESSED, SYS, 2, 6))
 		button.pressed.connect(open_settings_tab.bind(tab))
 		_tabs.add_child(button)
 
@@ -2573,7 +2781,7 @@ func _draw_settings() -> void:
 	_draw_setting_rows(settings_tab)
 	match settings_tab:
 		"input":
-			_body.add_child(_button("See what every key does", open_app.bind("controls")))
+			_draw_controls()
 		"system":
 			_body.add_child(_section("NEW PLAYER TOUR"))
 			if tour_running:
@@ -2648,7 +2856,9 @@ func _ask_tour(action: String) -> void:
 
 ## A small heading inside an app's page.
 func _section(text: String) -> Label:
-	return _label(text, 12, UiTheme.ACCENT)
+	var label := _label(text, 12, SYS)
+	label.add_theme_font_override("font", display_font())
+	return label
 
 
 ## DEV MODE: the temporary switches for testing. Only in a debug or editor
@@ -2702,7 +2912,7 @@ func _slider(text: String, key: String, range_: Vector2, step: float, value: flo
 	var name_label := _label(text, 14, UiTheme.INK)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(name_label)
-	var value_label := _label(shown.call(value), 14, UiTheme.ACCENT)
+	var value_label := _label(shown.call(value), 14, SYS)
 	value_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	head.add_child(value_label)
 	box.add_child(head)
@@ -2803,7 +3013,7 @@ class HoloScreen extends Node3D:
 	## projector's cone opening sideways into it (Caleb's sketch): from its
 	## lower corner up this share of its height.
 	var beam_reach := 0.25
-	var backing := 0.6
+	var backing := 0.75
 	## The scan lines' depth, faint so they never dim a line of text.
 	var line_depth := 0.05
 	var open_time := 0.15
@@ -2970,12 +3180,10 @@ class AppIcon extends Control:
 		var outline := PackedVector2Array([box.position + Vector2(cut, 0), Vector2(box.end.x, box.position.y),
 				Vector2(box.end.x, box.end.y - cut), box.end - Vector2(cut, 0), Vector2(box.position.x, box.end.y),
 				box.position + Vector2(0, cut)])
-		draw_colored_polygon(outline, Color(0.1, 0.085, 0.07) if _hover else Color(0.055, 0.06, 0.068))
+		draw_colored_polygon(outline, SYS_HOVER if _hover else Color(0.055, 0.06, 0.068))
 		var edge := outline.duplicate()
 		edge.append(outline[0])
-		draw_polyline(edge, Color(UiTheme.ACCENT, 0.9 if _hover else 0.4), 2.0, true)
-		# A short lit tick on the top edge, like a status light.
-		draw_line(box.position + Vector2(cut + 6, 5), box.position + Vector2(cut + 22, 5), Color(UiTheme.ACCENT, 0.8), 2.0)
+		draw_polyline(edge, Color(SYS, 0.9 if _hover else 0.4), 2.0, true)
 		_draw_glyph(box.get_center() + Vector2(0, 2), tile / 70.0)
 		var font := get_theme_default_font()
 		var text := title.to_upper()
@@ -2987,14 +3195,14 @@ class AppIcon extends Control:
 			var shown := str(badge) if badge < 100 else "99+"
 			var text_w := font.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x
 			var tag := Rect2(Vector2(box.end.x - 16.0, box.position.y - 6.0), Vector2(maxf(26.0, text_w + 10.0), 26.0))
-			draw_rect(tag, UiTheme.ACCENT)
+			draw_rect(tag, MARK)
 			draw_rect(tag, SCREEN_BG, false, 2.0)
 			draw_string(font, Vector2(tag.get_center().x - text_w * 0.5, tag.position.y + 20.0), shown,
 					HORIZONTAL_ALIGNMENT_LEFT, -1, 19, SCREEN_BG)
 
 	## Each app's picture in accent lines, `k` scaling it.
 	func _draw_glyph(c: Vector2, k: float) -> void:
-		var ink := UiTheme.ACCENT.lightened(0.15) if _hover else UiTheme.ACCENT
+		var ink := SYS.lightened(0.15) if _hover else SYS
 		var w := 2.6 * k
 		match app:
 			"contacts":
@@ -3044,11 +3252,6 @@ class AppIcon extends Control:
 				draw_polyline(ring, ink, w, true)
 				draw_line(c + Vector2(-6, -3) * k, c + Vector2(3, -12) * k, Color(ink, 0.7), 2.0 * k, true)
 				draw_line(c + Vector2(-5, 6) * k, c + Vector2(7, -6) * k, Color(ink, 0.45), 2.0 * k, true)
-			"controls":
-				for row in 2:
-					for col in 4:
-						draw_rect(Rect2(c + Vector2(-21 + col * 11, -14 + row * 11) * k, Vector2(8, 8) * k), ink, false, 2.0 * k)
-				draw_rect(Rect2(c + Vector2(-13, 9) * k, Vector2(26, 7) * k), ink, false, 2.0 * k)
 			"console":
 				# DEV MODE: a terminal's prompt.
 				draw_rect(Rect2(c + Vector2(-21, -16) * k, Vector2(42, 32) * k), ink, false, w)
@@ -3075,6 +3278,101 @@ class AppIcon extends Control:
 				draw_arc(c, 6.0 * k, 0.0, TAU, 16, ink, w, true)
 
 
+## A pop-up while the phone is away: its words on a small dark card with
+## an amber edge, thrown up a little ahead, above and right of the eyes
+## (`ahead`, `up`, `right`), square to the camera and drawn over the world,
+## the same way the emote wheel stands off the wrist (`Hud.EmoteHolo`).
+## Seen from further off (third person) it grows so it reads the same
+## (`read_at`). View only, your own phone only, and never in a mirror.
+class NoticeHolo extends Node3D:
+	var ahead := 0.6
+	var up := 0.17
+	var right := 0.2
+	var read_at := 0.6
+	## The card's text width, metres at arm's length.
+	var width := 0.3
+	var pixel := 0.00055
+	var _label: Label3D
+	var _card: MeshInstance3D
+	var _edge: MeshInstance3D
+	var _card_mat: StandardMaterial3D
+	var _edge_mat: StandardMaterial3D
+
+	func _ready() -> void:
+		top_level = true
+		_card_mat = _material(Color(0.015, 0.025, 0.03, 0.82), 1)
+		_edge_mat = _material(Color(MARK, 0.95), 2)
+		_card = _quad(_card_mat)
+		_edge = _quad(_edge_mat)
+		_label = Label3D.new()
+		_label.name = "Words"
+		_label.no_depth_test = true
+		_label.shaded = false
+		_label.double_sided = true
+		_label.font_size = 40
+		_label.outline_size = 0
+		_label.modulate = UiTheme.INK
+		_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_label.render_priority = 3
+		_label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_label)
+		for part: VisualInstance3D in [_card, _edge, _label]:
+			part.layers = 1 << (MirrorScript.MIRROR_LAYER - 1)
+
+	func _material(color: Color, priority: int) -> StandardMaterial3D:
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.no_depth_test = true
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.albedo_color = color
+		mat.render_priority = priority
+		return mat
+
+	func _quad(mat: StandardMaterial3D) -> MeshInstance3D:
+		var part := MeshInstance3D.new()
+		part.mesh = QuadMesh.new()
+		part.material_override = mat
+		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(part)
+		return part
+
+	## Where the card's left edge stands for `who`: from the eyes along the
+	## aim's heading (never its pitch, so it stays put as you look up).
+	func spot_for(who: Node3D) -> Vector3:
+		var aim: Vector3 = who.call("get_aim_dir")
+		var heading := Vector3(aim.x, 0.0, aim.z)
+		heading = heading.normalized() if heading.length() > 0.01 else -who.global_basis.z
+		var side := heading.cross(Vector3.UP).normalized()
+		return (who.call("get_eye_position") as Vector3) + heading * ahead + Vector3.UP * up + side * right
+
+	func show_text(text: String, alpha: float, who: Node3D, cam: Camera3D) -> void:
+		var at := spot_for(who)
+		var grow := 1.0
+		var facing := Basis.IDENTITY
+		if cam != null:
+			grow = clampf(cam.global_position.distance_to(at) / read_at, 1.0, 6.0)
+			facing = cam.global_basis.orthonormalized()
+		global_transform = Transform3D(facing.scaled_local(Vector3.ONE * grow), at)
+		if _label.text != text:
+			_label.text = text
+		_label.pixel_size = pixel
+		_label.width = width / pixel
+		var box := _label.get_aabb()
+		var pad := 0.012
+		var bar := 0.006
+		var size := Vector2(maxf(box.size.x, 0.05) + bar, maxf(box.size.y, 0.02)) + Vector2(pad, pad) * 2.0
+		# The amber bar down the left edge, the words just right of it.
+		_label.position = Vector3(-size.x * 0.5 + bar + pad - box.position.x, -(box.position.y + box.size.y * 0.5), 0.0)
+		(_card.mesh as QuadMesh).size = size
+		(_edge.mesh as QuadMesh).size = Vector2(bar, size.y)
+		_edge.position = Vector3(-size.x * 0.5 + bar * 0.5, 0, 0)
+		_card_mat.albedo_color.a = 0.82 * alpha
+		_edge_mat.albedo_color.a = 0.95 * alpha
+		_label.modulate.a = alpha
+
+
 ## A live reading on the home screen (the link, the inbox, the latest
 ## news): a small heading over a line or two. Tap it to open its app.
 class Readout extends PanelContainer:
@@ -3089,7 +3387,7 @@ class Readout extends PanelContainer:
 		box.add_theme_constant_override("separation", -2)
 		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(box)
-		heading = _line(title, 18, UiTheme.ACCENT)
+		heading = _line(title, 18, SYS)
 		value = _line("", 28, UiTheme.INK)
 		detail = _line("", 20, DIM_INK)
 		for label: Label in [heading, value, detail]:
@@ -3143,7 +3441,7 @@ class PowerButton extends Control:
 			tapped.emit()
 
 	func _draw() -> void:
-		var ink := UiTheme.ACCENT.lightened(0.2) if _hover else Color(UiTheme.INK, 0.8)
+		var ink := SYS.lightened(0.2) if _hover else Color(UiTheme.INK, 0.8)
 		var c := size * 0.5
 		var r := minf(size.x, size.y) * 0.36
 		draw_arc(c, r, -PI * 0.5 + 0.7, PI * 1.5 - 0.7, 20, ink, 2.0, true)
@@ -3166,7 +3464,7 @@ class SignalBars extends Control:
 			var h := 5.0 + i * 4.0
 			var lit := i < strength
 			draw_rect(Rect2(Vector2(i * 7.5, size.y - h), Vector2(5.0, h)),
-					UiTheme.ACCENT if lit else Color(1, 1, 1, 0.18))
+					SYS if lit else Color(1, 1, 1, 0.18))
 
 
 ## The device's frame round the glass: gunmetal with an accent edge, screws
@@ -3176,6 +3474,15 @@ class SignalBars extends Control:
 class Chassis extends Control:
 	## Where the glass sits (left, top, right, bottom insets, pixels).
 	var glass := Vector4(22, 44, 22, 104)
+	## The chin's notice light: amber while there is news (a pop-up up, an
+	## unread message, an open invite), dark otherwise.
+	## The maker's mark's face (`Phone.display_font`).
+	var mark_font: Font
+	var lit := false:
+		set(value):
+			if value != lit:
+				lit = value
+				queue_redraw()
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3197,7 +3504,7 @@ class Chassis extends Control:
 		var inner := Rect2(Vector2(glass.x, glass.y), size - Vector2(glass.x + glass.z, glass.y + glass.w))
 		var edge := StyleBoxFlat.new()
 		edge.bg_color = Color(0, 0, 0, 0)
-		edge.border_color = Color(UiTheme.ACCENT, 0.5)
+		edge.border_color = Color(SYS, 0.5)
 		edge.set_border_width_all(2)
 		edge.set_corner_radius_all(16)
 		edge.anti_aliasing_size = 1.2
@@ -3214,23 +3521,21 @@ class Chassis extends Control:
 		draw_style_box(slot, Rect2(Vector2(size.x * 0.5 - 40, glass.y * 0.36), Vector2(80, 6)))
 		draw_circle(Vector2(size.x * 0.5 + 64, glass.y * 0.36 + 3), 5.0, Color(0.03, 0.03, 0.035))
 		draw_circle(Vector2(size.x * 0.5 + 64, glass.y * 0.36 + 3), 2.0, Color(0.2, 0.35, 0.5))
-		# The chin: the maker's mark and a vent either side of the keys.
-		var font := get_theme_default_font()
+		# The chin: the maker's mark, and the notice light on its corner.
+		var font: Font = mark_font if mark_font != null else get_theme_default_font()
 		var chin := size.y - glass.w
-		var mark := "ARES  //  LINK-7"
-		var mark_w := font.get_string_size(mark, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
-		draw_string(font, Vector2((size.x - mark_w) * 0.5, chin + 20.0), mark, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
-				Color(0.55, 0.53, 0.5))
-		for side: float in [-1.0, 1.0]:
-			for i in 4:
-				var x := size.x * 0.5 + side * (120.0 + i * 10.0)
-				draw_line(Vector2(x, chin + 40.0), Vector2(x, chin + 70.0), Color(0.03, 0.03, 0.035), 4.0)
-		# A status light on the chin's corner.
-		draw_circle(Vector2(size.x - 44, chin + 20.0), 4.0, Color(UiTheme.ACCENT, 0.9))
+		var mark := "VERGE"
+		var mark_w := font.get_string_size(mark, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+		draw_string(font, Vector2((size.x - mark_w) * 0.5, chin + 20.0), mark, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
+				Color(0.55, 0.55, 0.56))
+		var light := Vector2(size.x - 44, chin + 20.0)
+		draw_circle(light, 5.0, Color(0.03, 0.03, 0.035))
+		draw_circle(light, 3.5, Color(MARK, 0.95) if lit else Color(0.16, 0.16, 0.17))
 
 
-## The dark glass behind every screen: a deep gradient, a faint grid and
-## scan lines, and the maker's emblem low down.
+## The dark glass behind every screen: a plain deep gradient, so only
+## what the page says is drawn on it (Caleb: no decoration that means
+## nothing).
 class Backdrop extends Control:
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3241,29 +3546,6 @@ class Backdrop extends Control:
 			var t := float(i) / rows
 			draw_rect(Rect2(Vector2(0, size.y * t), Vector2(size.x, size.y / rows + 1.0)),
 					SCREEN_BG.lerp(Color(0.012, 0.016, 0.02), t))
-		var step := 28.0
-		var line := Color(UiTheme.ACCENT, 0.045)
-		var x := step
-		while x < size.x:
-			draw_line(Vector2(x, 0), Vector2(x, size.y), line, 1.0)
-			x += step
-		var y := step
-		while y < size.y:
-			draw_line(Vector2(0, y), Vector2(size.x, y), line, 1.0)
-			y += step
-		y = 0.0
-		while y < size.y:
-			draw_line(Vector2(0, y), Vector2(size.x, y), Color(0, 0, 0, 0.18), 1.0)
-			y += 3.0
-		# The emblem: a hexagon round a chevron.
-		var c := Vector2(size.x * 0.5, size.y * 0.82)
-		var hex := PackedVector2Array()
-		for i in 7:
-			hex.append(c + Vector2.from_angle(PI / 6.0 + TAU * i / 6.0) * 70.0)
-		draw_polyline(hex, Color(UiTheme.ACCENT, 0.07), 3.0, true)
-		draw_polyline(PackedVector2Array([c + Vector2(-30, 26), c + Vector2(0, -30), c + Vector2(30, 26)]),
-				Color(UiTheme.ACCENT, 0.08), 6.0, true)
-		draw_line(c + Vector2(-14, 6), c + Vector2(14, 6), Color(UiTheme.ACCENT, 0.08), 5.0)
 
 
 ## A hardware key on the device's chin: back (a chevron) or home (a ring).
@@ -3291,12 +3573,12 @@ class ChinKey extends Control:
 	func _draw() -> void:
 		var c := size * 0.5
 		var cap := StyleBoxFlat.new()
-		cap.bg_color = Color(0.09, 0.09, 0.1) if not _hover else Color(0.16, 0.12, 0.08)
+		cap.bg_color = Color(0.09, 0.09, 0.1) if not _hover else SYS_HOVER
 		cap.border_color = Color(0.03, 0.03, 0.035)
 		cap.set_border_width_all(2)
 		cap.set_corner_radius_all(8)
 		draw_style_box(cap, Rect2(Vector2.ZERO, size))
-		var ink := UiTheme.ACCENT if _hover else Color(0.6, 0.58, 0.55)
+		var ink := SYS if _hover else Color(0.6, 0.58, 0.55)
 		if kind == "back":
 			draw_polyline(PackedVector2Array([c + Vector2(5, -9), c + Vector2(-5, 0), c + Vector2(5, 9)]), ink, 3.0, true)
 		else:

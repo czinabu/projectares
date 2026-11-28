@@ -1,6 +1,7 @@
 extends Node
 ## Registers the input actions in code so the bindings live in one readable place.
-## Rebinding UI can later edit InputMap at runtime without touching project.godot.
+## These are the defaults: the phone's Settings › Input rebinds a key
+## (`GameSettings.rebind`), which keeps only what differs from them.
 
 const KEY_ACTIONS := {
 	"move_forward": KEY_W,
@@ -51,17 +52,35 @@ const MOUSE_ACTIONS := {
 
 
 func _ready() -> void:
-	for action: String in KEY_ACTIONS:
+	for action: String in actions():
+		for ev: InputEvent in default_events(action):
+			_bind(action, ev)
+
+
+## Every action set up here, keys first.
+static func actions() -> Array[String]:
+	var out: Array[String] = []
+	for action: String in KEY_ACTIONS.keys() + MOUSE_ACTIONS.keys():
+		if action not in out:
+			out.append(action)
+	return out
+
+
+## What `action` is bound to out of the box.
+static func default_events(action: String) -> Array[InputEvent]:
+	var out: Array[InputEvent] = []
+	if KEY_ACTIONS.has(action):
 		var ev := InputEventKey.new()
 		ev.physical_keycode = KEY_ACTIONS[action]
-		_bind(action, ev)
-	for action: String in MOUSE_ACTIONS:
+		out.append(ev)
+	if MOUSE_ACTIONS.has(action):
 		var ev := InputEventMouseButton.new()
 		ev.button_index = MOUSE_ACTIONS[action]
-		_bind(action, ev)
+		out.append(ev)
+	return out
 
 
-func _bind(action: String, event: InputEvent) -> void:
+static func _bind(action: String, event: InputEvent) -> void:
 	if not InputMap.has_action(action):
 		InputMap.add_action(action)
 	InputMap.action_add_event(action, event)

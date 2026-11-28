@@ -11,10 +11,27 @@ date in the same PR.
   turns phone requests into service calls and pushes each affected player a
   fresh `social_state` snapshot. A feature that adds a new place a player can be
   (base, social hub) reports it with `NetSession._set_presence(peer, where)` and
-  a name in `SocialService.PLACE_NAMES`. The phone's Controls app lists
-  every key from `Phone.CONTROLS`, whose `{action}` names are filled in from
-  the live `InputMap`; a new input action needs a row there (a test fails
-  otherwise), and a changed control needs its row's wording updated. The phone
+  a name in `SocialService.PLACE_NAMES`. Settings › Input lists
+  every key from `Phone.CONTROLS` (it was a Keys app of its own; Caleb's
+  phone review put it in one place), each `{action}` drawn as a key cap
+  from the live `InputMap`; a new input action needs a row there (a test
+  fails otherwise), and a changed control needs its row's wording updated.
+  Clicking a cap and pressing a key or mouse button rebinds it
+  (`Phone._capture_rebind`, `GameSettings.rebind`): an action already on
+  that key takes the old one, so no two share a key, Esc or a left click
+  keeps it, and only what differs from `InputSetup`'s defaults is saved
+  (`key_binds`, laid over the defaults by `GameSettings.apply_bindings`).
+  The screen keeps to the approved palette (`Phone.SYS` cyan for the
+  device's systems, `Phone.MARK` amber only for marks that ask for you,
+  unread counts, the notice light, a key waiting to be pressed, and
+  `Phone.WARN` red for errors and blocked players), headings and the
+  maker's mark (VERGE) in Oxanium (`Phone.display_font`), and nothing
+  drawn that means nothing: no grid, emblem or vents (Caleb's call). A
+  button set in a row keeps its words on one line (`Phone.fit_to_glass`),
+  and a row of several buttons is a flow that wraps inside the glass.
+  The home screen shows the time once, in the status bar. A chat is
+  bubbles, yours on the right, over a typing box held under the page
+  (`Phone._dock`). The phone
   is a thing in the hand, never an overlay, and every view shows the same
   one: a rugged handheld with a pistol grip (`core/phone/handheld.gd`, its
   origin at the grip) that the character's own right hand closes round with
@@ -48,7 +65,13 @@ date in the same PR.
   texture because the hologram shader takes four taps across each
   pixel's footprint (`Hud.Wrist.HOLO_SHADER`, a viewport texture has no
   mipmaps), and its scan lines are faint (`HoloScreen.line_depth`) so they
-  never dim a line of text. The Mirror app (Caleb's pick): in first person a
+  never dim a line of text. While the Mirror app is up (a mirror in first
+  person, the dressing room in third) the body stops reading the phone and
+  stands to be looked at (Caleb's call): the phone low at the right hip,
+  head and chest up (`Locomotion.phone_low_wrist`, `ActionPose.phone_low`),
+  sent as the held "mirror" stance after the emotes (`Emotes.POSES`,
+  `PlayerController.mirror_pose`), so every view, the glass and other
+  players see the same stand; the hologram stays where it is. The Mirror app (Caleb's pick): in first person a
   mirror stands square in front of the body, never along the camera, close
   enough that you stand large in it (`Mirror.distance`), and wide enough
   to fill the view behind both you and the phone's screen
@@ -118,7 +141,8 @@ date in the same PR.
   only: nothing in the simulation reads one. Moving, firing, drawing, the
   phone or watch, a vehicle or the air ends one, and starting one puts the
   weapon away (`PlayerController._tick_emote`). A new emote is an
-  `Emotes.IDS` entry and a pose; check by eye with `visual_check.tscn --
+  `Emotes.IDS` entry and a pose (a held stance off the wheel, like the
+  Mirror's, is an `Emotes.POSES` entry and never plays as an emote); check by eye with `visual_check.tscn --
   <dir> --emotes-only`. The emote key's quick wheel comes up without the
   watch (`PlayerController.open_emote_wheel`, `emote_wheel_open`; the
   mouse picks a slice, `wheel_slice`, and never turns the view while it is
@@ -138,6 +162,13 @@ date in the same PR.
   puts one ahead of plain news (the tour's step). While the screen is
   covered between places (`notices_paused`, set by `main.gd`) the one up
   keeps its time. A new kind of news that can go stale sends a key.
+  A pop-up is never flat on the view (the immersion rule): it drops in as
+  a banner across the top of the phone's own glass, and while the phone
+  is away the same words stand as a small hologram ahead, above and right
+  of your eyes (`Phone.NoticeHolo`, view only, your own, never in a
+  mirror, grown with distance so third person reads it too). The chin's
+  light is amber while there is news (a pop-up, an unread message, an
+  open invite).
 - Bug reports (the must-work checklist's "Bug reporting with logs"): the
   phone's Report app (`Phone.report_requested`) hands `Main` a line of
   text, and `core/report/bug_report.gd` (`Main.bug_report`, view and
@@ -351,7 +382,9 @@ date in the same PR.
   it stands just past the character (`Wrist.tp_depth`, `tp_behind`), so the
   body passes in front of it and it reads as coming from the watch, beside
   the head clear of the crosshair, a third of the view tall, backed but still see-through (a hologram, Caleb's call)
-  (`_tp_spot`, `_tp_size`, `tp_backing`); the arm and its
+  (`_tp_spot`, `_tp_size`, `tp_backing`), and from the eyes it has a
+  fainter dark glass too (`fp_backing`; Caleb's "a bit less transparent on
+  both views", which also raised the phone's hologram `backing`); the arm and its
   pose stay the same, only where the light lands differs. It stays close to the body
   (Caleb's feedback): its lower edge sits just over the watch as the camera
   sees it (`_over_wrist`, `tp_over_wrist`), level with the shoulder, and

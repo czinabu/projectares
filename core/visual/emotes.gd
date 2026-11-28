@@ -10,6 +10,14 @@ extends RefCounted
 ## Every emote, in the order the watch turns through them.
 const IDS: Array[String] = ["wave", "salute", "point", "cheer", "sit", "lean", "dance", "taunt"]
 
+## Stances that are not on the wheel but travel the same way, numbered
+## after `IDS`: "mirror" is the relaxed stand while the Mirror app is up,
+## the phone low at the hip and the head up (Caleb's call), so you, a
+## mirror and everyone else see the face and the suit, not someone reading
+## a phone. A pose shows only with the phone out (`ActionPose.phone_low`,
+## `Locomotion.phone_pose`); it never plays as an emote.
+const POSES: Array[String] = ["mirror"]
+
 ## What the watch calls each.
 const NAMES := {"wave": "Wave", "salute": "Salute", "point": "Point", "cheer": "Cheer",
 	"sit": "Sit down", "lean": "Lean back", "dance": "Dance", "taunt": "Taunt"}
@@ -22,11 +30,15 @@ const SECONDS := {"wave": 2.6, "salute": 2.2, "point": 2.4, "cheer": 2.8,
 
 ## The emote's number as `ActorCommand.emote` carries it (0 for none).
 static func number_of(id: String) -> int:
+	if id in POSES:
+		return IDS.size() + POSES.find(id) + 1
 	return IDS.find(id) + 1
 
 
 ## The emote with that number, or "" for none (or one this game lacks).
 static func id_of(number: int) -> String:
+	if number > IDS.size() and number <= IDS.size() + POSES.size():
+		return POSES[number - IDS.size() - 1]
 	return IDS[number - 1] if number >= 1 and number <= IDS.size() else ""
 
 

@@ -1812,7 +1812,7 @@ func _test_game_settings() -> void:
 	GameSettings.apply_graphics()
 
 
-## The Controls app lists every key from the input map as it is right now.
+## Settings › Input lists every key from the input map as it is right now.
 func _test_phone_controls(phone: CanvasLayer) -> void:
 	var listed := {}
 	var unknown: Array[String] = []
@@ -1849,9 +1849,11 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 			"Q and E fly nothing: the air dash is Shift + a move key")
 	check(PhoneScript.key_name("free_look") == "E", "free look is held on E, clear of the space bar")
 	check(PhoneScript.controls_text("Hold {jump}") == "Hold Space", "a key spec reads from the input map")
-	phone.open_app("controls")
-	check(phone.app == "controls" and phone._title.text == "Controls" and phone._body.get_child_count() > 20,
-			"the phone has a Controls app")
+	phone.open_settings_tab("input")
+	await frames(1)
+	check(phone.app == "settings" and "controls" not in PhoneScript.APPS
+			and phone._body.find_child("Key_interact", true, false) != null and phone._body.get_child_count() > 20,
+			"Settings › Input lists every key (the Keys app moved there)")
 	# Rebinding shows straight away, since the list reads the input map.
 	var old_events := InputMap.action_get_events("interact")
 	InputMap.action_erase_events("interact")
@@ -1863,13 +1865,6 @@ func _test_phone_controls(phone: CanvasLayer) -> void:
 	for event: InputEvent in old_events:
 		InputMap.action_add_event("interact", event)
 	check(PhoneScript.key_name("interact") == "F", "the binding is put back")
-	phone.open_settings_tab("input")
-	await frames(1)
-	var link := false
-	for child in phone._body.get_children():
-		if child is Button and (child as Button).text.contains("every key"):
-			link = true
-	check(link, "settings link to the Controls app")
 
 
 func _test_phone_escape() -> void:
