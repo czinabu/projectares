@@ -169,7 +169,14 @@ date in the same PR.
   tips, never on the Low and Lowest graphics); the skate pumps in strides
   (`skate_stride`), a kick off a skate spins the body once round
   (`kick_spin_time`, not while aiming) and an air dash tucks the knees
-  (`dash_tuck`). Each rig has its own voice from the body, heard by
+  (`dash_tuck`). On every rig the body moves with each change of speed and
+  turn, never one stiff pose (Caleb's ask, `ActorSkin._update_sway`): the
+  pull of the acceleration rides a spring (`sway_stiffness`,
+  `sway_damping`, stepped in short slices) that swings the arms
+  (`sway_arms`) and legs (`sway_legs`, the shins more), and while the arms
+  are free of a weapon the chest leads a turn and sits back against a
+  change of speed (`_pose_spine`, `sway_twist`, `sway_pitch`), so a
+  weapon held up is never pulled off its aim. Each rig has its own voice from the body, heard by
   everyone as far as its `noise_range` (`ActorSkin._update_rig_voice`:
   the jetpack's roar with its throttle, the wings' rush with the airspeed,
   the skate's hum, a pop on each boots kick and dash), and the player hears

@@ -221,6 +221,31 @@ static func _test_looks(t: Node) -> void:
 	if vapor_was == null:
 		GameSettings._values.erase("graphics")
 
+	# The limbs carry on as the body speeds up: they trail behind a burst of
+	# speed, then settle back once it holds steady, and a turn flown with
+	# the arms free twists the chest into it.
+	skin.set("_flight_hold", 0.0)
+	skin.set("_flight_draw_left", 0.0)
+	for i in 90:
+		p.velocity = forward * 14.0
+		await t.get_tree().process_frame
+	for i in 8:
+		p.velocity = forward * (14.0 + i * 1.5)
+		await t.get_tree().process_frame
+	# The pull in the actor's frame: back, +Z, against the speed-up (lying
+	# out head first, that is down the body toward the feet).
+	var pulled: Vector3 = skin.get("_sway")
+	for i in 120:
+		p.velocity = forward * 26.0
+		await t.get_tree().process_frame
+	var settled: Vector3 = skin.get("_sway")
+	t.check(pulled.z > 0.1 and settled.length() < 0.06,
+			"speeding up, the limbs trail back (%.2f g), and settle once the speed holds (%.2f)" % [pulled.z, settled.length()])
+	for i in 30:
+		p.velocity = (forward * 24.0).rotated(Vector3.UP, i * 0.03)
+		await t.get_tree().process_frame
+	t.check(float(skin.get("_turn_rate")) > 0.8, "a turn is read for the chest to lead it (%.2f rad/s)" % float(skin.get("_turn_rate")))
+
 	# The first-person view rolls with the bank, scaled by the setting.
 	var controller := PlayerController.new()
 	controller.setup(p)

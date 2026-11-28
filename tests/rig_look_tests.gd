@@ -186,7 +186,9 @@ static func run(t: Node) -> void:
 		t.check(leaping > 0.12, "a jump lifts the lead knee (foot %.2f m up)" % leaping)
 		p.flight.is_hovering = true
 		p.velocity = -p.global_basis.z * 7.0
-		await t.get_tree().create_timer(0.6).timeout
+		# The jets catching the rise swing the legs up for a moment
+		# (`ActorSkin.sway_legs`); they hang once that settles.
+		await t.get_tree().create_timer(1.2).timeout
 		var hanging: float = foot_height.call()
 		t.check(not (String(skin._current) in skin.GAITS) and hanging < leaping,
 				"hovering, the legs hang loose instead of running (foot %.2f m up)" % hanging)

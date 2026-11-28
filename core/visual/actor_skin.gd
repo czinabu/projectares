@@ -262,6 +262,23 @@ var skate_stride := 1.3
 var skate_push := 0.35
 var kick_spin_time := 0.5
 var dash_tuck := 0.7
+## Secondary motion in flight (Caleb's ask: the body moves with every turn
+## and change of speed, never holding one stiff pose). The limbs carry on a
+## little as the body speeds up, slows, climbs or turns: the pull is the
+## acceleration turned round, in g, on a spring a little bouncy so the limbs
+## settle with some life (`sway_stiffness`, `sway_damping`). The arms swing
+## `sway_arms` of it and the legs `sway_legs` (the shins half as much
+## again); while the arms are free of a weapon the chest leads a turn by up
+## to `sway_twist` radians (full at `sway_turn_full` radians a second) and
+## sits back or forward against a change of speed by `sway_pitch` a g. View
+## only, read from velocity, so remote players match.
+var sway_stiffness := 60.0
+var sway_damping := 11.0
+var sway_arms := 0.5
+var sway_legs := 0.4
+var sway_twist := 0.3
+var sway_turn_full := 2.0
+var sway_pitch := 0.12
 
 ## Riding, the head turns at most this far (radians) toward the aim; the
 ## body stays facing along the vehicle.
@@ -500,6 +517,14 @@ var _stride := 0.0
 var _spin_left := 0.0
 var _spin_dir := 1.0
 var _tuck := 0.0
+## Secondary motion (`sway_stiffness`): the limbs' pull, actor frame, in g,
+## and how fast it is moving; how fast the way the body flies is swinging
+## (radians a second, positive turning left); the spine's bones.
+var _sway := Vector3.ZERO
+var _sway_v := Vector3.ZERO
+var _turn_rate := 0.0
+var _sway_heading := NAN
+var _spine_bones: Array[int] = []
 var _spread := 0.0
 ## 0 standing, 1 flying flat.
 var _glide := 0.0
@@ -981,6 +1006,7 @@ func _update(delta: float) -> void:
 	_flight_draw_left = aim_hold if actor.cmd.primary or actor.cmd.secondary else maxf(_flight_draw_left - delta, 0.0)
 	_flight_hold = move_toward(_flight_hold, 1.0 if _flight_draw_left > 0.0 else 0.0, glide_blend * delta)
 	_update_boot_thrust(delta)
+	_update_sway(delta)
 	_update_rig(delta)
 	_update_glide(delta)
 	_update_stowed()
@@ -5495,6 +5521,10 @@ func _setup_glide_pose(skeleton: Skeleton3D, def: Dictionary) -> void:
 		var suffix := foot.get_slice(".", 1)
 		_glide_legs.append(_bone_chain(skeleton, ["UpperLeg." + suffix, "LowerLeg." + suffix, foot], -1.0 if i == 0 else 1.0))
 	_glide_neck = skeleton.find_bone(def.get("neck", ""))
+	for bone_name: String in def.get("spine", []):
+		var bone := skeleton.find_bone(bone_name)
+		if bone >= 0:
+			_spine_bones.append(bone)
 	var hook := WeaponArm.Hook.new()
 	hook.name = "GlidePose"
 	hook.run = _pose_glide
@@ -5518,6 +5548,7 @@ func _bone_chain(skeleton: Skeleton3D, names: Array, side: float) -> Array:
 func _pose_glide() -> void:
 	if _skeleton == null:
 		return
+	_pose_spine()
 	_pose_air()
 	if _glide <= 0.0:
 		return
@@ -5534,7 +5565,7 @@ func _pose_glide() -> void:
 			continue
 		var arm_dir := glide_arm.lerp(dive_arm, smoothstep(0.0, 1.0, _wing_fast)).lerp(stall_arm, _wing_stall) \
 				.lerp(boost_arm, smoothstep(0.0, 1.0, _boost)).lerp(backstroke_arm, back)
-		var wanted := to_skeleton * Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z)
+		var wanted := to_skeleton * (Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z) + _limb_sway(sway_arms))
 		# Shooting or aiming, the arms keep their hold on the weapon.
 		var arm_w := w * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
 		_aim_bone(limb[0], limb[1], wanted, arm_w)
@@ -5542,11 +5573,65 @@ func _pose_glide() -> void:
 	for limb: Array in _glide_legs:
 		if not limb.is_empty():
 			var leg := glide_leg.lerp(backstroke_leg, back)
-			_pose_leg(limb, to_skeleton * Vector3(leg.x * limb[3], leg.y, leg.z), right, w)
+			_pose_leg(limb, to_skeleton * (Vector3(leg.x * limb[3], leg.y, leg.z) + _limb_sway(sway_legs)), right, w)
 	if _glide_neck >= 0:
 		var pose := _skeleton.get_bone_global_pose(_glide_neck)
 		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), lerpf(glide_look, backstroke_look, back) * w) * pose.basis
 		_skeleton.set_bone_global_pose(_glide_neck, pose)
+
+
+## The limbs' secondary motion (`sway_stiffness`): the pull of the body's
+## changes of speed and heading on a spring, stepped in short slices so a
+## long frame cannot throw it off.
+func _update_sway(delta: float) -> void:
+	var flying := is_airborne() and not actor.is_dead and actor.vehicle == null
+	var want := Vector3.ZERO
+	var rate := 0.0
+	if flying and delta > 0.0:
+		var accel := actor.global_basis.inverse() * ((actor.velocity - _vel_lag) * boot_accel_rate)
+		want = (-accel / 9.8).limit_length(1.2)
+		var flat := Vector2(actor.velocity.x, actor.velocity.z)
+		var heading := atan2(-actor.velocity.x, -actor.velocity.z)
+		if flat.length() > 2.0 and not is_nan(_sway_heading):
+			rate = wrapf(heading - _sway_heading, -PI, PI) / delta
+		_sway_heading = heading if flat.length() > 2.0 else NAN
+	else:
+		_sway_heading = NAN
+	_turn_rate = lerpf(_turn_rate, rate, 1.0 - exp(-bank_follow * delta))
+	var left := minf(delta, 0.25)
+	while left > 0.0:
+		var step := minf(left, 1.0 / 120.0)
+		_sway_v += ((want - _sway) * sway_stiffness - _sway_v * sway_damping) * step
+		_sway += _sway_v * step
+		left -= step
+
+
+## The limbs' swing this frame, in the body's own frame before the tip
+## (as limb directions are given), `share` of the pull.
+func _limb_sway(share: float) -> Vector3:
+	return (_body_turn.inverse() * _sway) * share
+
+
+## While the arms are free of a weapon in flat flight, the chest leads the
+## turn being flown and sits back or forward against a change of speed.
+## Runs first, so the limbs are aimed from where the chest has gone.
+func _pose_spine() -> void:
+	if _spine_bones.is_empty():
+		return
+	var free := 1.0 - smoothstep(0.0, 1.0, _flight_hold)
+	var w := maxf(smoothstep(0.0, 1.0, _limb_glide()), smoothstep(0.0, 1.0, _boot_w) * _boot_hero) * free
+	if w <= 0.001:
+		return
+	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
+	var up := (to_skeleton * Vector3.UP).normalized()
+	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	var twist := sway_twist * clampf(_turn_rate / maxf(sway_turn_full, 0.1), -1.0, 1.0)
+	var pitch := sway_pitch * clampf((_body_turn.inverse() * _sway).z, -1.0, 1.0)
+	var share := w / _spine_bones.size()
+	for bone in _spine_bones:
+		var pose := _skeleton.get_bone_global_pose(bone)
+		pose.basis = Basis(up, twist * share) * Basis(right, pitch * share) * pose.basis
+		_skeleton.set_bone_global_pose(bone, pose)
 
 
 ## How far the arms and legs are in the flat flying pose: a flare for the
@@ -5581,15 +5666,16 @@ func _pose_air() -> void:
 			thigh = thigh.lerp(legs[0], bw)
 			shin = shin.lerp(legs[1], bw)
 			toes = lerpf(toes, boot_toes, bw)
-		_pose_leg(limb, to_skeleton * Vector3(thigh.x * limb[3], thigh.y, thigh.z), right, w,
-				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), toes)
+		var swing := _limb_sway(sway_legs)
+		_pose_leg(limb, to_skeleton * (Vector3(thigh.x * limb[3], thigh.y, thigh.z) + swing), right, w,
+				to_skeleton * (Vector3(shin.x * limb[3], shin.y, shin.z) + swing * 1.5), toes)
 	var arm_w := w * smoothstep(0.0, 1.0, _boot_w) * _boot_hero * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
 	if arm_w > 0.001:
 		# Lying out, the arms ride by the sides until there is aiming to do.
 		for limb: Array in _glide_arms:
 			if limb.is_empty():
 				continue
-			var wanted := to_skeleton * Vector3(boot_arm.x * limb[3], boot_arm.y, boot_arm.z)
+			var wanted := to_skeleton * (Vector3(boot_arm.x * limb[3], boot_arm.y, boot_arm.z) + _limb_sway(sway_arms))
 			_aim_bone(limb[0], limb[1], wanted, arm_w)
 			_aim_bone(limb[1], limb[2], wanted, arm_w)
 	if _boot_w > 0.0 and _glide_neck >= 0:
