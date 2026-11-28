@@ -100,6 +100,32 @@ static func run(t: Node) -> void:
 			and sign.text.contains("3 PLAYERS") and absf(sign.global_position.y - portal.global_position.y - 10.25) < 0.05
 			and sign.global_position.z < portal.global_position.z and sign.pixel_size * sign.font_size >= 0.4,
 			"the gate's live line reads big and flat across the top of its doorway: %s" % (sign.text if sign else "none"))
+	# Walking into an open gate takes you through after a short count, and
+	# stepping out first cancels it; a closed or tour-locked gate never counts.
+	var gate_portal: Node3D = first.portal
+	var to := "world:%s" % first.world_id
+	view.gate_walk_in_time = 1.2
+	t.check(view.step_walk_in(gate_portal, 0.5) == "" and view.walk_in_progress() > 0.3,
+			"standing in a gate starts its countdown")
+	t.check(view.step_walk_in(null, 0.1) == "" and view.walk_in_progress() < 0.0,
+			"stepping out cancels it")
+	t.check(view.step_walk_in(gate_portal, 0.5) == "" and view.step_walk_in(gate_portal, 0.5) == "",
+			"stepping back in starts the count over")
+	t.check(view.step_walk_in(gate_portal, 0.3) == to, "a full count in the gate takes you through")
+	t.check(view.step_walk_in(gate_portal, 5.0) == "", "a gate that took you waits for you to step out")
+	view.step_walk_in(null, 0.1)
+	view.tour_closed = [str(first.world_id)]
+	t.check(view.step_walk_in(gate_portal, 5.0) == "" and view.walk_in_progress() < 0.0,
+			"a gate the tour keeps closed never counts down")
+	view.tour_closed = []
+	view.routes = {}
+	t.check(view.step_walk_in(gate_portal, 5.0) == "", "nor does a gate to a world this server lacks")
+	view.routes = routes
+	var shop: Node3D = null
+	for node in raid.get_tree().get_nodes_in_group("portal"):
+		if raid.map.is_ancestor_of(node) and not str(node.get_meta("destination", "")).begins_with("world:"):
+			shop = node
+	t.check(shop != null and view.step_walk_in(shop, 5.0) == "", "other doors still wait for [F]")
 	view.queue_free()
 
 	# How full a world is, for its panels.
