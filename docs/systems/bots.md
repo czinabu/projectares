@@ -12,7 +12,8 @@ date in the same PR.
   weather and supply pods carry on. `Main` reads it at boot
   (`Raid.enemies_wanted`): `--enemies` / `--no-enemies`, then
   `ARES_ENEMIES`, then a `--bots` count over 0, then the project setting
-  `ares/stability/enemies` (false during the stability pass). The test
+  `ares/stability/enemies` (on; it was off during the stability pass and
+  came back on once each world had its own roster, pockets and budget). The test
   runner and the benches keep enemies on and set `ARES_ENEMIES` for the
   servers they start. In a solo world the dev console's `enemies on|off`
   flips it live. Never delete an enemy system to get a quiet world: gate it
