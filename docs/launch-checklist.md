@@ -20,16 +20,22 @@ market come in later updates, and "1.0" waits until they are in.
 - [ ] **Account recovery code.** A one-time code on the phone that moves an
   account to a new PC. Same thread as above. (design-gaps: "Official
   servers before Steam")
-- [ ] **Steam.**
-  - [ ] Steamworks app (the $100 fee), store page, capsule art and
-    screenshots. Caleb's to do.
-  - [ ] Steam export presets (feature tag "steam") and an upload step for
-    the builds (depots).
+- [ ] **Steam.** What is left once the fee is paid, step by step, is in
+  `docs/steam.md`.
+  - [ ] Steamworks app (the $100 fee, about 30 days before release), store
+    page, capsule art, screenshots and a trailer. Caleb's to do, once it
+    can be paid for.
+  - [x] Steam export presets ("Windows Steam", "Linux Steam": the release
+    build plus the tag "steam") and a hand-run upload workflow
+    (`.github/workflows/steam.yml`), which only exports until the Steam
+    app's settings are added.
   - [x] The self-updater stays off in a copy Steam installed
     (`Updater.on_steam`), since Steam updates it.
   - [ ] Steam login, or a decision to add it a few weeks after launch
     (design-gaps: "Steam login"). Caleb's call.
   - [ ] A privacy policy and terms, since accounts live on our server.
+    Drafts are in `docs/legal/`; they need a read-through and their
+    placeholders filled before they are published.
 - [ ] **A friends playtest** on the official server, to set the prices,
   drop rates and balance that are placeholders today.
 - [ ] **Progression.** The mastery gate on Mk2, Mk2 helmets, bounties paying
