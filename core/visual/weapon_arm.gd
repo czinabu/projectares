@@ -95,7 +95,7 @@ var off_hand_at := -0.16
 ## A two-handed weapon at rest is carried across the body: where the weapon
 ## hand's wrist goes (actor frame) and which way the haft runs up from it,
 ## so the off hand reaches it too.
-var carry_point := Vector3(0.14, 1.1, -0.22)
+var carry_point := Vector3(0.14, 1.1, -0.3)
 var carry_up := Vector3(-0.6, 0.75, -0.3)
 ## How far into that carry the arms are.
 var _carry := 0.0

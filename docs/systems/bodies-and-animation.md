@@ -223,7 +223,14 @@ date in the same PR.
   frame toward the least that clears it: the elbow's pole turned, the hand
   out, the shoulder forward round its collarbone (as anyone holding
   something in both hands does), each eased back once not needed. Both
-  hands on a handle never move off it (the off arm could not follow).
+  hands on a handle never move off it (the off arm could not follow),
+  so a two-handed technique's keys (`ActionPose.techniques`: `cut`,
+  `chop2`) keep both hands ahead of the chest themselves: a windup no
+  further back than about the chest's front, a follow-through that
+  finishes well out in front of the far hip, and the hammer and spear
+  carried out from the body (`WeaponArm.carry_point`), since the off hand
+  on the handle sits nearer the body than the weapon hand. A spear's
+  thrust still draws well back first (its windup, `melee_viability`).
   Once both arms have reached, an elbow still inside is swung round its
   shoulder-to-wrist line out of it (`_swivel_clear`), the wrist kept as it
   was. Measure the real meshes with `--swing-clip-only` (every melee
