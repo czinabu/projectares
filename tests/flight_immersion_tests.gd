@@ -246,15 +246,18 @@ static func _test_view(t: Node) -> void:
 	camera.global_position = p.get_eye_position()
 	camera.current = true
 	for i in 6:
-		holo.update(p, camera, true, Vector3.INF, 1.0 / 30.0)
+		holo.update(p, camera, true, camera.global_position + camera.global_basis * Vector3(-0.2, -0.25, -0.45), 1.0 / 30.0)
 		await t.get_tree().process_frame
 	var drawn := holo.get_node("Figure") as MeshInstance3D
 	var mesh := drawn.mesh as ImmediateMesh
 	t.check(holo.visible and mesh.get_surface_count() > 0, "the hologram draws the body from its posed bones")
-	var near := holo.global_position.distance_to(camera.global_position)
-	t.check(near < 1.0, "it hangs in front of the eyes, in the corner (%.2f m)" % near)
+	var wrist := camera.global_position + camera.global_basis * Vector3(-0.2, -0.25, -0.45)
+	var near := holo.global_position.distance_to(wrist)
+	t.check(near < 0.15, "it is thrown up off the watch on the wrist, not pinned to the screen (%.2f m off it)" % near)
+	holo.update(p, camera, true, Vector3.INF, 1.0 / 30.0)
+	t.check(not holo.visible, "with no watch on the wrist there is nothing to throw it up")
 	for i in 20:
-		holo.update(p, camera, false, Vector3.INF, 1.0 / 30.0)
+		holo.update(p, camera, false, wrist, 1.0 / 30.0)
 	t.check(not holo.visible, "and fades away once it is not wanted")
 	controller.queue_free()
 	p.queue_free()
