@@ -1,6 +1,6 @@
 # The Spore Marsh and Ashfront's scenery
 
-Rules for the Spore Marsh's wildlife, fouling, spores and Rootways, and Ashfront's scenery army, battle shelves, horde, flares and low sky. These are part of the rules in `CLAUDE.md` that must not be
+Rules for the Spore Marsh's wildlife, fouling, spores and Rootways, and Ashfront's scenery army, battle shelves, horde, flares, low sky and rim fort. These are part of the rules in `CLAUDE.md` that must not be
 broken: read this file before changing anything it covers, and keep it up to
 date in the same PR.
 
@@ -124,3 +124,16 @@ date in the same PR.
   only scenery fights (`may_rake`: as far from everyone as a fight is
   placed) and wrecks come down only past the rim; check with
   `--sky-only`.
+  The fortress line on the rim (`worlds/ashfront/rim_fort.gd`, the map's
+  `make_rim_fort`) is view only too: it stands on the crest between the
+  edge walls and the terrain's end (`LINE`, 317 m out), where
+  `scenery_height` still reads the field's own terrain (past 318 m the far
+  land drops away and anything there is hidden behind the crest). Nothing
+  of it may reach in past the edge walls, since a flier can get there and
+  it has no collision: a long piece runs along the wall, never across it.
+  It is merged once into one mesh a side with one surface a material
+  (`KEYS`); keep a new piece in those few surfaces (`_key`, or boxes
+  through `_append`), never a node of its own. Only the breaches' smoke
+  is a node (the map's `_smoke`, through `smoke_maker`). Rubble on the
+  slope stays on its steep top, as the planet's rocks do. Check with
+  `--rim-only`, which ends looking up at two breaches.

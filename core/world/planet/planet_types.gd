@@ -37,12 +37,15 @@ static func ashland() -> PlanetType:
 	}
 	# Ash-grey air and a neutral light, so the red lives in the sky's glow,
 	# the fires and the cracks and they stand out (Caleb's look pass, after
-	# his references: grey smoke with hot lights burning through it).
+	# his references: grey smoke with hot lights burning through it). Thick
+	# with smoke even when quiet (Caleb's call, after Helldivers and Ready
+	# Player One's Planet Doom): the field's far side and the rim go to
+	# silhouettes in a warm brown haze, while a fight at 30 m stays clear.
 	t.calm = {
 		"sky_tint": Color(0.75, 0.6, 0.55), "sky_energy": 0.95, "sky_saturation": 0.85,
-		"fog_color": Color(0.3, 0.28, 0.27), "fog_density": 0.7,
-		"fog_depth_begin": 70.0, "fog_depth_end": 900.0, "fog_depth_curve": 1.3,
-		"fog_height": 2.0, "fog_height_density": 0.04, "haze_height": 0.18,
+		"fog_color": Color(0.33, 0.29, 0.26), "fog_density": 0.85,
+		"fog_depth_begin": 32.0, "fog_depth_end": 400.0, "fog_depth_curve": 1.1,
+		"fog_height": 5.0, "fog_height_density": 0.07, "haze_height": 0.28,
 		"sun_color": Color(0.95, 0.75, 0.62), "sun_energy": 1.7, "sun_angles": Vector3(-20, 38, 0),
 		"ambient_color": Color(0.5, 0.5, 0.52), "ambient_energy": 1.4,
 		"exposure": 1.25, "saturation": 0.65, "contrast": 1.15, "glow": 0.9,
@@ -54,7 +57,11 @@ static func ashland() -> PlanetType:
 		"ambient_color": Color(0.52, 0.5, 0.5), "ambient_energy": 1.6,
 		"exposure": 1.3, "saturation": 0.6, "contrast": 1.05, "glow": 0.9,
 	}
-	t.smoke = {"density": 0.012, "colour": Color(0.45, 0.44, 0.44), "depth": 18.0, "war": 0.6, "storm": 1.5}
+	# Battle smoke low over the ground, and banks of it drifting across the
+	# field on the wind (on the graphics picks that draw ground smoke).
+	t.smoke = {"density": 0.012, "colour": Color(0.45, 0.44, 0.44), "depth": 18.0, "war": 0.6, "storm": 1.5,
+		"banks": {"count": 4, "cell": 80.0, "size": Vector3(50.0, 12.0, 32.0), "density": 0.14,
+			"drift": 1.2, "wind": 1.6}}
 	t.terrain = {
 		"base_amp": 9.0, "base_freq": 0.006, "octaves": 4, "warp": 25.0,
 		"ridge_amp": 26.0, "ridge_freq": 0.005, "ridge_cover": 0.18,

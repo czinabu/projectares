@@ -729,6 +729,30 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   horde, the flak batteries and bursts, the low sky's runs and the flares;
   High and Medium keep Full, Low (laptops) picks Thinned and Lowest picks
   Light. All of it keeps happening, only less at once.
+- **A fortress line on the rim (Caleb's go-ahead to use the Modular
+  Sci-Fi Megakit).** The rim's crest is no longer a bare quarry edge: a
+  ruined wall of armour plate runs along all four sides just past the
+  map's edge walls (`worlds/ashfront/rim_fort.gd`, the map's
+  `make_rim_fort`), lengths of 15 m wall with towers every 80 m, each with
+  a red lamp, and furnace-orange slits along the cabled tops. It has been
+  fought over: its height steps up and down (a second tier on some
+  lengths), some lengths lean back, two a side are blown open with a fire
+  still burning in the gap and smoke going up, rubble spills down the
+  slope under each breach and fallen plate lies all along the wall's foot.
+  In front of each battle shelf it is broken down to low stubs and gaps,
+  so the far war shows through. Built once from Quaternius's Megakit
+  pieces scaled up five times and plain boxes, dressed in the game's own
+  dark metal, merged into one mesh a side: at most sixteen draws, and
+  nothing a frame but the breaches' smoke. View only: no collision, none
+  on a server, and no piece of the wall reaches in over the rim's slope.
+- **Thick air even when quiet (Caleb's call, after Helldivers and Ready
+  Player One's Planet Doom).** The Ashland's calm mood keeps a warm brown
+  haze from 32 m that closes to silhouettes by about 400 m, so the far
+  side of the field, the rim and the skyline read as shapes in smoke while
+  a fight at 30 m stays clear; the war mood thickens it from there as
+  before. Where ground smoke is drawn (High and Medium), banks of smoke
+  drift across the field on the wind as well. Depth fog costs nothing; the
+  banks are a few more volumes in the ground smoke.
 - **The ruined city has life in it.** The skyline's city blocks
   (`Look.trim("distant_lit")`) keep a scattering of lit windows and a few
   floors still burning, flickering, drawn in the skyline shader with no

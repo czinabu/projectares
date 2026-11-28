@@ -368,9 +368,8 @@ class GroundSmoke:
 			var ground := at.y - 2.0
 			if map.has_method("ground_height"):
 				ground = float(map.call("ground_height", spot.x, spot.y))
-			var water: Variant = map.get_meta("mist_floor", null)
-			if water != null:
-				ground = maxf(ground, float(water))
+			if map.has_meta("mist_floor"):
+				ground = maxf(ground, float(map.get_meta("mist_floor")))
 			var bank := bank_volumes[i]
 			bank.global_position = Vector3(spot.x, ground + lift, spot.y)
 			bank.visible = fade > 0.02
