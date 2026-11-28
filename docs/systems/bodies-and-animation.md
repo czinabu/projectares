@@ -231,6 +231,10 @@ date in the same PR.
   carried out from the body (`WeaponArm.carry_point`), since the off hand
   on the handle sits nearer the body than the weapon hand. A spear's
   thrust still draws well back first (its windup, `melee_viability`).
+  Through a kick the body leans hard over its leg, so a weapon carried in
+  both hands is held out with the chest, turn and all (`_kick_ride`,
+  eased by `kick_ride_rate`), its off hand following on the handle; a
+  katana keeps its held-ready hold (ridden, its off arm folded in).
   Once both arms have reached, an elbow still inside is swung round its
   shoulder-to-wrist line out of it (`_swivel_clear`), the wrist kept as it
   was. Measure the real meshes with `--swing-clip-only` (every melee
