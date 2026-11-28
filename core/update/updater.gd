@@ -39,7 +39,9 @@ extends Node
 ##
 ## It runs only in an exported game that was stamped with a build number by
 ## the release workflow (`BUILD_SETTING`), never in the editor, a test run, a
-## dedicated server or headless. Nothing in it touches the simulation, and it
+## dedicated server or headless, and never in a copy Steam installed
+## (`on_steam`): Steam updates that one itself, and a pack swapped in under
+## it would fail Steam's file check and be put back. Nothing in it touches the simulation, and it
 ## uses no project class, so it keeps working whatever the pack holds.
 
 signal changed
@@ -116,7 +118,7 @@ func _ready() -> void:
 	if from >= 0 and from + 1 < args.size():
 		_base = args[from + 1].trim_suffix("/") + "/"
 	if not enabled(OS.has_feature("template"), build, args, DisplayServer.get_name(),
-			OS.has_feature("dedicated_server")):
+			OS.has_feature("dedicated_server"), on_steam()):
 		set_process(false)
 		return
 	just_updated = UPDATED_ARG in args
@@ -128,13 +130,20 @@ func _ready() -> void:
 
 ## Whether a game started like this keeps itself up to date.
 static func enabled(exported: bool, build_number: int, user_args: PackedStringArray,
-		display: String, dedicated: bool) -> bool:
-	if not exported or build_number <= 0 or dedicated or display == "headless":
+		display: String, dedicated: bool, steam := false) -> bool:
+	if not exported or build_number <= 0 or dedicated or steam or display == "headless":
 		return false
 	for arg in ["--server", "--account-service", OFF_ARG]:
 		if arg in user_args:
 			return false
 	return true
+
+
+## Whether Steam installed and started this copy: a Steam build (feature tag
+## "steam", for the Steam export presets to come) or any build Steam launched
+## (Steam sets `SteamAppId` for the games it starts).
+static func on_steam() -> bool:
+	return OS.has_feature("steam") or OS.has_environment("SteamAppId") or OS.has_environment("SteamGameId")
 
 
 ## Which builds a game takes: "release" for the playtest build, "dev" for
