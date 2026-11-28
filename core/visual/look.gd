@@ -27,6 +27,7 @@ const HAZE_BEAM_SHADER := preload("res://assets/shaders/haze_beam.gdshader")
 const LAVA_SHADER := preload("res://assets/shaders/lava.gdshader")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
+const GateLook := preload("res://core/visual/gate_look.gd")
 const RigModel := preload("res://core/visual/rig_model.gd")
 const UiTheme := preload("res://core/visual/ui_theme.gd")
 const VEHICLE_SCRIPT := "res://core/vehicle/vehicle.gd"
@@ -1925,6 +1926,38 @@ func trim(kind: String) -> Material:
 
 
 ## A small light with no shadow, for lamps and fires.
+## A deploy gate's glimpse of the world it leads to, from that world's
+## planet (`GateLook.window`): a sheet `size` metres facing +Z.
+func gate_window(type: PlanetType, size: Vector2, rim: Color, seed := 0.0) -> MeshInstance3D:
+	return GateLook.window(type, size, rim, seed)
+
+
+## The colour a world's gate glows in, from its planet (`GateLook.world_color`).
+## Pure data: callable headless, where the map still builds its trims.
+func gate_color(type: PlanetType) -> Color:
+	return GateLook.world_color(type)
+
+
+## A world's emblem for its gate (`GateLook.crest`).
+func gate_crest(type: PlanetType, size: float, color: Color) -> MeshInstance3D:
+	return GateLook.crest(type, size, color)
+
+
+## A sealed gate's frosted shutter with a hologram on it (`GateLook.teaser`).
+func gate_teaser(size: Vector2, rim: Color) -> MeshInstance3D:
+	return GateLook.teaser(size, rim)
+
+
+## A slatted panel showing how full a world is (`GateLook.meter`).
+func gate_meter(size: Vector2, color: Color, slats: int) -> MeshInstance3D:
+	return GateLook.meter(size, color, slats)
+
+
+## A strip of gate trim that a pulse can run up (`GateLook.trim`).
+func gate_trim(strip: MeshInstance3D, color: Color, height: float) -> void:
+	GateLook.trim(strip, color, height)
+
+
 func lamp(color: Color, energy: float, reach: float) -> OmniLight3D:
 	var light := OmniLight3D.new()
 	light.light_color = color
