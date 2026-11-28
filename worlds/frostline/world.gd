@@ -570,8 +570,10 @@ func boss_back_news(bot: Actor, _where: String) -> String:
 ## is free of randomness.
 func _make_heart_warden(bot: Actor) -> void:
 	bot.display_name = "Heart Warden"
-	bot.set_meta("look", "colossus")
-	_paint(bot, Color(0.75, 0.9, 1.0))
+	# Its own machine to look at, not the Sentinel grown taller: dark plate,
+	# its core bared and a crown of vents (`Look` "core_colossus").
+	bot.set_meta("look", "core_colossus")
+	_paint(bot, Color(0.4, 0.85, 1.0))
 	bot.set_stand_height(HEART_HEIGHT, 0.35)
 	bot.walk_speed = 2.6
 	bot.sprint_speed = 3.2

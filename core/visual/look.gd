@@ -307,6 +307,15 @@ const SKINS := {
 		"bare": true, "beam": true, "beam_color": Color(0.25, 0.95, 0.9),
 		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
 	},
+	# A core colossus: the same machine as the deepest guard, in dark plate,
+	# its core bared in a cage of ribs on its chest, a crown of lit vents
+	# behind its head, horns and a third layer of shoulder plate
+	# ("core_chassis", `ActorSkin._build_android`).
+	"core_colossus": {
+		"scenes": ["Stan.glb"], "height": 3.9, "hide": ["Stan"], "chassis": "android", "heavy_chassis": true,
+		"core_chassis": true, "bare": true, "beam": true, "beam_color": Color(0.35, 0.8, 1.0),
+		"anims": {"idle": "Idle", "walk": "Walk", "run": "Run", "death": "Death", "attack": "Punch"},
+	},
 	# Wildlife (DESIGN.md "Spore Marsh"): beasts of their own, built in code
 	# like the walker ("creature": `ActorSkin._build_creature`) round the
 	# scene's walking skeleton, whose mesh is hidden. They carry no weapon

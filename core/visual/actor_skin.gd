@@ -737,7 +737,7 @@ func _ready() -> void:
 	if def.get("suit", false):
 		_build_exo_suit()
 	if def.get("chassis", "") == "android":
-		_build_android(def.get("heavy_chassis", false))
+		_build_android(def.get("heavy_chassis", false), def.get("core_chassis", false))
 	if def.get("regalia", "") != "":
 		_build_regalia(str(def["regalia"]))
 	if def.get("gear", "") != "":
@@ -3270,13 +3270,18 @@ func _build_exo_suit() -> void:
 ## the body's colour. The right forearm is the weapon (`_update_arm_weapon`);
 ## the left ends in a three-clawed hand. A colossus (`heavy`) is broader,
 ## with layered shoulders, a reactor on its back and a missile pod over the
-## left shoulder. Everything hangs on the bone it moves with.
-func _build_android(heavy: bool) -> void:
+## left shoulder. A core colossus (`core`, the deepest guard) is a heavy
+## one in dark plate instead of pale: its core bared in the chest, a large
+## lit sphere in a cage of ribs, a crown of lit vents fanned up behind its
+## head, a third layer on each shoulder, swept horns on its helm and
+## pectoral slabs, so it reads as a different machine from any distance.
+## Everything hangs on the bone it moves with.
+func _build_android(heavy: bool, core := false) -> void:
 	if _skeleton == null:
 		return
 	var k := float(_def.get("height", 2.2)) / 2.2
 	var bulk := 1.25 if heavy else 1.0
-	var shell := _solid(Color(0.8, 0.82, 0.85), 0.0)
+	var shell := _solid(Color(0.8, 0.82, 0.85) if not core else Color(0.2, 0.23, 0.28), 0.0)
 	shell.metallic = 0.2
 	shell.roughness = 0.32
 	var frame := _solid(Color(0.1, 0.105, 0.12), 0.0)
@@ -3334,10 +3339,13 @@ func _build_android(heavy: bool) -> void:
 	_block(torso, "Inset", frame, lo + 0.04 * k, [-0.08 * w, 0.08 * w, -0.153 * w, -0.1 * w],
 			hi - 0.06 * k, [-0.12 * w, 0.12 * w, -0.163 * w, -0.1 * w])
 	var core_y := lerpf(lo, hi, 0.6)
-	var core := _piece(torso, "Core", tube, lit, Vector3(0, core_y, -0.17 * w), Vector3(0.09, 0.02, 0.09) * w)
-	core.rotation.x = PI * 0.5
-	var rim := _piece(torso, "CoreRim", tube, joint, Vector3(0, core_y, -0.163 * w), Vector3(0.13, 0.02, 0.13) * w)
-	rim.rotation.x = PI * 0.5
+	if core:
+		_build_bared_core(torso, Vector3(0, core_y, -0.16 * w), w, joint, lit)
+	else:
+		var heart := _piece(torso, "Core", tube, lit, Vector3(0, core_y, -0.17 * w), Vector3(0.09, 0.02, 0.09) * w)
+		heart.rotation.x = PI * 0.5
+		var rim := _piece(torso, "CoreRim", tube, joint, Vector3(0, core_y, -0.163 * w), Vector3(0.13, 0.02, 0.13) * w)
+		rim.rotation.x = PI * 0.5
 	for side: float in [-1.0, 1.0]:
 		var seam := _piece(torso, "Seam", BoxMesh.new(), lit, Vector3(side * 0.2 * w, lerpf(lo, hi, 0.5), -0.135 * w),
 				Vector3(0.012 * w, (hi - lo) * 0.8, 0.012 * w))
@@ -3350,12 +3358,23 @@ func _build_android(heavy: bool) -> void:
 	for side: float in [-1.0, 1.0]:
 		_piece(torso, "Vent", BoxMesh.new(), lit, Vector3(side * 0.07 * w, lerpf(lo, hi, 0.45), 0.215 * w),
 				Vector3(0.04, (hi - lo) * 0.45, 0.01) * w)
+	if core:
+		# Pectoral slabs angled over the upper chest, either side of the core.
+		for side: float in [-1.0, 1.0]:
+			var slab := _piece(torso, "Pectoral", BoxMesh.new(), shell, Vector3(side * 0.13 * w, hi - 0.1 * k, -0.175 * w),
+					Vector3(0.14, 0.1, 0.03) * w)
+			slab.rotation = Vector3(-0.25, side * 0.3, side * 0.15)
+			_piece(torso, "PectoralEdge", BoxMesh.new(), lit, Vector3(side * 0.13 * w, hi - 0.155 * k, -0.19 * w),
+					Vector3(0.12, 0.01, 0.012) * w).rotation = Vector3(-0.25, side * 0.3, side * 0.15)
+		_build_vent_crown(torso, hi, w, k, frame, joint, lit)
 	if heavy:
 		# A reactor drum on the back, lit through its grille, and a pod of
-		# missiles over the left shoulder.
+		# missiles over the left shoulder (a core colossus's crown stands
+		# there instead).
 		var drum := _piece(torso, "Reactor", tube, joint, Vector3(0, lerpf(lo, hi, 0.55), 0.3 * w), Vector3(0.26, 0.3, 0.26) * w)
 		drum.rotation.x = PI * 0.5
 		_piece(torso, "ReactorGlow", tube, lit, Vector3(0, lerpf(lo, hi, 0.55), 0.45 * w), Vector3(0.18, 0.01, 0.18) * w).rotation.x = PI * 0.5
+	if heavy and not core:
 		var pod_side := signf(_rest_at("UpperArm.L").x)
 		var pod_at := Vector3(pod_side * 0.2 * w, hi + 0.12 * k, 0.06 * w)
 		_piece(torso, "Pod", BoxMesh.new(), shell, pod_at, Vector3(0.2, 0.15, 0.24) * w)
@@ -3374,7 +3393,14 @@ func _build_android(heavy: bool) -> void:
 	_block(helm, "Face", frame, h0 + 0.005 * k, [-0.1 * k, 0.1 * k, -0.165 * k, -0.07 * k],
 			h0 + 0.12 * k, [-0.095 * k, 0.095 * k, -0.15 * k, -0.07 * k])
 	_piece(helm, "Visor", BoxMesh.new(), lit, Vector3(0, h0 + 0.16 * k, -0.135 * k), Vector3(0.19, 0.035, 0.03) * k)
-	_piece(helm, "Crest", BoxMesh.new(), paint, Vector3(0, h1 + 0.02 * k, 0.03 * k), Vector3(0.03, 0.06, 0.24) * k)
+	if core:
+		# Two horns swept back from the brow in place of the crest.
+		for side: float in [-1.0, 1.0]:
+			_strand(helm, "Horn", tube, joint, Vector3(side * 0.08 * k, h1 - 0.02 * k, -0.04 * k),
+					Vector3(side * 0.17 * k, h1 + 0.14 * k, 0.16 * k), 0.035 * k)
+			_piece(helm, "HornTip", tube, lit, Vector3(side * 0.17 * k, h1 + 0.14 * k, 0.16 * k), Vector3(0.03, 0.03, 0.03) * k)
+	else:
+		_piece(helm, "Crest", BoxMesh.new(), paint, Vector3(0, h1 + 0.02 * k, 0.03 * k), Vector3(0.03, 0.06, 0.24) * k)
 	for side: float in [-1.0, 1.0]:
 		var ear := _piece(helm, "Ear", tube, joint, Vector3(side * 0.12 * k, h0 + 0.12 * k, 0.02 * k), Vector3(0.08, 0.035, 0.08) * k)
 		ear.rotation.z = PI * 0.5
@@ -3399,6 +3425,13 @@ func _build_android(heavy: bool) -> void:
 			var under := _piece(guard, "ShoulderLower", BoxMesh.new(), shell, Vector3(out.x * 0.05 * w, -0.1 * w, 0),
 					Vector3(0.2, 0.08, 0.24) * w)
 			under.rotation.z = out.x * -0.55
+		if core:
+			var third := _piece(guard, "ShoulderLowest", BoxMesh.new(), shell, Vector3(out.x * 0.09 * w, -0.18 * w, 0),
+					Vector3(0.17, 0.07, 0.22) * w)
+			third.rotation.z = out.x * -0.8
+			var spike := _piece(guard, "ShoulderSpike", BoxMesh.new(), joint, Vector3(0, size.y * 0.6, 0.03 * w),
+					Vector3(0.04, 0.12, 0.14) * w)
+			spike.rotation.x = -0.3
 		_hang_at(guard, "AndroidShoulder" + side, "UpperArm." + side, shoulder + out * 0.04 * w + Vector3(0, 0.08 * w, 0))
 		_limb("UpperArm." + side, "LowerArm." + side, Vector3.ZERO, Vector2(0.08, 0.08) * w, frame, 0.0, 1.0, true)
 		_limb("UpperArm." + side, "LowerArm." + side, Vector3.ZERO, Vector2(0.15, 0.15) * w, shell, 0.15, 0.8)
@@ -3439,6 +3472,53 @@ func _build_android(heavy: bool) -> void:
 		for piece in boot.get_children():
 			(piece as Node3D).position += heel_side
 		_hang_at(boot, "AndroidBoot" + side, "Foot." + side, Vector3.ZERO)
+
+
+## A core colossus's bared core at `at` on its chest: a lit sphere set
+## into the carapace, a dark socket round it and ribs caging it.
+func _build_bared_core(torso: Node3D, at: Vector3, w: float, joint: Material, lit: Material) -> void:
+	var ball := SphereMesh.new()
+	ball.radius = 0.5
+	ball.height = 1.0
+	ball.radial_segments = 16
+	ball.rings = 8
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.42
+	ring.outer_radius = 0.5
+	ring.rings = 16
+	ring.ring_segments = 6
+	_piece(torso, "CoreSocket", ring, joint, at + Vector3(0, 0, 0.005 * w), Vector3(0.3, 0.3, 0.3) * w).rotation.x = PI * 0.5
+	_piece(torso, "Core", ball, lit, at, Vector3(0.2, 0.2, 0.16) * w)
+	var bar := CylinderMesh.new()
+	bar.top_radius = 0.5
+	bar.bottom_radius = 0.5
+	bar.height = 1.0
+	bar.radial_segments = 6
+	for i in 6:
+		var a := TAU * i / 6.0 + PI / 6.0
+		var rim := at + Vector3(cos(a), sin(a), 0) * 0.14 * w
+		var over := at + Vector3(cos(a) * 0.05, sin(a) * 0.05, -0.12) * w
+		_strand(torso, "CoreRib", bar, joint, rim, over, 0.022 * w)
+
+
+## A core colossus's crown: lit vents fanned up behind its head from the
+## top of the carapace, the middle one tallest, on a graphite collar.
+func _build_vent_crown(torso: Node3D, hi: float, w: float, k: float, frame: Material, joint: Material,
+		lit: Material) -> void:
+	_block(torso, "CrownBase", frame, hi - 0.02 * k, [-0.2 * w, 0.2 * w, 0.06 * w, 0.2 * w],
+			hi + 0.06 * k, [-0.17 * w, 0.17 * w, 0.08 * w, 0.18 * w])
+	for i in 5:
+		var spread := (i - 2) / 2.0
+		var tall := (0.5 - absf(spread) * 0.12) * k
+		# Each vent's pieces are laid in its own tilted frame but hung
+		# straight on the carapace, so they merge with it (`Look.merge_pieces`).
+		var vent := Transform3D(Basis.from_euler(Vector3(0.22, 0.0, -spread * 0.5)),
+				Vector3(spread * 0.17 * w, hi + 0.04 * k, 0.14 * w))
+		for piece: Array in [["Vent", joint, Vector3(0, tall * 0.5, 0), Vector3(0.05 * w, tall, 0.07 * w)],
+				["VentGlow", lit, Vector3(0, tall * 0.55, -0.036 * w), Vector3(0.022 * w, tall * 0.75, 0.006 * w)],
+				["VentTip", lit, Vector3(0, tall + 0.01 * k, 0), Vector3(0.055 * w, 0.02 * k, 0.075 * w)]]:
+			var part := _piece(torso, piece[0], BoxMesh.new(), piece[1], Vector3.ZERO, Vector3.ONE)
+			part.transform = vent * Transform3D(Basis.from_scale(piece[3]), piece[2])
 
 
 ## The parts the android was built of, for its arm weapon.

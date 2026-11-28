@@ -344,9 +344,15 @@ date in the same PR.
   "raider" or the civilians' "scavenger". A Legion Marksman's rifle shows
   a long scope (`Gun.attachments` set without `fit`, so its stats leave
   the tuning alone). View only.
-- Frostline's automata ("sentinel", "colossus") are a body built in code
-  round Stan's walking skeleton, its mesh hidden ("chassis": "android",
-  `ActorSkin._build_android`, "heavy_chassis" for the colossus). The
+- Frostline's automata ("sentinel", "colossus", "core_colossus") are a
+  body built in code round Stan's walking skeleton, its mesh hidden
+  ("chassis": "android", `ActorSkin._build_android`, "heavy_chassis" for
+  the colossus). "core_chassis" (the Heart Warden's "core_colossus") is a
+  heavy one in dark plate with its core bared in a cage of ribs, a crown
+  of vents behind the head instead of the missile pod, horns instead of
+  the crest and a third shoulder layer, so the last boss never reads as
+  the Sentinel grown taller; the crown's vents are laid as pieces of the
+  carapace, not child nodes, so they merge with it. The
   weapon is the right forearm (`_update_arm_weapon`, rebuilt when the
   weapon changes): a gun housing with a barrel, lit coils and an
   "ArmMuzzle" (set on the gun's visual as "drawn_muzzle", so

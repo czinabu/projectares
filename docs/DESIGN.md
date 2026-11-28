@@ -1265,8 +1265,12 @@ Ferals. Caleb chose a mix instead:
   Engine Sentinel and the Heart Warden are the station's automata, built
   in code as sleek androids (pale ceramic shells, lit seams and visor),
   their weapon built into the right forearm, a gun arm that comes up along
-  the aim or a blade. The colossus is broader, with a reactor and a
-  missile pod, and a lance for a forearm.
+  the aim or a blade. The colossus (the Engine Sentinel) is broader,
+  with a reactor and a missile pod, and a lance for a forearm. The Heart
+  Warden, the Engine's last fight, is a machine of its own to look at:
+  dark plate where the others are pale, its core bared in a cage of ribs
+  on its chest, a crown of lit vents fanned up behind its head, horns and
+  a third layer of shoulder plate.
 - **Armies are told apart by uniform, never by people.** Both of
   Ashfront's armies draw from every skin tone; the Legion wears navy and
   grey, the Tide rust and tan, and a faction's tint dresses clothes and
