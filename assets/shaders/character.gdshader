@@ -70,8 +70,8 @@ uniform vec3 suit_second : source_color = vec3(0.04, 0.042, 0.045);
 // joint is), (the arm's height and front, how far out the elbow and wrist
 // are), (how far out a leg is, the knee's and ankle's heights, its front).
 uniform vec4 suit_trunk = vec4(0.949, 1.311, 1.52, 0.212);
-uniform vec4 suit_arm = vec4(1.4555, 0.065, 0.463, 0.7065);
-uniform vec4 suit_leg = vec4(0.114, 0.542, 0.087, 0.036);
+uniform vec4 suit_arm = vec4(1.4555, -0.065, 0.463, 0.7065);
+uniform vec4 suit_leg = vec4(0.114, 0.542, 0.087, -0.036);
 varying vec4 rest;
 // Storm readability. Godot drops its own fog once FOG is written, so this
 // repeats that curve and then keeps less of it up close. `storm_pop` is 1

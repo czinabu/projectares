@@ -416,7 +416,8 @@ static func second_shade(cloth: Color, contrast: float) -> Color:
 
 ## Where a build's body is at rest, for the suit's styles to sit on
 ## (`character.gdshader` `suit_trunk`, `suit_arm`, `suit_leg`), from the
-## measured bones (`BodyFitData`).
+## measured bones (`BodyFitData`). Those are in the actor's frame (front
+## -Z); the rest body the shader reads is front +Z, so depths are flipped.
 static func body_marks(build: String) -> Dictionary:
 	var data: Dictionary = BodyFitData.DATA.get(build, BodyFitData.DATA["m"])
 	var bones: Dictionary = data["bones"]
@@ -424,6 +425,6 @@ static func body_marks(build: String) -> Dictionary:
 	var leg: Vector3 = bones["UpperLeg"]
 	return {
 		"suit_trunk": Vector4(bones["Hips"].y, bones["Chest"].y, bones["Neck"].y, absf(arm.x)),
-		"suit_arm": Vector4(arm.y, arm.z, absf(bones["LowerArm"].x), absf(bones["Wrist"].x)),
-		"suit_leg": Vector4(absf(leg.x), bones["LowerLeg"].y, bones["Foot"].y, leg.z),
+		"suit_arm": Vector4(arm.y, -arm.z, absf(bones["LowerArm"].x), absf(bones["Wrist"].x)),
+		"suit_leg": Vector4(absf(leg.x), bones["LowerLeg"].y, bones["Foot"].y, -leg.z),
 	}
