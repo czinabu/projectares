@@ -34,6 +34,12 @@ var mote_count := 90
 var mote_speed := 0.55
 ## The cut of a gate's corners (m): the gates are octagons, like the logo.
 var gate_chamfer := 2.6
+## Faint octagonal ribs between the gates, this many to a gap: they fill the lane in
+## and make it feel like one continuous portal.
+var ribs_per_gap := 6
+## The glitch in them: how far a rib slips sideways (m), and the share of its bars that drop out.
+var rib_slip := 0.35
+var rib_dropout := 0.18
 var fov := 52.0
 var jump_fov := 100.0
 ## The slow sway of the view as it drifts, so it never feels on rails.
@@ -57,6 +63,10 @@ var _gates: Array[Node3D] = []
 var _streaks: MultiMeshInstance3D
 var _streak_spots: PackedVector3Array = []
 var _motes: MultiMeshInstance3D
+var _ribs: MultiMeshInstance3D
+var _rib_z: PackedFloat32Array = []
+var _rib_bars: Array[Transform3D] = []
+var _rib_slips: PackedVector2Array = []
 var _mote_spots: PackedVector3Array = []
 var _env: Environment
 var _time := 0.0
@@ -81,6 +91,7 @@ func _ready() -> void:
 		add_child(gate)
 		_gates.append(gate)
 	_build_streaks()
+	_build_ribs()
 	_build_motes()
 	_build_rails()
 
@@ -108,6 +119,7 @@ func advance(distance: float) -> void:
 		while gate.position.z > gate_spacing * 0.5:
 			gate.position.z -= lane
 			_relabel(gate)
+	_advance_ribs(distance)
 	if _streaks == null:
 		return
 	var stretch := 1.0 + jump_amount * 14.0
@@ -263,6 +275,73 @@ func _build_streaks() -> void:
 	add_child(_streaks)
 	advance(0.0)
 
+
+
+## Thin, see-through octagon frames spaced between the gates, all in one multimesh.
+func _build_ribs() -> void:
+	var w := gate_size.x
+	var h := gate_size.y
+	var c := gate_chamfer
+	var bar := 0.05
+	# The eight bars of one rib as unit-box transforms: four sides and four corner cuts.
+	var bars: Array[Transform3D] = []
+	bars.append(Transform3D(Basis.from_scale(Vector3(bar, h - 2.0 * c, bar)), Vector3(-w * 0.5, 0, 0)))
+	bars.append(Transform3D(Basis.from_scale(Vector3(bar, h - 2.0 * c, bar)), Vector3(w * 0.5, 0, 0)))
+	bars.append(Transform3D(Basis.from_scale(Vector3(w - 2.0 * c, bar, bar)), Vector3(0, -h * 0.5, 0)))
+	bars.append(Transform3D(Basis.from_scale(Vector3(w - 2.0 * c, bar, bar)), Vector3(0, h * 0.5, 0)))
+	for sx: float in [-1.0, 1.0]:
+		for sy: float in [-1.0, 1.0]:
+			var basis := Basis(Vector3.BACK, deg_to_rad(45.0) * -sx * sy) * Basis.from_scale(Vector3(c * 1.4142, bar, bar))
+			bars.append(Transform3D(basis, Vector3(sx * (w * 0.5 - c * 0.5), sy * (h * 0.5 - c * 0.5), 0)))
+	_rib_bars = bars
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3.ONE
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.vertex_color_use_as_albedo = true
+	material.albedo_color = Color.WHITE
+	mesh.material = material
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.mesh = mesh
+	multimesh.instance_count = gate_count * ribs_per_gap * bars.size()
+	# An echo of each gate trailing away from it: the ribs nearest a gate are the
+	# strongest and they fade toward the next one. Each slips a little sideways and
+	# loses a few bars, so the echo glitches.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5519
+	for g in gate_count:
+		for r in ribs_per_gap:
+			var along := float(r + 1) / float(ribs_per_gap + 1)
+			_rib_z.append(-gate_spacing * (g + 1.0 + along))
+			_rib_slips.append(Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-0.4, 0.4)) * rib_slip)
+			var strength := 0.34 * pow(1.0 - along, 1.6) + 0.04
+			for j in bars.size():
+				var alpha := 0.0 if rng.randf() < rib_dropout else strength * rng.randf_range(0.6, 1.0)
+				multimesh.set_instance_color((g * ribs_per_gap + r) * bars.size() + j, Color(CYAN.r, CYAN.g, CYAN.b, alpha))
+	_ribs = MultiMeshInstance3D.new()
+	_ribs.multimesh = multimesh
+	_ribs.custom_aabb = AABB(Vector3(-w, -h, -gate_spacing * gate_count - 10.0), Vector3(2.0 * w, 2.0 * h, gate_spacing * gate_count + 20.0))
+	add_child(_ribs)
+	_advance_ribs(0.0)
+
+
+func _advance_ribs(distance: float) -> void:
+	if _ribs == null:
+		return
+	var lane := gate_spacing * gate_count
+	var multimesh := _ribs.multimesh
+	for i in _rib_z.size():
+		var z := _rib_z[i] + distance
+		while z > gate_spacing * 0.5:
+			z -= lane
+		_rib_z[i] = z
+		for j in _rib_bars.size():
+			var t := _rib_bars[j]
+			t.origin += Vector3(_rib_slips[i].x, _rib_slips[i].y, z)
+			multimesh.set_instance_transform(i * _rib_bars.size() + j, t)
 
 
 ## Dust motes through the whole cross-section of the lane, amber and cyan, dim.

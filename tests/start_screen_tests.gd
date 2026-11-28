@@ -48,6 +48,14 @@ static func run(t: Node) -> void:
 	var names := Worlds.raid_worlds().map(func(w: WorldDef) -> String: return w.display_name.to_upper())
 	t.check(not signs.is_empty() and signs.all(func(t: String) -> bool: return t in names),
 			"some gates carry the names of the worlds you can deploy to")
+	# Between the gates, fainter octagon ribs fill the lane, and they go round too.
+	var ribs: MultiMeshInstance3D = backdrop.get("_ribs")
+	t.check(ribs != null and ribs.multimesh.instance_count == backdrop.gate_count * backdrop.ribs_per_gap * 8,
+			"fainter ribs fill the lane between the gates")
+	var rib_z: PackedFloat32Array = backdrop.get("_rib_z")
+	t.check(rib_z.size() == backdrop.gate_count * backdrop.ribs_per_gap
+			and Array(rib_z).all(func(z: float) -> bool: return z <= backdrop.gate_spacing * 0.5 and z > -lane),
+			"the ribs stay inside the lane as it runs")
 	backdrop.jump_time = 0.1
 	await backdrop.jump()
 	await t.frames(1)
