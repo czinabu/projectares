@@ -365,7 +365,26 @@ var _pending_switch := -1
 ## The zoom level asked of a helmet with binoculars. The visor key steps it.
 var _visor_level := 0
 var _rng := RandomNumberGenerator.new()
-var _thrust_audio: AudioStreamPlayer
+## The wind past your ears at speed, in the air or on a skate (the style
+## pass): from `air_rush_from` m/s, full by `air_rush_full`.
+var _air_rush: AudioStreamPlayer
+var air_rush_from := 9.0
+var air_rush_full := 30.0
+## Flight's camera motion in first person (the style pass, Caleb's call):
+## the view rolls with the wings' bank (`flight_bank_roll` of it) and a
+## skate's carve (`skate_carve_roll`), sways `skate_sway_deg` with a skate's
+## strides, and a jetpack boost rumbles (`boost_rumble_deg`) after a jolt as
+## it lights (`boost_jolt_deg`). Camera only, so the body is the same in
+## both views; scaled by the phone's `GameSettings.flight_camera_motion`,
+## and never in third person, where the body shows it.
+var flight_bank_roll := 0.33
+var skate_carve_roll := 0.25
+var skate_sway_deg := 1.0
+var boost_rumble_deg := 0.18
+var boost_jolt_deg := 0.8
+var _flight_roll := 0.0
+var _flight_rumble := Vector2.ZERO
+var _was_boosting := false
 ## Fades hostile bodies the eyes cannot see out of the third-person view.
 var peek_fade := PeekFade.new()
 ## Kick still on its way to the view (x pitch, y yaw, radians), the kick the
@@ -420,12 +439,14 @@ func _ready() -> void:
 	actor.hit_confirmed.connect(_on_hit_confirmed)
 	actor.health.damaged.connect(_on_damaged)
 	actor.landed.connect(_on_landed)
-	var thrust_stream := Sfx.get_stream("thrust")
-	if thrust_stream:
-		_thrust_audio = AudioStreamPlayer.new()
-		_thrust_audio.stream = thrust_stream
-		_thrust_audio.volume_db = -10.0
-		add_child(_thrust_audio)
+	# A rig's own voice comes from the body (`ActorSkin._update_rig_voice`);
+	# here only the wind past your ears.
+	var rush_stream := Sfx.get_stream("air_rush")
+	if rush_stream:
+		_air_rush = AudioStreamPlayer.new()
+		_air_rush.stream = rush_stream
+		_air_rush.volume_db = -60.0
+		add_child(_air_rush)
 
 
 func _exit_tree() -> void:
@@ -1466,19 +1487,15 @@ func _process(delta: float) -> void:
 		var k := smoothstep(0.0, 1.0, _mirror_look)
 		view_yaw = lerp_angle(yaw, _mirror_frame.x, k)
 		view_pitch = lerpf(view_pitch, _mirror_frame.y, k)
-	var look := Basis.from_euler(Vector3(view_pitch + _shake.y, view_yaw + _shake.x, 0.0))
+	_update_flight_motion(delta)
+	var look := Basis.from_euler(Vector3(view_pitch + _shake.y + _flight_rumble.y, view_yaw + _shake.x + _flight_rumble.x, 0.0))
 	var pivot := actor.get_eye_position() - Vector3(0.0, _dip, 0.0)
 	_shoulder_aim = move_toward(_shoulder_aim, 1.0 if aiming else 0.0, shoulder_rate * delta)
 	var desired := pivot + _third_person_offset(look, pivot, delta)
-	camera.global_transform = Transform3D(look, desired)
+	camera.global_transform = Transform3D(look * Basis(Vector3.BACK, _flight_roll * _eyes_weight), desired)
 	_dress_view(delta)
 	peek_fade.update(actor, camera, peek_rule_applies() and is_third_person(), delta)
-	if _thrust_audio:
-		var thrusting := actor.flight.is_thrusting and not actor.is_dead
-		if thrusting and not _thrust_audio.playing:
-			_thrust_audio.play()
-		elif not thrusting and _thrust_audio.playing:
-			_thrust_audio.stop()
+	_update_air_rush()
 	var first_person := not actor.is_dead and pivot.distance_to(desired) <= 0.7
 	var skin := actor.get_node_or_null("Skin")
 	# First person looks out of the model's own eyes (`ActorSkin.eye_point`),
@@ -1726,6 +1743,45 @@ func feel_blast(at: Vector3) -> void:
 	if near <= 0.0:
 		return
 	kick_view(Vector2(_rng.randf_range(-0.6, 0.6), -1.0) * deg_to_rad(blast_kick_deg) * near * near)
+
+
+## Works out flight's camera motion for this frame (see `flight_bank_roll`):
+## the roll, eased, and the boost's rumble. Only the first-person camera
+## takes it (`_eyes_weight`).
+func _update_flight_motion(delta: float) -> void:
+	var amount := clampf(GameSettings.flight_camera_motion, 0.0, 1.0)
+	var skin := actor.get_node_or_null("Skin")
+	var roll := 0.0
+	var rumble := 0.0
+	if amount > 0.0 and skin != null and skin.has_method("flight_bank") and not actor.is_dead:
+		roll = float(skin.call("flight_bank")) * flight_bank_roll + float(skin.call("skate_carve")) * skate_carve_roll
+		var stride: float = skin.call("stride_phase")
+		if not is_nan(stride):
+			roll += sin(stride) * deg_to_rad(skate_sway_deg)
+		rumble = float(skin.call("boost_push"))
+	var boosting := actor.flight.is_boosting and not actor.is_dead
+	if boosting and not _was_boosting and amount > 0.0:
+		# The pack lights: the view is pushed back a little.
+		kick_view(Vector2(0.0, deg_to_rad(boost_jolt_deg) * amount))
+	_was_boosting = boosting
+	_flight_roll = lerpf(_flight_roll, roll * amount, 1.0 - exp(-8.0 * delta))
+	var shake := deg_to_rad(boost_rumble_deg) * rumble * amount
+	_flight_rumble = Vector2(_rng.randf_range(-shake, shake), _rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
+
+
+## The wind past your ears: louder and higher the faster you fly or skate.
+func _update_air_rush() -> void:
+	if _air_rush == null:
+		return
+	var moving := not actor.is_dead and actor.vehicle == null and (not actor.is_on_floor() or actor.flight.is_skating)
+	var share := clampf((actor.velocity.length() - air_rush_from) / maxf(air_rush_full - air_rush_from, 0.1), 0.0, 1.0) \
+			if moving else 0.0
+	if share > 0.0 and not _air_rush.playing:
+		_air_rush.play()
+	elif share <= 0.0 and _air_rush.playing:
+		_air_rush.stop()
+	_air_rush.volume_db = lerpf(-30.0, -6.0, share)
+	_air_rush.pitch_scale = 0.8 + 0.4 * share
 
 
 ## Jolts the view by `kick` (yaw, pitch in radians); it springs back.

@@ -314,8 +314,10 @@ var noise_lookers := 3
 ## closer; walking or crouched is silent. Jets and engines carry further.
 const STEP_SPRINT := 16.0
 const STEP_JOG := 7.0
-const JETS_HEARD := 30.0
 const ENGINE_HEARD := 40.0
+## The furthest anything is heard from (a jetpack at work, `FlightRig.noise`):
+## how far a listening bot looks round for noise at all.
+const LOUDEST_HEARD := 60.0
 ## Seconds an alerted bot faces a sound it is not going to look at.
 var alert_time := 4.0
 ## A callout: a bot that spots a person tells its faction within this range
@@ -1578,7 +1580,7 @@ func _find_target() -> Actor:
 			if weather != null and storm_bold > 0.0 else 1.0
 	var sight := sight_range * storm_boost
 	var listening := state != State.ATTACK
-	var reach := maxf(sight, ENGINE_HEARD) if listening else sight
+	var reach := maxf(sight, LOUDEST_HEARD) if listening else sight
 	var heard_dist := INF
 	_heard_at = Vector3.INF
 	_heard_from = null
@@ -1713,13 +1715,16 @@ func _outside_warmth(dest: Vector3) -> Vector3:
 
 
 ## How far off a bot hears `other` move (0: silent): an occupied vehicle's
-## engine, a flight rig's jets, or footsteps by pace. Walking, crouching and
-## gliding make no sound worth turning for.
+## engine, a flight rig at work (`FlightRig.noise`), or footsteps by pace.
+## Walking and crouching make no sound worth turning for.
 static func noise_of(other: Actor) -> float:
 	if other.vehicle != null:
 		return ENGINE_HEARD
-	if other.flight != null and other.flight.is_hovering:
-		return JETS_HEARD
+	# A flight rig at work is heard as far as the rig carries (its
+	# `noise_range`: the jetpack loud, the wings a rush, boots quiet).
+	var rig := other.flight.noise() if other.flight != null else 0.0
+	if rig > 0.0:
+		return rig
 	if not other.is_on_floor() or other.crouched:
 		return 0.0
 	var pace := Vector2(other.velocity.x, other.velocity.z).length()

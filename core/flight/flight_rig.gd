@@ -142,7 +142,7 @@ var glide_dive_fall := 10.0
 var glide_dive_accel := 5.0
 var glide_drag := 2.0
 var glide_stall := 0.6
-var glide_climb_cost := 14.0
+var glide_climb_cost := 15.0
 var glide_recover := 6.0
 var glide_lift_accel := 36.0
 ## How hard the wings catch a fall or a dive back to the glide's own sink, in
@@ -215,6 +215,14 @@ var skate_lift := 6.0
 ## `soar_climb` m/s. 0 accel: no soar.
 var soar_accel := 0.0
 var soar_climb := 4.0
+## Boots' wall kick (Caleb's call, the style pass): jump in the air beside a
+## wall kicks up at `wall_kick` m/s and away from it at `wall_kick_push`,
+## free, once a time in the air (`Actor._wall_kick`). 0 for none.
+var wall_kick := 0.0
+var wall_kick_push := 0.0
+## How far away bots hear this rig at work (`noise`, `BotBrain.noise_of`),
+## in meters: the jetpack loud, the wings a rush of air, boots quiet.
+var noise_range := 0.0
 ## Every rig: pressing sprint in the air dashes the way the move keys point
 ## (forward with none held). The dash adds `air_dash_speed` that way on top
 ## of how the rig is flying for `air_dash_time`, then takes it back off, so
@@ -367,6 +375,16 @@ func skim(delta: float, height: float) -> void:
 ## Which band a skim is in: 0 cool (low), 1 warm, 2 burning.
 func skim_band() -> int:
 	return 0 if skim_height < skim_low else (1 if skim_height < skim_high else 2)
+
+
+## How far away this rig is heard right now: its `noise_range` while it
+## works (jets lit, a glide, a skate or skim, a kick's burst), else 0.
+func noise() -> float:
+	if not enabled:
+		return 0.0
+	if is_thrusting or is_hovering or is_boosting or is_gliding or is_skating or is_skimming:
+		return noise_range
+	return 0.0
 
 
 func can_skate() -> bool:

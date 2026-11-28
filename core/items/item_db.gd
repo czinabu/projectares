@@ -781,7 +781,7 @@ const JETPACK_MK1 := {
 	"heat_per_sec": 12.5, "hover_heat_mult": 1.0, "cruise_heat_mult": 1.0, "climb_heat_mult": 1.3,
 	"boost_heat_mult": 0.18, "cool_per_sec": 25.0, "coast_cool": 25.0, "ceiling": 40.0,
 	"flight_aim": 0.1, "fall_damage_mult": 0.5, "scan_range": 120.0, "indoor_mult": 0.5,
-	"heavy_lift": true, "gust_mult": 0.6, "tier": 1, "weight": 6.0,
+	"heavy_lift": true, "gust_mult": 0.6, "noise_range": 60.0, "tier": 1, "weight": 6.0,
 }
 
 ## Thruster boots: ground agility and stealth. No heat: 4 charges pay for
@@ -795,7 +795,8 @@ const BOOTS_MK1 := {
 	"skim_mid_heat": 0.0, "skim_high_heat": 0.0, "air_dash_speed": 14.0, "air_dash_time": 0.3,
 	"air_dash_heat": 0.0, "air_dash_cooldown": 0.25, "ground_speed_mult": 1.15, "flight_aim": 0.0,
 	"fall_damage_mult": 0.0, "graze_window": 0.2, "scan_range": 30.0, "indoor_mult": 1.0,
-	"ceiling": 10.0, "gust_mult": 0.25, "skate_speed": 18.0, "tier": 1, "weight": 2.0,
+	"ceiling": 10.0, "gust_mult": 0.25, "skate_speed": 18.0, "wall_kick": 9.0, "wall_kick_push": 7.0,
+	"noise_range": 12.0, "tier": 1, "weight": 2.0,
 }
 
 ## Glide wings: distance and speed. A free launch, then a 22 m/s glide that
@@ -813,7 +814,7 @@ const WINGS_MK1 := {
 	"max_charges": 2, "charge_time": 1.0, "charge_on_ground": true,
 	"glide_sidearm_only": true, "slide_landing_speed": 18.0, "ground_speed_mult": 0.95,
 	"flight_aim": 1.5, "fall_damage_mult": 1.0, "scan_range": 80.0, "indoor_mult": 0.0,
-	"ceiling": 40.0, "gust_mult": 1.0, "tier": 1, "weight": 4.0,
+	"ceiling": 40.0, "gust_mult": 1.0, "noise_range": 30.0, "tier": 1, "weight": 4.0,
 }
 
 ## What a higher tier improves on each rig: its strength only (see
