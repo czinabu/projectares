@@ -93,7 +93,7 @@ static func _test_lane(t: Node, base: HomeBase, p: Actor) -> void:
 	for target in base.lane_targets:
 		metres.append(int(round(counter_z - target.home.z)))
 	t.check(metres == [4, 8, 12] and (base.range_sign.get_node("Name") as Label3D).text == "TEST LANE", "plates at 4, 8 and 12 m from the counter, under a lane sign")
-	t.check(not p.weapons_locked, "weapons are free in the lane")
+	t.check(not p.fire_safe, "weapons are free in the lane")
 	var plate: HomeBase.RangeTarget = base.lane_targets[0]
 	p.global_position = base.to_global(Vector3(plate.home.x, 0.1, counter_z + 1.0))
 	p.velocity = Vector3.ZERO

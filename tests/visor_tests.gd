@@ -607,7 +607,7 @@ static func _safe_zones(t: Node) -> void:
 	t.add_child(base)
 	await t.frames(10)
 	var p := base.player
-	t.check(p.weapons_locked and p.visor.mode == "zoom", "at home the helmet is worn and weapons are locked")
+	t.check(p.fire_safe and p.visor.mode == "zoom", "at home the helmet is worn and weapons are on safety")
 	p.cmd.visor_level = 1
 	await t.frames(2)
 	t.check(p.visor.is_zoomed(), "binoculars zoom at home")
