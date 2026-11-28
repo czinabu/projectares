@@ -56,6 +56,11 @@ const MAX_NAME := 20
 const MIN_SECRET := 16
 ## How long a sign-in token is good for, in seconds (see `sign_in_with`).
 const TOKEN_LIFE := 12.0 * 3600.0
+## Recovery codes (`make_recovery_code`): letters and digits that cannot be
+## mistaken for each other (no 0/O, 1/I/L), 16 of them in groups of 4. 32
+## letters make 80 random bits, far past guessing.
+const RECOVERY_LETTERS := "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+const RECOVERY_LENGTH := 16
 
 ## The folder accounts live in: the SQLite database `accounts.sqlite`
 ## (`AccountStore`), beside the clan and phone records. Old one-file-per-account
@@ -133,6 +138,9 @@ class Account:
 	var shown_name := ""
 	var salt := ""
 	var secret_hash := ""
+	## The hash of the account's recovery code (`make_recovery_code`), or ""
+	## when it has none. Only the hash is kept: the code is shown once.
+	var recovery_hash := ""
 	var stash: Array[String] = []
 	## Slot name (see Loadout.SLOTS) -> item id.
 	var loadout := {}
@@ -186,6 +194,7 @@ class Account:
 			"name": shown_name,
 			"salt": salt,
 			"secret_hash": secret_hash,
+			"recovery_hash": recovery_hash,
 			"stash": stash,
 			"loadout": loadout,
 			StashRules.BARE_KEY: true,
@@ -216,6 +225,7 @@ class Account:
 		shown_name = str(data.get("name", id)).left(MAX_NAME)
 		salt = str(data.get("salt", ""))
 		secret_hash = str(data.get("secret_hash", ""))
+		recovery_hash = str(data.get("recovery_hash", ""))
 		stash.clear()
 		var saved_stash: Variant = data.get("stash", [])
 		if typeof(saved_stash) == TYPE_ARRAY:
@@ -295,6 +305,10 @@ static func id_for_name(shown_name: String) -> String:
 ##   "secret"  {"name", "secret"}: the name and the secret the game made
 ##             (`sign_in`). The account is made the first time a name is seen.
 ##   "token"   {"token"}: a token an earlier sign-in handed out (below).
+##   "recovery" {"name", "code", "secret"}: the account's recovery code, from
+##             a computer whose game holds another secret (`recover`). The
+##             account takes on that secret, so the old computer's stops
+##             working, and the code is used up.
 ## A new way to sign in (a store login such as Steam, checked with the
 ## store's web service) is a new method here that ends in an account id, and
 ## nothing past this call changes: everything else is keyed by that id.
@@ -315,6 +329,12 @@ func sign_in_with(credentials: Dictionary) -> Dictionary:
 			return result
 		"token":
 			return verify(str(credentials.get("token", "")).left(256))
+		"recovery":
+			var recovered := recover(str(credentials.get("name", "")).left(64), str(credentials.get("code", "")).left(64),
+					str(credentials.get("secret", "")).left(256))
+			if recovered.ok:
+				recovered["token"] = _issue_token(recovered.account_id)
+			return recovered
 	return _fail("This server does not know that way of signing in.")
 
 
@@ -375,6 +395,69 @@ func sign_in(shown_name: String, secret: String) -> Dictionary:
 	_adopt_host_profile(account, secret)
 	_dev_top_up(account)  # DEV MODE
 	return {"ok": true, "account_id": id, "created": true}
+
+
+## A new recovery code for the account (DESIGN.md section 14, "Sign-in"):
+## {"ok", "code"}, the code written "ABCD-EFGH-JKMN-PQRS". Only its hash is
+## kept, so this is the one time it is shown; a new one replaces the last.
+## Whoever holds it and the account's name can move the account to another
+## computer (`recover`).
+func make_recovery_code(account_id: String) -> Dictionary:
+	var account := load_account(account_id)
+	if account == null:
+		return _fail("No such account.")
+	var bytes := Crypto.new().generate_random_bytes(RECOVERY_LENGTH)
+	var code := ""
+	for i in RECOVERY_LENGTH:
+		# 256 is a multiple of the 32 letters, so each is as likely as the next.
+		code += RECOVERY_LETTERS[bytes[i] % RECOVERY_LETTERS.length()]
+	account.recovery_hash = _hash(account.salt, code)
+	_save(account)
+	return {"ok": true, "code": format_recovery_code(code)}
+
+
+## The letters of a recovery code as a player may type them: upper case,
+## with anything that is not one of `RECOVERY_LETTERS` (spaces, dashes)
+## left out.
+static func clean_recovery_code(code: String) -> String:
+	var clean := ""
+	for c in code.to_upper():
+		if c in RECOVERY_LETTERS:
+			clean += c
+	return clean
+
+
+## A code's letters in groups of four, for reading off and writing down.
+static func format_recovery_code(code: String) -> String:
+	var groups: Array[String] = []
+	for i in range(0, code.length(), 4):
+		groups.append(code.substr(i, 4))
+	return "-".join(groups)
+
+
+## Moves the account named `shown_name` to a computer whose game holds
+## `secret`, if `code` is its recovery code: the account takes on that
+## secret (the old one stops working), any sign-in token is dropped and the
+## code is used up. Returns what `sign_in` does.
+func recover(shown_name: String, code: String, secret: String) -> Dictionary:
+	var id := id_for_name(shown_name)
+	if id == "":
+		return _fail("Names are %d to %d letters, digits, _ or -." % [MIN_NAME, MAX_NAME])
+	if secret.length() < MIN_SECRET:
+		return _fail("Bad sign-in secret.")
+	var account := load_account(id)
+	var clean := clean_recovery_code(code)
+	if account == null or account.recovery_hash == "" or clean.length() != RECOVERY_LENGTH \
+			or _hash(account.salt, clean) != account.recovery_hash:
+		return _fail("That name and recovery code do not match an account here.")
+	account.secret_hash = _hash(account.salt, secret)
+	account.recovery_hash = ""
+	_tokens.erase(_token_of.get(id, ""))
+	_token_of.erase(id)
+	_save(account)
+	grant_gear_crates(account)
+	_dev_top_up(account)  # DEV MODE
+	return {"ok": true, "account_id": id, "created": false, "recovered": true}
 
 
 ## The host signing in to their own server: their account takes on the

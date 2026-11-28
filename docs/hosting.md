@@ -21,8 +21,10 @@ This guide uses [Hetzner Cloud](https://www.hetzner.com/cloud). It is one of
 the cheapest reliable providers, its smallest machines are plenty for a few
 players, it has data centers in Europe and the US, and it bills by the hour
 with a monthly cap, so you can delete the machine whenever you like and stop
-paying. Prices change, so check the order page; expect roughly $5 to $8 a month
-for the size below.
+paying. Prices change, so check the order page. Late in 2026 the size below
+cost about $6.50 a month in Europe and $20.50 in the US, where Hetzner more than
+doubled its prices in June 2026; an official server with a core for every world
+(8 dedicated cores, CCX33) was about $166 a month in the US.
 
 Any other provider that gives you an Ubuntu machine with a public address works
 the same way from step 3 on.
@@ -210,6 +212,75 @@ the account service reads the same `accounts.sqlite`, so point its
 `--accounts` at the old folder to keep them. A world on another machine
 adds `--public-host <its address>` so the plaza can send players there, and
 needs a private network to the account service (`--account-url`).
+
+## Host from a PC at home
+
+The friends playtest runs on a Windows PC at home instead of a rented
+machine (Caleb's call, 28 November 2026): it costs nothing to run, and the
+whole-server bench on it tells us what the rented machine for the launch
+needs. It runs the official layout (every world a program of its own,
+sharing one set of accounts) straight from the installed game, so no
+Docker and no build.
+
+**What the PC needs.** Any recent desktop with a processor core for each
+program (the account service, the plaza, Ashfront and Frostline: four or
+more cores), 8 GB of memory or more, and a wired connection. The upload
+speed matters most: a crowded fight was guessed at 0.3 to 1 Mbps per
+player (not measured yet), so check yours at speedtest.net.
+
+**1. Check that players can reach you.** Open your router's admin page and
+find its internet (WAN) address, then compare it with the one
+whatismyip.com shows. If they match, go on. If they differ, your provider
+shares one public address between many homes (common in apartment
+buildings with internet included), and nobody outside can connect in:
+ask your provider for a public address, or use a rented machine (above).
+
+**2. Forward the ports.** In the router, forward **UDP 24565 to 24567** to
+this PC (the plaza on 24565, then Ashfront and Frostline). Give the PC a
+fixed address on your network first (the router's "DHCP reservation"), or
+the forward stops working when it gets a new one. The account service
+(24700) stays private: never forward it.
+
+**3. Install the game and start the server.** Install the game on the PC
+as usual, then run `tools/host/host_playtest.bat` (copy it anywhere).
+Windows asks once whether the game may use the network: allow it on the
+kind of network the PC is on (your home network is usually "Private"). The window shows `Cluster: account service
+on port 24700` and a `Server: running ...` line for each world. Leave it
+open; closing it stops every world.
+
+Accounts, the server's certificate and the hourly backups are kept in
+`%USERPROFILE%\VergeServer`. Copy its `accounts_backups` folder somewhere
+else now and then (a USB drive, a cloud folder): a backup on the same disk
+does not survive the disk.
+
+**4. Join it.** Friends type your public address (from whatismyip.com)
+under **A friend's server** in the phone's Servers app. On the PC itself,
+or another computer in your home, join `127.0.0.1` or the PC's address on
+your network instead: many routers do not let a home computer reach its
+own public address.
+
+A home address can change. If yours does, friends need the new one; a
+free dynamic DNS name (such as DuckDNS) follows it for you, and friends
+type that name instead.
+
+**Updating.** The server is the game on that PC, so it is always that
+game's version. When a new build is out, close the server window, start
+the game once so it updates itself, quit it, and run the script again.
+Players on an older game are told to update, as with any server.
+
+**Keep it safe.** The forwarded ports reach only the game server, which
+checks every sign-in in the handshake, encrypts connections and limits each
+player's requests. Still, give it a PC of its own with nothing personal on
+it, run it under a normal (not administrator) Windows account, keep Windows
+updated, and put it on the router's guest network if it has one, so it
+cannot see your other devices. Never forward the account service's port
+(24700).
+
+**Before strangers play.** A home server shows every player your home
+address, a busy PvP game can draw someone who floods it with traffic and
+takes your home internet down, and a power cut or a Windows update reboot
+takes the game down for everyone. Fine for friends; the public launch
+moves to a rented machine.
 
 ## Backups
 

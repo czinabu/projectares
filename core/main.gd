@@ -159,6 +159,9 @@ var _cluster: Array[Dictionary] = []
 ## Client: the sign-in token each server address last handed out
 ## (`NetSession.ticket`), shown instead of the secret on the next trip there.
 var _tickets := {}
+## A recovery code typed in the phone's Servers app (`Phone.recover_account`),
+## sent with the next sign-in only (`NetSession.recovery`), then forgotten.
+var _recovery_code := ""
 ## Client: where this server's plaza is, once you have been in it. Leaving a
 ## world's lobby or finishing a run leads back there. Port -1 means no plaza.
 var _plaza_address := ""
@@ -1411,6 +1414,11 @@ func _setup_phone() -> void:
 	phone.tour_requested.connect(_on_tour_requested)
 	phone.host_requested.connect(_go_online_from_phone.bind(""))
 	phone.join_requested.connect(_go_online_from_phone)
+	phone.recover_requested.connect(func(address: String, code: String) -> void:
+		_recovery_code = code
+		_go_online_from_phone(address)
+		if net == null:
+			_recovery_code = "")
 	phone.join_world_requested.connect(join_world)
 	phone.leave_server_requested.connect(_leave_from_phone)
 	phone.update_restart_requested.connect(_restart_for_update)
@@ -2561,6 +2569,7 @@ func _new_session(host: String) -> NetSession:
 	session.secret = Profile.get_online_secret()
 	# Travelling on within the same servers: the token the last one gave.
 	session.ticket = str(_tickets.get(host, ""))
+	session.recovery = _recovery_code
 	session.look = Profile.appearance
 	# `-- --lag 120 --loss 10 --jitter 60` fakes a bad connection:
 	# milliseconds of delay each way, the percent of input packets lost, and
@@ -2721,6 +2730,10 @@ func _take_ahead(host: String, port: int) -> NetSession:
 func _on_online_signed_in(account: Dictionary) -> void:
 	if net.ticket != "":
 		_tickets[_join_address] = net.ticket
+	_recovery_code = ""
+	if net.recovered:
+		net.recovered = false
+		phone.show_notice("Your account is on this computer now. Make a new recovery code in the Servers app.")
 	phone.set_update_needed(false)
 	phone.set_server_changed({})
 	_tour_stash_size = (account.get("stash", []) as Array).size()
@@ -3116,6 +3129,7 @@ func _at_plaza() -> bool:
 
 ## Could not connect or sign in, or the connection dropped in the lobby.
 func _on_online_failed(reason: String) -> void:
+	_recovery_code = ""
 	var was_refused := net != null and (net.refused or net.outdated != "" or not net.identity_changed.is_empty())
 	if net:
 		if net.refused:

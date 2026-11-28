@@ -89,6 +89,7 @@ const PUSH_EVERY := 1.0
 ## `HELD` change accounts and are done exactly once.
 const CALLS := {
 	"sign_in": [TYPE_DICTIONARY],
+	"recovery_code": [TYPE_STRING],
 	"watch": [TYPE_ARRAY],
 	"release": [TYPE_STRING],
 	"fetch": [TYPE_STRING],
@@ -429,6 +430,8 @@ func _run(link: Link, id: String, what: String, args: Array) -> Variant:
 			for account_id: String in link.watching:
 				all[account_id] = stash.snapshot(account_id)
 			return {"ok": true, "accounts": all}
+		"recovery_code":
+			return stash.make_recovery_code(args[0])
 		"release":
 			link.watching.erase(args[0])
 			return {"ok": true}
