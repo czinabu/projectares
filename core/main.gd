@@ -1925,6 +1925,11 @@ func _make_dressing_light(me: Actor) -> OmniLight3D:
 	light.light_energy = dressing_light_energy
 	light.omni_range = 4.0
 	light.shadow_enabled = false
+	# A fill, not a lamp: it puts no glint on anything, and leaves the
+	# mirror's frame alone (it stands right by the frame, which showed it as
+	# a bright blot down the middle of the view).
+	light.light_specular = 0.0
+	light.light_cull_mask = MirrorScript.ALL_LAYERS & ~(1 << (MirrorScript.MIRROR_LAYER - 1))
 	var ahead := Basis(Vector3.UP, controller.yaw) * Vector3.FORWARD
 	me.get_parent().add_child(light)
 	light.global_position = me.global_position + Vector3.UP * 1.6 + ahead * 1.3

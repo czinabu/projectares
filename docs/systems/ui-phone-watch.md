@@ -50,7 +50,12 @@ date in the same PR.
   mipmaps), and its scan lines are faint (`HoloScreen.line_depth`) so they
   never dim a line of text. The Mirror app (Caleb's pick): in first person a
   mirror stands square in front of the body, never along the camera, close
-  enough that you stand large in it (`Mirror.distance`). Caleb's "make the
+  enough that you stand large in it (`Mirror.distance`), and wide enough
+  to fill the view behind both you and the phone's screen
+  (`Mirror.width`, `side_offset`), so no edge of it runs down the middle.
+  Its reflection is drawn at about the screen's own sharpness
+  (`Mirror._fit_resolution`, with the main view's smoothing and model
+  detail) and the dressing light puts no glint on its frame. Caleb's "make the
   mirror easy to use and clear": the phone in the hand was too small to
   read with the mirror in view and you too small in the glass, so in first
   person the view frames your reflection, you left of the middle the whole
