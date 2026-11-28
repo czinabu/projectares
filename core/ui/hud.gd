@@ -1976,14 +1976,18 @@ void fragment() {
 	## The card's face in metres, and its picture in pixels.
 	var face_size := Vector2(0.18, 0.104)
 	var pixels := Vector2i(520, 300)
-	## Where the card opens when the camera looks out of the eyes, in the
-	## camera's space, at `reference_fov`: just over the raised wrist.
+	## A reference spot for the card from the eyes, in the camera's space
+	## (third person sizes its fallback against how far off it is).
 	var first_person_at := Vector3(-0.1, -0.1, -0.38)
-	## From the eyes, how far above the watch face the card's centre stands.
-	var fp_card_lift := 0.09
-	var fp_card_reads_at := 0.42
-	## The field of view the sizes above are for. A wider view grows them.
-	var reference_fov := 80.0
+	## From the eyes (Caleb's feedback: too small to read mid-fight, and off
+	## to the side), the card stands where it reads, not where the wrist
+	## happens to be: its centre at `fp_at` of the way from the middle of the
+	## view to its left and top edges, so it sits up and left of the
+	## crosshair and over the raised hand, never behind it, and it is
+	## `fp_screen` of the view tall, whatever the field of view. The light
+	## still runs up to it from the watch face.
+	var fp_at := Vector2(-0.25, 0.36)
+	var fp_screen := 0.26
 	## Third person: how big the card looks next to its first-person size
 	## (it grows with the camera's distance, so it reads the same from behind
 	## the shoulder), and where it hangs: in front of the character, beyond
@@ -2020,6 +2024,11 @@ void fragment() {
 	## reaches.
 	var glow_energy := 0.7
 	var glow_range := 0.6
+	## From the eyes the light runs a long way up across the view to the
+	## card, so it is drawn this much fainter than from behind.
+	var fp_beam := 0.35
+	## How deep the card's scan lines run (the shader's `line_depth`).
+	var line_depth := 0.08
 	## Seconds the card takes to open or close.
 	var raise_time := 0.18
 
@@ -2142,32 +2151,97 @@ void fragment() {
 			_worn.queue_free()
 		_worn = null
 
-	## The watch itself: a band and a small glowing face, face up (+Y).
+	## The watch itself, face up (+Y), its strap running round the wrist
+	## along Z and the arm along X (Caleb's ask: a real device, not a cyan
+	## block): a segmented strap whose ends curl down round the wrist, lugs,
+	## an eight-sided gunmetal case with two side keys, a raised bezel ring,
+	## a glowing round face ("Face", tinted by `show_card`) and a small
+	## projector lens on the bezel.
+	## The still pieces are merged one mesh per material
+	## (`Look.merge_pieces`); the face keeps its own node. Built in metres
+	## on the wrist, drawn depth tested like anything worn.
 	static func _watch() -> Node3D:
 		var watch := Node3D.new()
 		watch.name = "Watch"
-		watch.add_child(_box(Vector3(0.03, 0.012, 0.086), Color(0.08, 0.08, 0.09)))
-		var face := _box(Vector3(0.036, 0.008, 0.036), Color(0.3, 0.95, 1.0), 2.0)
+		var strap := _mat(Color(0.07, 0.075, 0.08), 0.0, 0.2, 0.75)
+		var metal := _mat(Color(0.2, 0.22, 0.25), 0.0, 0.85, 0.35)
+		var trim := _mat(Color(0.42, 0.46, 0.5), 0.0, 0.9, 0.25)
+		var lens := _mat(GLOW_COLOR, 3.0)
+		# The strap: links across the back of the wrist, the end ones
+		# turned down round its sides.
+		for i in 5:
+			var z := (i - 2) * 0.0115
+			var link := _part(BoxMesh.new(), Vector3(0.022, 0.005, 0.0105), strap, Vector3(0, -0.004, z))
+			if absf(z) > 0.02:
+				link.position.y -= 0.007
+				link.position.z -= signf(z) * 0.002
+				link.rotation.x = -signf(z) * 0.9
+			watch.add_child(link)
+		# Lugs where the strap meets the case.
+		for x: float in [-0.009, 0.009]:
+			for z: float in [-0.019, 0.019]:
+				watch.add_child(_part(BoxMesh.new(), Vector3(0.005, 0.007, 0.008), metal, Vector3(x, 0.0, z)))
+		var case := CylinderMesh.new()
+		case.radial_segments = 8
+		case.rings = 1
+		watch.add_child(_part(case, Vector3(0.038, 0.011, 0.038), metal, Vector3(0, 0.003, 0)))
+		# Two keys on one side of the case.
+		for x: float in [-0.007, 0.007]:
+			watch.add_child(_part(BoxMesh.new(), Vector3(0.005, 0.004, 0.004), trim, Vector3(x, 0.004, 0.0195)))
+		var bezel := TorusMesh.new()
+		bezel.inner_radius = 0.82
+		bezel.outer_radius = 1.0
+		bezel.rings = 24
+		bezel.ring_segments = 6
+		watch.add_child(_part(bezel, Vector3(0.017, 0.022, 0.017), trim, Vector3(0, 0.0095, 0)))
+		var dome := SphereMesh.new()
+		dome.radial_segments = 10
+		dome.rings = 5
+		dome.is_hemisphere = true
+		# The lens sits on the bezel on the hand's side (the watch's -X).
+		watch.add_child(_part(dome, Vector3(0.0028, 0.0028, 0.0028), lens, Vector3(-0.0155, 0.0105, 0.0)))
+		Look.merge_pieces(watch, false, true)
+		var disc := CylinderMesh.new()
+		disc.radial_segments = 24
+		disc.rings = 1
+		var face := _part(disc, Vector3(0.03, 0.002, 0.03), _mat(Color(0.3, 0.95, 1.0), 2.0), Vector3(0, 0.0095, 0))
 		face.name = "Face"
-		face.position = Vector3(0, 0.008, 0)
 		watch.add_child(face)
 		return watch
 
-	static func _box(size: Vector3, color: Color, glow := 0.0) -> MeshInstance3D:
-		var mesh := BoxMesh.new()
-		mesh.size = size
+	## One piece of the watch: `mesh` (built at unit size) stretched to
+	## `size` metres at `at`.
+	static func _part(mesh: PrimitiveMesh, size: Vector3, mat: Material, at: Vector3) -> MeshInstance3D:
+		if mesh is BoxMesh:
+			(mesh as BoxMesh).size = size
+		elif mesh is CylinderMesh:
+			(mesh as CylinderMesh).top_radius = size.x * 0.5
+			(mesh as CylinderMesh).bottom_radius = size.x * 0.5
+			(mesh as CylinderMesh).height = size.y
+		elif mesh is SphereMesh:
+			(mesh as SphereMesh).radius = size.x
+			(mesh as SphereMesh).height = size.y * 2.0
+		mesh.material = mat
+		var part := MeshInstance3D.new()
+		part.mesh = mesh
+		part.position = at
+		if mesh is TorusMesh:
+			part.scale = size
+		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		return part
+
+	## The watch's materials: plain metal or strap, or glowing light (`glow`).
+	static func _mat(color: Color, glow := 0.0, metallic := 0.0, roughness := 0.6) -> StandardMaterial3D:
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = color
+		mat.metallic = metallic
+		mat.roughness = roughness
 		if glow > 0.0:
 			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			mat.emission_enabled = true
 			mat.emission = color
 			mat.emission_energy_multiplier = glow
-		mesh.material = mat
-		var box := MeshInstance3D.new()
-		box.mesh = mesh
-		box.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		return box
+		return mat
 
 	## Straps the watch to the character's wrist bone, once there is a skin
 	## with one. Headless there is none, and nothing is worn.
@@ -2240,10 +2314,6 @@ void fragment() {
 		# (`ActorSkin._update_watch_glow`); first person lights the forearm.
 		_glow.light_energy = glow_energy * open
 		_glow.visible = open > 0.0 and not third
-		# A wider view shrinks everything in it; the watch grows to match.
-		var k := 1.0
-		if cam:
-			k = tan(deg_to_rad(cam.fov) * 0.5) / tan(deg_to_rad(reference_fov) * 0.5)
 		transform = Transform3D.IDENTITY
 		if third:
 			if is_inside_tree():
@@ -2261,13 +2331,13 @@ void fragment() {
 				var size := far / first_person_at.length() * third_person_view
 				var from_eyes := cam != null and cam.global_position.distance_to(p.get_eye_position()) < 0.7
 				if from_eyes:
-					# Looking out of the eyes, the card stands just over the
-					# raised wrist (`WeaponArm.watch_point` brings it up into
-					# view), at its real size, turned to the eye.
-					# Held close to the face it is smaller, so it always looks as
-					# big as a card at `fp_card_reads_at` metres.
-					spot = wrist + facing.y * fp_card_lift + facing.z * 0.02
-					size = clampf(cam.global_position.distance_to(spot) / fp_card_reads_at, 0.35, 1.0) * k
+					# Looking out of the eyes, the card stands up and left of
+					# the crosshair, over the raised hand (`WeaponArm.watch_point`
+					# brings the wrist up into view under it), as deep as the
+					# wrist and turned to the eye (`fp_at`, `fp_screen`).
+					var depth := _fp_depth(cam, wrist)
+					size = _tp_size(cam, depth, fp_screen)
+					spot = _fp_spot(cam, depth)
 				elif cam:
 					var depth := tp_depth(p, cam)
 					size = _tp_size(cam, depth)
@@ -2288,7 +2358,7 @@ void fragment() {
 		_holo.material_override = _holo_behind if from_behind else _holo_over
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("open", open)
 		(_holo.material_override as ShaderMaterial).set_shader_parameter("backing", tp_backing if from_behind else 0.0)
-		_draw_beam(third, open)
+		_draw_beam(third, open, 1.0 if from_behind else fp_beam)
 
 	## One card material: drawn over everything (`over`, from the eyes) or
 	## depth tested (from behind, where the body stands in front of it).
@@ -2299,6 +2369,8 @@ void fragment() {
 		mat.shader = shader
 		mat.set_shader_parameter("card", viewport.get_texture())
 		mat.set_shader_parameter("tint", HOLO_TINT)
+		# Faint scan lines: they must never dim a line of the card's text.
+		mat.set_shader_parameter("line_depth", line_depth)
 		mat.render_priority = 10
 		return mat
 
@@ -2319,11 +2391,27 @@ void fragment() {
 		var head := cam.global_transform.affine_inverse() * p.get_eye_position()
 		return maxf(-head.z, 0.5) + tp_behind
 
-	## Third person: the card's scale so it stands `tp_screen` of the view tall
-	## at `depth` from the camera.
-	func _tp_size(cam: Camera3D, depth: float) -> float:
+	## The card's scale so it stands `share` of the view tall (`tp_screen`
+	## when not given) at `depth` from the camera.
+	func _tp_size(cam: Camera3D, depth: float, share := -1.0) -> float:
 		var tall := 2.0 * depth * tan(deg_to_rad(cam.fov) * 0.5)
-		return tall * tp_screen / face_size.y
+		return tall * (tp_screen if share < 0.0 else share) / face_size.y
+
+	## From the eyes: how far out along the view the card stands, as deep as
+	## the raised wrist (kept within arm's reach).
+	func _fp_depth(cam: Camera3D, wrist: Vector3) -> float:
+		var at := cam.global_transform.affine_inverse() * wrist
+		return clampf(-at.z, 0.2, 0.6)
+
+	## From the eyes: the card's centre, `depth` out along the view at
+	## `fp_at` of the way from the middle of the view to its edges.
+	func _fp_spot(cam: Camera3D, depth: float) -> Vector3:
+		var half_tall := depth * tan(deg_to_rad(cam.fov) * 0.5)
+		var vp := cam.get_viewport()
+		var aspect := 16.0 / 9.0
+		if vp != null and vp.get_visible_rect().size.y > 0.0:
+			aspect = vp.get_visible_rect().size.x / vp.get_visible_rect().size.y
+		return cam.global_transform * Vector3(fp_at.x * half_tall * aspect, fp_at.y * half_tall, -depth)
 
 	## Third person: where the card starts, `depth` out from the camera,
 	## level with the head (a little over it), before it slides clear of it.
@@ -2396,14 +2484,14 @@ void fragment() {
 	## bright at the face and thinning out towards the card, with bands of
 	## light running out along it, so the card reads as projected rather
 	## than floating. Nothing crosses the card's face, so it stays readable.
-	func _draw_beam(third: bool, open: float) -> void:
+	func _draw_beam(third: bool, open: float, strength := 1.0) -> void:
 		var mesh := _beam.mesh as ImmediateMesh
 		mesh.clear_surfaces()
 		_beam.visible = _holo.visible and is_inside_tree()
 		if not _beam.visible:
 			return
 		_beam.global_transform = Transform3D.IDENTITY
-		(_beam.material_override as ShaderMaterial).set_shader_parameter("open", open)
+		(_beam.material_override as ShaderMaterial).set_shader_parameter("open", open * strength)
 		var apex := _face_position(third)
 		var half := face_size * 0.5
 		var left := _holo.global_transform * Vector3(-half.x, -half.y, 0.0)
@@ -2459,7 +2547,7 @@ void fragment() {
 		for watch: Node in [_worn.get_child(0) if _worn != null and is_instance_valid(_worn) and _worn.get_child_count() > 0 else null]:
 			var face := watch.get_node_or_null("Face") as MeshInstance3D if watch != null else null
 			if face:
-				var mat := (face.mesh as BoxMesh).material as StandardMaterial3D
+				var mat := (face.mesh as PrimitiveMesh).material as StandardMaterial3D
 				mat.albedo_color = face_color
 				mat.emission = face_color
 		var glow := face_color.lerp(GLOW_COLOR, 0.5)
@@ -2815,6 +2903,12 @@ void fragment() {
 		extends Control
 
 		const INK := Color(0.6, 1.0, 1.0)
+		## The dark rim round the card's text (`_text`): how wide, in pixels,
+		## and its colour.
+		const TEXT_RIM := 5
+		const RIM_COLOR := Color(0.0, 0.035, 0.05, 0.9)
+		## The card's plate: the dark glass the lines are drawn on.
+		const PLATE := Color(0.0, 0.08, 0.1, 0.72)
 		const WARM := Color(1.0, 0.62, 0.3)
 		const BAR_COLORS := [Color(1.0, 0.35, 0.3), Color(0.45, 0.7, 1.0), Color(0.95, 0.9, 0.4), Color(1.0, 0.6, 0.2),
 				Color(0.6, 0.85, 1.0)]
@@ -2847,6 +2941,16 @@ void fragment() {
 		func focused_id() -> String:
 			return slots[focus].id if focus < slots.size() else ""
 
+		## A line of the card's text with a dark rim round every letter, so it
+		## reads against snow, sky or a fire behind the card (Caleb's
+		## feedback: the list was unreadable mid-fight). The rim is the
+		## card's dark glass, not a box.
+		func _text(font: Font, at: Vector2, text: String, align: HorizontalAlignment, width: float, font_size: int,
+				color: Color) -> void:
+			draw_string_outline(font, at, text, align, width, font_size, TEXT_RIM,
+					Color(RIM_COLOR, RIM_COLOR.a * color.a))
+			draw_string(font, at, text, align, width, font_size, color)
+
 		## The tab the open icon is on.
 		func focused_tab() -> String:
 			return slots[focus].get("tab", "") if focus < slots.size() else ""
@@ -2856,7 +2960,7 @@ void fragment() {
 			var h := size.y
 			var font := ThemeDB.fallback_font
 			# A faint plate with lit corners: light, not a box.
-			draw_rect(Rect2(Vector2(4, 4), size - Vector2(8, 8)), Color(0.0, 0.14, 0.18, 0.5))
+			draw_rect(Rect2(Vector2(4, 4), size - Vector2(8, 8)), PLATE)
 			for corner in [Vector2(6, 6), Vector2(w - 6, 6), Vector2(6, h - 6), Vector2(w - 6, h - 6)]:
 				var sx := 1.0 if corner.x < w * 0.5 else -1.0
 				var sy := 1.0 if corner.y < h * 0.5 else -1.0
@@ -2865,8 +2969,8 @@ void fragment() {
 			if death != "":
 				var y := 36.0
 				for line in death.split("\n"):
-					draw_string(font, Vector2(22, y), line, HORIZONTAL_ALIGNMENT_LEFT, w - 44, 20, Color(INK, 0.95))
-					y += 24.0
+					_text(font, Vector2(22, y), line, HORIZONTAL_ALIGNMENT_LEFT, w - 44, 22, Color(INK, 1.0))
+					y += 26.0
 				return
 			var top := 14.0
 			if not bars.is_empty():
@@ -2891,7 +2995,7 @@ void fragment() {
 			var step := minf((row_w - 40.0) / count, 170.0)
 			var left := (row_w - step * count) * 0.5
 			if not panel.is_empty():
-				_draw_panel(Rect2(Vector2(w * 0.45, top + 8.0), Vector2(w * 0.55 - 24.0, h - top - 80.0)), open_slot)
+				_draw_panel(Rect2(Vector2(w * 0.45, top + 8.0), Vector2(w * 0.55 - 24.0, h - top - 70.0)), open_slot)
 				row_w = w * 0.45
 				step = minf((row_w - 40.0) / count, 170.0)
 				left = (row_w - step * count) * 0.5
@@ -2912,8 +3016,8 @@ void fragment() {
 							Color(WARM if slot.alert else INK, 0.95), 4.0, true)
 				_draw_icon(str(slot.get("glyph", slot.id)), centre, radius, color, 3.0 if looked else 2.0)
 				if slot.value != "":
-					draw_string(font, centre + Vector2(-step * 0.5, radius + 30.0), slot.value,
-							HORIZONTAL_ALIGNMENT_CENTER, step, 20 if looked else 17, color)
+					_text(font, centre + Vector2(-step * 0.5, radius + 30.0), slot.value,
+							HORIZONTAL_ALIGNMENT_CENTER, step, 22 if looked else 19, color)
 				# A carousel shows a pip for each thing it holds.
 				var held := int(slot.get("count", 0))
 				if looked and held > 1:
@@ -2930,42 +3034,42 @@ void fragment() {
 			var line_y := h - 40.0 if note == "" else h - 56.0
 			var hints: Array = open.hints
 			var room := w - 40.0 - hints.size() * 34.0
-			var text_w := minf(font.get_string_size(open.detail, HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x, room)
+			var text_w := minf(font.get_string_size(open.detail, HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x, room)
 			var x := (w - text_w - hints.size() * 34.0) * 0.5
-			draw_string(font, Vector2(x, line_y), open.detail, HORIZONTAL_ALIGNMENT_LEFT, room, 26,
+			_text(font, Vector2(x, line_y), open.detail, HORIZONTAL_ALIGNMENT_LEFT, room, 28,
 					_color_of(open, true))
 			x += text_w + 14.0
 			for hint: String in hints:
 				_draw_hint(hint, Vector2(x + 10.0, line_y - 9.0), Color(INK, 0.9))
 				x += 34.0
 			if note != "":
-				draw_string(font, Vector2(22, h - 20.0), note, HORIZONTAL_ALIGNMENT_CENTER, w - 44, 16,
-						Color(INK, 0.6))
+				_text(font, Vector2(22, h - 20.0), note, HORIZONTAL_ALIGNMENT_CENTER, w - 44, 18,
+						Color(INK, 0.8))
 
 		## An opened icon's panel in `box`: a page's title and lines (Standing),
 		## or a list the wheel moves through with the picked row lit (the map's
 		## targets, the pack), scrolled to keep it in view.
 		func _draw_panel(box: Rect2, slot: Dictionary) -> void:
 			var font := ThemeDB.fallback_font
-			draw_rect(box, Color(0.0, 0.2, 0.25, 0.3))
+			draw_rect(box, Color(0.0, 0.1, 0.13, 0.6))
 			draw_rect(box, Color(INK, 0.3), false, 1.5)
 			var lines: Array = slot.get("panel", [])
 			var at := int(slot.get("panel_at", -1))
-			var y := box.position.y + 20.0
+			var y := box.position.y + 23.0
 			if slot.has("page"):
-				draw_string(font, Vector2(box.position.x + 10.0, y), String(slot.page).to_upper(),
-						HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 20.0, 17, Color(INK, 1.0))
-				y += 22.0
-			var row_h := 19.0
+				_text(font, Vector2(box.position.x + 10.0, y), String(slot.page).to_upper(),
+						HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 20.0, 20, Color(INK, 1.0))
+				y += 25.0
+			var row_h := 23.0
 			var fits := maxi(1, int((box.end.y - y) / row_h))
 			var first := clampi(at - fits / 2, 0, maxi(lines.size() - fits, 0)) if at >= 0 else 0
 			for i in range(first, mini(lines.size(), first + fits)):
 				var lit := i == at
 				if lit:
-					draw_rect(Rect2(Vector2(box.position.x + 4.0, y - 14.0), Vector2(box.size.x - 8.0, row_h)),
-							Color(INK, 0.14))
-				draw_string(font, Vector2(box.position.x + 10.0, y), str(lines[i]), HORIZONTAL_ALIGNMENT_LEFT,
-						box.size.x - 20.0, 15, Color(INK, 1.0 if lit or at < 0 else 0.6))
+					draw_rect(Rect2(Vector2(box.position.x + 4.0, y - 17.0), Vector2(box.size.x - 8.0, row_h)),
+							Color(INK, 0.22))
+				_text(font, Vector2(box.position.x + 10.0, y), str(lines[i]), HORIZONTAL_ALIGNMENT_LEFT,
+						box.size.x - 20.0, 19, Color(INK, 1.0 if lit or at < 0 else 0.82))
 				y += row_h
 
 		## The small holographic map in `box`: the risk zones as faint cells,
@@ -3006,7 +3110,7 @@ void fragment() {
 				draw_line(Vector2(x, box.position.y), Vector2(x, box.end.y), Color(INK, 0.08), 1.0)
 				draw_line(Vector2(box.position.x, y), Vector2(box.end.x, y), Color(INK, 0.08), 1.0)
 			draw_rect(box, Color(INK, 0.35), false, 1.5)
-			draw_string(ThemeDB.fallback_font, box.position + Vector2(box.size.x * 0.5 - 6.0, -3.0), "N",
+			_text(ThemeDB.fallback_font, box.position + Vector2(box.size.x * 0.5 - 6.0, -3.0), "N",
 					HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(INK, 0.6))
 			var storm: Variant = map.get("storm")
 			if storm is Dictionary:
@@ -3057,9 +3161,9 @@ void fragment() {
 			var y := top + 18.0
 			for i in TABS.size():
 				var lit: bool = TABS[i] == open_tab
-				var color := Color(INK, 1.0 if lit else 0.6)
-				draw_string(font, Vector2(20.0 + each * i, y), String(TABS[i]).to_upper(),
-						HORIZONTAL_ALIGNMENT_CENTER, each, 20 if lit else 17, color)
+				var color := Color(INK, 1.0 if lit else 0.75)
+				_text(font, Vector2(20.0 + each * i, y), String(TABS[i]).to_upper(),
+						HORIZONTAL_ALIGNMENT_CENTER, each, 22 if lit else 19, color)
 				if lit:
 					draw_line(Vector2(20.0 + each * i + each * 0.25, y + 6.0),
 							Vector2(20.0 + each * (i + 1) - each * 0.25, y + 6.0), color, 2.0)
@@ -3069,28 +3173,28 @@ void fragment() {
 					var box := Rect2(Vector2(20.0 + each * i + each * 0.12, y - 22.0), Vector2(each * 0.76, 34.0))
 					draw_rect(box, Color(INK, 0.55 + 0.3 * sin(_time * 4.0)), false, 2.0)
 					if i > 0:
-						draw_string(font, Vector2(box.position.x - 16.0, y), "<", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(INK, 0.8))
+						_text(font, Vector2(box.position.x - 16.0, y), "<", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(INK, 0.8))
 					if i < TABS.size() - 1:
-						draw_string(font, Vector2(box.end.x + 6.0, y), ">", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(INK, 0.8))
+						_text(font, Vector2(box.end.x + 6.0, y), ">", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(INK, 0.8))
 			y += 12.0
 			var line: String = summaries.get(open_tab, "")
 			if line != "":
-				y += 18.0
-				draw_string(font, Vector2(20, y), line, HORIZONTAL_ALIGNMENT_CENTER, w - 40, 17, Color(INK, 0.85))
+				y += 21.0
+				_text(font, Vector2(20, y), line, HORIZONTAL_ALIGNMENT_CENTER, w - 40, 19, Color(INK, 1.0))
 			if popup != "":
-				y += 18.0
-				draw_string(font, Vector2(20, y), popup, HORIZONTAL_ALIGNMENT_CENTER, w - 40, 17,
+				y += 21.0
+				_text(font, Vector2(20, y), popup, HORIZONTAL_ALIGNMENT_CENTER, w - 40, 19,
 						Color(WARM, 0.95))
 			if objective != "":
-				y += 18.0
+				y += 21.0
 				# A small diamond marks it as the thing to do next.
-				var text_w := minf(font.get_string_size(objective, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x, w - 70.0)
+				var text_w := minf(font.get_string_size(objective, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x, w - 70.0)
 				var x := (w - text_w) * 0.5
 				var c := Vector2(x - 12.0, y - 6.0)
 				var mark := Color(WARM, 0.75 + 0.25 * sin(_time * 3.0))
 				draw_polyline(PackedVector2Array([c + Vector2(0, -5), c + Vector2(5, 0), c + Vector2(0, 5),
 						c + Vector2(-5, 0), c + Vector2(0, -5)]), mark, 1.5, true)
-				draw_string(font, Vector2(x, y), objective, HORIZONTAL_ALIGNMENT_LEFT, w - 70.0, 17, Color(WARM, 0.9))
+				_text(font, Vector2(x, y), objective, HORIZONTAL_ALIGNMENT_LEFT, w - 70.0, 19, Color(WARM, 1.0))
 			return y
 
 		## The vitals strip along the top, when the visor is not showing them:
@@ -3220,7 +3324,7 @@ void fragment() {
 			if hint.begins_with("key:"):
 				var box := Rect2(c - Vector2(12, 12), Vector2(24, 24))
 				draw_rect(box, color, false, 2.0)
-				draw_string(ThemeDB.fallback_font, c + Vector2(-12, 7), hint.substr(4), HORIZONTAL_ALIGNMENT_CENTER,
+				_text(ThemeDB.fallback_font, c + Vector2(-12, 7), hint.substr(4), HORIZONTAL_ALIGNMENT_CENTER,
 						24, 18, color)
 				return
 			var body := Rect2(c - Vector2(9, 14), Vector2(18, 28))
