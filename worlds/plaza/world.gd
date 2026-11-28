@@ -11,6 +11,7 @@ func _init() -> void:
 	display_name = "The Concourse"
 	description = "The safe zone between worlds. Meet people, show off your gear, and step through a gate to deploy."
 	safe_zone = true
+	music = "plaza"
 	bot_count = 0
 	# Nothing to protect and nothing to wait for.
 	sign_out_time = 1.0

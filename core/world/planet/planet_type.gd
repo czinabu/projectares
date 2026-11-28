@@ -55,3 +55,6 @@ var props: Array[Dictionary] = []
 ## Simulation defaults for a world on this planet: `cold`, `surface_grip`,
 ## `shot_carry`. Read by `WorldDef` when it takes the planet.
 var rules := {}
+## What a footstep on the open ground sounds like (one of `Sfx.STEP_GROUNDS`:
+## "hard", "dirt", "snow", "soft", "wood"). View only.
+var footsteps := "dirt"
