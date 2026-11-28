@@ -5,3 +5,4 @@
 *.wav binary
 # Vendored libraries are kept byte for byte.
 addons/godot-sqlite/bin/** -text
+*.bat text eol=crlf

@@ -60,6 +60,46 @@ services:
     command: ["--server", "--only", "frostline", "--port", "24567", "--accounts", "/data/servers",
               "--account-url", "ws://accounts:24700"]
 
+  # Meridian (24568) and the arena (24575) are held back from the first
+  # release (docs/systems/launch-scope.md). When one ships, add it back here
+  # as `<id>:` with its own port, like the worlds above.
+
+volumes:
+    - ares-servers:/data/servers
+
+services:
+  # Accounts, clans, phone records, the market and the directory of worlds.
+  # Nothing reaches it from outside: it has no published port.
+  accounts:
+    build: .
+    image: ares-server
+    restart: unless-stopped
+    init: true
+    tty: true
+    environment:
+      ARES_SERVICE_KEY: ${ARES_SERVICE_KEY:?set ARES_SERVICE_KEY in .env}
+    volumes:
+      - ares-data:/data
+    command: ["--account-service", "--bind", "*", "--accounts", "/data/accounts"]
+
+  plaza:
+    <<: *world
+    ports: ["24565:24565/udp"]
+    command: ["--server", "--only", "plaza", "--port", "24565", "--accounts", "/data/servers",
+              "--account-url", "ws://accounts:24700"]
+
+  ashfront:
+    <<: *world
+    ports: ["24566:24566/udp"]
+    command: ["--server", "--only", "ashfront", "--port", "24566", "--accounts", "/data/servers",
+              "--account-url", "ws://accounts:24700"]
+
+  frostline:
+    <<: *world
+    ports: ["24567:24567/udp"]
+    command: ["--server", "--only", "frostline", "--port", "24567", "--accounts", "/data/servers",
+              "--account-url", "ws://accounts:24700"]
+
   meridian:
     <<: *world
     ports: ["24568:24568/udp"]
