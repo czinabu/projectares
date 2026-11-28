@@ -2855,8 +2855,24 @@ way you push, the hands tip like ailerons and the legs swing to balance,
 before the flight itself bends; then the arms and legs swing on with
 each change of speed and settle. Wind rushes past your ears at speed on every rig. In first person the view
 rolls with a third of the wings' bank and a little with a skate's carve,
-and rumbles in a boost; the phone's "Camera motion in flight" turns it
-down or off. The vapor is off on the Low and Lowest graphics.
+and rumbles in a boost, leans with a hover's or skate's turn, and bobs
+with the push (a hard climb sinks the eyes, a hover breathes, a skate's
+strides bounce); the phone's "Camera motion in flight" turns it down or
+off. The vapor is off on the Low and Lowest graphics.
+
+First person flight (Caleb's ask): the watch throws a small hologram of
+your own body into the top left corner of the view, drawn from the same
+bones the body is posed with this frame, seen from behind and above
+against a level ring, so pitch, roll and the limbs read from outside while
+you look out of your own eyes; the rig shows as its wingtips and lit
+flames, a line shows where you are really going, and a faint beam ties it
+to the watch when the wrist is in view (the phone's "Flight hologram"
+turns it off). Your own rig is heard whole from inside it rather than
+panning round your ears, the wind grows with speed, and flying fast
+through a storm or the cold streaks the visor glass with the weather. No
+limb ever sinks into a rig: any arm or leg a flight pose would put into
+the pack, a spread wing or the other boot is turned out of it at the
+shoulder or hip, in both views.
 
 ### Cruising (Caleb's call)
 

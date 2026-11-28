@@ -43,6 +43,8 @@ const EMBER := Color(1.0, 0.55, 0.2)
 const STRAP_X := 0.1
 const STRAP_WIDTH := 0.05
 const HARNESS_TOP := 0.15
+## How thick a spread wing is at its spar, for keeping limbs off it.
+const WING_THICK := 0.03
 ## A boot thruster's cuff round the ankle: its radius across outside and
 ## inside, how much
 ## deeper it is front to back, where its middle is behind the ankle, and

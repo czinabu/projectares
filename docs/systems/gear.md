@@ -197,12 +197,32 @@ date in the same PR.
   a little ahead (`lead_*` tuning, `_pose_lead_arms`, `_leg_lead`; the arms
   only `lead_armed` of it with a weapon in hand). A check of a posed bone
   must read it from a modifier after them all, since the skeleton puts its
-  poses back once drawn (`rig_style_tests._probe`). Each rig has its own voice from the body, heard by
+  poses back once drawn (`rig_style_tests._probe`). No limb sinks into a
+  rig (Caleb's rule): last in the flight pose (`ActorSkin._keep_clear_of_rig`,
+  airborne only), points along each arm (with the hand) and leg are
+  tested against the rig as posed this frame (`_rig_shapes`: the pack as
+  the box round its own pieces, leaving out the wings, the generic straps
+  and anything hung off a marker such as flames; each visible wing as a
+  plate of its built outline, `RigModel.WING_THICK`; a boot's heel
+  thruster as a box only the other leg avoids), and a limb sunk in is
+  turned out at its shoulder or hip, up to four times, to stand
+  `rig_clear_arm` or `rig_clear_leg` off (a plate is left toward the
+  limb's own side). One body, so both views. `rig_intrusion` measures it;
+  `tests/flight_immersion_tests.gd` flies every rig model's poses on both
+  builds (about 10 cm deep without it, under 1 cm with it). Each rig has its own voice from the body, heard by
   everyone as far as its `noise_range` (`ActorSkin._update_rig_voice`:
   the jetpack's roar with its throttle, the wings' rush with the airspeed,
   the skate's hum, a pop on each boots kick and dash), and the player hears
-  the wind past their ears at speed (`PlayerController._update_air_rush`).
-  The first-person camera's share of it is in `camera-and-views.md`.
+  the wind past their ears at speed (`PlayerController._update_air_rush`:
+  from `air_rush_from` to `air_rush_full` m/s, its level on the square
+  root of the share so it is heard early, its pitch rising, and a
+  wavering buffet past `air_rush_buffet_from`). Worn in first person
+  (`ActorSkin.worn_view`, set by the controller) the rig is heard whole
+  from inside it, not as a sound beside the ear that swings round as the
+  head turns: its voice barely pans (`worn_pan`), does not fall off with
+  distance and sits `worn_db` lower, and the boots' pops play flat
+  (`_boot_pop`). The first-person camera's share of it is in
+  `camera-and-views.md`.
   Checked by `tests/rig_style_tests.gd`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one

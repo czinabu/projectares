@@ -375,10 +375,18 @@ var _pending_switch := -1
 var _visor_level := 0
 var _rng := RandomNumberGenerator.new()
 ## The wind past your ears at speed, in the air or on a skate (the style
-## pass): from `air_rush_from` m/s, full by `air_rush_full`.
+## pass): from `air_rush_from` m/s, full by `air_rush_full`, rising from
+## `air_rush_quiet_db` to `air_rush_loud_db` (Caleb: louder with speed), and
+## past `air_rush_buffet_from` of full it buffets, the level wavering by up
+## to `air_rush_buffet_db` as the air tears past the helmet.
 var _air_rush: AudioStreamPlayer
-var air_rush_from := 9.0
-var air_rush_full := 30.0
+var air_rush_from := 6.0
+var air_rush_full := 32.0
+var air_rush_quiet_db := -34.0
+var air_rush_loud_db := -1.0
+var air_rush_buffet_from := 0.55
+var air_rush_buffet_db := 3.0
+var _air_clock := 0.0
 ## Flight's camera motion in first person (the style pass, Caleb's call):
 ## the view rolls with the wings' bank (`flight_bank_roll` of it) and a
 ## skate's carve (`skate_carve_roll`), sways `skate_sway_deg` with a skate's
@@ -391,8 +399,25 @@ var skate_carve_roll := 0.25
 var skate_sway_deg := 1.0
 var boost_rumble_deg := 0.18
 var boost_jolt_deg := 0.8
+## The view leans `flight_lean_roll` of the upright flying body's lean
+## into a turn (a hover, the boots, a skate), and the head bobs on the
+## flight (`_flight_bob`, metres up): it sinks `flight_bob_gain` m for each
+## m/s² the body is pushed up (a jet's kick, a swoop's pull, a kick off a
+## skate) and lifts as it drops, at most `flight_bob_max`, on a soft spring,
+## with a gentle `hover_bob` m sway riding a jetpack's hover and a bounce of
+## `skate_bob` m with each skating stride. First person only, scaled by the
+## camera motion setting.
+var flight_lean_roll := 0.5
+var flight_bob_gain := 0.01
+var flight_bob_max := 0.07
+var hover_bob := 0.012
+var skate_bob := 0.018
 var _flight_roll := 0.0
 var _flight_rumble := Vector2.ZERO
+var _flight_bob := 0.0
+var _flight_bob_v := 0.0
+var _bob_clock := 0.0
+var _bob_last_vy := 0.0
 var _was_boosting := false
 ## Fades hostile bodies the eyes cannot see out of the third-person view.
 var peek_fade := PeekFade.new()
@@ -1563,7 +1588,7 @@ func _process(delta: float) -> void:
 	_eyes_weight = 0.0
 	if first_person:
 		_eyes_weight = 1.0 - minf(_cam_dist / 0.7, 1.0)
-		camera.global_position += _eye_offset * _eyes_weight
+		camera.global_position += (_eye_offset + Vector3.UP * _flight_bob) * _eyes_weight
 	if skin != _eyes_skin:
 		if _eyes_skin != null and is_instance_valid(_eyes_skin) and _eyes_skin.has_signal("head_posed"):
 			_eyes_skin.disconnect("head_posed", _on_head_posed)
@@ -1592,6 +1617,8 @@ func _process(delta: float) -> void:
 	camera.cull_mask = 0xFFFFF & ~(1 << (MirrorScript.HEAD_LAYER - 1)) if first_person else 0xFFFFF
 	if skin != null and skin.has_method("hide_head"):
 		skin.hide_head(first_person or screen_view_up())
+	if skin != null and "worn_view" in skin:
+		skin.set("worn_view", first_person)
 	ActionPose.of(actor).advance(delta)
 	# Aiming down sights the body brings the gun up to its eyes, the same in
 	# both views (`ActionPose.ads`). First person then settles the eye on the
@@ -1799,10 +1826,13 @@ func _update_flight_motion(delta: float) -> void:
 	var rumble := 0.0
 	if amount > 0.0 and skin != null and skin.has_method("flight_bank") and not actor.is_dead:
 		roll = float(skin.call("flight_bank")) * flight_bank_roll + float(skin.call("skate_carve")) * skate_carve_roll
+		if skin.has_method("flight_lean"):
+			roll += float(skin.call("flight_lean")) * flight_lean_roll
 		var stride: float = skin.call("stride_phase")
 		if not is_nan(stride):
 			roll += sin(stride) * deg_to_rad(skate_sway_deg)
 		rumble = float(skin.call("boost_push"))
+	_update_flight_bob(skin, amount, delta)
 	var boosting := actor.flight.is_boosting and not actor.is_dead
 	if boosting and not _was_boosting and amount > 0.0:
 		# The pack lights: the view is pushed back a little.
@@ -1811,6 +1841,31 @@ func _update_flight_motion(delta: float) -> void:
 	_flight_roll = lerpf(_flight_roll, roll * amount, 1.0 - exp(-8.0 * delta))
 	var shake := deg_to_rad(boost_rumble_deg) * rumble * amount
 	_flight_rumble = Vector2(_rng.randf_range(-shake, shake), _rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
+
+
+## The head's bob on the flight (`flight_bob_gain`): a soft spring after
+## where the push and the rig put the head, stepped in short slices.
+func _update_flight_bob(skin: Node, amount: float, delta: float) -> void:
+	var flying := amount > 0.0 and not actor.is_dead and actor.vehicle == null and actor.flight.working() \
+			and (not actor.is_on_floor() or actor.flight.is_skating)
+	var want := 0.0
+	if flying and delta > 0.0:
+		var push := (actor.velocity.y - _bob_last_vy) / delta
+		want = clampf(-push * flight_bob_gain, -flight_bob_max, flight_bob_max)
+		_bob_clock += delta
+		if actor.flight.is_hovering:
+			want += sin(_bob_clock * 1.7) * hover_bob
+		var stride: Variant = skin.call("stride_phase") if skin != null and skin.has_method("stride_phase") else NAN
+		if not is_nan(float(stride)):
+			want += absf(sin(float(stride))) * skate_bob - skate_bob * 0.5
+	_bob_last_vy = actor.velocity.y
+	want *= amount
+	var left := minf(delta, 0.25)
+	while left > 0.0:
+		var step := minf(left, 1.0 / 120.0)
+		_flight_bob_v += ((want - _flight_bob) * 90.0 - _flight_bob_v * 14.0) * step
+		_flight_bob += _flight_bob_v * step
+		left -= step
 
 
 ## The wind past your ears: louder and higher the faster you fly or skate.
@@ -1824,8 +1879,11 @@ func _update_air_rush() -> void:
 		_air_rush.play()
 	elif share <= 0.0 and _air_rush.playing:
 		_air_rush.stop()
-	_air_rush.volume_db = lerpf(-30.0, -6.0, share)
-	_air_rush.pitch_scale = 0.8 + 0.4 * share
+	_air_clock += get_process_delta_time()
+	var buffet := clampf((share - air_rush_buffet_from) / maxf(1.0 - air_rush_buffet_from, 0.01), 0.0, 1.0)
+	var waver := sin(_air_clock * 9.0) * 0.6 + sin(_air_clock * 23.0 + 1.3) * 0.4
+	_air_rush.volume_db = lerpf(air_rush_quiet_db, air_rush_loud_db, sqrt(share)) + waver * buffet * air_rush_buffet_db
+	_air_rush.pitch_scale = 0.75 + 0.55 * share
 
 
 ## Jolts the view by `kick` (yaw, pitch in radians); it springs back.

@@ -163,6 +163,8 @@ const SCHEMA := [
 	{"key": "flight_camera_motion", "tab": "view", "section": "CAMERA", "kind": "slider",
 			"label": "Camera motion in flight, first person", "default": 1.0, "range": Vector2(0.0, 1.0),
 			"step": 0.05, "format": "percent"},
+	{"key": "flight_hologram", "tab": "view", "section": "CAMERA", "kind": "toggle",
+			"label": "Flight hologram from the watch, first person", "default": true},
 	{"key": "show_nameplates", "tab": "view", "section": "CAMERA", "kind": "toggle",
 			"label": "Names over other players", "default": true},
 	{"key": "master_volume", "tab": "system", "kind": "slider", "label": "Volume", "default": 0.8,
@@ -223,6 +225,11 @@ static var fullscreen: bool:
 static var flight_camera_motion: float:
 	get: return _values.get("flight_camera_motion", 1.0)
 	set(v): _values["flight_camera_motion"] = v
+## The small hologram of yourself the watch throws while you fly in first
+## person (`FlightHolo`).
+static var flight_hologram: bool:
+	get: return _values.get("flight_hologram", true)
+	set(v): _values["flight_hologram"] = v
 static var show_nameplates: bool:
 	get: return _values["show_nameplates"]
 	set(v): _values["show_nameplates"] = v

@@ -2194,6 +2194,20 @@ void fragment() {
 		_worn = attach
 
 	var _emote_holo: EmoteHolo
+	var _flight_holo: FlightHolo
+
+	## The hologram of yourself the watch throws while you fly in first
+	## person (`FlightHolo`), made the first time it is wanted.
+	func _mount_flight_holo(p: Actor, controller: PlayerController, shown: bool, delta: float) -> void:
+		var wanted: bool = shown and FlightHolo.wanted(p, controller, raised)
+		if not wanted and (_flight_holo == null or not is_instance_valid(_flight_holo)):
+			return
+		if _flight_holo == null or not is_instance_valid(_flight_holo):
+			_flight_holo = FlightHolo.new()
+			_flight_holo.name = "FlightHolo"
+			add_child(_flight_holo)
+		var watch := watch_position(p) if _worn != null and is_instance_valid(_worn) else Vector3.INF
+		_flight_holo.update(p, controller.camera if controller != null else null, wanted, watch, delta)
 
 	## The quick emote wheel thrown over the wrist where there is no visor
 	## to draw it on (no helmet, or one taken off; `Hud.emote_wheel_holo`).
@@ -2220,6 +2234,7 @@ void fragment() {
 	## closes the card towards `raised`. Hidden with the HUD.
 	func mount(p: Actor, controller: PlayerController, shown: bool, delta := 0.0) -> void:
 		_mount_emote_holo(p, controller, shown)
+		_mount_flight_holo(p, controller, shown, delta)
 		# The card rises off the watch on your own wrist in both views: first
 		# and third person differ only in where the camera is (Caleb's rule).
 		var third := true

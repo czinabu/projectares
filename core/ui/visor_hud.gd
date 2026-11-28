@@ -86,6 +86,20 @@ var ash := 0.0
 ## settle (a share of the way to the middle, which stays clear).
 const ASH_SPECKS := 220
 const ASH_CLEAR := 0.55
+## Streaks of the weather whipping across the glass as you fly fast through
+## it (Caleb's first person flight pass): how many there are at most, how
+## strong they are now (0 to 1), and in what colour (the storm's own streak
+## colour, frost white in the cold). The speeds (m/s) they start and are
+## full at, and how strong the cold alone makes them with no storm.
+const STREAKS := 48
+var streaks := 0.0
+var streak_ink := Color(1, 1, 1, 0.6)
+var streak_from := 12.0
+var streak_full := 38.0
+var streak_cold := 0.45
+## How fast the streaks run across the glass now, a share of full speed.
+var _streak_run := 0.0
+var _streak_clock := 0.0
 ## The armor arc's colour (stamina takes the glass's own).
 const ARMOR_INK := Color(0.5, 0.75, 1.0)
 ## Colours of the heading strip's marks that are not the glass's own.
@@ -402,6 +416,7 @@ func _process(delta: float) -> void:
 	if p != null and raid != null and raid.weather != null and raid.world != null:
 		ashing = ash_settling(raid.world.weather_kind, raid.weather.strength_at(p.global_position))
 	ash = move_toward(ash, ashing, delta * (0.06 if ashing > ash else 0.04))
+	_update_streaks(p, delta)
 	landing = Hud.landing_warning(p) if p != null and (glass_shown() or flat_shown()) else 0.0
 	_animate(p, delta)
 	if p == null or _world == null or not _world.is_inside_tree():
@@ -865,6 +880,7 @@ func _draw() -> void:
 		_draw_glass(ink)
 		_draw_frost()
 		_draw_ash()
+		_draw_streaks()
 	_draw_vitals(p, ink)
 	_draw_landing(p)
 	_draw_hunted(p)
@@ -1117,6 +1133,61 @@ func _draw_ash() -> void:
 		draw_circle(at, grain, dark)
 		# Lit grit catches the light on its upper edge.
 		draw_circle(at - Vector2(0, grain * 0.4), grain * 0.45, Color(0.85, 0.6, 0.45, 0.25 * landed))
+
+
+## How strong the streaks across the glass are for a wearer moving at
+## `speed` (m/s) off the ground through weather this `strength` (0 to 1) in
+## air this `cold` (body heat a second): nothing on the ground or slow, and
+## nothing in clear, warm air.
+func streaks_wanted(speed: float, airborne: bool, strength: float, cold: float) -> float:
+	if not airborne:
+		return 0.0
+	var fast := clampf((speed - streak_from) / maxf(streak_full - streak_from, 1.0), 0.0, 1.0)
+	var weather := maxf(clampf(strength, 0.0, 1.0), streak_cold if cold > 0.0 else 0.0)
+	return fast * weather
+
+
+func _update_streaks(p: Actor, delta: float) -> void:
+	var wanted := 0.0
+	var speed := 0.0
+	if p != null and raid != null and raid.world != null and controller != null and not controller.is_third_person():
+		speed = p.velocity.length()
+		var storm := raid.weather.strength_at(p.global_position) if raid.weather != null else 0.0
+		var chill := raid.world.cold_at(p.global_position) if storm <= 0.0 else 0.0
+		wanted = streaks_wanted(speed, FlightHolo.flying(p), storm, chill)
+		if wanted > 0.0:
+			var look := get_node_or_null("/root/Look")
+			var kind := raid.world.weather_kind if storm > 0.0 and raid.world.weather_kind != "" else "snow"
+			if look != null and look.has_method("weather_kit"):
+				streak_ink = (look.call("weather_kit", kind) as Dictionary).get("streak", streak_ink)
+	streaks = move_toward(streaks, wanted, delta * 2.0)
+	_streak_run = clampf((speed - streak_from) / maxf(streak_full - streak_from, 1.0), 0.0, 1.0)
+	_streak_clock += delta * (0.4 + 1.6 * _streak_run)
+
+
+## The weather whipping across the glass at speed: thin streaks born near
+## the clear middle and dragged out toward the rim, longer the faster you
+## go. The glass itself, so first person only, like frost and ash.
+func _draw_streaks() -> void:
+	if streaks <= 0.01:
+		return
+	var half := size * 0.5
+	var count := int(ceil(STREAKS * streaks))
+	for i in count:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash(i * 7907 + 13)
+		var angle := rng.randf() * TAU
+		var pace := rng.randf_range(0.7, 1.3)
+		# Each one runs from the edge of the clear middle out past the rim, then again.
+		var life := fposmod(_streak_clock * pace + rng.randf(), 1.0)
+		var dir := Vector2(cos(angle), sin(angle))
+		var reach := lerpf(ASH_CLEAR * 0.8, 1.15, life)
+		var length := (0.04 + 0.16 * _streak_run) * rng.randf_range(0.6, 1.2)
+		var a := half + Vector2(dir.x * half.x, dir.y * half.y) * reach
+		var b := half + Vector2(dir.x * half.x, dir.y * half.y) * (reach + length)
+		# Faint where it is born, strongest midway, gone at the rim.
+		var fade := sin(life * PI) * streaks
+		draw_line(a, b, Color(streak_ink, streak_ink.a * 0.8 * fade), 1.0 + rng.randf() * 1.2, true)
 
 
 ## Where the curved heading strip is at `off` degrees from straight ahead:
