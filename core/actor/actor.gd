@@ -260,6 +260,14 @@ var is_dead := false
 ## Set in a safe zone: weapons can be drawn and shown but not used, and
 ## abilities and healing do nothing.
 var weapons_locked := false
+## Set in the home base off the shooting range (`HomeBase`): weapons can be
+## drawn, held, aimed and reloaded, but the trigger, the melee swing, the
+## kick, abilities, artifacts and healing do nothing. A pull of the trigger
+## only clicks (`safety_click`). It lives in `Actor`, so any machine that
+## simulates the actor enforces it the same way, in either view.
+var fire_safe := false
+## Seconds before the safety clicks again, so a held trigger is not a buzz.
+var _safety_left := 0.0
 ## Set for a blades bout in the arena (`Arena._apply_rules`, on every
 ## machine from the bout's rules): no gun may be drawn, and one in hand is
 ## put away for the blade, so a fighter brings only their melee weapon.
@@ -533,14 +541,14 @@ func _physics_process(delta: float) -> void:
 		_fit_body()
 	_simulate_weapons(delta)
 	ability.tick(delta)
-	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked:
+	if cmd.ability_pressed and stagger_left <= 0.0 and not weapons_locked and not fire_safe:
 		ability.activate()
 	artifact.tick(delta)
-	if cmd.artifact_pressed and stagger_left <= 0.0 and not weapons_locked:
+	if cmd.artifact_pressed and stagger_left <= 0.0 and not weapons_locked and not fire_safe:
 		artifact.activate()
 	_simulate_helmet(delta)
 	visor.tick(cmd, delta)
-	if not weapons_locked:
+	if not weapons_locked and not fire_safe:
 		_simulate_heal(delta)
 	# On a client of an online raid, using things is the server's decision.
 	if cmd.interact_pressed and Combat.authoritative:
@@ -1541,7 +1549,10 @@ func _simulate_weapons(delta: float) -> void:
 			gun.start_reload()
 			_reload_ask = 0.0
 		if not wings_block(weapon):
-			weapon.handle_input(cmd, delta)
+			if fire_safe:
+				_handle_input_safe(weapon, delta)
+			else:
+				weapon.handle_input(cmd, delta)
 		else:
 			weapon.drop_aim()
 		# A power weapon with nothing left is thrown away. The authority
@@ -1551,6 +1562,38 @@ func _simulate_weapons(delta: float) -> void:
 			Loadout.set_power(self, "")
 	elif weapon:
 		weapon.drop_aim()
+
+
+## The weapon's input with the safety on (`fire_safe`): the attack buttons
+## are taken off the command for this call and put back, so aim, block and
+## reload still work. A fresh pull of the trigger clicks instead.
+func _handle_input_safe(weapon: Weapon, delta: float) -> void:
+	_safety_left = maxf(0.0, _safety_left - delta)
+	if cmd.primary_pressed and _safety_left <= 0.0:
+		_safety_left = 0.35
+		safety_click()
+	var held := [cmd.primary, cmd.primary_pressed, cmd.tertiary_pressed, cmd.kick_pressed,
+			cmd.weapon_ability_pressed]
+	cmd.primary = false
+	cmd.primary_pressed = false
+	cmd.tertiary_pressed = false
+	cmd.kick_pressed = false
+	cmd.weapon_ability_pressed = false
+	weapon.handle_input(cmd, delta)
+	cmd.primary = held[0]
+	cmd.primary_pressed = held[1]
+	cmd.tertiary_pressed = held[2]
+	cmd.kick_pressed = held[3]
+	cmd.weapon_ability_pressed = held[4]
+
+
+## The cue for a pull with the safety on: the weapon's dry click, in the
+## world, and a short line on the visor. Silent on a headless server.
+func safety_click() -> void:
+	var gun := get_active_weapon() as Gun
+	if gun != null:
+		gun._reload_sound("dry_fire")
+	notice.emit("Safety on: fire on the range")
 
 
 ## See `primary_in_watch`.

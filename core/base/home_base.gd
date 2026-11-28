@@ -864,7 +864,9 @@ func suit_up() -> void:
 
 ## Locks the suited player's weapons and has the range score their shots.
 func _suit_locked(actor: Actor) -> void:
-	actor.weapons_locked = true
+	# Weapons come out anywhere in the base; only the range lets them fire.
+	actor.weapons_locked = false
+	actor.fire_safe = true
 	for weapon in actor.weapons:
 		var gun := weapon as Gun
 		if gun and not gun.has_meta("range_scored"):
@@ -927,7 +929,8 @@ func _physics_process(delta: float) -> void:
 	_tick_course(delta)
 	# Weapons are free only past the firing line, and never run dry there.
 	var on_range := in_range(to_local(player.global_position))
-	player.weapons_locked = not on_range
+	player.weapons_locked = false
+	player.fire_safe = not on_range
 	if on_range:
 		for weapon in player.weapons:
 			var gun := weapon as Gun
