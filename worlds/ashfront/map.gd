@@ -373,6 +373,7 @@ func make_rim_fort() -> Node3D:
 	var fort: Node3D = RIM_FORT.new()
 	fort.shelves = SHELVES
 	fort.ground_at = scenery_height
+	fort.smoke_maker = _smoke
 	return fort
 
 

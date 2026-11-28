@@ -131,6 +131,9 @@ date in the same PR.
   land drops away and anything there is hidden behind the crest). Nothing
   of it may reach in past the edge walls, since a flier can get there and
   it has no collision: a long piece runs along the wall, never across it.
-  It is merged once into one mesh a side with one surface a material;
-  keep a new piece in those few surfaces (`_key`), never a node of its own.
-  Check with `--rim-only`.
+  It is merged once into one mesh a side with one surface a material
+  (`KEYS`); keep a new piece in those few surfaces (`_key`, or boxes
+  through `_append`), never a node of its own. Only the breaches' smoke
+  is a node (the map's `_smoke`, through `smoke_maker`). Rubble on the
+  slope stays on its steep top, as the planet's rocks do. Check with
+  `--rim-only`, which ends looking up at two breaches.

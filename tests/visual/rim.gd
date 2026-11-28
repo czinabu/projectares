@@ -37,4 +37,16 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 		camera.look_at_from_position(eye, aim)
 		await v._settle(40)
 		await v._shot(out_dir.path_join("rim_%s.png" % view[0]))
+	# Up the slope at two breaches, from the field below them.
+	var fort := raid.map.get_node_or_null("RimFort")
+	if fort != null:
+		var breaches: Array[Vector3] = fort.get("breaches")
+		for k in mini(2, breaches.size()):
+			var at: Vector3 = breaches[k * 3 % breaches.size()]
+			var flat := Vector2(at.x, at.z)
+			var from := flat - flat.normalized() * 70.0
+			var eye := Vector3(from.x, ground.call(from.x, from.y) + 2.0, from.y)
+			camera.look_at_from_position(eye, at + Vector3(0, 4.0, 0))
+			await v._settle(40)
+			await v._shot(out_dir.path_join("rim_breach_%d.png" % k))
 	raid.queue_free()

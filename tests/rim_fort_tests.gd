@@ -28,7 +28,7 @@ static func run(t: Node) -> void:
 		var at: Vector3 = piece.at
 		outside = outside and maxf(absf(at.x), absf(at.z)) > walls + 1.0
 		var ground := float(raid.map.call("scenery_height", at.x, at.z))
-		if piece.file != FORT.CREST:
+		if not piece.stacked:
 			grounded = grounded and at.y < ground and at.y > ground - 12.0
 		sides[piece.side] = int(sides.get(piece.side, 0)) + 1
 	t.check(outside and sides.size() == 4, "the line runs along all four sides, past the walls")
@@ -44,19 +44,25 @@ static func run(t: Node) -> void:
 		if Vector2(at.x, at.z).dot(out) > 300.0 and l > lateral.x and l < lateral.y:
 			low = low and not FORT.TOWERS.has(piece.file) and not FORT.WALLS.has(piece.file)
 	t.check(low, "in front of a shelf the wall is broken down low")
-	# Nothing reaches in past the edge walls, where a flier could meet it.
+	# No piece of the wall reaches in past the edge walls, where a flier
+	# could meet it.
 	var clear := true
-	for child in fort.get_children():
-		var box := (child as MeshInstance3D).global_transform * (child as MeshInstance3D).mesh.get_aabb()
-		# A side is long one way and thin the other; the thin way is "out".
-		var across_x := box.size.x < box.size.z
-		var inner := minf(absf(box.position.x), absf(box.end.x)) if across_x else minf(absf(box.position.z), absf(box.end.z))
+	for piece in pieces:
+		var box: AABB = piece.box
+		# Clear of the square inside the walls on one axis or the other.
+		var out_x := minf(absf(box.position.x), absf(box.end.x)) if box.position.x * box.end.x > 0.0 else 0.0
+		var out_z := minf(absf(box.position.z), absf(box.end.z)) if box.position.z * box.end.z > 0.0 else 0.0
+		var inner := maxf(out_x, out_z)
 		clear = clear and inner > walls
-	t.check(clear, "and none of it reaches in over the rim's slope")
+	t.check(clear, "and no piece of the wall reaches in over the rim's slope")
+	# Each side has its breaches, each with smoke going up.
+	var breaches: Array[Vector3] = fort.get("breaches")
+	var smoke := fort.find_children("*", "GPUParticles3D", false, false).size()
+	t.check(breaches.size() >= 4 and smoke == breaches.size(), "the wall is blown open in places, smoke rising from each breach")
 	var draws := 0
-	for child in fort.get_children():
-		var mesh := (child as MeshInstance3D).mesh
-		draws += mesh.get_surface_count() if mesh != null else 0
-	t.check(fort.get_child_count() == 4 and draws <= 16, "it costs a few draws: one mesh a side, a surface a material")
+	var meshes := fort.find_children("*", "MeshInstance3D", false, false)
+	for child in meshes:
+		draws += (child as MeshInstance3D).mesh.get_surface_count()
+	t.check(meshes.size() == 4 and draws <= 4 * FORT.KEYS.size(), "it costs a few draws: one mesh a side, a surface a material")
 	fort.queue_free()
 	raid.queue_free()
