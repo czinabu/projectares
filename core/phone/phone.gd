@@ -703,13 +703,13 @@ func mirror_on_face() -> bool:
 
 
 ## `Main` reports whether a mirror could stand in front of the player.
-## Once one stands the phone goes down so it shows the whole kit.
+## The phone stays up with its screen thrown beside your reflection, as the
+## third-person dressing room shows it (Caleb's comparison of the two: the
+## phone going down left half the view empty and nothing to choose from);
+## the app's button puts it down to see the whole kit.
 func set_mirror_up(up: bool) -> void:
-	var was_up := mirror_up
 	mirror_up = up
-	if mirror_open() and up and not was_up:
-		set_mirror_lowered(true)
-	elif not up:
+	if not up:
 		set_mirror_lowered(false)
 	if mirror_open():
 		refresh()
