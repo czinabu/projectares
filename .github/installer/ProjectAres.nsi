@@ -1,4 +1,4 @@
-; Windows installer for Project Ares, built by .github/workflows/windows-client.yml
+; Windows installer for Verge, built by .github/workflows/windows-client.yml
 ; with NSIS (makensis) on Linux:
 ;   makensis -DSRC=<folder with ProjectAres.exe, .pck and the readme> -DICON=<.ico>
 ;            -DBUILD=<n> -DOUTFILE=<setup.exe> ProjectAres.nsi
@@ -26,14 +26,16 @@ Unicode true
   !define OUTFILE "ProjectAres-Setup.exe"
 !endif
 
-!define NAME "Project Ares"
+!define NAME "Verge"
 !define EXE "ProjectAres.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ProjectAres"
 
 Name "${NAME}"
 OutFile "${OUTFILE}"
 RequestExecutionLevel user
-InstallDir "$LOCALAPPDATA\Programs\${NAME}"
+; The folder keeps the prototype name so an install made before the rename is
+; updated in place.
+InstallDir "$LOCALAPPDATA\Programs\Project Ares"
 InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 SetCompressor /SOLID lzma
 BrandingText "${NAME} build ${BUILD}"
@@ -61,6 +63,11 @@ Section "Install"
   Delete "$INSTDIR\ProjectAres.pck.new"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
+  ; Shortcuts from before the rename.
+  Delete "$DESKTOP\Project Ares.lnk"
+  Delete "$SMPROGRAMS\Project Ares\Project Ares.lnk"
+  Delete "$SMPROGRAMS\Project Ares\Uninstall Project Ares.lnk"
+  RMDir "$SMPROGRAMS\Project Ares"
   CreateShortcut "$DESKTOP\${NAME}.lnk" "$INSTDIR\${EXE}" "" "$INSTDIR\${EXE}" 0
   CreateDirectory "$SMPROGRAMS\${NAME}"
   CreateShortcut "$SMPROGRAMS\${NAME}\${NAME}.lnk" "$INSTDIR\${EXE}" "" "$INSTDIR\${EXE}" 0
