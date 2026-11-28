@@ -42,7 +42,7 @@ const SINK := 2.5
 ## Where the wall is kept low in front of a shelf, past its ends (m).
 const SHELF_MARGIN := 16.0
 ## The surfaces a side's mesh may have, in draw order.
-const KEYS := ["plate", "dark", "glow", "beacon"]
+const KEYS := ["t1", "t2", "t3", "plate", "dark", "glow", "beacon"]
 ## Breaches a side (where no shelf is), each two lengths wide.
 const BREACHES := 2
 ## Chunks of fallen plate along the foot of the wall, a side.
@@ -68,6 +68,8 @@ var _sides := {}
 
 func _ready() -> void:
 	name = "RimFort"
+	# Past the edge walls nobody can cross: never stood beside, so no collision.
+	set_meta("walk_through", "scenery past the edge walls")
 	if Look.enabled:
 		build()
 
@@ -80,12 +82,13 @@ func build() -> void:
 	rng.seed = 7151
 	for out: Vector2 in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, -1), Vector2(0, 1)]:
 		_lay_side(out, rng)
-	var materials := {
+	var materials := KitMesh.trims(Color(0.74, 0.66, 0.58))
+	materials.merge({
 		"plate": Look.surface("metal", {"tint": Color(0.8, 0.73, 0.66), "grime": 1.0, "scale": 0.05}),
 		"dark": Look.surface("metal", {"tint": Color(0.36, 0.33, 0.31), "grime": 1.0, "scale": 0.05}),
 		"glow": Look.trim("orange"),
 		"beacon": Look.trim("beacon"),
-	}
+	})
 	for side: String in _sides:
 		add_child((_sides[side] as KitMesh).node("Side_" + side, materials, KEYS))
 	_sides.clear()

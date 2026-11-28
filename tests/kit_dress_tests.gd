@@ -27,9 +27,9 @@ static func run(t: Node) -> void:
 	t.add_child(map)
 	await t.frames(2)
 	var forge := map.find_child("ForgeClad", true, false) as MeshInstance3D
-	t.check(forge != null and forge.mesh.get_surface_count() <= 4, "the Forge is clad, in a few draws")
+	t.check(forge != null and forge.mesh.get_surface_count() <= 6, "the Forge is clad, in a few draws")
 	var wrecks := map.find_child("WreckClad", true, false) as MeshInstance3D
-	t.check(wrecks != null and wrecks.mesh.get_surface_count() <= 4, "the wrecks' hulls are plated, all in one node")
+	t.check(wrecks != null and wrecks.mesh.get_surface_count() <= 8, "the wrecks' hulls are plated, all in one node")
 	var tanks := 0
 	var hidden := true
 	for wreck: Dictionary in map.get("_wrecks"):

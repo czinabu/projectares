@@ -727,8 +727,9 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   slope under each breach and fallen plate lies all along the wall's foot.
   In front of each battle shelf it is broken down to low stubs and gaps,
   so the far war shows through. Built once from Quaternius's Megakit
-  pieces scaled up five times and plain boxes, dressed in the game's own
-  dark metal, merged into one mesh a side: at most sixteen draws, and
+  pieces scaled up five times and plain boxes, in the kit's own panel
+  textures tinted to the ash, merged into one mesh a side: one draw a
+  material, a few a side, and
   nothing a frame but the breaches' smoke. View only: no collision, none
   on a server, and no piece of the wall reaches in over the rim's slope.
 - **Thick air even when quiet (Caleb's call, after Helldivers and Ready

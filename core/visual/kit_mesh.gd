@@ -6,19 +6,26 @@ extends RefCounted
 ## wall costs a few draw calls and nothing a frame.
 ##
 ## Kit models' own materials are dropped: each surface is sorted into a key
-## by its material's name (`GLOW`, `DARK`, `PLATE`; anything else, decals and
-## collision shapes, is left out), and `build` dresses each key with the
-## material the caller gives. Only positions and normals are kept, so the
-## materials must not need UVs (`Look.surface` is laid on by world position).
+## by its material's name (`key_of`: "t1", "t2", "t3" for the kit's three
+## trim sheets, "glow" and "dark"; anything else, decals and collision
+## shapes, is left out), and `build` dresses each key with the material the
+## caller gives (`Look.kit_trim` for a trim sheet). Positions, normals and
+## the kit's UVs are kept.
 ## View only: never collision, never built on a server.
 
 const DIR := "res://assets/props/megakit/"
-## Kit material names (prefixes) for each key.
-const GLOW := ["MI_Trim_03_Cables", "M_Glass", "M_Light"]
-const DARK := ["MI_Trim_03", "M_Black"]
-const PLATE := ["MI_Trim_01", "MI_Trim_02", "MI_PaddedWall"]
+## Kit material names (prefixes) for each key, tried in this order.
+const KEYS_BY_NAME := [
+	["glow", ["MI_Trim_03_Cables", "M_Glass", "M_Light"]],
+	["dark", ["M_Black"]],
+	["t1", ["MI_Trim_01"]],
+	["t2", ["MI_Trim_02", "MI_PaddedWall"]],
+	["t3", ["MI_Trim_03"]],
+]
+## The kit's trim sheets, by key (`Look.kit_trim`).
+const SHEETS := {"t1": "01", "t2": "02", "t3": "03"}
 
-## key -> [verts, normals, indices], in the order keys were first used.
+## key -> [verts, normals, uvs, indices], in the order keys were first used.
 var _surfaces := {}
 ## Each model's drawable surfaces, read once a run: file -> [[mesh, surface, key, xform], ...].
 static var _parts := {}
@@ -53,6 +60,10 @@ func add_mesh(key: String, mesh: Mesh, surface: int, xform: Transform3D) -> void
 	var arrays: Array = _arrays[id]
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV] if arrays[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+	if uvs.size() != verts.size():
+		uvs = PackedVector2Array()
+		uvs.resize(verts.size())
 	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
 	var placed := PackedVector3Array()
 	var turned := PackedVector3Array()
@@ -74,27 +85,33 @@ func add_mesh(key: String, mesh: Mesh, surface: int, xform: Transform3D) -> void
 			var swap := indices[k + 1]
 			indices[k + 1] = indices[k + 2]
 			indices[k + 2] = swap
-	add_arrays(key, placed, turned, indices)
+	add_arrays(key, placed, turned, indices, uvs)
 
 
-## Adds ready-placed triangles to surface `key`.
-func add_arrays(key: String, verts: PackedVector3Array, normals: PackedVector3Array, indices: PackedInt32Array) -> void:
+## Adds ready-placed triangles to surface `key` (`uvs` left out: all zero).
+func add_arrays(key: String, verts: PackedVector3Array, normals: PackedVector3Array, indices: PackedInt32Array, uvs := PackedVector2Array()) -> void:
 	if not _surfaces.has(key):
-		_surfaces[key] = [PackedVector3Array(), PackedVector3Array(), PackedInt32Array()]
+		_surfaces[key] = [PackedVector3Array(), PackedVector3Array(), PackedVector2Array(), PackedInt32Array()]
 	var into: Array = _surfaces[key]
 	var v_out: PackedVector3Array = into[0]
 	var n_out: PackedVector3Array = into[1]
-	var i_out: PackedInt32Array = into[2]
+	var u_out: PackedVector2Array = into[2]
+	var i_out: PackedInt32Array = into[3]
 	var start := v_out.size()
 	v_out.append_array(verts)
 	n_out.append_array(normals)
+	if uvs.size() == verts.size():
+		u_out.append_array(uvs)
+	else:
+		u_out.resize(start + verts.size())
 	var from := i_out.size()
 	i_out.resize(from + indices.size())
 	for k in indices.size():
 		i_out[from + k] = start + indices[k]
 	into[0] = v_out
 	into[1] = n_out
-	into[2] = i_out
+	into[2] = u_out
+	into[3] = i_out
 
 
 func is_empty() -> bool:
@@ -115,7 +132,8 @@ func build(materials: Dictionary, order: Array = []) -> ArrayMesh:
 		arrays.resize(Mesh.ARRAY_MAX)
 		arrays[Mesh.ARRAY_VERTEX] = parts[0]
 		arrays[Mesh.ARRAY_NORMAL] = parts[1]
-		arrays[Mesh.ARRAY_INDEX] = parts[2]
+		arrays[Mesh.ARRAY_TEX_UV] = parts[2]
+		arrays[Mesh.ARRAY_INDEX] = parts[3]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, materials.get(key))
 	_surfaces.clear()
@@ -177,16 +195,20 @@ static func key_of(material: Material) -> String:
 	if material == null:
 		return ""
 	var named := material.resource_name
-	for prefix: String in GLOW:
-		if named.begins_with(prefix):
-			return "glow"
-	for prefix: String in DARK:
-		if named.begins_with(prefix):
-			return "dark"
-	for prefix: String in PLATE:
-		if named.begins_with(prefix):
-			return "plate"
+	for entry: Array in KEYS_BY_NAME:
+		for prefix: String in entry[1]:
+			if named.begins_with(prefix):
+				return entry[0]
 	return ""
+
+
+## Materials for the three trim sheets, each tinted `tint`, and `suffix` on
+## their keys (for a second set, say rusted, in the same mesh).
+static func trims(tint: Color, suffix := "") -> Dictionary:
+	var out := {}
+	for key: String in SHEETS:
+		out[key + suffix] = Look.kit_trim(SHEETS[key], tint)
+	return out
 
 
 static var _box_mesh: BoxMesh
