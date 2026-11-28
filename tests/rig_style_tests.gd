@@ -5,6 +5,7 @@ extends RefCounted
 ## Run from the main test runner. Nothing here starts a server.
 
 const GameSettings := preload("res://core/settings/game_settings.gd")
+const WeaponArmScript := preload("res://core/visual/weapon_arm.gd")
 
 
 static func run(t: Node) -> void:
@@ -194,6 +195,21 @@ static func _test_looks(t: Node) -> void:
 	var climbing := float(skin.get("_jet_throttle"))
 	t.check(flames.size() == 2 and absf(still - 1.0) < 0.1 and climbing > still + 0.3,
 			"the jets burn longer as they push harder (throttle %.2f g hovering, %.2f g climbing)" % [still, climbing])
+	# Pushing the stick forward while still at rest: the body leans in and
+	# the hands reach forward before the drift starts.
+	skin.set("_flight_hold", 0.0)
+	skin.set("_flight_draw_left", 0.0)
+	var rest_reach: float = await _hand_reach(skin, p)
+	p.cmd.move = Vector2(0, 1)
+	for i in 10:
+		p.velocity = Vector3.ZERO
+		await t.get_tree().process_frame
+	var up_now: Vector3 = (skin as Node3D).transform.basis.y
+	var reach: float = await _hand_reach(skin, p)
+	t.check(up_now.z < -0.05 and float(skin.get("_tilt").z) > -0.02,
+			"a jetpack leans into the stick before it drifts (%.2f rad of lead)" % -up_now.z)
+	t.check(reach > rest_reach + 0.03, "the arms reach the way the stick points (hands %.2f m further ahead)" % (reach - rest_reach))
+	p.cmd.move = Vector2.ZERO
 	p.flight.is_hovering = false
 	p.flight.is_thrusting = false
 
@@ -263,6 +279,27 @@ static func _test_looks(t: Node) -> void:
 		await t.get_tree().process_frame
 	t.check(float(skin.get("_turn_rate")) > 0.8, "a turn is read for the chest to lead it (%.2f rad/s)" % float(skin.get("_turn_rate")))
 
+	# The flyer leads the rig: looking right of the flight path in a glide,
+	# the body banks right and the inside (right) arm drops before the path
+	# has bent at all.
+	for i in 40:
+		p.velocity = forward * 24.0
+		await t.get_tree().process_frame
+	var hands: Vector2 = await _hand_heights(skin)
+	var base_bank := float(skin.get("_bank"))
+	var yaw_was := p.rotation.y
+	p.rotation.y -= 0.45
+	for i in 12:
+		p.velocity = forward * 24.0
+		await t.get_tree().process_frame
+	var leaning: Vector2 = await _hand_heights(skin)
+	var lead := float(skin.get("_lead_turn"))
+	t.check(lead < -0.5 and absf(float(skin.get("_bank")) - base_bank) < 0.05,
+			"looking right in a glide, the body leads into the turn (%.2f) before the path bends" % lead)
+	t.check(leaning.x - leaning.y > hands.x - hands.y + 0.05,
+			"the inside arm drops and the outside lifts to lead the turn (%.2f m against %.2f)" % [leaning.x - leaning.y, hands.x - hands.y])
+	p.rotation.y = yaw_was
+
 	# The first-person view rolls with the bank, scaled by the setting.
 	var controller := PlayerController.new()
 	controller.setup(p)
@@ -294,3 +331,37 @@ static func _test_looks(t: Node) -> void:
 	raid.queue_free()
 	await t.frames(3)
 	Look.enabled = false
+
+
+## The skeleton's posed bones as the modifiers leave them, read by a probe
+## added after them all (the skeleton puts its poses back once drawn).
+static func _probe(skin: Node) -> Dictionary:
+	var skeleton: Skeleton3D = skin.get("_skeleton")
+	var seen := {}
+	var probe: SkeletonModifier3D = WeaponArmScript.Hook.new()
+	probe.set("run", func() -> void:
+		for b in skeleton.get_bone_count():
+			seen[b] = skeleton.global_transform * skeleton.get_bone_global_pose(b).origin)
+	skeleton.add_child(probe)
+	await skin.get_tree().process_frame
+	await skin.get_tree().process_frame
+	probe.free()
+	return seen
+
+
+## The two hands' heights in the world (left, right).
+static func _hand_heights(skin: Node) -> Vector2:
+	var seen: Dictionary = await _probe(skin)
+	var arms: Array = skin.get("_glide_arms")
+	return Vector2((seen[arms[0][2]] as Vector3).y, (seen[arms[1][2]] as Vector3).y)
+
+
+## How far ahead of the shoulders the hands are, on average (metres along
+## the actor's facing).
+static func _hand_reach(skin: Node, p: Actor) -> float:
+	var seen: Dictionary = await _probe(skin)
+	var to_actor := p.global_transform.affine_inverse()
+	var total := 0.0
+	for limb: Array in skin.get("_glide_arms"):
+		total += (to_actor * (seen[limb[2]] as Vector3)).z * -1.0 - (to_actor * (seen[limb[0]] as Vector3)).z * -1.0
+	return total / 2.0

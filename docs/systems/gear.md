@@ -178,7 +178,18 @@ date in the same PR.
   (`sway_arms`) and legs (`sway_legs`, the shins more), and while the arms
   are free of a weapon the chest leads a turn and sits back against a
   change of speed (`_pose_spine`, `sway_twist`, `sway_pitch`), so a
-  weapon held up is never pulled off its aim. Each rig has its own voice from the body, heard by
+  weapon held up is never pulled off its aim. The flyer leads the rig
+  rather than reacting to it (Caleb's ask, `ActorSkin._update_lead`): the
+  intent read from `Actor.cmd` (the stick, climb and descend, the view
+  swinging, and in a glide the view against the flight path and the trim)
+  eases in faster than the attitude follows the velocity, so the head looks
+  into a turn first, the chest turns, bends and leans, the inside arm drops
+  and the outside lifts, the arms reach the way the stick points, the hands
+  tip like ailerons, the legs swing to balance, and the body leans or banks
+  a little ahead (`lead_*` tuning, `_pose_lead_arms`, `_leg_lead`; the arms
+  only `lead_armed` of it with a weapon in hand). A check of a posed bone
+  must read it from a modifier after them all, since the skeleton puts its
+  poses back once drawn (`rig_style_tests._probe`). Each rig has its own voice from the body, heard by
   everyone as far as its `noise_range` (`ActorSkin._update_rig_voice`:
   the jetpack's roar with its throttle, the wings' rush with the airspeed,
   the skate's hum, a pop on each boots kick and dash), and the player hears

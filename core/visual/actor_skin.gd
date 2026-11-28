@@ -285,6 +285,43 @@ var sway_legs := 0.4
 var sway_twist := 0.3
 var sway_turn_full := 2.0
 var sway_pitch := 0.12
+## The flyer leads the rig (Caleb's ask: the pilot steers, the rig answers,
+## not the other way round). What the player asks for (the stick, a climb or
+## a descent, the view swinging round, and in a glide the view against the
+## way it flies and the trim) is read from `Actor.cmd`, which remote players
+## have too, and eased in quickly (`lead_rate`, faster than the body's own
+## attitude follows the velocity), so the body moves first and the flight
+## answers. The body leans into the stick (`lead_lean`) and banks into a
+## turn in a glide (`lead_bank`, radians); the head looks into the turn
+## (`lead_head`) and the climb (`lead_head_pitch`); the chest turns
+## (`lead_twist`), bends (`lead_roll`) and leans with the stick or the trim
+## (`lead_crunch`); the arms drop on the inside of a turn and lift outside
+## (`lead_arm_roll`), reach where the stick points and press down to climb
+## (`lead_reach`), and sweep back for a dive or forward to pull up
+## (`lead_sweep`); the hands tip like ailerons into the turn (`lead_hand`)
+## and flex with the climb (`lead_hand_flex`); the legs swing the other way
+## to balance (`lead_legs`). A glide turns `lead_turn_angle` radians of
+## view off the flight path into a full turn, anything else
+## `lead_turn_rate` radians a second of view turning. Arms and chest only
+## while they are free of a weapon being aimed, and only `lead_armed` of
+## the arms' lead with one in hand. View only.
+var lead_rate := 14.0
+var lead_armed := 0.4
+var lead_lean := 0.16
+var lead_bank := 0.3
+var lead_head := 0.45
+var lead_head_pitch := 0.25
+var lead_twist := 0.3
+var lead_roll := 0.14
+var lead_crunch := 0.2
+var lead_arm_roll := 0.45
+var lead_reach := 0.5
+var lead_sweep := 0.4
+var lead_hand := 0.5
+var lead_hand_flex := 0.35
+var lead_legs := 0.2
+var lead_turn_angle := 0.6
+var lead_turn_rate := 2.5
 
 ## Riding, the head turns at most this far (radians) toward the aim; the
 ## body stays facing along the vehicle.
@@ -529,6 +566,12 @@ var _tuck := 0.0
 var _sway := Vector3.ZERO
 var _sway_v := Vector3.ZERO
 var _turn_rate := 0.0
+## The pilot's intent (`lead_rate`): how hard a turn is asked for (-1..1,
+## positive left), the reach (heading frame: the stick's way level, up for a
+## climb or a pull), and how far the lead is on at all.
+var _lead_turn := 0.0
+var _lead_reach := Vector3.ZERO
+var _lead_w := 0.0
 var _sway_heading := NAN
 var _spine_bones: Array[int] = []
 var _spread := 0.0
@@ -5454,6 +5497,7 @@ func _update_glide(delta: float) -> void:
 	# the camera and then let it swing back: undo the view's turn first, so
 	# the attitude eases only toward the way the body really flies.
 	var yaw := actor.global_rotation.y
+	_update_lead(flat, face, wrapf(yaw - _last_yaw, -PI, PI), delta)
 	if _glide > 0.0 or _boost > 0.0:
 		var turned := wrapf(yaw - _last_yaw, -PI, PI)
 		_face -= turned
@@ -5463,6 +5507,14 @@ func _update_glide(delta: float) -> void:
 	_tilt = _tilt.lerp(tilt, follow)
 	_face = lerp_angle(wrapf(_face, -PI, PI), face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
+	var lead_tilt := Vector3.ZERO
+	var lead_banked := 0.0
+	if _lead_w > 0.0:
+		var level_reach := Vector3(_lead_reach.x, 0.0, _lead_reach.z)
+		var flat_w := smoothstep(0.0, 1.0, maxf(_glide, _boost))
+		lead_tilt = (level_reach * lead_lean * (1.0 - flat_w)
+				+ Vector3.LEFT * _lead_turn * lead_lean * (1.0 if actor.flight.is_skating else 0.0)) * _lead_w
+		lead_banked = lead_bank * _lead_turn * _lead_w * flat_w
 	# Free look in a glide: the body twists round its own length to face the
 	# view, so looking behind lays it on its back (a backstroke) while the
 	# wings fly on, and a sidearm aims back past the feet.
@@ -5484,10 +5536,11 @@ func _update_glide(delta: float) -> void:
 	if _spin_left > 0.0:
 		_spin_left = maxf(0.0, _spin_left - delta)
 		spin = _spin_dir * TAU * smoothstep(0.0, 1.0, 1.0 - _spin_left / maxf(kick_spin_time, 0.01))
-	var angle := _tilt.length()
-	var tip := Basis(Vector3.UP.cross(_tilt / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
+	var shown := _tilt + lead_tilt
+	var angle := shown.length()
+	var tip := Basis(Vector3.UP.cross(shown / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
 	# A positive bank or twist rolls to the right: right side down.
-	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist + _look_roll + spin)
+	var turn := tip * Basis(Vector3.UP, _face - _bank - lead_banked + _twist + _look_roll + spin)
 	_body_turn = turn
 	var pivot := Vector3(0, glide_pivot, 0)
 	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)
@@ -5574,6 +5627,12 @@ func _pose_glide() -> void:
 		return
 	_pose_spine()
 	_pose_air()
+	_pose_flat()
+	_pose_lead_arms()
+
+
+## The flat flying pose of `_pose_glide`, while the glide or a boost has it.
+func _pose_flat() -> void:
 	if _glide <= 0.0:
 		return
 	var w := smoothstep(0.0, 1.0, _limb_glide())
@@ -5597,11 +5656,95 @@ func _pose_glide() -> void:
 	for limb: Array in _glide_legs:
 		if not limb.is_empty():
 			var leg := glide_leg.lerp(backstroke_leg, back)
-			_pose_leg(limb, to_skeleton * (Vector3(leg.x * limb[3], leg.y, leg.z) + _limb_sway(sway_legs)), right, w)
+			_pose_leg(limb, to_skeleton * (Vector3(leg.x * limb[3], leg.y, leg.z) + _limb_sway(sway_legs) + _leg_lead()), right, w)
 	if _glide_neck >= 0:
 		var pose := _skeleton.get_bone_global_pose(_glide_neck)
 		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), lerpf(glide_look, backstroke_look, back) * w) * pose.basis
 		_skeleton.set_bone_global_pose(_glide_neck, pose)
+
+
+## What the pilot is asking for (`lead_rate`), read from the command so a
+## remote player's body leads the same way. `face` is where the flight path
+## points from the view (radians, positive left), `turned` how far the view
+## swung this frame.
+func _update_lead(flat: bool, face: float, turned: float, delta: float) -> void:
+	var f := actor.flight
+	var alive := not actor.is_dead and actor.vehicle == null
+	var flying := alive and f.enabled and is_airborne() \
+			and (flat or f.is_hovering or f.is_skating or _boot_w > 0.0)
+	var turn := 0.0
+	var reach := Vector3.ZERO
+	if flying:
+		var cmd := actor.cmd
+		if f.is_gliding:
+			# A glide steers by the view: the body leads toward where it looks.
+			if not cmd.free_look:
+				turn = clampf(-wrapf(face, -PI, PI) / maxf(lead_turn_angle, 0.01), -1.0, 1.0)
+			reach.y = clampf(-actor.glide_trim(), -1.0, 1.0)
+		else:
+			var rate := turned / delta if delta > 0.0 else 0.0
+			var carve := cmd.move.x * 0.7 if f.is_skating else 0.0
+			turn = clampf(rate / maxf(lead_turn_rate, 0.01) - carve, -1.0, 1.0)
+			var climb := (1.0 if cmd.jump else 0.0) - (1.0 if cmd.descend else 0.0)
+			reach = Vector3(cmd.move.x, climb, -cmd.move.y).limit_length(1.0)
+	var follow := 1.0 - exp(-lead_rate * delta)
+	_lead_turn = lerpf(_lead_turn, turn, follow)
+	_lead_reach = _lead_reach.lerp(reach, follow)
+	_lead_w = move_toward(_lead_w, 1.0 if flying else 0.0, air_blend * delta)
+
+
+## A vector in the flight's heading frame (level, facing the way the body
+## flies: x right, y up, z back), turned into the body's own frame before
+## the tip, as limb directions are given.
+func _heading_to_body(v: Vector3) -> Vector3:
+	return _body_turn.inverse() * (Basis(Vector3.UP, _face) * v)
+
+
+## The arms and hands lead (`lead_arm_roll`): laid over whatever pose the
+## arms have, the inside arm drops and the outside one lifts into a turn,
+## the arms reach where the stick points (pressing down to climb), a glide's
+## sweep back to dive and forward to pull up, and the hands tip like
+## ailerons and flex with the climb.
+func _pose_lead_arms() -> void:
+	var w := smoothstep(0.0, 1.0, _lead_w) * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
+	# A weapon in hand keeps the arms closer to its hold.
+	if _in_hand != null:
+		w *= lead_armed
+	if w <= 0.001:
+		return
+	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
+	var g := smoothstep(0.0, 1.0, _limb_glide())
+	var level := Vector3(_lead_reach.x, 0.0, _lead_reach.z)
+	for limb: Array in _glide_arms:
+		if limb.is_empty():
+			continue
+		var side: float = limb[3]
+		var off := Vector3(0.0, lead_arm_roll * _lead_turn * side, 0.0)
+		off += (level - Vector3(0.0, _lead_reach.y, 0.0)) * lead_reach * (1.0 - g)
+		off += Vector3(0.0, 0.0, -_lead_reach.y * lead_sweep * g)
+		var push := to_skeleton * _heading_to_body(off)
+		var upper := _skeleton.get_bone_global_pose(limb[0]).origin
+		var elbow := _skeleton.get_bone_global_pose(limb[1]).origin
+		_aim_bone(limb[0], limb[1], (elbow - upper).normalized() + push, w)
+		elbow = _skeleton.get_bone_global_pose(limb[1]).origin
+		var hand := _skeleton.get_bone_global_pose(limb[2])
+		_aim_bone(limb[1], limb[2], (hand.origin - elbow).normalized() + push, w)
+		hand = _skeleton.get_bone_global_pose(limb[2])
+		var fore := (hand.origin - _skeleton.get_bone_global_pose(limb[1]).origin)
+		if fore.length_squared() < 0.000001:
+			continue
+		var bend_axis := (to_skeleton * _heading_to_body(Vector3.RIGHT)).normalized()
+		hand.basis = Basis(fore.normalized(), lead_hand * _lead_turn * side * w) \
+				* Basis(bend_axis, lead_hand_flex * _lead_reach.y * w) * hand.basis
+		_skeleton.set_bone_global_pose(limb[2], hand)
+
+
+## The legs swing against the arms' reach to balance (`lead_legs`), body
+## frame as `_limb_sway`.
+func _leg_lead() -> Vector3:
+	if _lead_w <= 0.0:
+		return Vector3.ZERO
+	return _heading_to_body(-Vector3(_lead_reach.x, 0.0, _lead_reach.z) * lead_legs * _lead_w)
 
 
 ## The limbs' secondary motion (`sway_stiffness`): the pull of the body's
@@ -5643,19 +5786,32 @@ func _pose_spine() -> void:
 	if _spine_bones.is_empty():
 		return
 	var free := 1.0 - smoothstep(0.0, 1.0, _flight_hold)
-	var w := maxf(smoothstep(0.0, 1.0, _limb_glide()), smoothstep(0.0, 1.0, _boot_w) * _boot_hero) * free
+	var lead := smoothstep(0.0, 1.0, _lead_w)
+	var w := maxf(maxf(smoothstep(0.0, 1.0, _limb_glide()), smoothstep(0.0, 1.0, _boot_w) * _boot_hero), lead) * free
 	if w <= 0.001:
 		return
 	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
 	var up := (to_skeleton * Vector3.UP).normalized()
 	var right := (to_skeleton * Vector3.RIGHT).normalized()
-	var twist := sway_twist * clampf(_turn_rate / maxf(sway_turn_full, 0.1), -1.0, 1.0)
-	var pitch := sway_pitch * clampf((_body_turn.inverse() * _sway).z, -1.0, 1.0)
+	var forward := (to_skeleton * Vector3.FORWARD).normalized()
+	var g := smoothstep(0.0, 1.0, _limb_glide())
+	# The chest leads: it turns into the turn asked for before the flight
+	# swings round, bends into it, and leans with the stick or the trim.
+	var twist := sway_twist * clampf(_turn_rate / maxf(sway_turn_full, 0.1), -1.0, 1.0) + lead_twist * _lead_turn * lead
+	var pitch := sway_pitch * clampf((_body_turn.inverse() * _sway).z, -1.0, 1.0) \
+			+ lead_crunch * (_lead_reach.z * (1.0 - g) + _lead_reach.y * g) * lead
+	var roll := -lead_roll * _lead_turn * lead
 	var share := w / _spine_bones.size()
 	for bone in _spine_bones:
 		var pose := _skeleton.get_bone_global_pose(bone)
-		pose.basis = Basis(up, twist * share) * Basis(right, pitch * share) * pose.basis
+		pose.basis = Basis(up, twist * share) * Basis(right, pitch * share) * Basis(forward, roll * share) * pose.basis
 		_skeleton.set_bone_global_pose(bone, pose)
+	if _glide_neck >= 0 and lead > 0.001:
+		# The head leads most: it looks into the turn and the climb first.
+		var pose := _skeleton.get_bone_global_pose(_glide_neck)
+		pose.basis = Basis(up, lead_head * _lead_turn * lead * free) \
+				* Basis(right, lead_head_pitch * _lead_reach.y * lead * free) * pose.basis
+		_skeleton.set_bone_global_pose(_glide_neck, pose)
 
 
 ## How far the arms and legs are in the flat flying pose: a flare for the
@@ -5690,7 +5846,7 @@ func _pose_air() -> void:
 			thigh = thigh.lerp(legs[0], bw)
 			shin = shin.lerp(legs[1], bw)
 			toes = lerpf(toes, boot_toes, bw)
-		var swing := _limb_sway(sway_legs)
+		var swing := _limb_sway(sway_legs) + _leg_lead()
 		_pose_leg(limb, to_skeleton * (Vector3(thigh.x * limb[3], thigh.y, thigh.z) + swing), right, w,
 				to_skeleton * (Vector3(shin.x * limb[3], shin.y, shin.z) + swing * 1.5), toes)
 	var arm_w := w * smoothstep(0.0, 1.0, _boot_w) * _boot_hero * (1.0 - smoothstep(0.0, 1.0, _flight_hold))

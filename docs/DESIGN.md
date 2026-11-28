@@ -2823,9 +2823,12 @@ Each rig flies with a character of its own, seen, heard and felt:
   dive began, so the jetpack still owns height. A rush of air heard 30 m
   away.
 
-On every rig the body moves with each turn and change of speed (Caleb's
-ask): the arms and legs swing on and settle, and with the arms free the
-chest leads a turn. Wind rushes past your ears at speed on every rig. In first person the view
+On every rig the flyer leads and the rig answers (Caleb's ask): the
+moment you steer, the head looks into the turn, the chest turns and
+leans, the inside arm drops and the outside lifts, the arms reach the
+way you push, the hands tip like ailerons and the legs swing to balance,
+before the flight itself bends; then the arms and legs swing on with
+each change of speed and settle. Wind rushes past your ears at speed on every rig. In first person the view
 rolls with a third of the wings' bank and a little with a skate's carve,
 and rumbles in a boost; the phone's "Camera motion in flight" turns it
 down or off. The vapor is off on the Low and Lowest graphics.
