@@ -17,6 +17,22 @@ const BOOM_DELAY_MAX := 2.5
 var rumble_db := Vector2(-30.0, -13.0)
 ## The always-on wind's volume (dB); a storm brings its own (`WeatherView`).
 var wind_db := -30.0
+## Which of `Sfx`'s loops the always-on wind is ("wind", or a world's own,
+## such as the cold's "wind_cold"), and the rumble under everything.
+var wind_sound := "wind"
+var rumble_sound := "war_rumble"
+## Sounds of the place itself now and then, each a dictionary: "sound" (an
+## `Sfx` sound), "rate" (times a second), "db" (a Vector2 range of volume),
+## "distance" (a Vector2 range, m, how far from the ear in any direction).
+## A frozen world's ice groaning far off, say. Thinned with the sound detail.
+var accents: Array[Dictionary] = []
+## How far the ear is under cover now, 0 to 1 (the map sets it: inside a
+## great machine, say): the wind drops by `shelter_wind_db` and the rumble
+## rises by `shelter_rumble_db`, eased over a second.
+var shelter := 0.0
+var shelter_wind_db := 18.0
+var shelter_rumble_db := 8.0
+var _shelter := 0.0
 ## Bursts of far gunfire a second, quiet and in all-out war.
 var fire_rate := Vector2(0.12, 1.4)
 ## How far off (m) a far burst is placed from the ear, toward the fighting,
@@ -38,8 +54,8 @@ var _booms: Array[Array] = []
 
 func _ready() -> void:
 	_rng.seed = 4242
-	_rumble = _loop("war_rumble")
-	_wind = _loop("wind")
+	_rumble = _loop(rumble_sound)
+	_wind = _loop(wind_sound)
 
 
 func _loop(sound: String) -> AudioStreamPlayer:
@@ -91,10 +107,11 @@ func _process(delta: float) -> void:
 	var map := get_parent()
 	var heat := clampf(float(map.get_meta("war_intensity", 0.0)), 0.0, 1.0)
 	var duck := storm_duck_db * Look.weather_cover
+	_shelter = move_toward(_shelter, clampf(shelter, 0.0, 1.0), delta)
 	if _rumble != null:
-		_rumble.volume_db = lerpf(rumble_db.x, rumble_db.y, heat) - duck
+		_rumble.volume_db = lerpf(rumble_db.x, rumble_db.y, heat) - duck + shelter_rumble_db * _shelter
 	if _wind != null:
-		_wind.volume_db = wind_db - duck
+		_wind.volume_db = wind_db - duck - shelter_wind_db * _shelter
 	var ear := _ear()
 	if not ear.is_finite():
 		return
@@ -105,7 +122,16 @@ func _process(delta: float) -> void:
 			var way := Vector3(from.x - ear.x, 0.0, from.z - ear.z).normalized()
 			Sfx.play("far_boom", ear + way * 50.0 + Vector3(0, 6, 0), boom_db - duck, 400.0, 40.0)
 			_booms.remove_at(i)
-	if _rng.randf() < bursts_per_second(heat) * delta:
+	var detail := Sfx.sound_detail()
+	for accent: Dictionary in accents:
+		if _rng.randf() < float(accent.get("rate", 0.0)) * detail * delta:
+			var spread: Vector2 = accent.get("distance", Vector2(30.0, 80.0))
+			var bearing := _rng.randf() * TAU
+			var at := ear + Vector3(sin(bearing), 0.1, cos(bearing)) * _rng.randf_range(spread.x, spread.y)
+			var loud: Vector2 = accent.get("db", Vector2(-20.0, -12.0))
+			Sfx.play(String(accent.get("sound", "")), at, _rng.randf_range(loud.x, loud.y) - duck,
+					spread.y * 2.5, 30.0)
+	if _rng.randf() < bursts_per_second(heat) * detail * delta:
 		var centre: Variant = map.get_meta("war_centre", Vector3.ZERO)
 		var at := burst_from(ear, centre if centre is Vector3 else Vector3.ZERO, fire_distance,
 				_rng.randf_range(-fire_spread, fire_spread))
