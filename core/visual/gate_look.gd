@@ -12,6 +12,13 @@ extends RefCounted
 
 const WINDOW_SHADER := preload("res://assets/shaders/gate_window.gdshader")
 const METER_SHADER := preload("res://assets/shaders/gate_meter.gdshader")
+const CREST_SHADER := preload("res://assets/shaders/gate_crest.gdshader")
+## The gates' own orange, for a world with no planet.
+const DEFAULT_COLOR := Color(1.0, 0.6, 0.3)
+## Each storm's colour on a gate: ice for snow, gold for sand, green for a
+## wet, spore-laden world; ash and embers take the planet's crack glow.
+const STORM_COLORS := {"snow": Color(0.45, 0.8, 1.0), "sand": Color(1.0, 0.78, 0.35),
+	"rain": Color(0.45, 1.0, 0.6), "spores": Color(0.45, 1.0, 0.6)}
 
 ## `Planet.weather` kinds, as the window shader numbers them.
 const WEATHER := {"": 0, "embers": 1, "ash": 2, "snow": 3, "rain": 4, "sand": 5, "spores": 6}
@@ -68,6 +75,52 @@ static func window_params(type: PlanetType) -> Dictionary:
 		out["moon"] = sky.get("body2_color", Color(0.85, 0.85, 0.9))
 		out["moon_size"] = clampf(float(sky.get("body2_size", 0.0)) * 2.0, 0.04, 0.12)
 	return out
+
+
+## A gate's colour for a world on this planet: what its trim, its panels
+## and the edge of its glimpse glow in, so each gate reads as its world from
+## across the plaza. Pure data, safe headless.
+static func world_color(type: PlanetType) -> Color:
+	if type == null:
+		return DEFAULT_COLOR
+	var storm := str(type.weather.get("storm", ""))
+	if storm == "":
+		storm = str(type.weather.get("air", ""))
+	if STORM_COLORS.has(storm):
+		return STORM_COLORS[storm]
+	var glow: Color = type.ground.get("crack_glow", DEFAULT_COLOR)
+	return Color.from_hsv(glow.h, 0.75, 1.0)
+
+
+## Which emblem a world's crest shows (see `gate_crest.gdshader`), from
+## its planet's weather: 1 a flame (embers), 2 a snowflake, 3 a spore,
+## 4 dune waves (sand), 5 a burning peak (ash over glowing ground), 0 a
+## ringed planet otherwise.
+static func crest_kind(type: PlanetType) -> int:
+	if type == null:
+		return 0
+	var air := str(type.weather.get("air", ""))
+	var storm := str(type.weather.get("storm", ""))
+	if air == "embers":
+		return 1
+	if air == "snow" or storm == "snow":
+		return 2
+	if air == "spores":
+		return 3
+	if storm == "sand" or air == "sand":
+		return 4
+	if air == "ash" or storm == "ash":
+		return 5
+	return 0
+
+
+## A world's crest, `size` metres square, facing +Z.
+static func crest(type: PlanetType, size: float, color: Color) -> MeshInstance3D:
+	var mat := ShaderMaterial.new()
+	mat.shader = CREST_SHADER
+	mat.set_shader_parameter("kind", crest_kind(type))
+	mat.set_shader_parameter("color", color)
+	return _sheet(Vector2(size, size), mat, "Crest")
 
 
 ## A sealed gate's shutter: frost, hazard stripes and a dim hologram of a

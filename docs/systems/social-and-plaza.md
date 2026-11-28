@@ -36,7 +36,12 @@ date in the same PR.
   world's gate needs no line) and the server's live line
   (`PlazaView.heat_signs`, flat across the top of the doorway). The full
   write-up is on a console beside each open gate (group "gate_console"),
-  drawn only up close. Where `Look` draws, the doorway shows a glimpse of
+  drawn only up close. Each arch has a stepped frame (`_build_gate_frame`: flanges, a crown,
+  a lit threshold) lit in its world's colour (`Look.gate_color`, from the
+  planet's storm, so it is right headless too), with the world's crest on
+  both pillars (`GateLook.crest`, an emblem picked from the planet's
+  weather); a sealed arch is barred with clamped beams over blast doors
+  (`_build_sealed_doors`). Where `Look` draws, the doorway shows a glimpse of
   the world (`GateLook.window`, `gate_window.gdshader`): one unshaded sheet
   that traces the eye's ray into a made-up scene from the world's
   `PlanetType` (sky, ridges, ground, its air and storm drifting), so it

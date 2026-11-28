@@ -1932,6 +1932,17 @@ func gate_window(type: PlanetType, size: Vector2, rim: Color, seed := 0.0) -> Me
 	return GateLook.window(type, size, rim, seed)
 
 
+## The colour a world's gate glows in, from its planet (`GateLook.world_color`).
+## Pure data: callable headless, where the map still builds its trims.
+func gate_color(type: PlanetType) -> Color:
+	return GateLook.world_color(type)
+
+
+## A world's emblem for its gate (`GateLook.crest`).
+func gate_crest(type: PlanetType, size: float, color: Color) -> MeshInstance3D:
+	return GateLook.crest(type, size, color)
+
+
 ## A sealed gate's frosted shutter with a hologram on it (`GateLook.teaser`).
 func gate_teaser(size: Vector2, rim: Color) -> MeshInstance3D:
 	return GateLook.teaser(size, rim)

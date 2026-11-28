@@ -52,6 +52,10 @@ static func run(t: Node) -> void:
 				or (bay.fins as Array).size() != 2:
 			open_ok = false
 	t.check(open_ok, "the worlds fill the first arches, the rest stand sealed, each between two lit fins")
+	t.check(bays.all(func(bay: Dictionary) -> bool:
+		var world := Worlds.get_world(str(bay.world_id))
+		return world == null or bay.color == Look.gate_color(world.planet_type())),
+			"each open bay is lit in its world's colour")
 	t.check(bays.all(func(bay: Dictionary) -> bool: return bay.glimpse == null and (bay.meters as Array).is_empty()),
 			"no glimpse or panels where nothing is drawn")
 
@@ -113,6 +117,14 @@ static func run(t: Node) -> void:
 	var ice := GateLook.window_params(PlanetTypes.get_type("glacier"))
 	t.check(int(ice.storm) == GateLook.WEATHER["snow"] and float(ice.get("cap_amount", 0.0)) > 0.0
 			and float(ice.glow_amount) == 0.0, "a glacier's gate shows snow on snow-capped ridges")
+	var ash_type := PlanetTypes.get_type("ashland")
+	var ice_type := PlanetTypes.get_type("glacier")
+	t.check(GateLook.world_color(ash_type).r > 0.9 and GateLook.world_color(ice_type).b > 0.9
+			and GateLook.world_color(ice_type).r < 0.6 and GateLook.world_color(null) == GateLook.DEFAULT_COLOR,
+			"each gate glows in its world's colour: an ash world warm, a glacier icy")
+	t.check(GateLook.crest_kind(ash_type) == 1 and GateLook.crest_kind(ice_type) == 2
+			and GateLook.crest_kind(PlanetTypes.get_type("marsh")) == 3 and GateLook.crest_kind(PlanetTypes.get_type("dunes")) == 4,
+			"each world's crest comes from its weather: a flame, a snowflake, a spore, dunes")
 	var glimpse := GateLook.window(PlanetTypes.get_type("glacier"), Vector2(8.2, 11.8), Color.ORANGE)
 	t.check(glimpse.name == "Glimpse" and glimpse.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			and (glimpse.material_override as ShaderMaterial).shader == GateLook.WINDOW_SHADER,
