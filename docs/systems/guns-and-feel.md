@@ -145,3 +145,16 @@ date in the same PR.
   and a round jolts the view (`PlayerController.bullet_flinch`), never the
   aim. Who shot you is not shown: that is the tactical visor's job.
   Check by eye with `visual_check.tscn -- <dir> --impacts-only`.
+  A kill's marker also throws a thin ring out as it fades.
+- The crosshair (`core/ui/crosshair.gd`, on `Hud` and the base's HUD) is
+  the same in first and third person (Caleb's call): a dot and four ticks
+  whose gap is the gun's real spread (`Gun.current_spread_deg` in pixels
+  at the camera's field of view) plus a small kick per shot, so moving,
+  jumping, spraying and aiming open and close it by what they do to the
+  shots. It turns red over an enemy in range, dim grey when what is under
+  it is past `max_range` or `falloff_end`, dim red when the magazine is
+  out or jammed, and becomes a ring that fills during a reload, a charge
+  or a spin-up; a melee weapon gets the dot alone. It fades out when the
+  sight is up in first person; in third person aiming only closes it. It
+  is view only: one ray along the aim every `probe_interval`, nothing in
+  the simulation. Never put text on it.

@@ -28,6 +28,7 @@ const Contracts := preload("res://core/economy/contracts.gd")
 const SafetyNets := preload("res://core/economy/safety_nets.gd")
 const SkinScript := preload("res://core/visual/actor_skin.gd")
 const PhoneScript := preload("res://core/phone/phone.gd")
+const CrosshairScript := preload("res://core/ui/crosshair.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 ## The watch map's risk-zone grid is this many cells a side, how much room
 ## it leaves round what it shows, and the least half width it shows (metres).
@@ -85,7 +86,8 @@ var progress_ring: ProgressRing
 var _hurt_flash: ColorRect
 var _stance: StanceIndicator
 ## The aiming cross in the middle of the screen.
-var crosshair: Label
+## The aiming mark (`core/ui/crosshair.gd`): spread, target and reload state.
+var crosshair: Control
 var _prompt: Label
 var _messages: Array[Dictionary] = []
 ## The local player's last life, shown while they are down (see `show_death`).
@@ -142,8 +144,12 @@ func _ready() -> void:
 	root.add_child(_stance)
 	_place(_stance, 0.5, 0.5, Vector2(-70, -70), Vector2(140, 140))
 
-	crosshair = _label(root, "+", 22)
-	_place(crosshair, 0.5, 0.5, Vector2(-7, -17), Vector2(14, 30))
+	crosshair = CrosshairScript.new()
+	crosshair.name = "Crosshair"
+	crosshair.set("actor", raid.player)
+	crosshair.set("controller", controller)
+	root.add_child(crosshair)
+	_place(crosshair, 0.5, 0.5, Vector2(-60, -60), Vector2(120, 120))
 
 	_prompt = _label(root, "", 18)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -183,8 +189,9 @@ func _process(delta: float) -> void:
 	_stance.threat = incoming_side(p) if blade else -1
 	_update_ammo_counters(p)
 	if crosshair:
-		# Looking down an optic, its own reticle marks the middle.
-		crosshair.modulate.a = 0.0 if controller != null and is_instance_valid(controller) and controller.sighted else 1.0
+		# It fades itself out while the sight is up in first person.
+		crosshair.set("actor", p)
+		crosshair.set("controller", controller)
 	_update_heat_display(p)
 
 	var banking := raid.bank_progress()
@@ -1710,6 +1717,11 @@ class HitMarker:
 		var grow := _size * (1.0 + 0.25 * (1.0 - color.a))
 		for dir: Vector2 in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
 			draw_line(c + dir * 7.0 * grow, c + dir * 15.0 * grow, color, 2.5 * _size)
+		# A kill also throws a thin ring out past the marks as it fades.
+		if kind == "kill":
+			var ring := color
+			ring.a *= 0.8
+			draw_arc(c, 14.0 + 16.0 * (1.0 - color.a), 0.0, TAU, 40, ring, 2.0, true)
 
 ## A mark beside the crosshair on the side an enemy swing is coming from, so
 ## a blade out in first person reads a swing at the edge of the view. Guards

@@ -2393,6 +2393,11 @@ A fight should be read by ear and at a glance, the same in both views:
 - The hit marker says what the hit did: white for flesh, steel blue when
   plates soaked it, a wide cyan when the plates broke, gold for a head and
   red for a kill, each with its own sound.
+- The crosshair is small and honest: its ticks sit where your shots can
+  land right now, opening as you move or spray and closing as you aim. It
+  turns red over an enemy you can reach, greys out past your gun's range,
+  and becomes a filling ring while you reload. It is the same in both
+  views and fades away when you look down the sights.
 - Being shot jolts your view a little, more for a harder round. The aim
   stays put, so it never costs you a shot.
 
