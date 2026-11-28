@@ -1319,14 +1319,24 @@ func phone_pose() -> void:
 		var pose := skeleton.get_bone_global_pose(chest)
 		pose.basis = Basis(right, -phone_chest * w) * pose.basis
 		skeleton.set_bone_global_pose(chest, pose)
+	# Seated, the hold is measured from where the neck is now (low and leant
+	# forward over the bars) instead of from a standing neck, and the left
+	# hand stays on its grip.
+	var seated := ride_weight > 0.0 and _ride_on != null and is_instance_valid(_ride_on)
+	var lift := Vector3.ZERO
+	if seated and _neck >= 0:
+		var to_actor := to_skeleton.affine_inverse()
+		lift = (to_actor * skeleton.get_bone_global_pose(_neck).origin
+				- to_actor * skeleton.get_bone_global_rest(_neck).origin) * smoothstep(0.0, 1.0, ride_weight)
 	for arm: Array[int] in _arms:
 		if arm.size() != 3:
 			continue
 		if _side_of(arm[0]) < 0.0:
-			_bend(arm, skeleton.get_bone_rest(arm[2]).origin, to_skeleton * phone_rest,
-					to_skeleton.basis * phone_rest_elbow, w)
+			if not seated:
+				_bend(arm, skeleton.get_bone_rest(arm[2]).origin, to_skeleton * phone_rest,
+						to_skeleton.basis * phone_rest_elbow, w)
 			continue
-		var wrist := to_skeleton * phone_wrist
+		var wrist := to_skeleton * (phone_wrist + lift)
 		var elbow := to_skeleton.basis * phone_elbow
 		_bend(arm, skeleton.get_bone_rest(arm[2]).origin, wrist, elbow, w)
 		# The phone sits in the palm, a hand's length on from the wrist.

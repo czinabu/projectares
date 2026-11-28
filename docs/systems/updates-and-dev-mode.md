@@ -47,7 +47,9 @@ date in the same PR.
   beside the exe (on Windows a batch script does it once the game has
   closed, since an open pack cannot be replaced; release builds refuse
   `--main-pack`), then restarts. It never runs in the editor, a test, a
-  server or headless, and anything that changes the engine or a native
+  server or headless, nor in a copy Steam installed (`Updater.on_steam`:
+  the feature tag "steam" or Steam's `SteamAppId` at launch), since Steam
+  updates that one itself and would put back a swapped pack; and anything that changes the engine or a native
   library needs a fresh install. Release builds also refuse `--path`, so a
   game starts its own server with `Main.server_process_args`, which leaves
   it out of an exported game. Its state shows on the start screen's

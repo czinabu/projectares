@@ -1231,9 +1231,10 @@ func _head_local() -> Vector3:
 
 ## True while the actor holds their phone up (`ActorCommand.phone`, which
 ## travels with the held keys, so remote players show it too). The weapon is
-## worn meanwhile and drawn again when the phone goes away.
+## worn meanwhile and drawn again when the phone goes away. Riding too: the
+## right hand leaves its grip for it and the left keeps the bar.
 func phone_up() -> bool:
-	return actor.cmd.phone and not actor.is_dead and actor.vehicle == null
+	return actor.cmd.phone and not actor.is_dead
 
 
 ## Eases the phone hold in and out and keeps the phone itself in the right
@@ -5292,7 +5293,7 @@ func _update_ride() -> void:
 			and locomotion.ride == vehicle and float(vehicle.get("airborne_time")) <= 0.0
 	locomotion.ride_foot_down = move_toward(locomotion.ride_foot_down, 1.0 if stopped else 0.0,
 			foot_down_rate * get_process_delta_time())
-	var free := _in_hand == null and _plan.is_empty()
+	var free := _in_hand == null and _plan.is_empty() and not phone_up()
 	locomotion.ride_hands = Vector2(1.0, 1.0 if free else 0.0)
 	# A gun in hand is held out toward the aim, where it would be on foot.
 	var gun := _in_hand as Gun

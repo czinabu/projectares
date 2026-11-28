@@ -55,6 +55,11 @@ date in the same PR.
   bike's lean (`ActorSkin.ride_frame`). The left hand keeps its grip; the
   right takes its grip only with nothing in it, holds a gun out toward the
   aim, and leaves a blade to its usual hold, so melee windups still show.
+  The phone works riding too (Caleb's bug: it was unusable on a vehicle):
+  with it out, the right hand leaves its grip to hold it, measured from the
+  seated neck, the left keeps the bar (`Locomotion.phone_pose`), and the
+  vehicle gets no throttle or steering, so it coasts
+  (`tests/ride_phone_tests.gd`).
   Getting on and off is instant for the simulation (the seat, the exit
   spot) and shown over `ActorSkin.board_time` (0.42 s on) and
   `unboard_time` (0.32 s off): the skin starts the body where the actor

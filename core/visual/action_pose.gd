@@ -817,7 +817,8 @@ func advance(delta: float) -> void:
 	var watch_wanted := actor.cmd != null and actor.cmd.watch_up and not actor.is_dead
 	_watch_raise = move_toward(_watch_raise, 1.0 if watch_wanted else 0.0, delta / maxf(watch_time, 0.001))
 	watch = ease(_watch_raise, -2.0)
-	var phone_wanted := actor.cmd != null and actor.cmd.phone and not actor.is_dead and actor.vehicle == null
+	# Riding too: the rider takes a hand off the bar for it (`Locomotion.phone_pose`).
+	var phone_wanted := actor.cmd != null and actor.cmd.phone and not actor.is_dead
 	phone = move_toward(phone, 1.0 if phone_wanted else 0.0, phone_rate * delta)
 	if actor.visor.enabled:
 		helmet = move_toward(helmet, actor.helmet_stow, 1.5 * delta / maxf(actor.helmet_stow_time, 0.01))
