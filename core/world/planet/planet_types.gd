@@ -190,6 +190,8 @@ static func saltflat() -> PlanetType:
 	}
 	t.horizon = {"reach": 3200.0, "peaks": 110.0}
 	t.weather = {"air": "", "storm": "sand"}
+	# Salt-white and violet under its purple sky, not the dunes' gold.
+	t.accent = Color(0.82, 0.7, 1.0)
 	t.props = [
 		{"kind": "spire", "per_ha": 0.14, "size": Vector2(14.0, 40.0), "max_slope": 0.3, "out": 0.45},
 		{"kind": "slab", "per_ha": 0.6, "size": Vector2(2.0, 4.0), "max_slope": 0.4},
@@ -251,6 +253,8 @@ static func basalt() -> PlanetType:
 	}
 	t.horizon = {"reach": 2600.0, "peaks": 260.0}
 	t.weather = {"air": "ash", "storm": "ash"}
+	# Lava red, not the ash plains' orange.
+	t.accent = Color(1.0, 0.22, 0.2)
 	t.props = [
 		{"kind": "spire", "per_ha": 0.5, "size": Vector2(4.0, 12.0), "max_slope": 0.4},
 		{"kind": "boulder", "per_ha": 4.0, "size": Vector2(0.6, 2.2), "max_slope": 0.6},
