@@ -21,11 +21,12 @@ var _summary: Label
 
 ## Every choice, in the order the Mirror app lists them: the body, then the
 ## head (hairstyle, facial hair, hair colour, eyes, skin, face shape), then
-## the suit.
+## the suit: the style of its top, legs and boots (`Human.SUIT_STYLES`), its
+## colours, its trim and its pattern.
 const PICKS: Array[String] = ["build", "style", "facial", "hair", "eyes", "skin", "face", "body", "legs", "feet",
-		"top", "bottom", "pattern"]
-const TITLES := {"build": "Body", "face": "Face", "style": "Hairstyle", "facial": "Facial hair", "body": "Suit top",
-		"legs": "Suit legs", "feet": "Boots"}
+		"top", "bottom", "trim", "pattern"]
+const TITLES := {"build": "Body", "face": "Face", "style": "Hairstyle", "facial": "Facial hair", "body": "Top style",
+		"legs": "Legs style", "feet": "Boots"}
 
 
 func _ready() -> void:
@@ -141,6 +142,7 @@ func randomize_look() -> void:
 	next["pattern"] = 1 + rng.randi() % (Human.PATTERNS.size() - 1) if rng.randf() < 0.4 else 0
 	next["top"] = rng.randi() % Human.CLOTH_COLORS.size()
 	next["bottom"] = rng.randi() % Human.CLOTH_COLORS.size()
+	next["trim"] = rng.randi() % Human.TRIM_COLORS.size() if rng.randf() < 0.5 else 0
 	_apply(Human.player_look(next, owned))
 
 

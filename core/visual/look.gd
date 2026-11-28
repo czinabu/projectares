@@ -2177,6 +2177,12 @@ func dress_surfaces(mesh_node: MeshInstance3D, def: Dictionary, chosen: Dictiona
 				mat.set_shader_parameter("suit_color", suit["color"])
 				mat.set_shader_parameter("suit_trim", suit["trim"])
 				mat.set_shader_parameter("suit_pattern", suit.get("pattern", 0))
+				mat.set_shader_parameter("suit_cut", suit["cut"])
+				mat.set_shader_parameter("suit_material", suit["material"])
+				mat.set_shader_parameter("suit_second", suit["second"])
+				var marks := Human.body_marks(chosen.get("build", "m"))
+				for mark: String in marks:
+					mat.set_shader_parameter(mark, marks[mark])
 		mesh_node.set_surface_override_material(i, mat)
 		materials.append(mat)
 	return materials
