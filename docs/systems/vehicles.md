@@ -156,6 +156,29 @@ date in the same PR.
   included, can be thrown in every world (Caleb's call), except a race
   world (`WorldDef.vehicle_toys` off), which races its own stock machines. A vehicle's `watch_recharge` and `footprint` stats
   set the watch's wait after a throw and the room it needs to unpack.
+- Hitting things (`Vehicle._collide`, after every move; Caleb's bug:
+  "vehicles currently stop anytime they collide with anything no matter how
+  small it is ... if you bump into someone they just slow down instead of
+  react normally"). Nothing scrubs the speed off any more. A low lip (a
+  kerb, a plank, a rock) under `step_height` is driven over
+  (`_step_over`). A wall keeps `bump_keep` of the speed along it and
+  bounces back `bump_bounce` of the speed into it; a hit slower than
+  `bump_min` only slides. Vehicles collide with each other
+  (`LAYER_VEHICLES` is in their mask), and another vehicle or its rider is
+  a body that moves too (`_bump_body`): the two trade speed along the line
+  between them by their `weight` with `bump_bounce` of spring, so a racer
+  bumped from the side is shoved aside and keeps its pace, a light bike
+  rammed by a rover is thrown, and a person on foot counts for
+  `person_weight`. A blow off the centre spins the body (`spin`, by
+  `bump_spin`, capped at `max_spin`). The flat velocity is split into the
+  speed along the heading and a shove, `knock`, which rides on top of the
+  drive and dies away with `spin` at `knock_decay` (`_take`,
+  `_shake_off`); a vehicle with either left is not parked. Online only the
+  authority moves the other vehicle (`take_bump`); `knock` and `spin`
+  travel in the ride state (`NetSession.WIRE_VEHICLE_STATE` 2) and are
+  corrected like `speed` and `slip`. A vehicle leaving the world wakes
+  the parked ones near it (`_exit_tree`), since one may stand on it
+  (`tests/vehicle_bump_tests.gd`).
 - Toy vehicles: a vehicle a player owns in a world rides on their watch as
   a toy (`Raid.PlayerState.stowed`, read with `Raid.stowed_for`), never in
   the inventory. `Raid.throw_toy` throws one from the actor along their aim;
