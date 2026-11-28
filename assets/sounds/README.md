@@ -1,5 +1,8 @@
 # Recorded sounds
 
+(The world's footsteps, engines, cold wind and music are CC0 and live in
+`world/`, see `assets/LICENSES.md`. This page is about the Sonniss clips.)
+
 Clips cut from the Sonniss #GameAudioGDC 2026 bundle (royalty-free, commercial
 use, no attribution). Its license lets them ship inside the game but not be
 handed out as they are, so the `.ogg` files are not in this public repository.
