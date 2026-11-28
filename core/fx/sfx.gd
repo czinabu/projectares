@@ -5,6 +5,7 @@ extends Node
 ## when the file is there (`recorded`); without it the synth plays.
 
 const RATE := 22050
+const GameSettings := preload("res://core/settings/game_settings.gd")
 
 ## How close a round must pass the listener to be heard going by, and how
 ## far from its shooter it must be (your own shots never whizz).
@@ -120,6 +121,8 @@ func _ready() -> void:
 		if stream != null:
 			_streams[sound] = stream
 	_load_weapon_sounds()
+	_load_world_sounds()
+	get_tree().node_added.connect(_on_node_added)
 
 
 ## Weapon voices made by `assets/sounds/weapons/make_weapon_sounds.py`
@@ -353,6 +356,134 @@ static func near_miss(from: Vector3, to: Vector3, ear: Vector3) -> Vector3:
 		return Vector3.INF
 	var near := from + line * t
 	return near if near.distance_to(ear) <= PASS_RADIUS else Vector3.INF
+
+
+## The world's sounds made by `assets/sounds/world/make_world_sounds.py`
+## (Kenney's CC0 footsteps and engines, and our own wind and music). Each
+## is optional like the rest: a checkout without one goes without it.
+const WORLD_DIR := "res://assets/sounds/world/"
+## The grounds a footstep can sound like (`Footsteps.ground_at`), each five
+## takes played at random.
+const STEP_GROUNDS := ["hard", "dirt", "snow", "soft", "wood"]
+const WORLD_LOOPS := ["engine_ground", "engine_hover", "engine_air", "wind_cold", "music_plaza"]
+## Seconds one track takes to fade into the next (or out to silence).
+const MUSIC_FADE := 2.5
+## Footsteps heard at most a second, all bodies together, at full sound
+## detail; `sound_detail` scales it (your own are always heard).
+const STEPS_A_SECOND := 28.0
+## Engines running at once, at full sound detail (yours always runs).
+const ENGINES_AT_ONCE := 6
+
+var _music: AudioStreamPlayer
+var _music_track := ""
+var _music_tween: Tween
+var _step_budget := 0.0
+var _step_budget_at := 0
+var engines_running := 0
+
+
+func _load_world_sounds() -> void:
+	for ground: String in STEP_GROUNDS:
+		var pick := AudioStreamRandomizer.new()
+		pick.random_pitch = 1.08
+		pick.random_volume_offset_db = 1.5
+		pick.playback_mode = AudioStreamRandomizer.PLAYBACK_RANDOM_NO_REPEATS
+		for i in 5:
+			var path := WORLD_DIR + "step_%s_%d.ogg" % [ground, i + 1]
+			if ResourceLoader.exists(path):
+				pick.add_stream(-1, load(path))
+		if pick.streams_count > 0:
+			_streams["step_" + ground] = pick
+	for sound: String in WORLD_LOOPS:
+		var path: String = WORLD_DIR + sound + ".ogg"
+		if ResourceLoader.exists(path):
+			var stream := load(path) as AudioStream
+			if stream is AudioStreamOggVorbis:
+				(stream as AudioStreamOggVorbis).loop = true
+			_streams[sound] = stream
+
+
+## How much of the game's sound detail is kept (footsteps a second, engines
+## at once, how far they carry): the War scenery setting, which the Low and
+## Lowest presets turn down for a laptop. 1 is all of it.
+static func sound_detail() -> float:
+	return float(GameSettings.WAR_SCENERY[clampi(GameSettings.war_scenery, 0,
+			GameSettings.WAR_SCENERY.size() - 1)][1])
+
+
+## Whether one more footstep may be heard now: all the bodies in earshot
+## share `STEPS_A_SECOND` (scaled by `sound_detail`), so a crowd marching
+## past costs no more than a squad. Your own steps never ask.
+func take_step() -> bool:
+	var now := Time.get_ticks_msec()
+	var rate := STEPS_A_SECOND * sound_detail()
+	_step_budget = minf(_step_budget + (now - _step_budget_at) / 1000.0 * rate, rate * 0.25)
+	_step_budget_at = now
+	if _step_budget < 1.0:
+		return false
+	_step_budget -= 1.0
+	return true
+
+
+## How many engines may run at once at this sound detail.
+static func engines_at_once() -> int:
+	return maxi(2, roundi(ENGINES_AT_ONCE * sound_detail()))
+
+
+## Plays `track` ("music_" + track in `WORLD_DIR`) as the music, fading out
+## whatever played before; "" fades the music out. The same track again goes
+## on where it is, so walking from the start screen into the base or the
+## plaza never restarts it.
+func music(track: String) -> void:
+	if not _enabled or track == _music_track:
+		return
+	_music_track = track
+	var stream: AudioStream = _streams.get("music_" + track) if track != "" else null
+	var old := _music
+	_music = null
+	if old != null and is_instance_valid(old):
+		var out := create_tween()
+		out.tween_property(old, "volume_db", -60.0, MUSIC_FADE)
+		out.tween_callback(old.queue_free)
+	if stream == null:
+		return
+	_music = AudioStreamPlayer.new()
+	_music.stream = stream
+	# Its own bus, so the Music setting (`GameSettings.music_volume`) turns
+	# it down without touching the game's sounds.
+	_music.bus = AudioServer.get_bus_name(GameSettings.music_bus())
+	_music.volume_db = -60.0
+	add_child(_music)
+	_music.play()
+	if _music_tween != null:
+		_music_tween.kill()
+	_music_tween = create_tween()
+	_music_tween.tween_property(_music, "volume_db", -6.0, MUSIC_FADE)
+
+
+## The track playing now ("" for none).
+func music_track() -> String:
+	return _music_track
+
+
+## Gives every body its footsteps and every machine its engine as they come
+## into the game, once the frame they came in on is done (as `Look` dresses
+## them). View only: nothing here runs on a headless server.
+func _on_node_added(node: Node) -> void:
+	if node is Actor:
+		_attach_when_ready.call_deferred(node.get_instance_id(), "Footsteps")
+	elif node is CharacterBody3D and node.get_script() != null \
+			and node.get_script().resource_path == Look.VEHICLE_SCRIPT:
+		_attach_when_ready.call_deferred(node.get_instance_id(), "EngineSound")
+
+
+func _attach_when_ready(id: int, what: String) -> void:
+	var node := instance_from_id(id) as Node3D
+	if node == null or not node.is_inside_tree() or node.has_node(what):
+		return
+	var sound: Node3D = Footsteps.new() if what == "Footsteps" else EngineSound.new()
+	sound.name = what
+	node.add_child(sound)
 
 
 ## The raw stream, for callers that manage their own looping player.
