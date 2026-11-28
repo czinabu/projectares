@@ -125,6 +125,14 @@ date in the same PR.
   three plates at 4, 8 and 12 m that drop and pop back up, a hit counter on
   its end wall, sealed at the far end by the firing range's bulkhead.
   Buying the range removes the lane. Nothing there is real damage either.
+  The corridor and the range hall are closed all round in every shape and
+  every form: where a back room is still small (or held back at launch) its
+  walls stop short, so `HomeBase._seal_corridor` gives the rest of the
+  corridor a solid wall and the range hall a near wall over that room's
+  width (the spine and the ring, which have no back rooms, always get the
+  near wall). Never leave trim alone where a wall should be: the void shows
+  past it and you can jump out (`tests/base_seal_tests.gd` casts rays out of
+  the corridor, the lane and the range hall in each shape, starter and whole).
   Past the range's far end is the flight course (`HomeBase._build_course`,
   `in_course`): a tall lit hangar, walled and roofed so nobody flies out
   (Caleb's call), its roof over every rig's ceiling and past

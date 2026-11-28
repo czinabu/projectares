@@ -3218,10 +3218,54 @@ func _build_upgrades() -> void:
 	lane_targets.clear()
 	lane_board = null
 	_build_rooms()
+	_seal_corridor()
 	_build_bench()
 	_build_stations()
 	_build_plan_table()
 	_build_gates()
+
+
+## Closes what the back rooms leave open behind the hub. In the hall and the
+## courtyard the corridor's side walls and the range hall's near wall either
+## side of it are the back rooms' walls, but only once a room is whole: in its
+## small form (or held back at launch) it stops short, so the rest of the
+## corridor gets a solid wall of its own and the range hall a near wall over
+## the room's width, never trim alone over the dark (Caleb: "the endless void
+## is on the walls of the hallway and you can jump out into it"). The spine
+## and the ring have no back rooms: the range hall's near wall is built either
+## side of the corridor's own walls. Plain walls: the corridor's trim
+## (`_build_corridor`) and the range's (`_build_range`) already panel their
+## faces, and the far faces stand in a closed pocket nobody sees.
+func _seal_corridor() -> void:
+	var seal := Node3D.new()
+	seal.name = "CorridorSeal"
+	_keep(seal)
+	_into = seal
+	var material := _shell("wall")
+	var near := -range_from() + 0.25
+	var high := socket_size.y
+	var range_half := range_size.x * 0.5 + 0.5
+	for side: float in [-1.0, 1.0]:
+		var from_x := corridor.x * 0.5
+		if _corridor_walled():
+			# Past the corridor's own wall: 0.5 thick on the seventh
+			# socket's side (`_wall_run`), 0.25 on the other.
+			from_x += 0.5 if side < 0.0 and corridor_socket(hub_shape()) else 0.25
+		else:
+			var room: String = base_plan["N1" if side < 0.0 else "N2"]
+			var back_z := room_size.z * 0.5 + 0.5
+			if not BasePlan.held(room) and room_depth(room) >= socket_size.z:
+				continue
+			# From the end of the room's side wall (or the hub's back wall if
+			# the room is held back) to the range's near wall.
+			var start := back_z if BasePlan.held(room) else back_z + room_depth(room) + 0.25
+			var length := -near - 0.25 - start
+			if length > 0.01:
+				_box(Vector3(0.25, corridor.y, length),
+						Vector3(side * (corridor.x * 0.5 + 0.125), corridor.y * 0.5, -start - length * 0.5), material)
+		var width := range_half - from_x
+		_box(Vector3(width, high, 0.5), Vector3(side * (from_x + width * 0.5), high * 0.5, near), material)
+	_into = null
 
 
 ## The bulkheads: each room still in its small form has one by its sealed
