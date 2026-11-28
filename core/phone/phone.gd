@@ -54,6 +54,9 @@ signal tour_requested(action: String)
 ## ("host" or "host:port"), or leave the server you are on.
 signal host_requested
 signal join_requested(address: String)
+## Servers app: join the server at `address` with this account's recovery
+## `code`, moving the account to this computer (`NetSession.recovery`).
+signal recover_requested(address: String, code: String)
 signal leave_server_requested
 ## Contacts' Join (a friend's or squadmate's world, `SocialService.world_of`):
 ## `Main.join_world` takes you there the way a squad portal would.
@@ -69,6 +72,7 @@ signal report_requested(text: String)
 signal console_command(line: String)
 
 const SocialService := preload("res://core/social/social_service.gd")
+const StashService := preload("res://core/account/stash_service.gd")
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const DevMode := preload("res://core/dev/dev_mode.gd")  # DEV MODE
 const UiTheme := preload("res://core/visual/ui_theme.gd")
@@ -372,6 +376,13 @@ var server_changed := {}
 ## a redraw keeps your typing.
 var _address_edit: LineEdit
 var _address_draft := ""
+## The Servers app: the recovery code being typed to move an account here,
+## and the code the server last made for the account you are signed in to
+## (shown until you leave), or why it could not.
+var _recovery_edit: LineEdit
+var _recovery_draft := ""
+var recovery_shown := ""
+var recovery_error := ""
 ## The Report app: what is being written, and how the last report went.
 var _report_draft := ""
 ## DEV MODE: the Console app's draft, what it has printed and the commands
@@ -654,12 +665,16 @@ func _process(delta: float) -> void:
 func set_session(session: NetSession) -> void:
 	if net != null and is_instance_valid(net):
 		for pair: Array in [[net.social_changed, _on_social_changed], [net.social_notice, show_notice],
-				[net.social_error, _on_social_error], [net.tree_exiting, _on_session_gone]]:
+				[net.social_error, _on_social_error], [net.tree_exiting, _on_session_gone],
+				[net.recovery_code_received, _on_recovery_code]]:
 			if pair[0].is_connected(pair[1]):
 				pair[0].disconnect(pair[1])
 	net = session
 	chat_with = ""
+	recovery_shown = ""
+	recovery_error = ""
 	if net != null:
+		net.recovery_code_received.connect(_on_recovery_code)
 		net.social_changed.connect(_on_social_changed)
 		net.social_notice.connect(show_notice)
 		net.social_error.connect(_on_social_error)
@@ -755,6 +770,39 @@ func _sync_mirror() -> void:
 
 func _on_session_gone() -> void:
 	set_session(null)
+
+
+## The server made a recovery code (or could not): shown in the Servers app.
+func _on_recovery_code(code: String, error: String) -> void:
+	recovery_shown = code
+	recovery_error = error
+	refresh()
+
+
+## Servers app: asks the server for a new recovery code for this account.
+func make_recovery_code() -> void:
+	if linked() and not net.account.is_empty():
+		recovery_error = ""
+		net.request_recovery_code()
+
+
+## Joins the server at `address` with a recovery code, moving the account
+## named in the name field to this computer.
+func recover_account(address: String, code: String) -> void:
+	if linked():
+		return
+	var clean := address.strip_edges()
+	if clean == "":
+		set_link_status("Type the server's address first.")
+		return
+	if StashService.clean_recovery_code(code).length() != StashService.RECOVERY_LENGTH:
+		set_link_status("A recovery code is %d letters and digits, like ABCD-EFGH-JKMN-PQRS." % StashService.RECOVERY_LENGTH)
+		return
+	_address_draft = clean
+	_recovery_draft = ""
+	Profile.last_server = clean
+	Profile.save()
+	recover_requested.emit(clean, code)
 
 
 ## True while a server link is open or being opened (signed in or not).
@@ -2170,6 +2218,7 @@ func set_report_status(text: String, sent: bool) -> void:
 
 func _draw_servers() -> void:
 	_address_edit = null
+	_recovery_edit = null
 	if linked():
 		var card := _card()
 		var box: VBoxContainer = card.get_child(0)
@@ -2193,6 +2242,7 @@ func _draw_servers() -> void:
 		_body.add_child(card)
 		if link_status != "":
 			_body.add_child(_label(link_status, 14, UiTheme.ACCENT))
+		_draw_recovery_code()
 		if Updater.state != "off":
 			_draw_game_updates()
 		_body.add_child(_button("Leave the server", leave_server))
@@ -2264,6 +2314,25 @@ func _draw_servers() -> void:
 	join_box.add_child(_button("Join", func() -> void: join_server(edit.text)))
 	_body.add_child(join_card)
 
+	var move_card := _card()
+	var move_box: VBoxContainer = move_card.get_child(0)
+	move_box.add_child(_label("Move your account here", 17, UiTheme.INK))
+	move_box.add_child(_label("Played on another computer? Put that account's name above, the server's address, "
+			+ "and the recovery code you made there. The other computer stops signing in to it.", 13, DIM_INK))
+	_recovery_edit = LineEdit.new()
+	_recovery_edit.name = "RecoveryEdit"
+	_recovery_edit.text = _recovery_draft
+	_recovery_edit.placeholder_text = "Recovery code"
+	_recovery_edit.max_length = 32
+	_recovery_edit.text_changed.connect(func(text: String) -> void: _recovery_draft = text)
+	_recovery_edit.focus_entered.connect(func() -> void: _link_focus = "recovery")
+	move_box.add_child(_recovery_edit)
+	var code_edit := _recovery_edit
+	var address_edit := _address_edit
+	move_box.add_child(_button("Move it here and join", func() -> void:
+		recover_account(address_edit.text, code_edit.text)))
+	_body.add_child(move_card)
+
 	var door := _card()
 	var door_box: VBoxContainer = door.get_child(0)
 	if Profile.home_server != "":
@@ -2277,6 +2346,29 @@ func _draw_servers() -> void:
 	match _link_focus:
 		"name": name_edit.grab_focus.call_deferred()
 		"address": _address_edit.grab_focus.call_deferred()
+		"recovery": _recovery_edit.grab_focus.call_deferred()
+
+
+## The Servers app's card on the account's recovery code: how to make one,
+## and the one just made, shown until you leave the server.
+func _draw_recovery_code() -> void:
+	var card := _card()
+	var box: VBoxContainer = card.get_child(0)
+	box.add_child(_label("Recovery code", 17, UiTheme.INK))
+	if recovery_shown != "":
+		var code := _label(recovery_shown, 24, UiTheme.ACCENT)
+		code.name = "RecoveryCode"
+		box.add_child(code)
+		box.add_child(_label("Write it down now: it is shown only this once. With it and your name, you can move "
+				+ "this account to another computer. Anyone who has both can too, so keep it to yourself.", 13, DIM_INK))
+		box.add_child(_button("Make a new code (this one stops working)", make_recovery_code))
+	else:
+		box.add_child(_label("Your account here is tied to this computer. A recovery code moves it to another one "
+				+ "if you reinstall or change computers. Making one cancels any code you made before.", 13, DIM_INK))
+		box.add_child(_button("Make a recovery code", make_recovery_code))
+	if recovery_error != "":
+		box.add_child(_label(recovery_error, 13, UiTheme.ACCENT))
+	_body.add_child(card)
 
 
 ## The Servers app's card on the game's own updates (`Updater`): the build

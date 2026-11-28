@@ -83,6 +83,9 @@ signal base_visit_requested(owner_name: String, stash: Array, loadout: Dictionar
 ## Client: you walked through a squad portal your side may use; go to
 ## `destination` (a world id or the arena's). The server decided.
 signal portal_travel(destination: String)
+## Client: the server made this account a new recovery code (`recovery_code`),
+## "ABCD-EFGH-JKMN-PQRS", or "" with `error` set if it could not.
+signal recovery_code_received(code: String, error: String)
 
 const DEFAULT_PORT := 24565
 ## The sign-in handshake's own version, and nothing else's. It changes only
@@ -310,6 +313,13 @@ var ticket := ""
 ## Client: how this player's character looks, sent once signed in.
 var look := {}
 var secret := ""
+## Client, set before `join`: this account's recovery code, to sign in with
+## from a computer whose secret the account does not know yet (DESIGN.md
+## section 14, "Sign-in"). The account takes on `secret`, so the computer it
+## came from signs in no more, and the code is used up.
+var recovery := ""
+## Client: the last sign-in moved the account here with `recovery`.
+var recovered := false
 ## Client: your account as the server last sent it. Empty until signed in.
 var account := {}
 ## Client: the server answered and said no, so trying again will not help.
@@ -847,6 +857,9 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 	var token := str(hello.get("token", "")).left(256)
 	var credentials := {"method": "token", "token": token} if token != "" else \
 			{"method": "secret", "name": str(hello.get("name", "")).left(64), "secret": str(hello.get("secret", "")).left(256)}
+	if token == "" and str(hello.get("recovery", "")) != "":
+		credentials["method"] = "recovery"
+		credentials["code"] = str(hello.get("recovery", "")).left(64)
 	_signing_in[peer] = true
 	var result: Dictionary = await stash.sign_in_with(credentials)
 	_signing_in.erase(peer)
@@ -886,6 +899,8 @@ func _server_auth(peer: int, data: PackedByteArray) -> void:
 	var welcome := {"ok": true, "protocol": PROTOCOL, "world": world_id, "certificate": _certificate}
 	if result.has("token"):
 		welcome["token"] = result.token
+	if result.get("recovered", false):
+		welcome["recovered"] = true
 	_api.send_auth(peer, var_to_bytes(welcome))
 	_api.complete_auth(peer)
 
@@ -1687,6 +1702,27 @@ func _request_insure(action: String, item_id: String) -> void:
 		return
 	var result: Dictionary = await stash.insure(_peer_account[peer], action.left(16), item_id.left(64))
 	_lobby_answer(peer, result)
+
+
+## A new recovery code for the account signed in on this connection
+## (`StashService.make_recovery_code`), answered to that player alone.
+@rpc("any_peer", "call_remote", "reliable")
+func _request_recovery_code() -> void:
+	if not _allow("lobby"):
+		return
+	var peer := _api.get_remote_sender_id()
+	if not is_server or not _peer_account.has(peer):
+		return
+	var result: Dictionary = await stash.make_recovery_code(_peer_account[peer])
+	if not _here(peer):
+		return
+	_recovery_code_given.rpc_id(peer, str(result.get("code", "")),
+			"" if result.get("ok", false) else str(result.get("error", "The server could not make a code.")))
+
+
+@rpc("authority", "call_remote", "reliable")
+func _recovery_code_given(code: String, error: String) -> void:
+	recovery_code_received.emit(code.left(32), error.left(200))
 
 
 ## Lobby: sell stash items for scrip. An empty `item_id` sells all loot.
@@ -2495,10 +2531,12 @@ func _hello() -> Dictionary:
 	elif _join_mode != "plain":
 		# The secret and the token only ever go over an encrypted connection.
 		hello["name"] = player_name
-		if ticket != "":
+		if ticket != "" and recovery == "":
 			hello["token"] = ticket
 		else:
 			hello["secret"] = secret
+			if recovery != "":
+				hello["recovery"] = recovery
 	return hello
 
 
@@ -2588,6 +2626,9 @@ func _client_auth(id: int, data: PackedByteArray) -> void:
 		return
 	if answer.has("token"):
 		ticket = str(answer.token).left(256)
+	if recovery != "":
+		recovery = ""
+		recovered = bool(answer.get("recovered", false))
 	var p_world_id := str(answer.get("world", ""))
 	if world_for(p_world_id) == null:
 		refused = true
@@ -2921,6 +2962,13 @@ func craft(item_id: String) -> void:
 func insure(action: String, item_id: String = "") -> void:
 	if _is_connected() and not account.is_empty():
 		_request_insure.rpc_id(1, action, item_id)
+
+
+## Asks the server for a new recovery code for this account; it comes back
+## as `recovery_code_received`. A new code replaces the last one.
+func request_recovery_code() -> void:
+	if _is_connected() and not account.is_empty():
+		_request_recovery_code.rpc_id(1)
 
 
 ## Lobby: ask the server to sell stash items ("" sells all loot).

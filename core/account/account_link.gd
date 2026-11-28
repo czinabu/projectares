@@ -219,6 +219,11 @@ func sign_in_with(credentials: Dictionary) -> Dictionary:
 	return await _ask("sign_in", [credentials])
 
 
+## A new recovery code for the account (`StashService.make_recovery_code`).
+func make_recovery_code(account_id: String) -> Dictionary:
+	return await _ask("recovery_code", [account_id])
+
+
 func fetch(account_id: String) -> Dictionary:
 	if _mirror.has(account_id):
 		return snapshot(account_id)

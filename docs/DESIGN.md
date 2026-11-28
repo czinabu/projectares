@@ -4077,7 +4077,8 @@ past that call changes, and the token above is handed out the same way.
 
 Official servers open before the game is on Steam (Caleb's call), once
 connections are encrypted, signing in with the name and secret. A recovery
-code on the phone (Settings) moves an account to another computer. When
+code on the phone (the Servers app, built) moves an account to another
+computer. When
 Steam login arrives, the game ties the account it already holds to the
 player's Steam account once, so nobody loses progress.
 

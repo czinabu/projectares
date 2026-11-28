@@ -14,7 +14,15 @@ date in the same PR.
   (`NetSession.ticket`, kept per address by `main.gd`) that the game shows
   the next server instead of the secret, and that every server of one
   account service accepts; one that has run out is answered `"again":
-  "secret"` on the same connection. A store login (Steam) is a new method
+  "secret"` on the same connection. The third method is "recovery": the
+  name, the account's recovery code and the new computer's secret, which
+  the account takes on (the old secret and any token stop working, the
+  code is used up). A code comes from `StashService.make_recovery_code`,
+  asked for in the phone's Servers app (`NetSession.request_recovery_code`)
+  and shown there once; the account keeps only its hash, and a new code
+  cancels the last. Typed into the Servers app's "Move your account here"
+  card, it rides the next sign-in only (`NetSession.recovery`,
+  `Main._recovery_code`). A store login (Steam) is a new method
   there that ends in an account id, never a second path into a session. Both sides' messages always carry "protocol", so any two
   versions can say which one needs the update. `NetSession.PROTOCOL` is
   the handshake's own version and nothing else's: never raise it for a new
