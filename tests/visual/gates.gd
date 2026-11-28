@@ -77,6 +77,16 @@ static func shoot(vc: Node, out_dir: String, args: PackedStringArray) -> void:
 		camera.look_at_from_position(Vector3(first + 2.0, 2.0, line + 24.0), Vector3(first, 6.0, line))
 		await vc._settle(10)
 		await vc._shot(out_dir.path_join("gates_pulse.png"))
+	# Standing in the first gate, its countdown half run, looking up at it.
+	if not bays.is_empty() and bays[0]["portal"] != null:
+		var gate: Node3D = bays[0]["portal"]
+		view._light_arch(gate)
+		view.step_walk_in(gate, view.gate_walk_in_time * 0.5)
+		view._show_walk_in(gate)
+		camera.look_at_from_position(gate.global_position + Vector3(0.6, 2.6, 4.0),
+				gate.global_position + Vector3(0, 3.0, -6.0))
+		await vc._settle(10)
+		await vc._shot(out_dir.path_join("gates_inside.png"))
 	view.queue_free()
 	if low:
 		GameSettings.reset()

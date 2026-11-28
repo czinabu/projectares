@@ -55,6 +55,13 @@ date in the same PR.
   uniforms, so the terrace costs a few dozen draws and no per-frame
   script work beyond a running pulse. Check by eye with
   `visual_check.tscn -- <dir> --gates-only [--playtest] [--low]`.
+  You walk into an open world gate to deploy (Caleb's call): standing in
+  it counts down `PlazaView.gate_walk_in_time` (1.2 s) on the gate's face,
+  stepping out cancels, [F] goes at once, and a gate that took you waits
+  for you to step out (`step_walk_in`). A gate to a world the server
+  lacks, or one the tour keeps closed (`tour_closed`), never counts;
+  every other door still waits for [F]. The greybox's lit sheet is freed
+  where a glimpse is drawn, so the world shows while you stand in it.
 - The War Room (DESIGN.md section 2, "Spectating screens"): the plaza's
   big screen is `WarRoom` (`core/social/war_room.gd`, view only, made by
   `PlazaView` only where `Look` is on, drawn into a `SubViewport` on the
