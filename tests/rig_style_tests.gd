@@ -220,6 +220,23 @@ static func _test_looks(t: Node) -> void:
 	GameSettings._values["graphics"] = vapor_was if vapor_was != null else GameSettings.GRAPHICS_HIGH
 	if vapor_was == null:
 		GameSettings._values.erase("graphics")
+	# A thin wisp, never a bar running back past the camera: tips flying at
+	# 30 m/s leave streaks cut to `vapor_length`.
+	var wisp: Variant = (skin.get_script() as GDScript).get("_Vapor").new()
+	t.add_child(wisp)
+	var cap := float(skin.get("vapor_length"))
+	for k in 40:
+		var tips: Array[Vector3] = [Vector3(-1, 5, -0.5 * k), Vector3(1, 5, -0.5 * k)]
+		wisp.step(tips, 1.0 / 60.0, 0.6, cap, 0.03, 0.35, 4.0)
+	var longest := 0.0
+	for trail: Array in wisp.get("_trails"):
+		var run := 0.0
+		for k in range(1, trail.size()):
+			run += (trail[k][0] as Vector3).distance_to(trail[k - 1][0])
+		longest = maxf(longest, run)
+	t.check(longest > cap - 1.0 and longest <= cap,
+			"the wingtip vapor is cut to %.0f m (longest %.1f m of 19.5 flown)" % [cap, longest])
+	wisp.free()
 
 	# The limbs carry on as the body speeds up: they trail behind a burst of
 	# speed, then settle back once it holds steady, and a turn flown with

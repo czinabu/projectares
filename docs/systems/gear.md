@@ -166,7 +166,9 @@ date in the same PR.
   shudders them and spreads the arms (`stall_arm`), all through
   `RigModel.set_wing_spread`'s `sweep`, `flex` and `flutter`, and the
   wingtips stream vapor fast or pulling hard (`_Vapor`, one draw for both
-  tips, never on the Low and Lowest graphics); the skate pumps in strides
+  tips, never on the Low and Lowest graphics; thin wisps cut to
+  `vapor_length`, tapered to the tail and faded near the camera, so a chase
+  view never sees bars running past the lens); the skate pumps in strides
   (`skate_stride`), a kick off a skate spins the body once round
   (`kick_spin_time`, not while aiming) and an air dash tucks the knees
   (`dash_tuck`). On every rig the body moves with each change of speed and

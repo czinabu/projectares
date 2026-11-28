@@ -246,13 +246,19 @@ var jet_kick_time := 0.3
 var dive_arm := Vector3(0.14, -1.0, 0.08)
 var stall_arm := Vector3(0.9, -0.55, 0.05)
 var stall_shudder := 0.07
-## Wingtip vapor: a streak off each tip that fades over `vapor_life`
-## seconds, drawn while the glide is faster than `vapor_speed` m/s or
-## pulling more than `vapor_g`; never on the Low and Lowest graphics.
+## Wingtip vapor: a thin streak off each tip that fades over `vapor_life`
+## seconds and is never longer than `vapor_length` m, drawn while the glide
+## is faster than `vapor_speed` m/s or pulling more than `vapor_g`; never on
+## the Low and Lowest graphics. It tapers to nothing at its tail, and fades
+## out within `vapor_clear` m of the camera so a chase view behind the
+## flyer sees wisps, not bars running past the lens.
 var vapor_speed := 26.0
 var vapor_g := 1.5
 var vapor_life := 0.6
-var vapor_width := 0.05
+var vapor_length := 6.0
+var vapor_width := 0.03
+var vapor_alpha := 0.35
+var vapor_clear := 4.0
 ## Boots, a skater and free-runner: the skate pumps in strides
 ## (`skate_stride` strides a second at the skate's speed, each leg pushing
 ## out and back by `skate_push`), a kick while skating spins the body once
@@ -5256,7 +5262,7 @@ func _update_wing_air(gliding: bool, delta: float) -> void:
 				tips.append(tip.global_position)
 		if not streaming:
 			tips.clear()
-		_vapor.step(tips, delta, vapor_life, vapor_width)
+		_vapor.step(tips, delta, vapor_life, vapor_length, vapor_width, vapor_alpha, vapor_clear)
 
 
 ## For the first-person camera's flight motion (`PlayerController`): the
@@ -5306,8 +5312,10 @@ class _Vapor extends MeshInstance3D:
 		material_override = mat
 
 	## Adds this frame's tip places (none while not streaming), ages the
-	## rest out over `life` seconds and redraws.
-	func step(tips: Array[Vector3], delta: float, life: float, width: float) -> void:
+	## rest out over `life` seconds, cuts each trail to `length` m and
+	## redraws: `width` at the tip tapering to nothing, `alpha` at most,
+	## fading by age, along the trail and within `clear` m of the camera.
+	func step(tips: Array[Vector3], delta: float, life: float, length: float, width: float, alpha: float, clear: float) -> void:
 		while _trails.size() < tips.size():
 			_trails.append([])
 		for trail: Array in _trails:
@@ -5317,6 +5325,16 @@ class _Vapor extends MeshInstance3D:
 				trail.pop_front()
 		for i in tips.size():
 			(_trails[i] as Array).append([tips[i], 0.0])
+		for trail: Array in _trails:
+			var run := 0.0
+			var j := trail.size() - 1
+			while j > 0:
+				run += (trail[j][0] as Vector3).distance_to(trail[j - 1][0])
+				if run > length:
+					break
+				j -= 1
+			for _cut in j:
+				trail.pop_front()
 		_mesh.clear_surfaces()
 		var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
 		var eye := camera.global_position if camera != null else Vector3.ZERO
@@ -5335,16 +5353,21 @@ class _Vapor extends MeshInstance3D:
 				_mesh.surface_add_vertex(last)
 				_mesh.surface_set_color(Color(1, 1, 1, 0))
 				_mesh.surface_add_vertex(trail[0][0])
-			for j in trail.size():
+			var count := trail.size()
+			for j in count:
 				var at: Vector3 = trail[j][0]
-				var next: Vector3 = trail[mini(j + 1, trail.size() - 1)][0]
+				var next: Vector3 = trail[mini(j + 1, count - 1)][0]
 				var prev: Vector3 = trail[maxi(j - 1, 0)][0]
 				var along := (next - prev).normalized()
-				var side := along.cross(eye - at).normalized() * width
-				var fade := 1.0 - float(trail[j][1]) / life
-				_mesh.surface_set_color(Color(1, 1, 1, 0.5 * fade * fade))
+				# 0 at the tail, 1 at the tip.
+				var share := float(j) / float(count - 1)
+				var side := along.cross(eye - at).normalized() * width * share
+				var age := 1.0 - float(trail[j][1]) / life
+				var near := smoothstep(clear * 0.5, clear, at.distance_to(eye)) if camera != null else 1.0
+				var shade := Color(1, 1, 1, alpha * age * age * share * near)
+				_mesh.surface_set_color(shade)
 				_mesh.surface_add_vertex(at - side)
-				_mesh.surface_set_color(Color(1, 1, 1, 0.5 * fade * fade))
+				_mesh.surface_set_color(shade)
 				_mesh.surface_add_vertex(at + side)
 				last = at + side
 		if drawn:
