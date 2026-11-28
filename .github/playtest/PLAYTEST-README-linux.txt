@@ -1,15 +1,15 @@
 VERGE - playtest build for Linux
 
-1. Unpack this folder anywhere you can write to and run ProjectAres.x86_64
-   (double-click, or ./ProjectAres.x86_64 in a terminal). Keep
-   ProjectAres.pck beside it: that is the game.
+1. Unpack this folder anywhere you can write to and run Verge.x86_64
+   (double-click, or ./Verge.x86_64 in a terminal). Keep
+   Verge.pck beside it: that is the game.
    It needs Vulkan graphics drivers (Mesa on Intel and AMD, the NVIDIA
    driver on NVIDIA). Without Vulkan it falls back to OpenGL, which draws a
    plainer picture.
    It keeps itself up to date: at launch it checks for a newer build,
    downloads it in the background and restarts into it (your phone tells
    you when one is waiting). Keep the folder somewhere you can write to.
-   If you rename ProjectAres.x86_64, rename ProjectAres.pck to match.
+   If you rename Verge.x86_64, rename Verge.pck to match.
    Only a new Godot version needs a fresh download.
 2. On a laptop the game picks lighter graphics on its first launch. Change
    it on the phone (P): Settings, View tab, Graphics quality.

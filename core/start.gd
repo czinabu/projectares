@@ -17,7 +17,7 @@ func _ready() -> void:
 		return
 	# The project is named Verge (the window title follows it), and
 	# `custom_user_dir_name` keeps the save folder under app_userdata at its
-	# prototype name ("Project Ares") so it never moves.
+	# prototype name ("Project Ares") so nobody's saves move.
 	# The volume settings first, then the plaza's track under the title
 	# (it plays on into the base and the plaza, `Sfx.music`).
 	GameSettings.ensure_loaded()

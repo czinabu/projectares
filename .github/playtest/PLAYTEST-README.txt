@@ -1,9 +1,9 @@
 VERGE - playtest build
 
-1. Easiest: run ProjectAres-Setup.exe from the release page. It installs to
+1. Easiest: run Verge-Setup.exe from the release page. It installs to
    your user's Programs folder and adds desktop and Start menu shortcuts.
    Or unzip this folder anywhere you can write to (not Program Files) and run
-   ProjectAres.exe. Keep ProjectAres.pck beside it: that is the game.
+   Verge.exe. Keep Verge.pck beside it: that is the game.
    (Windows may warn about an unknown publisher: More info > Run anyway.)
    From now on the game updates itself: it checks for a newer build when it
    starts, downloads it and restarts. The build number shows in the start

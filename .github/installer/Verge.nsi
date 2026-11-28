@@ -1,14 +1,19 @@
 ; Windows installer for Verge, built by .github/workflows/windows-client.yml
 ; with NSIS (makensis) on Linux:
-;   makensis -DSRC=<folder with ProjectAres.exe, .pck and the readme> -DICON=<.ico>
-;            -DBUILD=<n> -DOUTFILE=<setup.exe> ProjectAres.nsi
+;   makensis -DSRC=<folder with Verge.exe, .pck and the readme> -DICON=<.ico>
+;            -DBUILD=<n> -DOUTFILE=<setup.exe> Verge.nsi
 ;
-; It installs for the current user, into %LOCALAPPDATA%\Programs\Project Ares,
+; It installs for the current user, into %LOCALAPPDATA%\Programs\Verge,
 ; where Windows puts per-user games and apps (no admin prompt). Program Files
 ; is left alone on purpose: it needs admin rights to write, and the game
-; updates itself by replacing ProjectAres.pck in its own folder
+; updates itself by replacing Verge.pck in its own folder
 ; (core/update/updater.gd). Saves live in %APPDATA%\Godot\app_userdata and are
 ; never touched by installing or uninstalling.
+;
+; Before the rename the game was installed as ProjectAres.exe in
+; Programs\Project Ares under the uninstall key "ProjectAres". Installing over
+; such a copy moves it: the old files, shortcuts and key are removed and the
+; game goes into the new folder (the saves stay where they are).
 
 Unicode true
 !include "MUI2.nsh"
@@ -23,19 +28,22 @@ Unicode true
   !define ICON "..\..\assets\branding\icon.ico"
 !endif
 !ifndef OUTFILE
-  !define OUTFILE "ProjectAres-Setup.exe"
+  !define OUTFILE "Verge-Setup.exe"
 !endif
 
 !define NAME "Verge"
-!define EXE "ProjectAres.exe"
-!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ProjectAres"
+!define EXE "Verge.exe"
+!define PACK "Verge.pck"
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Verge"
+; The install from before the rename (ProjectAres.exe in Programs\Project Ares).
+!define OLD_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ProjectAres"
+!define OLD_EXE "ProjectAres.exe"
+!define OLD_PACK "ProjectAres.pck"
 
 Name "${NAME}"
 OutFile "${OUTFILE}"
 RequestExecutionLevel user
-; The folder keeps the prototype name so an install made before the rename is
-; updated in place.
-InstallDir "$LOCALAPPDATA\Programs\Project Ares"
+InstallDir "$LOCALAPPDATA\Programs\${NAME}"
 InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 SetCompressor /SOLID lzma
 BrandingText "${NAME} build ${BUILD}"
@@ -55,12 +63,32 @@ BrandingText "${NAME} build ${BUILD}"
 !insertmacro MUI_LANGUAGE "English"
 
 Section "Install"
+  ; Move an install from before the rename: its files go (never the saves,
+  ; which are elsewhere), then its folder if that leaves it empty, then its key.
+  ReadRegStr $0 HKCU "${OLD_KEY}" "InstallLocation"
+  StrCmp $0 "" old_done
+  Delete "$0\${OLD_EXE}"
+  Delete "$0\${OLD_PACK}"
+  Delete "$0\${OLD_PACK}.new"
+  StrCmp $0 $INSTDIR old_key
+  Delete "$0\PLAYTEST-README.txt"
+  Delete "$0\BUILD.txt"
+  Delete "$0\Uninstall.exe"
+  RMDir "$0"
+old_key:
+  DeleteRegKey HKCU "${OLD_KEY}"
+old_done:
+
   SetOutPath "$INSTDIR"
   File "${SRC}\${EXE}"
-  File "${SRC}\ProjectAres.pck"
+  File "${SRC}\${PACK}"
   File "${SRC}\PLAYTEST-README.txt"
   ; A pack the updater left half swapped in an older install.
-  Delete "$INSTDIR\ProjectAres.pck.new"
+  Delete "$INSTDIR\${PACK}.new"
+  ; The old exe and pack, if this folder held them.
+  Delete "$INSTDIR\${OLD_EXE}"
+  Delete "$INSTDIR\${OLD_PACK}"
+  Delete "$INSTDIR\${OLD_PACK}.new"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   ; Shortcuts from before the rename.
@@ -86,8 +114,8 @@ SectionEnd
 
 Section "Uninstall"
   Delete "$INSTDIR\${EXE}"
-  Delete "$INSTDIR\ProjectAres.pck"
-  Delete "$INSTDIR\ProjectAres.pck.new"
+  Delete "$INSTDIR\${PACK}"
+  Delete "$INSTDIR\${PACK}.new"
   Delete "$INSTDIR\PLAYTEST-README.txt"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"

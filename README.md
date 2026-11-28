@@ -1,8 +1,9 @@
 # Verge
 
-"Project Ares" was the prototype name; it lives on in file names (`ProjectAres.exe`,
-the install and save folders) so existing installs keep updating and keep
-their saves.
+"Project Ares" was the prototype name. Players only ever see Verge (the
+installer, exe, window, shortcuts and release files); the save folder alone
+keeps the old name, so nobody's progress moves, and the code keeps a few
+internal `ares` names.
 
 A full-loot PvPvE war game across a set of hand-built worlds, made in Godot 4.
 New worlds are designed and added by the team over time. Each world
@@ -155,22 +156,25 @@ world, or dying and pressing L, brings you back here.
 After you pull new code, the first launch may show "Updating the project" for a
 few seconds and restart on its own. That is Godot learning about new scripts.
 
-The Windows build is installed once with `ProjectAres-Setup.exe` from the
+The Windows build is installed once with `Verge-Setup.exe` from the
 "latest" release (or the zip, unzipped anywhere you can write to). The installer
-puts the game in `%LOCALAPPDATA%\Programs\Project Ares`, where Windows keeps
+puts the game in `%LOCALAPPDATA%\Programs\Verge`, where Windows keeps
 per-user games, with no admin prompt, adds desktop and Start menu shortcuts, and
-lists it in Settings > Apps to uninstall. It keeps itself up to date: at launch it checks for a newer build, downloads it in the
+lists it in Settings > Apps to uninstall. Run over an install from before the
+rename (`Verge.exe` in `Programs\Project Ares`), it moves it to the new
+folder and keeps the saves. An old install that is never reinstalled keeps
+updating as it is. It keeps itself up to date: at launch it checks for a newer build, downloads it in the
 background and restarts into it. The start screen's corner and the phone's
 Servers app say which build you run. Only a new Godot version needs a fresh
 download. Pass `-- --no-update` to stop it.
 
-The Linux build (`ProjectAres-linux-*.tar.gz` on the same release) updates itself
+The Linux build (`Verge-linux-*.tar.gz` on the same release) updates itself
 the same way once unpacked somewhere you can write to: it reads its own
-`update-linux.json` and swaps in `ProjectAres-linux.pck` beside
-`ProjectAres.x86_64`, never the executable itself.
+`update-linux.json` and swaps in `Verge-linux.pck` beside
+`Verge.x86_64`, never the executable itself.
 
 The dev build (every world, nothing held back) is on its own "dev-latest"
-release, never on "latest". Unpack `ProjectAresDev-linux-*.tar.gz` (or unzip
+release, never on "latest". Unpack `VergeDev-linux-*.tar.gz` (or unzip
 the Windows zip) somewhere you can write to and run it: it keeps itself up to
 date from there and only ever takes dev builds.
 

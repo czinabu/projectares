@@ -42,7 +42,7 @@ static func _when_it_runs(t: Node) -> void:
 static func _manifests(t: Node) -> void:
 	var sha := "a".repeat(64)
 	var good := {"build": 20, "commit": "abc1234", "godot": "4.7", "platform": "windows",
-			"pack": "ProjectAres.pck", "size": 1000, "sha256": sha}
+			"pack": "Verge.pck", "size": 1000, "sha256": sha}
 	t.check(UpdaterScript.decide(good, 19, "4.7", "Windows") == "download", "a newer build is downloaded")
 	t.check(UpdaterScript.decide(good, 20, "4.7", "Windows") == "current"
 			and UpdaterScript.decide(good, 25, "4.7", "Windows") == "current",
@@ -64,7 +64,7 @@ static func _manifests(t: Node) -> void:
 	t.check(UpdaterScript.pack_path(20) == "user://updates/build-20.pck", "a download waits under user://updates")
 	var linux := good.duplicate()
 	linux["platform"] = "linux"
-	linux["pack"] = "ProjectAres-linux.pck"
+	linux["pack"] = "Verge-linux.pck"
 	t.check(UpdaterScript.decide(linux, 19, "4.7", "Linux") == "download"
 			and UpdaterScript.decide(linux, 19, "4.7", "Windows") == "other",
 			"the Linux build downloads the Linux pack, and Windows never takes it")
@@ -101,10 +101,10 @@ static func _restarts(t: Node) -> void:
 			UpdaterScript.UPDATED_ARG]))
 	t.check(again == PackedStringArray(["--fullscreen", "--", "--dev", UpdaterScript.UPDATED_ARG]),
 			"the game's own arguments are kept, and the mark only once")
-	var script := UpdaterScript.install_script("C:\\Users\\A 100%\\build-20.pck", "D:\\Games\\Ares\\ProjectAres.pck",
-			"D:\\Games\\Ares\\ProjectAres.exe", PackedStringArray(["--", UpdaterScript.UPDATED_ARG]))
-	t.check("move /y \"C:\\Users\\A 100%%\\build-20.pck\" \"D:\\Games\\Ares\\ProjectAres.pck\"" in script
-			and "start \"\" \"D:\\Games\\Ares\\ProjectAres.exe\" \"--\" \"%s\"" % UpdaterScript.UPDATED_ARG in script
+	var script := UpdaterScript.install_script("C:\\Users\\A 100%\\build-20.pck", "D:\\Games\\Verge\\Verge.pck",
+			"D:\\Games\\Verge\\Verge.exe", PackedStringArray(["--", UpdaterScript.UPDATED_ARG]))
+	t.check("move /y \"C:\\Users\\A 100%%\\build-20.pck\" \"D:\\Games\\Verge\\Verge.pck\"" in script
+			and "start \"\" \"D:\\Games\\Verge\\Verge.exe\" \"--\" \"%s\"" % UpdaterScript.UPDATED_ARG in script
 			and "goto wait" in script and "geq 60" in script,
 			"on Windows a script waits for the game to close, moves the pack in, quoted, and starts it again")
 
@@ -112,7 +112,7 @@ static func _restarts(t: Node) -> void:
 static func _install(t: Node) -> void:
 	DirAccess.make_dir_recursive_absolute(DIR)
 	var pack := ProjectSettings.globalize_path(DIR.path_join("new.pck"))
-	var target := ProjectSettings.globalize_path(DIR.path_join("ProjectAres.pck"))
+	var target := ProjectSettings.globalize_path(DIR.path_join("Verge.pck"))
 	_write(pack, "new build")
 	DirAccess.remove_absolute(target)
 	t.check(UpdaterScript.install_over(pack, target) == ERR_FILE_NOT_FOUND and not FileAccess.file_exists(target),
@@ -149,8 +149,8 @@ static func _wiring(t: Node) -> void:
 			"the Linux client is the playtest build with its pack beside the exe, so it updates too")
 	var workflow := FileAccess.get_file_as_string("res://.github/workflows/windows-client.yml")
 	t.check(workflow == "" or (UpdaterScript.BUILD_SETTING.get_slice("/", 2) in workflow
-			and UpdaterScript.MANIFEST in workflow and "ProjectAres.pck" in workflow
-			and UpdaterScript.LINUX_MANIFEST in workflow and "ProjectAres-linux.pck" in workflow
+			and UpdaterScript.MANIFEST in workflow and "Verge.pck" in workflow
+			and UpdaterScript.LINUX_MANIFEST in workflow and "Verge-linux.pck" in workflow
 			and "\"platform\": \"linux\"" in workflow
 			and "update-dev.json" in workflow and "\"channel\": \"dev\"" in workflow
 			and "dev-latest" in workflow and "update-dev-linux.json" in workflow
@@ -161,10 +161,15 @@ static func _wiring(t: Node) -> void:
 			and str(presets.get_value(client + ".options", "application/icon", "")).ends_with(".ico")
 			and FileAccess.file_exists("res://assets/branding/icon.ico"),
 			"the game wears its own logo: window, boot splash and the exe's icon")
-	var installer := FileAccess.get_file_as_string("res://.github/installer/ProjectAres.nsi")
+	var installer := FileAccess.get_file_as_string("res://.github/installer/Verge.nsi")
 	t.check(installer == "" or ("RequestExecutionLevel user" in installer
 			and "$LOCALAPPDATA\\Programs" in installer and "$DESKTOP" in installer),
 			"the installer installs per user, where the game can update itself, with a desktop shortcut")
+	t.check(workflow == "" or ("ProjectAres" not in workflow and "Verge-Setup.exe" in workflow),
+			"every release file players download is named Verge")
+	t.check(installer == "" or ("Uninstall\\ProjectAres" in installer and "DeleteRegKey HKCU \"${OLD_KEY}\"" in installer
+			and "!define EXE \"Verge.exe\"" in installer),
+			"the installer installs Verge.exe and moves an install from before the rename")
 	var main_script: Script = load("res://core/main.gd")
 	var installed: PackedStringArray = main_script.server_process_args(PackedStringArray(["--server"]), true)
 	var checkout: PackedStringArray = main_script.server_process_args(PackedStringArray(["--server"]), false)
