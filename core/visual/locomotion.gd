@@ -190,6 +190,11 @@ var ride_knee := Vector3(0.35, 0.5, -1.0)
 var ride_elbow := Vector3(1.0, -0.5, 0.6)
 var ride_look_up := 0.75
 var ride_rate := 5.0
+## Hanging into a turn (the vehicle's `rider_hang`): how far the hips slide
+## to the inside of the seat at a full radian of hang (m), and what share
+## of the hang the head turns back toward level.
+var ride_hang_hips := 0.3
+var ride_hang_level := 0.6
 
 ## How quickly the relaxed-stand legs blend in and out (per second).
 var stand_legs_rate := 4.0
@@ -1218,10 +1223,18 @@ func _ride_pose() -> void:
 	var right := (to_skeleton.basis * Vector3.RIGHT).normalized()
 	var up := (to_skeleton.basis * Vector3.UP).normalized()
 
+	# Into a turn on a bike the rider hangs in past the bike's own lean: the
+	# hips slide to the inside of the seat and the back rolls further over,
+	# by the vehicle's `rider_hang` at full lock, once it is rolling.
+	var hang := 0.0
+	var hang_share: float = _ride_on.get("rider_hang") if "rider_hang" in _ride_on else 0.0
+	if hang_share > 0.0:
+		var rolling := clampf((absf(float(_ride_on.get("speed"))) - 1.0) / 3.0, 0.0, 1.0)
+		hang = float(_ride_on.get("steer_seen")) * hang_share * rolling
 	var hips := skeleton.find_bone(_hip_name)
 	if hips >= 0:
 		var seat: Vector3 = _ride_on.get("seat_point")
-		var want := to_skeleton * (seat + Vector3(0.0, ride_hip_height, 0.0))
+		var want := to_skeleton * (seat + Vector3(sin(hang) * ride_hang_hips, ride_hip_height, 0.0))
 		var shift := (want - skeleton.get_bone_global_pose(hips).origin) * w
 		for bone in _roots:
 			var pose := skeleton.get_bone_global_pose(bone)
@@ -1231,7 +1244,8 @@ func _ride_pose() -> void:
 	# the clip had: the back is turned to lie at `rider_lean` from upright.
 	var lean: float = _ride_on.get("rider_lean")
 	if not _spine.is_empty() and _neck >= 0:
-		var want := Basis(right, -lean) * up
+		var along := (to_skeleton.basis * Vector3.BACK).normalized()
+		var want := Basis(along, -hang) * Basis(right, -lean) * up
 		var start := skeleton.get_bone_global_pose(_neck).origin - skeleton.get_bone_global_pose(_spine[0]).origin
 		var goal := start.normalized().slerp(want, w) if start.length_squared() > 0.000001 else want
 		# Each bone turns about its own joint, so the chord from the bottom of
@@ -1289,7 +1303,10 @@ func _ride_pose() -> void:
 
 	if _neck >= 0:
 		var pose := skeleton.get_bone_global_pose(_neck)
-		pose.basis = Basis(up, ride_turn * w) * Basis(right, lean * ride_look_up * w) * pose.basis
+		# The head turns back toward level from the hang, as a rider keeps
+		# the eyes on the road.
+		var level := Basis((to_skeleton.basis * Vector3.BACK).normalized(), hang * ride_hang_level * w)
+		pose.basis = level * Basis(up, ride_turn * w) * Basis(right, lean * ride_look_up * w) * pose.basis
 		skeleton.set_bone_global_pose(_neck, pose)
 
 

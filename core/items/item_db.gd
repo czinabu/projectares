@@ -338,7 +338,7 @@ func _ready() -> void:
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
 	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle", "vendor"],
-			{"body": "scrambler", "max_speed": 24.0, "boost_speed": 32.0, "body_color": Color(0.6, 0.45, 0.3),
+			{"body": "scrambler", "rider_hang": 0.4, "max_speed": 24.0, "boost_speed": 32.0, "body_color": Color(0.6, 0.45, 0.3),
 			"cargo_points": [Vector3(0.0, 0.92, 0.95)] as Array[Vector3], "race": RACE_SCRAPPER},
 			"Rattly motorbike. Fast, loud, and no cover for the rider.")
 	# The Raider is a hoverbike: the "hover" tag floats it (`Vehicle`, "Hover").
@@ -350,7 +350,7 @@ func _ready() -> void:
 			"turn_rate": 2.4, "full_turn_speed": 5.0, "pivot_turn": 0.8, "coast_decel": 2.5,
 			"brake_decel": 22.0, "max_slope": 30.0, "grip": 4.0, "max_slip": 0.45,
 			"hang_time": 0.45, "launch_keep": 0.6, "downforce": 1.6, "hover_height": 0.45,
-			"lean_amount": 0.45, "rider_lean": 0.6,
+			"lean_amount": 0.45, "rider_lean": 0.6, "rider_hang": 0.35,
 			"seat_offset": Vector3(0.0, 0.1, 0.2), "seat_point": Vector3(0.0, 1.03, 0.2),
 			"grip_points": [Vector3(-0.3, 1.3, -0.42), Vector3(0.3, 1.3, -0.42)] as Array[Vector3],
 			"peg_points": [Vector3(-0.36, 0.74, -0.04), Vector3(0.36, 0.74, -0.04)] as Array[Vector3],

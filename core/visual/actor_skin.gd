@@ -5742,9 +5742,12 @@ func _update_ride() -> void:
 ## about its wheels. Null on foot. The vehicle carries the actor at its
 ## `seat_offset`, so that is where the model's feet start from.
 func ride_frame() -> Variant:
-	var vehicle: Node3D = locomotion.get("_ride_on") if locomotion else null
-	if vehicle == null or not is_instance_valid(vehicle) or not vehicle.is_inside_tree():
+	# A vehicle packed or freed just after the ride can still be the one the
+	# pose is easing off: checked before it reaches a typed variable.
+	var ride_on: Variant = locomotion.get("_ride_on") if locomotion else null
+	if ride_on == null or not is_instance_valid(ride_on) or not (ride_on as Node3D).is_inside_tree():
 		return null
+	var vehicle := ride_on as Node3D
 	var model := vehicle.get_node_or_null("Model") as Node3D
 	var frame: Transform3D = model.global_transform if model else vehicle.global_transform
 	var offset: Vector3 = vehicle.get("seat_offset")
