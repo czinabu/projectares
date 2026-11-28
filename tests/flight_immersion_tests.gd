@@ -7,10 +7,12 @@ extends RefCounted
 
 const GameSettings := preload("res://core/settings/game_settings.gd")
 const WeaponArmScript := preload("res://core/visual/weapon_arm.gd")
+const RigModel := preload("res://core/visual/rig_model.gd")
 
 
 static func run(t: Node) -> void:
 	print("Flight immersion")
+	await _test_takeoffs(t)
 	await _test_limbs_clear(t)
 	await _test_worn_sound(t)
 	await _test_view(t)
@@ -105,9 +107,15 @@ static func _test_limbs_clear(t: Node) -> void:
 					var turn: float = pose.get("turn", 0.0)
 					var look_off: float = pose.get("look", 0.0)
 					var yaw := p.rotation.y
+					var takeoff: bool = pose.get("takeoff", false)
+					var kind := RigModel.kind_for(rig)
 					var step := func(i: int) -> void:
 						p.rotation.y = yaw + turn * i + (look_off if i > 4 else 0.0)
 						p.velocity = forward * speed + Vector3(0, -drop, 0)
+						if takeoff:
+							# Every moment of the rig's own takeoff.
+							skin.set("_takeoff", 1.0 - i / 40.0)
+							skin.set("_takeoff_kind", kind)
 					var deep: float = await _worst(t, skin, step, 40)
 					p.rotation.y = yaw
 					if clear_on:
@@ -127,9 +135,44 @@ static func _test_limbs_clear(t: Node) -> void:
 	Look.enabled = false
 
 
+## Each rig takes off in a pose of its own as its flight lights up off
+## the ground: the jets, the boots or the wings' launch.
+static func _test_takeoffs(t: Node) -> void:
+	Look.enabled = true
+	var arena := _arena(t)
+	for rig: String in ["jetpack_mk1", "boots_thruster", "wings_glide"]:
+		var p: Actor = await _flyer(t, arena, "m", rig)
+		var skin := p.get_node("Skin")
+		var f := p.flight
+		p.airborne_time = 0.1
+		await t.frames(2)
+		if rig.begins_with("wings"):
+			f.is_gliding = true
+		else:
+			f.is_thrusting = true
+		var kind := RigModel.kind_for(rig)
+		var peak := 0.0
+		for i in 30:
+			p.velocity = Vector3(0, 6, 0)
+			await t.get_tree().process_frame
+			peak = maxf(peak, float(skin.call("takeoff_weight")))
+		t.check(String(skin.get("_takeoff_kind")) == kind and peak > 0.9,
+				"the %s takes off in its own pose (%.2f in)" % [kind, peak])
+		for i in 60:
+			await t.get_tree().process_frame
+		t.check(float(skin.call("takeoff_weight")) == 0.0, "and the %s's flight pose takes over after" % kind)
+		p.queue_free()
+		await t.frames(2)
+	arena.queue_free()
+	await t.frames(2)
+	Look.enabled = false
+
+
 ## The flight poses each kind of rig flies in.
 static func _poses(rig: String) -> Array:
 	var out := []
+	out.append({"name": "taking off", "takeoff": true, "hover": rig.begins_with("jetpack"), "glide": rig.begins_with("wings"),
+			"thrust": not rig.begins_with("wings"), "speed": 4.0, "drop": -6.0})
 	if rig.begins_with("jetpack"):
 		out.append({"name": "hovering", "hover": true})
 		for x in [-1, 0, 1]:
@@ -252,8 +295,9 @@ static func _test_view(t: Node) -> void:
 	var mesh := drawn.mesh as ImmediateMesh
 	t.check(holo.visible and mesh.get_surface_count() > 0, "the hologram draws the body from its posed bones")
 	var wrist := camera.global_position + camera.global_basis * Vector3(-0.2, -0.25, -0.45)
-	var near := holo.global_position.distance_to(wrist)
-	t.check(near < 0.15, "it is thrown up off the watch on the wrist, not pinned to the screen (%.2f m off it)" % near)
+	var ahead_left := camera.global_basis.inverse() * (holo.global_position - camera.global_position)
+	t.check(ahead_left.x < -0.1 and ahead_left.y > 0.05 and ahead_left.z < -0.4,
+			"it is beamed from the watch to a spot ahead and to the left of the eyes (%s)" % ahead_left)
 	holo.update(p, camera, true, Vector3.INF, 1.0 / 30.0)
 	t.check(not holo.visible, "with no watch on the wrist there is nothing to throw it up")
 	for i in 20:

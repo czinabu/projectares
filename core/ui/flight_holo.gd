@@ -1,7 +1,7 @@
 class_name FlightHolo
 extends Node3D
-## A small hologram of yourself that the watch throws up off its face, on
-## your own wrist in the world, while you fly in first person (Caleb's ask, after the ship
+## A small hologram of yourself that the watch beams out ahead and to the
+## left of the eyes while you fly in first person (Caleb's ask, after the ship
 ## silhouette in a cockpit), so you can see your attitude and pose from
 ## outside while looking out of your own eyes. It is drawn from your own
 ## body's skeleton as it was posed this frame (the same bones both views
@@ -9,8 +9,8 @@ extends Node3D
 ## and a little above against a level ring: it pitches, rolls and turns
 ## with you, the limbs move as yours do (the lead into a turn, a skater's
 ## strides), the rig shows as its wingtips and lit flames, and a line ahead
-## shows where the body is really going, on a faint beam up from the watch.
-## Glance at the wrist to read it, as with the watch's card.
+## shows where the body is really going. A faint beam runs to it from the
+## watch, so it is the watch's projection in the world, not a screen overlay.
 ##
 ## View only and first person only: `Hud.Wrist` mounts it (beside the
 ## emote wheel's hologram, `Hud.EmoteHolo`), it reads the skin and never
@@ -21,13 +21,15 @@ const GameSettings := preload("res://core/settings/game_settings.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
 const INK := Color(0.45, 0.95, 1.0)
 
-## Where the figure stands: thrown up off the watch face, `lift` metres
-## above it (up the view) and `toward` metres in toward the eyes, so it is
-## a projection in the world on your own wrist, never a spot fixed on the
-## screen (DESIGN.md's immersion rule); and how big a 1.8 m body is drawn.
-var lift := 0.07
-var toward := 0.03
-var size := 0.09
+## Where the figure stands (Caleb's call, since the wrist is out of view
+## while flying): beamed from the watch to a spot in the world ahead and
+## to the left of the eyes, `ahead` metres out, at a share of the way from
+## the view's middle to its left and top edges (`corner`, so it keeps its
+## place whatever the field of view); and how big a 1.8 m body is drawn.
+## The beam comes up from the watch on the wrist, in view or not.
+var ahead := 0.6
+var corner := Vector2(0.66, 0.5)
+var size := 0.1
 ## The angle it is seen from: above (radians down onto it) and from the
 ## side (a three-quarter view, so a dive and a climb read).
 var view_down := 0.38
@@ -138,7 +140,10 @@ func update(p: Actor, camera: Camera3D, on: bool, watch: Vector3, delta: float) 
 	var to_body := Basis(Vector3.UP, yaw).inverse()
 	var turn := look * Basis(Vector3.UP, view_side) * Basis(Vector3.RIGHT, view_down)
 	var scale_by := size / 1.8
-	var middle := watch + look.y * lift + (camera.global_position - watch).normalized() * toward
+	var tall := tan(deg_to_rad(camera.fov) * 0.5)
+	var screen := camera.get_viewport().get_visible_rect().size
+	var wide := tall * (screen.x / maxf(screen.y, 1.0))
+	var middle := camera.global_position + look * Vector3(-wide * corner.x * ahead, tall * corner.y * ahead, -ahead)
 	global_position = middle
 	var place := func(at: Vector3) -> Vector3:
 		return middle + turn * (to_body * (at - hips)) * scale_by
@@ -188,7 +193,7 @@ func update(p: Actor, camera: Camera3D, on: bool, watch: Vector3, delta: float) 
 	var going := p.velocity * speed_scale
 	if going.length() > 0.05:
 		_line(place.call(hips), place.call(hips + going.limit_length(2.5)), eye, faint, stroke)
-	# The faint beam it is thrown up on, from the watch face.
+	# The faint beam it is thrown on, up from the watch face.
 	_line(watch, middle + turn * Vector3.DOWN * size * 0.6, eye, Color(INK, 0.12 * shown), stroke * 2.0)
 	_mesh.surface_end()
 

@@ -68,7 +68,10 @@ date in the same PR.
   is drawn in one draw a frame, an unshaded line mesh with no depth test,
   from the body's own bones as posed this frame (read by a probe modifier
   added after all the others), so it is never a second model or pose. It
-  stands `ahead` of the eyes at a share of the screen (`corner`) worked
+  is the watch's projection (Caleb's call): a faint beam runs to it from
+  the watch on the wrist (`Wrist.watch_position`; no watch, no
+  hologram), and since the wrist is out of view while flying it stands
+  `ahead` of the eyes at a share of the screen (`corner`) worked
   out from the field of view, seen from `view_down` above and `view_side`
   round, against a ring level with the world. The skin's `rig_marks` give
   the wingtips and lit flames, `bones` the skeleton.

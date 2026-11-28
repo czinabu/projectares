@@ -292,6 +292,25 @@ var rig_clear_arm := 0.055
 var rig_clear_leg := 0.075
 var rig_clear_turn := 1.2
 var rig_clear_on := true
+## Each rig's takeoff (Caleb's ask): a pose of its own for the first
+## `rig_takeoff_time` seconds of a flight from the ground, laid over the
+## flight pose and the same in both views. Directions are in the body's
+## frame like `glide_arm` (x out to the side, y up the body, z back), as
+## [arm, thigh, shin] with a lean (radians forward) and how far the toes
+## point. The jetpack lifts: knees giving as the jets catch, arms pressed
+## down and back, then the legs hang straight under the thrust. The boots
+## spring: a knee driven up, the other leg pushing off, arms thrown up and
+## forward. The wings launch: arms swept back along the wings, the body
+## pitched into the dive, legs together.
+var rig_takeoff_time := 0.75
+var takeoff_poses := {
+	"jetpack": {"arm": Vector3(0.4, -1.0, 0.35), "thigh": [Vector3(0.06, -1.0, -0.45), Vector3(0.06, -1.0, -0.3)],
+			"shin": [Vector3(0.0, -1.0, 0.55), Vector3(0.0, -1.0, 0.45)], "lean": 0.12, "toes": 0.7, "head": -0.25},
+	"boots": {"arm": Vector3(0.3, 0.5, -0.8), "thigh": [Vector3(0.06, -0.35, -1.0), Vector3(0.05, -1.0, 0.35)],
+			"shin": [Vector3(0.0, -1.0, 0.2), Vector3(0.0, -1.0, 0.6)], "lean": 0.22, "toes": 0.9, "head": -0.1},
+	"wings": {"arm": Vector3(0.3, -0.45, 0.9), "thigh": [Vector3(0.04, -1.0, 0.12), Vector3(0.04, -1.0, 0.12)],
+			"shin": [Vector3(0.0, -1.0, 0.2), Vector3(0.0, -1.0, 0.2)], "lean": 0.45, "toes": 1.0, "head": -0.35},
+}
 ## Secondary motion in flight (Caleb's ask: the body moves with every turn
 ## and change of speed, never holding one stiff pose). The limbs carry on a
 ## little as the body speeds up, slows, climbs or turns: the pull is the
@@ -1525,6 +1544,7 @@ func _update_air(delta: float, airborne: bool) -> void:
 	else:
 		_air_push = move_toward(_air_push, 0.0, delta / takeoff_time)
 	_was_airborne = airborne
+	_update_takeoff(delta)
 	_land_left = move_toward(_land_left, 0.0, delta / land_time)
 	if locomotion:
 		# Down fast, up slow: sin over the squat's life, peaking early.
@@ -5853,6 +5873,7 @@ func _pose_glide() -> void:
 	_pose_air()
 	_pose_flat()
 	_pose_lead_arms()
+	_pose_takeoff()
 	if rig_clear_on:
 		_keep_clear_of_rig()
 
@@ -5981,6 +6002,11 @@ func _leg_lead() -> Vector3:
 ## posed as the skeleton is this frame (read inside the pose pass, before
 ## anything hung on a bone has followed it).
 var _rig_boxes := {}
+## The takeoff running (1 at liftoff down to 0, `rig_takeoff_time`), and
+## which rig's.
+var _takeoff := 0.0
+var _takeoff_kind := ""
+var _flew_last := false
 var _wing_shape := RigModel.new()
 
 
@@ -6192,6 +6218,75 @@ func _keep_clear_of_rig() -> void:
 				var pose := _skeleton.get_bone_global_pose(limb[0])
 				pose.basis = Basis(axis.normalized(), angle) * pose.basis
 				_skeleton.set_bone_global_pose(limb[0], pose)
+
+
+## Starts a rig's takeoff when its flight lights up off the ground (the
+## jets or the boots firing, or the wings' launch) and runs it down.
+func _update_takeoff(delta: float) -> void:
+	var f := actor.flight
+	var flying := f.enabled and not actor.is_dead and actor.vehicle == null \
+			and (f.is_thrusting or f.is_hovering or f.is_gliding or f.is_boosting or f.is_skimming)
+	var kind := RigModel.kind_for(_rig_id) if _rig_id != "" else ""
+	if flying and not _flew_last and kind != "" and actor.airborne_time < (1.5 if kind == "wings" else 0.6):
+		_takeoff = 1.0
+		_takeoff_kind = kind
+	elif delta > 0.0:
+		_takeoff = move_toward(_takeoff, 0.0, delta / maxf(rig_takeoff_time, 0.05))
+	_flew_last = flying
+
+
+## How far into its takeoff pose the body is: in fast, held, out as the
+## flight pose takes over.
+func takeoff_weight() -> float:
+	if _takeoff <= 0.0:
+		return 0.0
+	var t := 1.0 - _takeoff
+	return smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.55, 1.0, t))
+
+
+## The rig's own takeoff pose (`takeoff_poses`), laid over the flight pose
+## while `_takeoff` runs. The arms keep their hold on a weapon being aimed.
+func _pose_takeoff() -> void:
+	var w := takeoff_weight()
+	if w <= 0.001 or not takeoff_poses.has(_takeoff_kind):
+		return
+	var pose: Dictionary = takeoff_poses[_takeoff_kind]
+	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
+	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	# The first part of it gives at the knees, then the legs drive out.
+	var drive := smoothstep(0.15, 0.5, 1.0 - _takeoff)
+	var lean: float = pose.lean
+	for bone in _spine_bones:
+		var b := _skeleton.get_bone_global_pose(bone)
+		b.basis = Basis(right, -lean * w / maxf(_spine_bones.size(), 1)) * b.basis
+		_skeleton.set_bone_global_pose(bone, b)
+	if _glide_neck >= 0:
+		var n := _skeleton.get_bone_global_pose(_glide_neck)
+		n.basis = Basis(right, float(pose.head) * w) * n.basis
+		_skeleton.set_bone_global_pose(_glide_neck, n)
+	for i in _glide_legs.size():
+		var limb: Array = _glide_legs[i]
+		if limb.is_empty():
+			continue
+		var at := mini(i, 1)
+		var thigh: Vector3 = (pose.thigh as Array)[at]
+		var shin: Vector3 = (pose.shin as Array)[at]
+		# Driving out, a bent knee straightens toward the thigh's line.
+		shin = shin.lerp(thigh, drive * 0.6)
+		_pose_leg(limb, to_skeleton * Vector3(thigh.x * limb[3], thigh.y, thigh.z), right, w,
+				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), float(pose.toes))
+	var arm_w := w * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
+	if _in_hand != null:
+		arm_w *= lead_armed
+	if arm_w <= 0.001:
+		return
+	var arm: Vector3 = pose.arm
+	for limb: Array in _glide_arms:
+		if limb.is_empty():
+			continue
+		var wanted := to_skeleton * Vector3(arm.x * limb[3], arm.y, arm.z)
+		_aim_bone(limb[0], limb[1], wanted, arm_w)
+		_aim_bone(limb[1], limb[2], wanted, arm_w)
 
 
 ## The limbs' secondary motion (`sway_stiffness`): the pull of the body's
@@ -6520,6 +6615,10 @@ func _on_burst() -> void:
 	_burst_left = burst_burn
 	if actor.flight.can_skim() and not actor.is_dead:
 		_boot_pop(-2.0)
+	if _rig_id != "" and actor.airborne_time < 0.6 and not actor.flight.is_skating and not actor.is_dead:
+		# A kick or launch straight off the ground is the rig's takeoff.
+		_takeoff = 1.0
+		_takeoff_kind = RigModel.kind_for(_rig_id)
 	if actor.flight.is_skating and _flight_hold < 0.5 and not actor.is_dead:
 		# A kick off a skate: a spin, the way the strafe key or the carve leans.
 		var side := actor.cmd.move.x if absf(actor.cmd.move.x) > 0.1 else -_skate_carve

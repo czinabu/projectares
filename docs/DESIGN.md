@@ -2865,9 +2865,15 @@ your own body into the top left corner of the view, drawn from the same
 bones the body is posed with this frame, seen from behind and above
 against a level ring, so pitch, roll and the limbs read from outside while
 you look out of your own eyes; the rig shows as its wingtips and lit
-flames, a line shows where you are really going, and a faint beam ties it
-to the watch when the wrist is in view (the phone's "Flight hologram"
-turns it off). Your own rig is heard whole from inside it rather than
+flames, a line shows where you are really going, and a faint beam runs to
+it from the watch, so it is the watch's projection in the world, not a
+screen overlay (Caleb's call: the wrist is out of view while flying, so
+the watch beams it ahead and to the left; the phone's "Flight hologram"
+turns it off). Each rig takes off in a pose of its own, the same in both
+views: the jetpack lifts with the knees giving as the jets catch and the
+arms pressed down and back, the boots spring off one leg with a knee
+driven up and the arms thrown forward, and the wings launch with the arms
+swept back and the body pitched into the dive. Your own rig is heard whole from inside it rather than
 panning round your ears, the wind grows with speed, and flying fast
 through a storm or the cold streaks the visor glass with the weather. No
 limb ever sinks into a rig: any arm or leg a flight pose would put into

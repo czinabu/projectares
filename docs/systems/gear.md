@@ -209,7 +209,13 @@ date in the same PR.
   `rig_clear_arm` or `rig_clear_leg` off (a plate is left toward the
   limb's own side). One body, so both views. `rig_intrusion` measures it;
   `tests/flight_immersion_tests.gd` flies every rig model's poses on both
-  builds (about 10 cm deep without it, under 1 cm with it). Each rig has its own voice from the body, heard by
+  builds (about 10 cm deep without it, under 1 cm with it). Each rig
+  takes off in its own pose (Caleb's ask, `ActorSkin._pose_takeoff`,
+  `takeoff_poses`, `rig_takeoff_time`): started when the rig's flight
+  lights within a moment of leaving the ground (`_update_takeoff`; the
+  wings' launch a little later) or a kick or launch fires off the ground
+  (`_on_burst`), laid over the flight pose before the keep-clear pass, the
+  arms keeping a weapon's hold; `takeoff_weight` says how far in it is. Each rig has its own voice from the body, heard by
   everyone as far as its `noise_range` (`ActorSkin._update_rig_voice`:
   the jetpack's roar with its throttle, the wings' rush with the airspeed,
   the skate's hum, a pop on each boots kick and dash), and the player hears
