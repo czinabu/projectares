@@ -1593,6 +1593,9 @@ func _find_target() -> Actor:
 		var dist := eye.distance_to(chest)
 		if dist >= reach or dist * 0.85 >= best_score and not listening:
 			continue
+		# Past sight and an engine's reach, only a rig loud enough is heard.
+		if dist >= sight and dist >= ENGINE_HEARD and (other.flight == null or other.flight.noise() <= dist):
+			continue
 		if not Raid.together(actor, other):
 			continue
 		if world and not world.can_damage(actor, other, null):
