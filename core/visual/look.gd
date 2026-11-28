@@ -74,7 +74,9 @@ const HUMAN_ANIMS := {"idle": "Idle_Stand", "idle_gun": "Idle_Gun", "aim_gun": "
 	"run_back": "Run_Back", "run_left": "Run_Left", "run_right": "Run_Right", "roll": "Roll",
 	"kick": "Kick_Right", "slide": "Slide_L", "slide_start": "Slide_Start_L",
 	"slide_exit": "Slide_Exit_L", "air_legs": "Jump", "fist": "Sword_Idle",
-	"knock_fall": "Hit_Knockback", "knock_rise": "LayToIdle"}
+	"knock_fall": "Hit_Knockback", "knock_rise": "LayToIdle",
+	"hit_chest": "Hit_Chest", "hit_head": "Hit_Head", "hit_stomach": "Hit_Stomach",
+	"hit_left": "Hit_Shoulder_L", "hit_right": "Hit_Shoulder_R"}
 const HUMAN_ARM := ["UpperArm.R", "LowerArm.R", "Wrist.R"]
 const HUMAN_OFF_ARM := ["UpperArm.L", "LowerArm.L", "Wrist.L"]
 const HUMAN_FEET := ["Foot.L", "Foot.R"]

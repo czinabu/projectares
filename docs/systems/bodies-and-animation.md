@@ -155,6 +155,34 @@ date in the same PR.
   sends `switch_weapon = ActorCommand.HOLSTER` and draws `Actor.last_drawn`
   again; it is an index, never a toggle, so it replicates safely. Check with
   `--holster-only`.
+- A hit makes the body flinch (Caleb's pick from the pack: the Universal
+  Animation Library's hit clips, `Look.HUMAN_ANIMS` "hit_chest",
+  "hit_head", "hit_stomach", "hit_left", "hit_right"). The authority marks
+  each hit on the body it lands on (`Actor.hit_mark`, packed by
+  `Actor._mark_hit`): where it landed (a headshot is the head, under
+  `HIT_STOMACH_SHARE` of the eyes' height the stomach, high and off the
+  middle a shoulder, else the chest), which way it came from (the
+  shooter, else the hit's place) and how hard (a share of full health, in
+  four steps), under a count that changes with every hit. A hit with no
+  place (the cold, a storm) or one a guard took marks nothing, and a
+  client never marks one: the mark rides in every state entry
+  (`NetSession._state_entry`, `WIRE_ACTOR_STATE`), so every view sees the
+  same flinch. `Locomotion` (the "HitFlinch" hook, after the look, so a
+  headshot snaps the head off the aim a moment) plays the clip as the turn
+  each bone from the hips up makes away from the clip's last frame
+  (standing again), the hips' share put on the lowest spine bone so the
+  legs keep their stride, and the arms reach for the weapon after it as
+  ever. The clips are made for a hit from the front; one from anywhere
+  else turns them round about the up axis to come from there (a shot from
+  behind throws the head forward). Scaled by the step
+  (`flinch_strength`) and the place (`flinch_zone`: the stomach clip
+  doubles right over, so half), eased in over `flinch_in`, an older one
+  faded out over `flinch_out` when a new one starts; braced to
+  `flinch_braced` aimed down the sights; none while knocked down (that
+  has its own fall) or dead. First person's eyes ride the head, so a hit
+  jolts the view by a few centimetres, never the aim: shots leave from the
+  actor's eyes. Checked in `tests/hit_flinch_tests.gd`; see it with
+  `--flinch-only` (`frames` for clips).
 - People are built from parts (`core/visual/human.gd`): an "appearance" names
   a build, four parts and colours. It is cosmetic only and never trusted:
   always pass one through `Look.clean_appearance` / `Look.set_appearance`,

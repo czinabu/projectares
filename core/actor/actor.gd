@@ -252,6 +252,24 @@ var hunted_by := ""
 ## so everyone sees the shivering.
 var shivering := false
 const CHILL_SHARE := 0.35
+## The last hit that makes the body flinch (`Locomotion` plays the pack's
+## hit clips from it), packed by `_mark_hit`: where on the body it landed
+## (`HIT_CHEST`...), which way it came from, how hard, and a count that
+## changes with every hit. The authority sets it and every client gets it
+## in the state, so everyone sees the same flinch. View only: nothing in
+## the simulation reads it.
+var hit_mark := 0
+const HIT_CHEST := 1
+const HIT_HEAD := 2
+const HIT_STOMACH := 3
+const HIT_LEFT := 4
+const HIT_RIGHT := 5
+## Below this share of the eyes' height a hit is in the stomach (or lower);
+## above `HIT_SHOULDER_SHARE`, and `HIT_SHOULDER_SIDE` m off the middle,
+## in a shoulder.
+const HIT_STOMACH_SHARE := 0.6
+const HIT_SHOULDER_SHARE := 0.8
+const HIT_SHOULDER_SIDE := 0.1
 ## The vehicle this actor is riding, or null. While riding, the vehicle moves
 ## the actor; weapons, healing and abilities still work.
 var vehicle: Node3D = null
@@ -1972,11 +1990,56 @@ func kill(kind: String, source: Node = null) -> void:
 	health.apply_damage(info)
 
 
-func _on_health_damaged(_info: DamageInfo) -> void:
+func _on_health_damaged(info: DamageInfo) -> void:
 	_flash()
+	# A hit with no place (the cold, a storm) or one a guard took moves
+	# nobody. A client only hears of its own hits, with no place: the
+	# server's mark comes in the state.
+	if Combat.authoritative and not info.blocked and not info.parried and info.position != Vector3.ZERO:
+		hit_mark = _mark_hit(info)
 	if heal_time_left > 0.0:
 		heal_time_left = 0.0
 		notice.emit("Heal interrupted")
+
+
+## `hit_mark` for `info`: bits 0-4 the way it came from (32 steps round,
+## 0 straight ahead, counted toward the right), 5-7 where it landed, 8-9
+## how hard (a share of full health: under 10%, 20%, 35%, or more), and
+## the count above.
+func _mark_hit(info: DamageInfo) -> int:
+	var to_local := global_basis.orthonormalized().inverse()
+	var at := to_local * (info.position - global_position)
+	var zone := HIT_CHEST
+	var share := at.y / maxf(eye_height, 0.5)
+	if info.headshot:
+		zone = HIT_HEAD
+	elif share < HIT_STOMACH_SHARE:
+		zone = HIT_STOMACH
+	elif share > HIT_SHOULDER_SHARE and absf(at.x) > HIT_SHOULDER_SIDE:
+		zone = HIT_LEFT if at.x < 0.0 else HIT_RIGHT
+	var source := info.source as Node3D
+	var from := to_local * ((source.global_position if source != null and is_instance_valid(source) \
+			else info.position) - global_position)
+	var way := 0
+	if Vector2(from.x, from.z).length_squared() > 0.0001:
+		way = posmod(roundi(atan2(from.x, -from.z) / TAU * 32.0), 32)
+	var hard := info.amount / maxf(health.max_health, 1.0)
+	var strength := 0 if hard < 0.1 else (1 if hard < 0.2 else (2 if hard < 0.35 else 3))
+	return (((hit_mark >> 10) + 1) % 1024 << 10) | strength << 8 | zone << 5 | way
+
+
+## The parts of `hit_mark`: where, which way (radians, 0 ahead, toward the
+## right) and how hard (0 to 3).
+static func hit_zone(mark: int) -> int:
+	return (mark >> 5) & 7
+
+
+static func hit_way(mark: int) -> float:
+	return float(mark & 31) / 32.0 * TAU
+
+
+static func hit_strength(mark: int) -> int:
+	return (mark >> 8) & 3
 
 
 ## A brief white flash so every hit is visible.

@@ -2441,7 +2441,7 @@ func _send_states() -> void:
 
 
 ## Raise it when what a state entry carries changes (`NetManifest`).
-const WIRE_ACTOR_STATE := 1
+const WIRE_ACTOR_STATE := 2
 
 
 ## One actor's state as it goes out to viewers of `tier`, with the presses
@@ -2457,7 +2457,8 @@ func _state_entry(id: int, tier: int) -> Array:
 			| (ActorCommand.STATE_KNOCKED_DOWN if actor.knocked_left > 0.0 else 0)
 	cmd[ActorCommand.SWITCH_INDEX] = _switches[tier].get(id, -1)
 	return [id, actor.global_position, actor.velocity, cmd, actor.health.health,
-			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0)]
+			actor.health.armor, actor.stagger_left, _dead_kind.get(id, ""), _applied_seq.get(id, 0),
+			actor.hit_mark]
 
 
 # ---------------------------------------------------------------- client ----
@@ -3407,8 +3408,8 @@ func _receive_state(tick: int, entries: Array) -> void:
 		var id: int = entry[0]
 		entries_received[id] = int(entries_received.get(id, 0)) + 1
 		# The server has your inputs up to here: stop resending those.
-		if id == my_actor_id and entry.size() > 9:
-			_acked_seq = maxi(_acked_seq, int(entry[9]))
+		if id == my_actor_id and entry.size() > 10:
+			_acked_seq = maxi(_acked_seq, int(entry[10]))
 		# Presses from an update we have not applied yet must not be lost.
 		if _latest.has(id):
 			var cmd: Array = entry[3]
@@ -4235,6 +4236,8 @@ func _apply_state(actor: Actor, entry: Array, mine: bool, tick: int = 0) -> void
 		actor.weapons_locked = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
 				and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_SHELTERED != 0
 	# So is the cold (`Raid._tick_cold`): everyone sees who shivers.
+	# And the last hit, so everyone sees the body flinch (`Actor.hit_mark`).
+	actor.hit_mark = int(entry[9])
 	actor.shivering = typeof(entry[3]) == TYPE_ARRAY and entry[3].size() == ActorCommand.ARRAY_SIZE \
 			and int(ActorCommand._number(entry[3][ActorCommand.FLAGS_INDEX])) & ActorCommand.STATE_CHILLED != 0
 	# And a knockdown (`Actor.knock_down`): down for what is left of the

@@ -712,7 +712,8 @@ func _ready() -> void:
 			var found := _find_animation(def["anims"][key])
 			if found != "":
 				_anims[key] = found
-				if key not in ["death", "attack", "roll", "kick", "fist", "knock_fall", "knock_rise"]:
+				if key not in ["death", "attack", "roll", "kick", "fist", "knock_fall", "knock_rise"] \
+						and not key.begins_with("hit_"):
 					_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR
 		# Sized in the relaxed stand: an idle that bends the knees or
 		# spreads the feet (a person's) would otherwise size the body up.
