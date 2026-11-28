@@ -338,7 +338,7 @@ func _ready() -> void:
 	# Vehicles. Not carried: the Raid parks one next to you when you deploy, and
 	# whoever signs out riding it takes it home. Stats tune Vehicle.
 	register("bike_scrapper", "Scrapper Bike", Rarity.UNCOMMON, 600, ["vehicle", "vendor"],
-			{"max_speed": 24.0, "boost_speed": 32.0, "body_color": Color(0.6, 0.45, 0.3),
+			{"body": "scrambler", "max_speed": 24.0, "boost_speed": 32.0, "body_color": Color(0.6, 0.45, 0.3),
 			"cargo_points": [Vector3(0.0, 0.92, 0.95)] as Array[Vector3], "race": RACE_SCRAPPER},
 			"Rattly motorbike. Fast, loud, and no cover for the rider.")
 	# The Raider is a hoverbike: the "hover" tag floats it (`Vehicle`, "Hover").
@@ -346,7 +346,7 @@ func _ready() -> void:
 	# and short gaps, but it drifts in turns, brakes and climbs worse, and two
 	# up it is heavier (the `laden_*` shares). Reasoning in DESIGN.md section 8.
 	register("bike_raider", "Raider Hoverbike", Rarity.RARE, 1400, ["vehicle", "hover"],
-			{"model": "hoverbike", "max_speed": 26.0, "boost_speed": 35.0, "accel": 16.0,
+			{"model": "hoverbike", "body": "ducted", "max_speed": 26.0, "boost_speed": 35.0, "accel": 16.0,
 			"turn_rate": 2.4, "full_turn_speed": 5.0, "pivot_turn": 0.8, "coast_decel": 2.5,
 			"brake_decel": 22.0, "max_slope": 30.0, "grip": 4.0, "max_slip": 0.45,
 			"hang_time": 0.45, "launch_keep": 0.6, "downforce": 1.6, "hover_height": 0.45,
