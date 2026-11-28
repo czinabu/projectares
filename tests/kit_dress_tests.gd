@@ -44,6 +44,10 @@ static func run(t: Node) -> void:
 	t.check(walls != null and walls.mesh.get_surface_count() <= 8, "the walls are faced in kit panels, all in one node")
 	var mast: StaticBody3D = map.get("_mast")
 	t.check(mast != null and not (mast.get_child(1) as MeshInstance3D).visible, "the hill's mast is drawn as a lattice, not a block")
+	var clutter: Array = map.get("_clutter")
+	var piles := map.find_child("ClutterClad", true, false) as MeshInstance3D
+	t.check(clutter.size() >= 10 and piles != null and piles.mesh.get_surface_count() <= 7,
+			"supply piles of kit crates and barrels stand about the camps and strongpoints, in one node")
 	map.queue_free()
 	Look.enabled = was_on
 	# Without Look, none of it.
