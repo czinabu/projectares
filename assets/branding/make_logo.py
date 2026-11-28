@@ -5,25 +5,44 @@ FONT = "assets/fonts/Rajdhani-SemiBold.ttf"
 AMBER = (255, 158, 56)
 BG = (14, 12, 18)
 
+CYAN = (77, 217, 255)
+
+def chamfer(x0, y0, x1, y1, c):
+    return [(x0 + c, y0), (x1 - c, y0), (x1, y0 + c), (x1, y1 - c), (x1 - c, y1), (x0 + c, y1), (x0, y1 - c), (x0, y0 + c)]
+
 def emblem(size):
     s = size * 4
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    r = s * 0.2
-    d.rounded_rectangle([0, 0, s - 1, s - 1], radius=r, fill=BG + (255,), outline=(60, 52, 48, 255), width=max(1, s // 64))
-    # A spearhead "V": an outer chevron pointing down, a lit core.
+    # A hard-cornered plate, not a rounded app tile.
+    d.polygon(chamfer(0, 0, s - 1, s - 1, s * 0.12), fill=BG + (255,))
+    # The lane's gate frame, thin and cyan, broken at the corners like the
+    # arches in the tunnel, with the short ticks inside them.
+    m, bw, gap = s * 0.1, max(2, s // 56), s * 0.2
+    x0, y0, x1, y1 = m, m, s - m, s - m
+    for (ax, ay, bx, by) in [(x0 + gap, y0, x1 - gap, y0), (x0 + gap, y1, x1 - gap, y1),
+                             (x0, y0 + gap, x0, y1 - gap), (x1, y0 + gap, x1, y1 - gap)]:
+        d.rectangle([ax - bw / 2, ay - bw / 2, bx + bw / 2, by + bw / 2], fill=CYAN + (255,))
+    tick = s * 0.1
+    for sx, ex in [(x0, 1), (x1, -1)]:
+        for sy, ey in [(y0, 1), (y1, -1)]:
+            xa, xb = sorted([sx, sx + ex * tick])
+            ya, yb = sorted([sy, sy + ey * tick])
+            d.rectangle([xa, sy - bw / 2, xb, sy + bw / 2], fill=CYAN + (255,))
+            d.rectangle([sx - bw / 2, ya, sx + bw / 2, yb], fill=CYAN + (255,))
+    # The V: two heavy amber slabs meeting at the point, cut across by a
+    # slit, so it reads as a line you cross: the verge.
     cx = s / 2
-    top, base = s * 0.2, s * 0.82
-    w = s * 0.34
-    t = s * 0.11
-    outer = [(cx - w, top), (cx - w + t * 1.15, top), (cx, base - t * 2.3), (cx + w - t * 1.15, top), (cx + w, top), (cx, base)]
+    top, base = s * 0.27, s * 0.76
+    w = s * 0.26
+    t = s * 0.115
+    outer = [(cx - w, top), (cx - w + t * 1.25, top), (cx, base - t * 2.4), (cx + w - t * 1.25, top), (cx + w, top), (cx, base)]
     d.polygon(outer, fill=AMBER + (255,))
-    # a cyan spark at the tip, the lane's colour
-    glow = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    gd.ellipse([cx - s * 0.05, base - s * 0.05 - t * 0.6, cx + s * 0.05, base + s * 0.05 - t * 0.6], fill=(150, 240, 255, 230))
-    glow = glow.filter(ImageFilter.GaussianBlur(s * 0.02))
-    img = Image.alpha_composite(img, glow)
+    slit = s * 0.015
+    cut = top + (base - top) * 0.5
+    d.polygon([(0, cut), (s, cut), (s, cut + slit * 2), (0, cut + slit * 2)], fill=BG + (255,))
+    # Cyan spark under the point: the way out.
+    d.polygon([(cx - s * 0.035, base + s * 0.03), (cx + s * 0.035, base + s * 0.03), (cx, base + s * 0.075)], fill=CYAN + (255,))
     return img.resize((size, size), Image.LANCZOS)
 
 icon = emblem(512)
