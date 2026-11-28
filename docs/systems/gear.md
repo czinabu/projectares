@@ -48,7 +48,9 @@ date in the same PR.
   boost poses for the other two. Touching down out of a glide or a boost
   at speed is a run-out (`ActorSkin._run_out`): the body leans back
   against the skid (`run_out_lean`) with a shallow squat (`run_out_squat`)
-  until it slows, never pitched forward onto the ground, and the legs brace
+  until it slows (at most `run_out_time`, and over at once when the player
+  runs on with the stick at running speed, or the legs would freeze in
+  the skid while the body runs), never pitched forward onto the ground, and the legs brace
   in a skid on the feet (`Locomotion.skid`, `_skid_pose`: the lead leg out
   ahead nearly straight, the trailing leg bent under, the back straightened),
   shown in place of the slide when a wings landing slides. Check by eye with
@@ -143,6 +145,59 @@ date in the same PR.
   quicker while tuning, `--air-only`: one sheet of the hover, a drift, a
   boost, a glide, boots and a fall, taking `name=value` overrides of the
   skin's tuning vars (`air_toes=0.9`) and `only=hover,glide`.
+- Each rig flies with its own style (Caleb's style pass): the jetpack a
+  heavy gunship, the boots a skater and free-runner, the wings a bird of
+  prey. Gameplay, simulated from the command like the rest: a wing swoop
+  (`Actor._glide_velocity`: pulled up with speed past the glide's, the
+  climb pays only `glide_climb_cost`, no drag on top, so a 30 m/s dive
+  pulls back up about 20 m and never above where the dive began; at the
+  glide's speed a pull-up bleeds speed as before), and the boots' wall kick
+  (`Actor._wall_kick`, `wall_beside`, `FlightRig.wall_kick` and
+  `wall_kick_push`: jump in the air beside a wall kicks up and away from
+  it, free, once a time in the air, cut to the ceiling like any kick). A
+  rig is heard by bots as far as it carries while it works
+  (`FlightRig.noise_range`, `noise`, read by `BotBrain.noise_of`: jetpack
+  60 m, wings 30, boots 12; `BotBrain.LOUDEST_HEARD` is the furthest).
+  View only, read from the simulated actor so remote players match, the
+  same body in both views (`ActorSkin`): a jetpack's flames stretch with
+  the throttle and swivel toward the push (`_update_jet_thrust`,
+  `_aim_jet_flame`, `jet_gimbal`), the body tips into the push like a
+  helicopter (`_jet_lean`: into a drift, back to stop) and a boost lighting
+  kicks the flames (`jet_kick`); wings sweep back and the arms tuck past
+  the glide's speed (`dive_arm`), the tips bend up under load, a stall
+  shudders them and spreads the arms (`stall_arm`), all through
+  `RigModel.set_wing_spread`'s `sweep`, `flex` and `flutter`, and the
+  wingtips stream vapor fast or pulling hard (`_Vapor`, one draw for both
+  tips, never on the Low and Lowest graphics; thin wisps cut to
+  `vapor_length`, tapered to the tail and faded near the camera, so a chase
+  view never sees bars running past the lens); the skate pumps in strides
+  (`skate_stride`), a kick off a skate spins the body once round
+  (`kick_spin_time`, not while aiming) and an air dash tucks the knees
+  (`dash_tuck`). On every rig the body moves with each change of speed and
+  turn, never one stiff pose (Caleb's ask, `ActorSkin._update_sway`): the
+  pull of the acceleration rides a spring (`sway_stiffness`,
+  `sway_damping`, stepped in short slices) that swings the arms
+  (`sway_arms`) and legs (`sway_legs`, the shins more), and while the arms
+  are free of a weapon the chest leads a turn and sits back against a
+  change of speed (`_pose_spine`, `sway_twist`, `sway_pitch`), so a
+  weapon held up is never pulled off its aim. The flyer leads the rig
+  rather than reacting to it (Caleb's ask, `ActorSkin._update_lead`): the
+  intent read from `Actor.cmd` (the stick, climb and descend, the view
+  swinging, and in a glide the view against the flight path and the trim)
+  eases in faster than the attitude follows the velocity, so the head looks
+  into a turn first, the chest turns, bends and leans, the inside arm drops
+  and the outside lifts, the arms reach the way the stick points, the hands
+  tip like ailerons, the legs swing to balance, and the body leans or banks
+  a little ahead (`lead_*` tuning, `_pose_lead_arms`, `_leg_lead`; the arms
+  only `lead_armed` of it with a weapon in hand). A check of a posed bone
+  must read it from a modifier after them all, since the skeleton puts its
+  poses back once drawn (`rig_style_tests._probe`). Each rig has its own voice from the body, heard by
+  everyone as far as its `noise_range` (`ActorSkin._update_rig_voice`:
+  the jetpack's roar with its throttle, the wings' rush with the airspeed,
+  the skate's hum, a pop on each boots kick and dash), and the player hears
+  the wind past their ears at speed (`PlayerController._update_air_rush`).
+  The first-person camera's share of it is in `camera-and-views.md`.
+  Checked by `tests/rig_style_tests.gd`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one
   class whose `mode` stat picks what the visor does ("" plain, "zoom"

@@ -88,8 +88,9 @@ date in the same PR.
   bench's `--group 2,3,5` (and `--slots off` to compare).
   Bots react only to what they sense (DESIGN.md "Enemy senses and squads",
   Caleb's "everyone converges on me"): sight, a person's noise (shots,
-  `Combat.noise`, told nearest first; footsteps, jets and engines,
-  `BotBrain.noise_of`), a hit and a squadmate's callout (`_call_out`, a
+  `Combat.noise`, told nearest first; footsteps, engines and a flight
+  rig at work as far as it carries, `BotBrain.noise_of`,
+  `FlightRig.noise`), a hit and a squadmate's callout (`_call_out`, a
   snapshot when the spotter raises its gun). What they learn is a place,
   never live tracking: a lost contact is searched for (`_lost`) and let go.
   A world gives a kind its own senses with metas set in `equip_bot`

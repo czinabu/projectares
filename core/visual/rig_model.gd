@@ -113,7 +113,12 @@ static func build_boot(id: String, side: float) -> Node3D:
 ## way out each wing slides out of its slot, then its tip lifts.
 ## `roll` (-1..1, positive banking right) twists the two wings opposite ways
 ## like ailerons, and `trim` (-1 flare .. 1 dive) pitches both together.
-static func set_wing_spread(back: Node3D, amount: float, roll := 0.0, trim := 0.0) -> void:
+## The rest is how the wings answer the air (the style pass, Caleb's call):
+## `sweep` (0..1) folds them further back as the speed builds past the
+## glide, `flex` (0..1) bends the tips up under load in a hard turn or
+## pull, and `flutter` (radians) shakes them, as near a stall.
+static func set_wing_spread(back: Node3D, amount: float, roll := 0.0, trim := 0.0,
+		sweep := 0.0, flex := 0.0, flutter := 0.0) -> void:
 	if back == null:
 		return
 	var t := clampf(amount, 0.0, 1.0)
@@ -126,10 +131,12 @@ static func set_wing_spread(back: Node3D, amount: float, roll := 0.0, trim := 0.
 		var span: float = lerpf(hinge.get_meta("stowed_span"), 1.0, smoothstep(0.0, 0.6, t))
 		var turn := smoothstep(0.4, 1.0, t)
 		var side := -1.0 if wing_name == "WingL" else 1.0
-		var twist := (side * roll * 0.35 - trim * 0.22) * turn
-		# Swept further back in a dive, spread wide in a flare.
-		var sweep := Basis(Vector3.UP, -side * maxf(trim, -0.4) * 0.3 * turn)
-		hinge.basis = Basis(stowed.slerp(spread, turn)) * sweep * Basis(Vector3.RIGHT, twist) \
+		var twist := (side * roll * 0.35 - trim * 0.22 + flutter * side) * turn
+		# Swept further back in a dive and at speed, spread wide in a flare.
+		var back_sweep := Basis(Vector3.UP, -side * (maxf(trim, -0.4) * 0.3 + clampf(sweep, 0.0, 1.0) * 0.45) * turn)
+		# Loaded up in a hard turn, the tips bend up off the back.
+		var bend := Basis(Vector3.BACK, side * clampf(flex, 0.0, 1.0) * 0.28 * turn)
+		hinge.basis = Basis(stowed.slerp(spread, turn)) * back_sweep * bend * Basis(Vector3.RIGHT, twist) \
 				* Basis.from_scale(Vector3(span, 1.0, 1.0))
 		hinge.visible = t > 0.02
 	back.set_meta("spread", t)

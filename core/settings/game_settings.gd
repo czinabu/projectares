@@ -160,6 +160,9 @@ const SCHEMA := [
 	{"key": "eye_pullback", "tab": "view", "section": "CAMERA", "kind": "slider",
 			"label": "Camera pulled back, first person", "default": 0.15, "range": EYE_PULLBACK_RANGE,
 			"step": 0.01, "format": "centimetres", "preview": true},
+	{"key": "flight_camera_motion", "tab": "view", "section": "CAMERA", "kind": "slider",
+			"label": "Camera motion in flight, first person", "default": 1.0, "range": Vector2(0.0, 1.0),
+			"step": 0.05, "format": "percent"},
 	{"key": "show_nameplates", "tab": "view", "section": "CAMERA", "kind": "toggle",
 			"label": "Names over other players", "default": true},
 	{"key": "master_volume", "tab": "system", "kind": "slider", "label": "Volume", "default": 0.8,
@@ -214,6 +217,12 @@ static var music_volume: float:
 static var fullscreen: bool:
 	get: return _values["fullscreen"]
 	set(v): _values["fullscreen"] = v
+## How much the first-person view moves with flight (`PlayerController`'s
+## flight motion: rolling with the wings' bank and a skate's carve, a
+## boost's rumble), 0 for none.
+static var flight_camera_motion: float:
+	get: return _values.get("flight_camera_motion", 1.0)
+	set(v): _values["flight_camera_motion"] = v
 static var show_nameplates: bool:
 	get: return _values["show_nameplates"]
 	set(v): _values["show_nameplates"] = v

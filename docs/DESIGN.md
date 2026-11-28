@@ -2803,7 +2803,7 @@ measures them.
 | Air aim spread | +10% with the jets lit | +0% mid-dash or skimming low | +50% gliding |
 | Dodge | none | 0.2 s graze window per dash: rounds do 25% | none |
 | Fall damage | half | none | none out of a glide |
-| Noise and glow | loud, bright | quiet, dim | medium, wing trails |
+| Noise and glow | loud, bright: bots hear it 60 m off | quiet, dim: heard 12 m off | medium, wing trails: heard 30 m off |
 | Thermal and scan range | 120 m | 30 m | 80 m |
 | Indoors (a roof within 8 m) | clumsy: half speed and climb | full use | cannot open |
 
@@ -2811,6 +2811,39 @@ The wings keep their boost (Caleb's call): two a flight, each +8 m/s ahead
 or a small lift (Shift + S), refilled only on the ground. That launches them
 off flat ground or saves a dying glide, but it never climbs for long, so the
 jetpack keeps vertical play. A launch is free, once per time in the air.
+
+### Flying style (Caleb's call, the style pass)
+
+Each rig flies with a character of its own, seen, heard and felt:
+
+- **Jetpack, a heavy gunship.** You see the weight and the thrust: the
+  flames grow and shrink with the throttle and the nozzles swivel to push,
+  the body tips into a drift and flares back to stop like a helicopter,
+  and a boost lighting kicks the flames and jolts the view. Looks only:
+  its handling is unchanged, so it stays the steady place to aim from.
+  The loudest rig, its roar heard 60 m away by players and bots alike.
+- **Boots, a skater and free-runner.** The skate pumps in strides, a kick
+  off a skate spins you once round, an air dash tucks the knees, and jump
+  in the air beside a wall kicks you up and away from it, free, once a
+  time in the air (still capped at the 10 m ceiling). Quiet: a hum and a
+  pop on each kick, heard 12 m away.
+- **Wings, a bird of prey.** All about energy: past the glide's speed the
+  wings sweep back and the arms tuck, the tips bend up in a hard turn, a
+  stall shudders them, and the wingtips stream vapor when fast or pulling
+  hard. Pulled up out of a dive, the speed past 22 m/s buys height back (a
+  swoop): a 30 m/s dive pulls back up about 20 m, never above where the
+  dive began, so the jetpack still owns height. A rush of air heard 30 m
+  away.
+
+On every rig the flyer leads and the rig answers (Caleb's ask): the
+moment you steer, the head looks into the turn, the chest turns and
+leans, the inside arm drops and the outside lifts, the arms reach the
+way you push, the hands tip like ailerons and the legs swing to balance,
+before the flight itself bends; then the arms and legs swing on with
+each change of speed and settle. Wind rushes past your ears at speed on every rig. In first person the view
+rolls with a third of the wings' bank and a little with a skate's carve,
+and rumbles in a boost; the phone's "Camera motion in flight" turns it
+down or off. The vapor is off on the Low and Lowest graphics.
 
 ### Cruising (Caleb's call)
 

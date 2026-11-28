@@ -186,7 +186,9 @@ static func run(t: Node) -> void:
 		t.check(leaping > 0.12, "a jump lifts the lead knee (foot %.2f m up)" % leaping)
 		p.flight.is_hovering = true
 		p.velocity = -p.global_basis.z * 7.0
-		await t.get_tree().create_timer(0.6).timeout
+		# The jets catching the rise swing the legs up for a moment
+		# (`ActorSkin.sway_legs`); they hang once that settles.
+		await t.get_tree().create_timer(1.2).timeout
 		var hanging: float = foot_height.call()
 		t.check(not (String(skin._current) in skin.GAITS) and hanging < leaping,
 				"hovering, the legs hang loose instead of running (foot %.2f m up)" % hanging)
@@ -490,6 +492,23 @@ static func run(t: Node) -> void:
 		p.velocity = Vector3.ZERO
 		await t.get_tree().create_timer(0.5).timeout
 		t.check(not skin._run_out, "stopped, the run-out is over")
+		# Caleb's bug: landing fast and running straight on froze the legs in
+		# the skid for as long as the run lasted. Running on ends it.
+		skin._glide = 1.0
+		p.velocity = p.global_basis * Vector3(0, 0, -20.0)
+		skin._on_landed(8.0)
+		skin._glide = 0.0
+		await t.frames(2)
+		var skid_on: bool = skin._run_out
+		p.cmd.move = Vector2(0, 1)
+		for i in 20:
+			p.velocity = p.global_basis * Vector3(0, 0, -p.sprint_speed)
+			await t.frames(1)
+		t.check(skid_on and not skin._run_out and skin.locomotion.skid_weight < 0.2,
+				"landing fast and running on, the legs leave the skid and run (skidding %s, then %.2f)" % [skid_on, skin.locomotion.skid_weight])
+		p.cmd.move = Vector2.ZERO
+		p.velocity = Vector3.ZERO
+		await t.get_tree().create_timer(0.3).timeout
 		t.check(skin.locomotion.skid_weight < 0.01, "and the legs come out of the skid")
 		t.check(absf(p.to_local(wing_tip.global_position).x) < 0.2, "the wings retract after gliding")
 		t.check((skin as Node3D).transform.basis.y.y > 0.99, "the body stands up again after gliding")

@@ -4,6 +4,7 @@ extends Node3D
 ## and plays the matching animation, swaps greybox weapon parts for models,
 ## and plays the effects for shots and hits.
 
+const GameSettings := preload("res://core/settings/game_settings.gd")
 const MirrorScript := preload("res://core/visual/mirror.gd")
 const Vfx := preload("res://core/visual/vfx.gd")
 const WeaponArm := preload("res://core/visual/weapon_arm.gd")
@@ -152,8 +153,12 @@ var land_time := 0.4
 ## crash: the body leans back against the skid by up to `run_out_lean`
 ## radians while it is still going faster than `run_out_speed` m/s, and the
 ## squat is kept to `run_out_squat` so it never folds up flat on the ground.
+## The skid lasts at most `run_out_time` seconds, and ends at once when the
+## player runs on (moving with the stick at running speed or slower), so
+## the legs never freeze in it while the body runs.
 var run_out_lean := 0.3
 var run_out_speed := 7.0
+var run_out_time := 0.9
 var run_out_squat := 0.4
 ## Vertical speed at which a jump counts as fully rising or fully falling.
 var air_rise_speed := 4.0
@@ -220,6 +225,107 @@ var boot_gimbal := 0.6
 var boot_toes := 0.0
 var boot_flame_min := 0.8
 var boot_flame_max := 2.0
+## The style pass (Caleb's call: each rig flies its own way). All view only,
+## read from the simulated actor, so remote players match and both views
+## show the same body.
+## Jetpack, a heavy gunship: the flames stretch with the throttle (from
+## `jet_flame_min` to `jet_flame_max` of their length, flickering by
+## `jet_flicker`) and the nozzles swivel up to `jet_gimbal` radians to push
+## the way the pack is working. Hovering, the body tips into that push like
+## a helicopter, by up to `hover_lean`: into a drift as it sets off, back as
+## it stops (a steady drift pushes `jet_drag` per m/s against the air). A
+## boost lighting kicks the flames to `jet_kick` times for `jet_kick_time`.
+var jet_flame_min := 0.55
+var jet_flame_max := 1.7
+var jet_flicker := 0.08
+var jet_gimbal := 0.35
+var jet_drag := 0.45
+var jet_kick := 1.6
+var jet_kick_time := 0.3
+## Wings, a bird of prey: past the glide's speed the arms tuck in
+## (`dive_arm`, full at the dive's top speed) and the wings sweep back;
+## loaded in a hard turn or a pull the tips bend up; stalled, the wings
+## shudder by `stall_shudder` radians and the arms reach out for balance
+## (`stall_arm`). Same frame as `glide_arm`.
+var dive_arm := Vector3(0.14, -1.0, 0.08)
+var stall_arm := Vector3(0.9, -0.55, 0.05)
+var stall_shudder := 0.07
+## Wingtip vapor: a thin streak off each tip that fades over `vapor_life`
+## seconds and is never longer than `vapor_length` m, drawn while the glide
+## is faster than `vapor_speed` m/s or pulling more than `vapor_g`; never on
+## the Low and Lowest graphics. It tapers to nothing at its tail, and fades
+## out within `vapor_clear` m of the camera so a chase view behind the
+## flyer sees wisps, not bars running past the lens.
+var vapor_speed := 26.0
+var vapor_g := 1.5
+var vapor_life := 0.6
+var vapor_length := 6.0
+var vapor_width := 0.03
+var vapor_alpha := 0.35
+var vapor_clear := 4.0
+## Boots, a skater and free-runner: the skate pumps in strides
+## (`skate_stride` strides a second at the skate's speed, each leg pushing
+## out and back by `skate_push`), a kick while skating spins the body once
+## round over `kick_spin_time` seconds (not while aiming), and an air dash
+## pulls the knees up into a tuck (`dash_tuck` radians).
+var skate_stride := 1.3
+var skate_push := 0.35
+var kick_spin_time := 0.5
+var dash_tuck := 0.7
+## Secondary motion in flight (Caleb's ask: the body moves with every turn
+## and change of speed, never holding one stiff pose). The limbs carry on a
+## little as the body speeds up, slows, climbs or turns: the pull is the
+## acceleration turned round, in g, on a spring a little bouncy so the limbs
+## settle with some life (`sway_stiffness`, `sway_damping`). The arms swing
+## `sway_arms` of it and the legs `sway_legs` (the shins half as much
+## again); while the arms are free of a weapon the chest leads a turn by up
+## to `sway_twist` radians (full at `sway_turn_full` radians a second) and
+## sits back or forward against a change of speed by `sway_pitch` a g. View
+## only, read from velocity, so remote players match.
+var sway_stiffness := 60.0
+var sway_damping := 11.0
+var sway_arms := 0.5
+var sway_legs := 0.4
+var sway_twist := 0.3
+var sway_turn_full := 2.0
+var sway_pitch := 0.12
+## The flyer leads the rig (Caleb's ask: the pilot steers, the rig answers,
+## not the other way round). What the player asks for (the stick, a climb or
+## a descent, the view swinging round, and in a glide the view against the
+## way it flies and the trim) is read from `Actor.cmd`, which remote players
+## have too, and eased in quickly (`lead_rate`, faster than the body's own
+## attitude follows the velocity), so the body moves first and the flight
+## answers. The body leans into the stick (`lead_lean`) and banks into a
+## turn in a glide (`lead_bank`, radians); the head looks into the turn
+## (`lead_head`) and the climb (`lead_head_pitch`); the chest turns
+## (`lead_twist`), bends (`lead_roll`) and leans with the stick or the trim
+## (`lead_crunch`); the arms drop on the inside of a turn and lift outside
+## (`lead_arm_roll`), reach where the stick points and press down to climb
+## (`lead_reach`), and sweep back for a dive or forward to pull up
+## (`lead_sweep`); the hands tip like ailerons into the turn (`lead_hand`)
+## and flex with the climb (`lead_hand_flex`); the legs swing the other way
+## to balance (`lead_legs`). A glide turns `lead_turn_angle` radians of
+## view off the flight path into a full turn, anything else
+## `lead_turn_rate` radians a second of view turning. Arms and chest only
+## while they are free of a weapon being aimed, and only `lead_armed` of
+## the arms' lead with one in hand. View only.
+var lead_rate := 14.0
+var lead_armed := 0.4
+var lead_lean := 0.16
+var lead_bank := 0.3
+var lead_head := 0.45
+var lead_head_pitch := 0.25
+var lead_twist := 0.3
+var lead_roll := 0.14
+var lead_crunch := 0.2
+var lead_arm_roll := 0.45
+var lead_reach := 0.5
+var lead_sweep := 0.4
+var lead_hand := 0.5
+var lead_hand_flex := 0.35
+var lead_legs := 0.2
+var lead_turn_angle := 0.6
+var lead_turn_rate := 2.5
 
 ## Riding, the head turns at most this far (radians) toward the aim; the
 ## body stays facing along the vehicle.
@@ -440,6 +546,42 @@ var _beam_mat: StandardMaterial3D
 var _beam_held := 0.0
 var _flames: Array[Node3D] = []
 var _burst_left := 0.0
+## Jetpack: the push the jets make (actor space, m/s²) and the throttle, in
+## g; how long a boost's kick has left, and whether it boosted last frame.
+var _jet_push := Vector3(0, 9.8, 0)
+var _jet_throttle := 1.0
+var _jet_kick_left := 0.0
+var _was_boosting := false
+## Wings: how far past the glide's speed (0..1), how stalled (0..1) and how
+## loaded (0..1) the glide is, and the wingtip vapor (`_Vapor`).
+var _wing_fast := 0.0
+var _wing_stall := 0.0
+var _wing_load := 0.0
+var _vapor: _Vapor
+## The worn rig's voice, heard by everyone near (`_update_rig_voice`), and
+## whether an air dash was running last frame (a boots' dash pops).
+var _rig_voice: AudioStreamPlayer3D
+var _was_dashing := false
+## Boots: the skate's stride (radians round), a kick's spin left (s) and its
+## way round, and how far into a dash's tuck the legs are.
+var _stride := 0.0
+var _spin_left := 0.0
+var _spin_dir := 1.0
+var _tuck := 0.0
+## Secondary motion (`sway_stiffness`): the limbs' pull, actor frame, in g,
+## and how fast it is moving; how fast the way the body flies is swinging
+## (radians a second, positive turning left); the spine's bones.
+var _sway := Vector3.ZERO
+var _sway_v := Vector3.ZERO
+var _turn_rate := 0.0
+## The pilot's intent (`lead_rate`): how hard a turn is asked for (-1..1,
+## positive left), the reach (heading frame: the stick's way level, up for a
+## climb or a pull), and how far the lead is on at all.
+var _lead_turn := 0.0
+var _lead_reach := Vector3.ZERO
+var _lead_w := 0.0
+var _sway_heading := NAN
+var _spine_bones: Array[int] = []
 var _spread := 0.0
 ## 0 standing, 1 flying flat.
 var _glide := 0.0
@@ -489,6 +631,7 @@ var _last_heading := 0.0
 ## Skating: the heading last frame, and the carve's lean now.
 var _skate_heading := NAN
 var _run_out := false
+var _run_out_left := 0.0
 var _skate_carve := 0.0
 var _has_heading := false
 ## The actor's yaw last frame: while the body lies flat in flight its
@@ -921,6 +1064,7 @@ func _update(delta: float) -> void:
 	_flight_draw_left = aim_hold if actor.cmd.primary or actor.cmd.secondary else maxf(_flight_draw_left - delta, 0.0)
 	_flight_hold = move_toward(_flight_hold, 1.0 if _flight_draw_left > 0.0 else 0.0, glide_blend * delta)
 	_update_boot_thrust(delta)
+	_update_sway(delta)
 	_update_rig(delta)
 	_update_glide(delta)
 	_update_stowed()
@@ -1343,6 +1487,7 @@ func _on_landed(impact_speed: float) -> void:
 	_land_left = 1.0
 	var flat := Vector2(actor.velocity.x, actor.velocity.z).length()
 	_run_out = (_glide > 0.05 or _boost > 0.05) and flat > run_out_speed
+	_run_out_left = run_out_time
 	if _run_out:
 		_land_depth = minf(_land_depth, run_out_squat)
 
@@ -5077,18 +5222,209 @@ func _update_rig(delta: float) -> void:
 	_burst_left = maxf(0.0, _burst_left - delta)
 	var burning := not actor.is_dead and (actor.flight.is_thrusting or actor.flight.is_skimming
 			or actor.flight.is_skating or _burst_left > 0.0)
-	for flame in _flames:
+	var jets := actor.flight.can_hover()
+	for i in _flames.size():
+		var flame := _flames[i]
 		flame.visible = burning
 		if burning and actor.flight.can_skim():
 			_aim_flame(flame)
+		elif burning and jets:
+			_aim_jet_flame(flame, i)
+	_update_rig_voice(burning)
+	if actor.flight.is_skating:
+		var going := Vector2(actor.velocity.x, actor.velocity.z).length() / maxf(actor.flight.skate_speed, 1.0)
+		_stride = wrapf(_stride + TAU * skate_stride * clampf(going, 0.3, 1.2) * delta, 0.0, TAU)
 	if _rig_back and _rig_back.has_node("WingL"):
-		var want := 1.0 if actor.flight.is_gliding and not actor.is_dead else 0.0
+		var gliding := actor.flight.is_gliding and not actor.is_dead
+		var want := 1.0 if gliding else 0.0
 		var was := _spread
 		_spread = move_toward(_spread, want, wing_speed * delta)
+		_update_wing_air(gliding, delta)
 		if _spread != was or _spread > 0.0:
 			# Flaring for a landing, the wings tip up to brake.
 			var trim := lerpf(actor.glide_trim(), -1.0, smoothstep(0.0, 1.0, _flare))
-			RigModel.set_wing_spread(_rig_back, _spread, clampf(-_bank / max_bank, -1.0, 1.0), trim)
+			var flutter := _wing_stall * stall_shudder * sin(Time.get_ticks_msec() * 0.06)
+			RigModel.set_wing_spread(_rig_back, _spread, clampf(-_bank / max_bank, -1.0, 1.0), trim,
+					smoothstep(0.0, 1.0, _wing_fast), _wing_load, flutter)
+
+
+## The rig's voice, heard by everyone near as far as it carries (its
+## `noise_range`): a jetpack roars with its throttle and higher in a boost,
+## the wings' rush builds with the airspeed, boots hum on a skate and pop on
+## a kick or a dash. View only: a server has no voice.
+func _update_rig_voice(burning: bool) -> void:
+	var f := actor.flight
+	var dashing := f.can_skim() and actor.air_dash_left > 0.0
+	if dashing and not _was_dashing and not actor.is_dead:
+		Sfx.play("boot_pop", global_position + Vector3(0, 0.3, 0), -4.0, maxf(f.noise_range, 8.0), maxf(f.noise_range, 8.0) / 6.0)
+	_was_dashing = dashing
+	if _rig_voice == null:
+		return
+	var air := actor.velocity.length()
+	var on := false
+	var volume := -80.0
+	var pitch := 1.0
+	if f.can_hover():
+		on = burning and f.is_thrusting
+		volume = lerpf(-14.0, -1.0, clampf(_jet_throttle / 1.6, 0.0, 1.0))
+		pitch = 0.75 + 0.2 * clampf(_jet_throttle, 0.0, 2.0) + (0.12 if f.is_boosting else 0.0)
+	elif f.can_glide() or f.glide_fall_speed > 0.0:
+		on = f.is_gliding and not actor.is_dead
+		var share := clampf((air - 8.0) / 24.0, 0.0, 1.0)
+		volume = lerpf(-22.0, -3.0, share)
+		pitch = 0.8 + 0.5 * share
+	else:
+		on = f.is_skating and not actor.is_dead
+		volume = -12.0
+		pitch = 0.9 + 0.2 * clampf(air / maxf(f.skate_speed, 1.0), 0.0, 1.0)
+	if on and not _rig_voice.playing:
+		_rig_voice.play()
+	elif not on and _rig_voice.playing:
+		_rig_voice.stop()
+	_rig_voice.volume_db = volume
+	_rig_voice.pitch_scale = pitch
+
+
+## How the air is treating the wings, for their pose and the arms': how far
+## past the glide's speed, how stalled and how loaded the glide is, and the
+## wingtip vapor that shows the fast and hard parts.
+func _update_wing_air(gliding: bool, delta: float) -> void:
+	var f := actor.flight
+	var air := Vector2(actor.velocity.x, actor.velocity.z).length()
+	var top := f.glide_speed * (1.0 + f.glide_dive_gain)
+	var fast := clampf((air - f.glide_speed) / maxf(top - f.glide_speed, 0.1), 0.0, 1.0) if gliding else 0.0
+	var stalled := 1.0 if gliding and actor.glide_stalled() else 0.0
+	# Load in g: a banked turn's, and a pull-up with speed to spare.
+	var pull := maxf(0.0, -actor.glide_trim()) if gliding else 0.0
+	var spare := clampf((air - f.glide_speed * f.glide_stall) / maxf(f.glide_speed * 0.5, 0.1), 0.0, 1.0)
+	var g := 1.0 / cos(minf(absf(_bank), 1.2)) + pull * spare if gliding else 1.0
+	var follow := 1.0 - exp(-bank_follow * delta)
+	_wing_fast = lerpf(_wing_fast, fast, follow)
+	_wing_stall = lerpf(_wing_stall, stalled, follow)
+	_wing_load = lerpf(_wing_load, clampf(g - 1.0, 0.0, 1.0), follow)
+	var streaming := gliding and (air > vapor_speed or g > vapor_g)
+	if _vapor == null and streaming and _vapor_allowed():
+		_vapor = _Vapor.new()
+		_vapor.top_level = true
+		add_child(_vapor)
+	if _vapor != null:
+		var tips: Array[Vector3] = []
+		for wing_name: String in ["WingL", "WingR"]:
+			var tip := _rig_back.get_node_or_null(wing_name + "/Panel/TipLight") as Node3D
+			if tip != null:
+				tips.append(tip.global_position)
+		if not streaming:
+			tips.clear()
+		_vapor.step(tips, delta, vapor_life, vapor_length, vapor_width, vapor_alpha, vapor_clear)
+
+
+## For the first-person camera's flight motion (`PlayerController`): the
+## wings' bank (radians, positive in a left turn, while the glide pose is
+## on), the skate's carve (the same way round), the skate's stride (radians
+## round, NAN when not skating) and how hard a jetpack boost is pushing
+## (0..1, more as it lights).
+func flight_bank() -> float:
+	return _bank * smoothstep(0.0, 1.0, _glide) * (1.0 - smoothstep(0.0, 1.0, _boost))
+
+
+func skate_carve() -> float:
+	return _skate_carve if actor.flight.is_skating else 0.0
+
+
+func stride_phase() -> float:
+	return _stride if actor.flight.is_skating else NAN
+
+
+func boost_push() -> float:
+	if not actor.flight.is_boosting:
+		return 0.0
+	return clampf(0.5 + 0.5 * _jet_kick_left / maxf(jet_kick_time, 0.01), 0.0, 1.0)
+
+
+## Wingtip vapor is a nicety: off on the Low and Lowest graphics.
+static func _vapor_allowed() -> bool:
+	var pick: Variant = GameSettings.value_of("graphics")
+	return pick == null or (int(pick) != GameSettings.GRAPHICS_LOW and int(pick) != GameSettings.GRAPHICS_LOWEST)
+
+
+## A fading streak behind each wingtip: the tips' last places, drawn as
+## one ribbon mesh a frame facing the camera (one draw for both). View only.
+class _Vapor extends MeshInstance3D:
+	var _trails: Array = []
+	var _mesh := ImmediateMesh.new()
+
+	func _init() -> void:
+		name = "WingVapor"
+		mesh = _mesh
+		cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.vertex_color_use_as_albedo = true
+		material_override = mat
+
+	## Adds this frame's tip places (none while not streaming), ages the
+	## rest out over `life` seconds, cuts each trail to `length` m and
+	## redraws: `width` at the tip tapering to nothing, `alpha` at most,
+	## fading by age, along the trail and within `clear` m of the camera.
+	func step(tips: Array[Vector3], delta: float, life: float, length: float, width: float, alpha: float, clear: float) -> void:
+		while _trails.size() < tips.size():
+			_trails.append([])
+		for trail: Array in _trails:
+			for point: Array in trail:
+				point[1] += delta
+			while not trail.is_empty() and float(trail[0][1]) > life:
+				trail.pop_front()
+		for i in tips.size():
+			(_trails[i] as Array).append([tips[i], 0.0])
+		for trail: Array in _trails:
+			var run := 0.0
+			var j := trail.size() - 1
+			while j > 0:
+				run += (trail[j][0] as Vector3).distance_to(trail[j - 1][0])
+				if run > length:
+					break
+				j -= 1
+			for _cut in j:
+				trail.pop_front()
+		_mesh.clear_surfaces()
+		var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+		var eye := camera.global_position if camera != null else Vector3.ZERO
+		var drawn := false
+		var last := Vector3.ZERO
+		for trail: Array in _trails:
+			if trail.size() < 2:
+				continue
+			if not drawn:
+				_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+				drawn = true
+			else:
+				# A break between the two ribbons: degenerate corners from
+				# the last one's end to this one's start, drawn clear.
+				_mesh.surface_set_color(Color(1, 1, 1, 0))
+				_mesh.surface_add_vertex(last)
+				_mesh.surface_set_color(Color(1, 1, 1, 0))
+				_mesh.surface_add_vertex(trail[0][0])
+			var count := trail.size()
+			for j in count:
+				var at: Vector3 = trail[j][0]
+				var next: Vector3 = trail[mini(j + 1, count - 1)][0]
+				var prev: Vector3 = trail[maxi(j - 1, 0)][0]
+				var along := (next - prev).normalized()
+				# 0 at the tail, 1 at the tip.
+				var share := float(j) / float(count - 1)
+				var side := along.cross(eye - at).normalized() * width * share
+				var age := 1.0 - float(trail[j][1]) / life
+				var near := smoothstep(clear * 0.5, clear, at.distance_to(eye)) if camera != null else 1.0
+				var shade := Color(1, 1, 1, alpha * age * age * share * near)
+				_mesh.surface_set_color(shade)
+				_mesh.surface_add_vertex(at - side)
+				_mesh.surface_set_color(shade)
+				_mesh.surface_add_vertex(at + side)
+				last = at + side
+		if drawn:
+			_mesh.surface_end()
 
 
 ## Sets the whole model's attitude in the air, about the actor's middle.
@@ -5145,15 +5481,14 @@ func _update_glide(delta: float) -> void:
 			# A boost: between the hover's lean (or none) and flat out.
 			var upright := Vector3.ZERO
 			if actor.flight.is_hovering and not actor.flight.is_boosting:
-				var drift := dir if speed > 0.5 else Vector3.FORWARD
-				upright = drift * hover_lean * clampf(speed / maxf(actor.flight.fly_speed, 0.1), 0.0, 1.0)
+				upright = _jet_lean()
 			tilt = upright.lerp(tilt, prone_w)
 			face *= prone_w
 			bank *= prone_w
 	else:
 		_has_heading = false
 		if alive and actor.flight.is_hovering:
-			tilt = dir * hover_lean * clampf(speed / maxf(actor.flight.fly_speed, 0.1), 0.0, 1.0)
+			tilt = _jet_lean()
 		elif alive and actor.flight.is_skating:
 			tilt = _skate_tilt(speed, delta)
 		elif _run_out:
@@ -5164,7 +5499,10 @@ func _update_glide(delta: float) -> void:
 		elif alive and _air > 0.0 and is_airborne():
 			# A running jump leans into it, and rights itself for the landing.
 			tilt = dir * leap_lean * clampf(speed / leap_lean_speed, 0.0, 1.0) * (1.0 - _air_fall)
-	_run_out = _run_out and alive and speed > run_out_speed * 0.5 and actor.is_on_floor()
+	_run_out_left = maxf(0.0, _run_out_left - delta)
+	var running_on := actor.cmd.move.length() > 0.1 and speed <= actor.sprint_speed + 0.5
+	_run_out = _run_out and alive and speed > run_out_speed * 0.5 and actor.is_on_floor() \
+			and _run_out_left > 0.0 and not running_on
 	if locomotion != null:
 		locomotion.skid = _run_out
 	# The actor turns with the view, and this model is its child. While the
@@ -5172,6 +5510,7 @@ func _update_glide(delta: float) -> void:
 	# the camera and then let it swing back: undo the view's turn first, so
 	# the attitude eases only toward the way the body really flies.
 	var yaw := actor.global_rotation.y
+	_update_lead(flat, face, wrapf(yaw - _last_yaw, -PI, PI), delta)
 	if _glide > 0.0 or _boost > 0.0:
 		var turned := wrapf(yaw - _last_yaw, -PI, PI)
 		_face -= turned
@@ -5181,6 +5520,14 @@ func _update_glide(delta: float) -> void:
 	_tilt = _tilt.lerp(tilt, follow)
 	_face = lerp_angle(wrapf(_face, -PI, PI), face, follow)
 	_bank = lerpf(_bank, bank, 1.0 - exp(-bank_follow * delta))
+	var lead_tilt := Vector3.ZERO
+	var lead_banked := 0.0
+	if _lead_w > 0.0:
+		var level_reach := Vector3(_lead_reach.x, 0.0, _lead_reach.z)
+		var flat_w := smoothstep(0.0, 1.0, maxf(_glide, _boost))
+		lead_tilt = (level_reach * lead_lean * (1.0 - flat_w)
+				+ Vector3.LEFT * _lead_turn * lead_lean * (1.0 if actor.flight.is_skating else 0.0)) * _lead_w
+		lead_banked = lead_bank * _lead_turn * _lead_w * flat_w
 	# Free look in a glide: the body twists round its own length to face the
 	# view, so looking behind lays it on its back (a backstroke) while the
 	# wings fly on, and a sidearm aims back past the feet.
@@ -5197,10 +5544,16 @@ func _update_glide(delta: float) -> void:
 		_twist = wrapf(_twist, -PI, PI)
 		_twist = move_toward(_twist, 0.0, twist_speed * delta)
 
-	var angle := _tilt.length()
-	var tip := Basis(Vector3.UP.cross(_tilt / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
+	# A kick off a skate spins the body once round, eased at both ends.
+	var spin := 0.0
+	if _spin_left > 0.0:
+		_spin_left = maxf(0.0, _spin_left - delta)
+		spin = _spin_dir * TAU * smoothstep(0.0, 1.0, 1.0 - _spin_left / maxf(kick_spin_time, 0.01))
+	var shown := _tilt + lead_tilt
+	var angle := shown.length()
+	var tip := Basis(Vector3.UP.cross(shown / angle).normalized(), angle) if angle > 0.001 else Basis.IDENTITY
 	# A positive bank or twist rolls to the right: right side down.
-	var turn := tip * Basis(Vector3.UP, _face - _bank + _twist + _look_roll)
+	var turn := tip * Basis(Vector3.UP, _face - _bank - lead_banked + _twist + _look_roll + spin)
 	_body_turn = turn
 	var pivot := Vector3(0, glide_pivot, 0)
 	transform = Transform3D(turn * Basis(Vector3.UP, PI), pivot - turn * pivot)
@@ -5329,6 +5682,10 @@ func _setup_glide_pose(skeleton: Skeleton3D, def: Dictionary) -> void:
 		var suffix := foot.get_slice(".", 1)
 		_glide_legs.append(_bone_chain(skeleton, ["UpperLeg." + suffix, "LowerLeg." + suffix, foot], -1.0 if i == 0 else 1.0))
 	_glide_neck = skeleton.find_bone(def.get("neck", ""))
+	for bone_name: String in def.get("spine", []):
+		var bone := skeleton.find_bone(bone_name)
+		if bone >= 0:
+			_spine_bones.append(bone)
 	var hook := WeaponArm.Hook.new()
 	hook.name = "GlidePose"
 	hook.run = _pose_glide
@@ -5352,7 +5709,14 @@ func _bone_chain(skeleton: Skeleton3D, names: Array, side: float) -> Array:
 func _pose_glide() -> void:
 	if _skeleton == null:
 		return
+	_pose_spine()
 	_pose_air()
+	_pose_flat()
+	_pose_lead_arms()
+
+
+## The flat flying pose of `_pose_glide`, while the glide or a boost has it.
+func _pose_flat() -> void:
 	if _glide <= 0.0:
 		return
 	var w := smoothstep(0.0, 1.0, _limb_glide())
@@ -5366,8 +5730,9 @@ func _pose_glide() -> void:
 	for limb: Array in _glide_arms:
 		if limb.is_empty():
 			continue
-		var arm_dir := glide_arm.lerp(boost_arm, smoothstep(0.0, 1.0, _boost)).lerp(backstroke_arm, back)
-		var wanted := to_skeleton * Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z)
+		var arm_dir := glide_arm.lerp(dive_arm, smoothstep(0.0, 1.0, _wing_fast)).lerp(stall_arm, _wing_stall) \
+				.lerp(boost_arm, smoothstep(0.0, 1.0, _boost)).lerp(backstroke_arm, back)
+		var wanted := to_skeleton * (Vector3(arm_dir.x * limb[3], arm_dir.y, arm_dir.z) + _limb_sway(sway_arms))
 		# Shooting or aiming, the arms keep their hold on the weapon.
 		var arm_w := w * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
 		_aim_bone(limb[0], limb[1], wanted, arm_w)
@@ -5375,10 +5740,161 @@ func _pose_glide() -> void:
 	for limb: Array in _glide_legs:
 		if not limb.is_empty():
 			var leg := glide_leg.lerp(backstroke_leg, back)
-			_pose_leg(limb, to_skeleton * Vector3(leg.x * limb[3], leg.y, leg.z), right, w)
+			_pose_leg(limb, to_skeleton * (Vector3(leg.x * limb[3], leg.y, leg.z) + _limb_sway(sway_legs) + _leg_lead()), right, w)
 	if _glide_neck >= 0:
 		var pose := _skeleton.get_bone_global_pose(_glide_neck)
 		pose.basis = Basis((to_skeleton * Vector3.RIGHT).normalized(), lerpf(glide_look, backstroke_look, back) * w) * pose.basis
+		_skeleton.set_bone_global_pose(_glide_neck, pose)
+
+
+## What the pilot is asking for (`lead_rate`), read from the command so a
+## remote player's body leads the same way. `face` is where the flight path
+## points from the view (radians, positive left), `turned` how far the view
+## swung this frame.
+func _update_lead(flat: bool, face: float, turned: float, delta: float) -> void:
+	var f := actor.flight
+	var alive := not actor.is_dead and actor.vehicle == null
+	var flying := alive and f.enabled and is_airborne() \
+			and (flat or f.is_hovering or f.is_skating or _boot_w > 0.0)
+	var turn := 0.0
+	var reach := Vector3.ZERO
+	if flying:
+		var cmd := actor.cmd
+		if f.is_gliding:
+			# A glide steers by the view: the body leads toward where it looks.
+			if not cmd.free_look:
+				turn = clampf(-wrapf(face, -PI, PI) / maxf(lead_turn_angle, 0.01), -1.0, 1.0)
+			reach.y = clampf(-actor.glide_trim(), -1.0, 1.0)
+		else:
+			var rate := turned / delta if delta > 0.0 else 0.0
+			var carve := cmd.move.x * 0.7 if f.is_skating else 0.0
+			turn = clampf(rate / maxf(lead_turn_rate, 0.01) - carve, -1.0, 1.0)
+			var climb := (1.0 if cmd.jump else 0.0) - (1.0 if cmd.descend else 0.0)
+			reach = Vector3(cmd.move.x, climb, -cmd.move.y).limit_length(1.0)
+	var follow := 1.0 - exp(-lead_rate * delta)
+	_lead_turn = lerpf(_lead_turn, turn, follow)
+	_lead_reach = _lead_reach.lerp(reach, follow)
+	_lead_w = move_toward(_lead_w, 1.0 if flying else 0.0, air_blend * delta)
+
+
+## A vector in the flight's heading frame (level, facing the way the body
+## flies: x right, y up, z back), turned into the body's own frame before
+## the tip, as limb directions are given.
+func _heading_to_body(v: Vector3) -> Vector3:
+	return _body_turn.inverse() * (Basis(Vector3.UP, _face) * v)
+
+
+## The arms and hands lead (`lead_arm_roll`): laid over whatever pose the
+## arms have, the inside arm drops and the outside one lifts into a turn,
+## the arms reach where the stick points (pressing down to climb), a glide's
+## sweep back to dive and forward to pull up, and the hands tip like
+## ailerons and flex with the climb.
+func _pose_lead_arms() -> void:
+	var w := smoothstep(0.0, 1.0, _lead_w) * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
+	# A weapon in hand keeps the arms closer to its hold.
+	if _in_hand != null:
+		w *= lead_armed
+	if w <= 0.001:
+		return
+	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
+	var g := smoothstep(0.0, 1.0, _limb_glide())
+	var level := Vector3(_lead_reach.x, 0.0, _lead_reach.z)
+	for limb: Array in _glide_arms:
+		if limb.is_empty():
+			continue
+		var side: float = limb[3]
+		var off := Vector3(0.0, lead_arm_roll * _lead_turn * side, 0.0)
+		off += (level - Vector3(0.0, _lead_reach.y, 0.0)) * lead_reach * (1.0 - g)
+		off += Vector3(0.0, 0.0, -_lead_reach.y * lead_sweep * g)
+		var push := to_skeleton * _heading_to_body(off)
+		var upper := _skeleton.get_bone_global_pose(limb[0]).origin
+		var elbow := _skeleton.get_bone_global_pose(limb[1]).origin
+		_aim_bone(limb[0], limb[1], (elbow - upper).normalized() + push, w)
+		elbow = _skeleton.get_bone_global_pose(limb[1]).origin
+		var hand := _skeleton.get_bone_global_pose(limb[2])
+		_aim_bone(limb[1], limb[2], (hand.origin - elbow).normalized() + push, w)
+		hand = _skeleton.get_bone_global_pose(limb[2])
+		var fore := (hand.origin - _skeleton.get_bone_global_pose(limb[1]).origin)
+		if fore.length_squared() < 0.000001:
+			continue
+		var bend_axis := (to_skeleton * _heading_to_body(Vector3.RIGHT)).normalized()
+		hand.basis = Basis(fore.normalized(), lead_hand * _lead_turn * side * w) \
+				* Basis(bend_axis, lead_hand_flex * _lead_reach.y * w) * hand.basis
+		_skeleton.set_bone_global_pose(limb[2], hand)
+
+
+## The legs swing against the arms' reach to balance (`lead_legs`), body
+## frame as `_limb_sway`.
+func _leg_lead() -> Vector3:
+	if _lead_w <= 0.0:
+		return Vector3.ZERO
+	return _heading_to_body(-Vector3(_lead_reach.x, 0.0, _lead_reach.z) * lead_legs * _lead_w)
+
+
+## The limbs' secondary motion (`sway_stiffness`): the pull of the body's
+## changes of speed and heading on a spring, stepped in short slices so a
+## long frame cannot throw it off.
+func _update_sway(delta: float) -> void:
+	var flying := is_airborne() and not actor.is_dead and actor.vehicle == null
+	var want := Vector3.ZERO
+	var rate := 0.0
+	if flying and delta > 0.0:
+		var accel := actor.global_basis.inverse() * ((actor.velocity - _vel_lag) * boot_accel_rate)
+		want = (-accel / 9.8).limit_length(1.2)
+		var flat := Vector2(actor.velocity.x, actor.velocity.z)
+		var heading := atan2(-actor.velocity.x, -actor.velocity.z)
+		if flat.length() > 2.0 and not is_nan(_sway_heading):
+			rate = wrapf(heading - _sway_heading, -PI, PI) / delta
+		_sway_heading = heading if flat.length() > 2.0 else NAN
+	else:
+		_sway_heading = NAN
+	_turn_rate = lerpf(_turn_rate, rate, 1.0 - exp(-bank_follow * delta))
+	var left := minf(delta, 0.25)
+	while left > 0.0:
+		var step := minf(left, 1.0 / 120.0)
+		_sway_v += ((want - _sway) * sway_stiffness - _sway_v * sway_damping) * step
+		_sway += _sway_v * step
+		left -= step
+
+
+## The limbs' swing this frame, in the body's own frame before the tip
+## (as limb directions are given), `share` of the pull.
+func _limb_sway(share: float) -> Vector3:
+	return (_body_turn.inverse() * _sway) * share
+
+
+## While the arms are free of a weapon in flat flight, the chest leads the
+## turn being flown and sits back or forward against a change of speed.
+## Runs first, so the limbs are aimed from where the chest has gone.
+func _pose_spine() -> void:
+	if _spine_bones.is_empty():
+		return
+	var free := 1.0 - smoothstep(0.0, 1.0, _flight_hold)
+	var lead := smoothstep(0.0, 1.0, _lead_w)
+	var w := maxf(maxf(smoothstep(0.0, 1.0, _limb_glide()), smoothstep(0.0, 1.0, _boot_w) * _boot_hero), lead) * free
+	if w <= 0.001:
+		return
+	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
+	var up := (to_skeleton * Vector3.UP).normalized()
+	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	var forward := (to_skeleton * Vector3.FORWARD).normalized()
+	var g := smoothstep(0.0, 1.0, _limb_glide())
+	# The chest leads: it turns into the turn asked for before the flight
+	# swings round, bends into it, and leans with the stick or the trim.
+	var twist := sway_twist * clampf(_turn_rate / maxf(sway_turn_full, 0.1), -1.0, 1.0) + lead_twist * _lead_turn * lead
+	var pitch := sway_pitch * clampf((_body_turn.inverse() * _sway).z, -1.0, 1.0) \
+			+ lead_crunch * (_lead_reach.z * (1.0 - g) + _lead_reach.y * g) * lead
+	var roll := -lead_roll * _lead_turn * lead
+	var share := w / _spine_bones.size()
+	for bone in _spine_bones:
+		var pose := _skeleton.get_bone_global_pose(bone)
+		pose.basis = Basis(up, twist * share) * Basis(right, pitch * share) * Basis(forward, roll * share) * pose.basis
+		_skeleton.set_bone_global_pose(bone, pose)
+	if _glide_neck >= 0 and lead > 0.001:
+		# The head leads most: it looks into the turn and the climb first.
+		var pose := _skeleton.get_bone_global_pose(_glide_neck)
+		pose.basis = Basis(up, lead_head * _lead_turn * lead * free) \
+				* Basis(right, lead_head_pitch * _lead_reach.y * lead * free) * pose.basis
 		_skeleton.set_bone_global_pose(_glide_neck, pose)
 
 
@@ -5414,15 +5930,16 @@ func _pose_air() -> void:
 			thigh = thigh.lerp(legs[0], bw)
 			shin = shin.lerp(legs[1], bw)
 			toes = lerpf(toes, boot_toes, bw)
-		_pose_leg(limb, to_skeleton * Vector3(thigh.x * limb[3], thigh.y, thigh.z), right, w,
-				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), toes)
+		var swing := _limb_sway(sway_legs) + _leg_lead()
+		_pose_leg(limb, to_skeleton * (Vector3(thigh.x * limb[3], thigh.y, thigh.z) + swing), right, w,
+				to_skeleton * (Vector3(shin.x * limb[3], shin.y, shin.z) + swing * 1.5), toes)
 	var arm_w := w * smoothstep(0.0, 1.0, _boot_w) * _boot_hero * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
 	if arm_w > 0.001:
 		# Lying out, the arms ride by the sides until there is aiming to do.
 		for limb: Array in _glide_arms:
 			if limb.is_empty():
 				continue
-			var wanted := to_skeleton * Vector3(boot_arm.x * limb[3], boot_arm.y, boot_arm.z)
+			var wanted := to_skeleton * (Vector3(boot_arm.x * limb[3], boot_arm.y, boot_arm.z) + _limb_sway(sway_arms))
 			_aim_bone(limb[0], limb[1], wanted, arm_w)
 			_aim_bone(limb[1], limb[2], wanted, arm_w)
 	if _boot_w > 0.0 and _glide_neck >= 0:
@@ -5491,6 +6008,9 @@ func _update_boot_thrust(delta: float) -> void:
 	var v := actor.velocity
 	_vel_lag = _vel_lag.lerp(v, 1.0 - exp(-boot_accel_rate * delta)) if delta > 0.0 else v
 	var boots := actor.flight.enabled and actor.flight.can_skim()
+	if actor.flight.enabled and actor.flight.can_hover():
+		_update_jet_thrust(delta)
+	_tuck = move_toward(_tuck, 1.0 if boots and actor.air_dash_left > 0.0 else 0.0, air_blend * 1.5 * delta)
 	var burning := boots and not actor.is_dead and actor.vehicle == null and is_airborne() \
 			and (actor.flight.is_skimming or actor.flight.is_skating or actor.air_dash_left > 0.0 or _burst_left > 0.0)
 	_boot_w = move_toward(_boot_w, 1.0 if burning else 0.0, air_blend * delta)
@@ -5514,6 +6034,52 @@ func _update_boot_thrust(delta: float) -> void:
 	# Skating keeps the skater's stance (`skate_legs`), never the flying one.
 	var hero := smoothstep(0.45, 0.9, ahead / cruise) * lined * lined if burning and not actor.flight.is_skating else 0.0
 	_boot_hero = lerpf(_boot_hero, hero, follow)
+
+
+## Reads what a jetpack's jets are doing from the actor's velocity: the push
+## they make (holding you up, speeding you up or slowing you, and a steady
+## drift against the air, `jet_drag`), the throttle, and a boost lighting.
+func _update_jet_thrust(delta: float) -> void:
+	var to_local := actor.global_basis.inverse()
+	var local := to_local * actor.velocity
+	var accel := to_local * ((actor.velocity - _vel_lag) * boot_accel_rate)
+	var push := accel + Vector3(local.x, 0.0, local.z) * jet_drag + Vector3(0.0, 9.8, 0.0)
+	push.y = maxf(push.y, 1.0)
+	var follow := 1.0 - exp(-attitude_follow * delta)
+	_jet_push = _jet_push.lerp(push, follow)
+	_jet_throttle = lerpf(_jet_throttle, _jet_push.length() / 9.8, follow)
+	_jet_kick_left = maxf(0.0, _jet_kick_left - delta)
+	var boosting := actor.flight.is_boosting and not actor.is_dead
+	if boosting and not _was_boosting:
+		_jet_kick_left = jet_kick_time
+	_was_boosting = boosting
+
+
+## Hovering on a jetpack, the body tips into the jets' push, up to
+## `hover_lean`: a helicopter's lean, not the drift's.
+func _jet_lean() -> Vector3:
+	var level := Vector3(_jet_push.x, 0.0, _jet_push.z)
+	if level.length() < 0.001:
+		return Vector3.ZERO
+	return level.normalized() * minf(atan2(level.length(), maxf(_jet_push.y, 0.1)), hover_lean)
+
+
+## Swivels a jetpack flame toward the jets' exhaust, as far as its nozzle
+## turns (`jet_gimbal`), and stretches it with the throttle, a boost's kick
+## and a flicker.
+func _aim_jet_flame(flame: Node3D, i: int) -> void:
+	var nozzle := flame.get_parent() as Node3D
+	if nozzle == null:
+		return
+	var exhaust := -_jet_push.normalized() if _jet_push.length() > 0.01 else Vector3.DOWN
+	var want := (nozzle.global_basis.orthonormalized().inverse() * (actor.global_basis.orthonormalized() * exhaust)).normalized()
+	var angle := Vector3.DOWN.angle_to(want)
+	var dir := Vector3.DOWN.slerp(want, minf(1.0, jet_gimbal / angle)) if angle > 0.001 else Vector3.DOWN
+	var kick := lerpf(1.0, jet_kick, _jet_kick_left / maxf(jet_kick_time, 0.01))
+	var flicker := 1.0 + jet_flicker * sin(Time.get_ticks_msec() * 0.045 + i * 1.7)
+	var stretch := clampf(_jet_throttle, jet_flame_min, jet_flame_max) * kick * flicker
+	var swivel := Basis(Quaternion(Vector3.DOWN, dir.normalized())) if angle > 0.001 else Basis.IDENTITY
+	flame.basis = swivel * Basis.from_scale(Vector3(lerpf(1.0, sqrt(stretch), 0.5), stretch, lerpf(1.0, sqrt(stretch), 0.5)))
 
 
 ## The body's lean while skating, as `_update_glide` takes it: forward
@@ -5550,7 +6116,11 @@ func _boot_tilt() -> Vector3:
 ## for its side as `_pose_air` does.
 func _skate_leg(i: int) -> Array:
 	var at := mini(i, 1) * 2
-	return [skate_legs[at], skate_legs[at + 1]]
+	# Pumping: each leg in turn pushes out to its side and back.
+	var push := maxf(0.0, sin(_stride + PI * i)) * skate_push
+	var thigh: Vector3 = skate_legs[at] + Vector3(push, 0.0, push * 0.5)
+	var shin: Vector3 = skate_legs[at + 1] + Vector3(push * 1.2, 0.0, push * 0.4)
+	return [thigh.normalized(), shin.normalized()]
 
 
 ## Thigh and shin directions for leg `i` while boots fire, in the body's own
@@ -5561,9 +6131,11 @@ func _boot_legs(i: int, side: float) -> Array:
 	var along := _body_turn.inverse() * _exhaust
 	along = Vector3(along.x * side, along.y, along.z)
 	var thigh := (along + Vector3(0.06, 0.0, 0.0)).normalized()
+	# A dash pulls both knees up into a tuck.
+	var tuck := dash_tuck * smoothstep(0.0, 1.0, _tuck)
 	if i == 0:
-		return [thigh, thigh]
-	var bend := 0.2 + boot_knee * _boot_hero
+		return [Basis(Vector3.RIGHT, tuck * 0.8) * thigh, Basis(Vector3.RIGHT, -tuck * 0.6) * thigh]
+	var bend := 0.2 + boot_knee * _boot_hero + tuck
 	return [Basis(Vector3.RIGHT, bend * 0.3) * thigh, Basis(Vector3.RIGHT, -bend * 0.7) * thigh]
 
 
@@ -5583,6 +6155,14 @@ func _aim_flame(flame: Node3D) -> void:
 
 func _on_burst() -> void:
 	_burst_left = burst_burn
+	if actor.flight.can_skim() and not actor.is_dead:
+		var reach := maxf(actor.flight.noise_range, 8.0)
+		Sfx.play("boot_pop", global_position + Vector3(0, 0.3, 0), -2.0, reach, reach / 6.0)
+	if actor.flight.is_skating and _flight_hold < 0.5 and not actor.is_dead:
+		# A kick off a skate: a spin, the way the strafe key or the carve leans.
+		var side := actor.cmd.move.x if absf(actor.cmd.move.x) > 0.1 else -_skate_carve
+		_spin_dir = -1.0 if side < 0.0 else 1.0
+		_spin_left = kick_spin_time
 
 
 ## Swaps the rig model for the one `id` needs ("" takes it off).
@@ -5592,6 +6172,9 @@ func _wear_rig(id: String) -> void:
 		holder.queue_free()
 	_rig_holders.clear()
 	_flames.clear()
+	if _rig_voice != null:
+		_rig_voice.queue_free()
+		_rig_voice = null
 	_rig_back = null
 	_spread = 0.0
 	if id == "":
@@ -5626,6 +6209,17 @@ func _wear_rig(id: String) -> void:
 			flame.visible = false
 			nozzle.add_child(flame)
 			_flames.append(flame)
+	var voice: String = {"jetpack": "jet_roar", "wings": "wing_rush", "boots": "skate_hum"}.get(RigModel.kind_for(id), "")
+	var stream := Sfx.get_stream(voice) if voice != "" else null
+	if stream != null:
+		_rig_voice = AudioStreamPlayer3D.new()
+		_rig_voice.name = "RigVoice"
+		_rig_voice.stream = stream
+		var reach := maxf(float(ItemDB.item_stats(id).get("noise_range", 20.0)), 8.0)
+		_rig_voice.max_distance = reach
+		_rig_voice.unit_size = reach / 6.0
+		_rig_voice.position = Vector3(0, 1.1, 0)
+		add_child(_rig_voice)
 	_mark_storm()
 
 
