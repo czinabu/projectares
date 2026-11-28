@@ -52,6 +52,10 @@ var smoke := {}
 ## What is scattered on the ground (`PlanetProps`): kind, how many per
 ## hectare, size range, and where (slope, height).
 var props: Array[Dictionary] = []
+## The colour a world on this planet glows in on its deploy gate
+## (`GateLook.world_color`), or clear to take it from the weather. Set it
+## where two planets' weather would give their gates the same colour.
+var accent := Color(0, 0, 0, 0)
 ## Simulation defaults for a world on this planet: `cold`, `surface_grip`,
 ## `shot_carry`. Read by `WorldDef` when it takes the planet.
 var rules := {}
