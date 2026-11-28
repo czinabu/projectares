@@ -350,6 +350,34 @@ var _wind_dir := Vector3.FORWARD
 var _wind_gust := 0.0
 var _wind_time := 0.0
 var _raid: Raid
+## Flinching from a hit (`Actor.hit_mark`): the pack's hit clips ("hit_chest",
+## "hit_head", "hit_stomach", "hit_left", "hit_right", by where it landed)
+## laid over the body from the hips up, as the turn each bone makes away
+## from where the clip ends (standing again), so the legs keep their stride
+## and the arms still reach for the weapon after. The clips are made for a
+## hit from the front; one from anywhere else turns them round to come from
+## there. `flinch_strength` scales them by how hard the hit was (its four
+## steps), `flinch_zone` by where (the stomach clip doubles right over),
+## `flinch_in` s eases the body into the clip's first frame, and an older
+## flinch fades out over `flinch_out` s when a new one starts. Aimed down
+## the sights the body is braced and flinches `flinch_braced` as far. None
+## while knocked down (that has its own fall) or dead. View only, the same
+## body in every view, and remote players match from the state.
+var flinch_strength := [0.4, 0.6, 0.8, 1.0]
+var flinch_zone := {Actor.HIT_CHEST: 1.0, Actor.HIT_HEAD: 1.0, Actor.HIT_STOMACH: 0.5,
+	Actor.HIT_LEFT: 1.0, Actor.HIT_RIGHT: 1.0}
+var flinch_in := 0.05
+var flinch_out := 0.1
+var flinch_braced := 0.5
+const HIT_CLIPS := {Actor.HIT_CHEST: "hit_chest", Actor.HIT_HEAD: "hit_head", Actor.HIT_STOMACH: "hit_stomach",
+	Actor.HIT_LEFT: "hit_left", Actor.HIT_RIGHT: "hit_right"}
+## Per zone: [clip, [[bone posed, track, the bone the track turns, its end
+## rotation inverted], ...]] from the hips up, parents first.
+var _hit_clips := {}
+## Flinches playing: [zone, seconds in, weight, way (radians), fade left
+## (below 0 while not fading)].
+var _flinches: Array = []
+var _seen_mark := -1
 
 
 ## `def` is the skin's entry in `Look.SKINS`, `anims` maps keys to the clips
@@ -506,6 +534,14 @@ func setup(def: Dictionary, player: AnimationPlayer, anims: Dictionary) -> void:
 	heading.name = "LookAtAim"
 	heading.run = _look_pose
 	skeleton.add_child(heading)
+	# After the look, so a shot to the head snaps it off the aim a moment.
+	if player:
+		_learn_hits(player, anims)
+	if not _hit_clips.is_empty():
+		var flinching := WeaponArm.Hook.new()
+		flinching.name = "HitFlinch"
+		flinching.run = _flinch_pose
+		skeleton.add_child(flinching)
 
 
 func _bones(names: Array) -> Array[int]:
@@ -714,6 +750,7 @@ func update(delta: float) -> void:
 	if _stand_anim and _stand_anim.length > 0.0:
 		_stand_time = fposmod(_stand_time + delta, _stand_anim.length)
 	_advance_slide(delta)
+	_advance_flinch(delta)
 	if ride != null and is_instance_valid(ride):
 		_ride_on = ride
 	if _ride_on != null and not is_instance_valid(_ride_on):
@@ -1088,6 +1125,104 @@ func _look_pose() -> void:
 	var head := skeleton.get_bone_global_pose(_head)
 	head.basis = Basis(Quaternion.IDENTITY.slerp(Quaternion(now, want), w)) * head.basis
 	skeleton.set_bone_global_pose(_head, head)
+
+
+## Reads the hit clips: for each, the bones from the hips up it turns, in
+## order parents first. The hips' own turn goes onto the lowest spine bone,
+## so the legs stay where the gait put them.
+func _learn_hits(player: AnimationPlayer, anims: Dictionary) -> void:
+	if _spine.is_empty():
+		return
+	var chest: int = _spine[_spine.size() - 1]
+	var hips := skeleton.find_bone(_hip_name)
+	var order: Array[int] = []
+	if hips >= 0:
+		order.append(hips)
+	order.append_array(_spine)
+	for bone in skeleton.get_bone_count():
+		# The neck, the head and the shoulders.
+		if bone != chest and (skeleton.get_bone_parent(bone) == chest or bone == _head):
+			order.append(bone)
+	for zone: int in HIT_CLIPS:
+		var key: String = HIT_CLIPS[zone]
+		if not anims.has(key) or not player.has_animation(anims[key]):
+			continue
+		var anim := player.get_animation(anims[key])
+		var tracks := _tracks_by_bone(anim)
+		var bones: Array = []
+		for bone in order:
+			if not tracks.has(bone) or not tracks[bone].has(Animation.TYPE_ROTATION_3D):
+				continue
+			var track: int = tracks[bone][Animation.TYPE_ROTATION_3D]
+			var end: Quaternion = anim.rotation_track_interpolate(track, anim.length)
+			bones.append([_spine[0] if bone == hips else bone, track, bone, end.inverse()])
+		if not bones.is_empty():
+			_hit_clips[zone] = [anim, bones]
+
+
+## Starts a flinch when `Actor.hit_mark` changes, and plays the ones going.
+func _advance_flinch(delta: float) -> void:
+	var mark := actor.hit_mark
+	if _seen_mark < 0:
+		_seen_mark = mark
+	if mark != _seen_mark:
+		_seen_mark = mark
+		var zone := Actor.hit_zone(mark)
+		if _hit_clips.has(zone) and not actor.is_dead and actor.knocked_left <= 0.0:
+			for going: Array in _flinches:
+				if going[4] < 0.0:
+					going[4] = flinch_out
+			_flinches.append([zone, 0.0, float(flinch_strength[Actor.hit_strength(mark)]) * float(flinch_zone.get(zone, 1.0)),
+					Actor.hit_way(mark), -1.0])
+	for i in range(_flinches.size() - 1, -1, -1):
+		var flinch: Array = _flinches[i]
+		flinch[1] += delta
+		if flinch[4] >= 0.0:
+			flinch[4] -= delta
+		var anim: Animation = _hit_clips[flinch[0]][0]
+		if actor.is_dead or flinch[1] > flinch_in + anim.length or (flinch[4] >= 0.0 and flinch[4] <= 0.0):
+			_flinches.remove_at(i)
+
+
+## How far into a flinch the body is now (0 to 1, the strongest playing).
+func flinch_weight() -> float:
+	var most := 0.0
+	for flinch: Array in _flinches:
+		most = maxf(most, _flinch_share(flinch))
+	return most
+
+
+func _flinch_share(flinch: Array) -> float:
+	var share: float = flinch[2] * smoothstep(0.0, flinch_in, flinch[1])
+	if flinch[4] >= 0.0:
+		share *= clampf(flinch[4] / flinch_out, 0.0, 1.0)
+	return share
+
+
+func _flinch_pose() -> void:
+	if _flinches.is_empty() or actor.is_dead:
+		return
+	var braced := lerpf(1.0, flinch_braced, clampf(ActionPose.of(actor).ads, 0.0, 1.0))
+	var up := (skeleton.global_basis.orthonormalized().inverse() * Vector3.UP).normalized()
+	for flinch: Array in _flinches:
+		var share := _flinch_share(flinch) * braced
+		if share <= 0.001:
+			continue
+		var clip: Array = _hit_clips[flinch[0]]
+		var anim: Animation = clip[0]
+		var time := clampf(flinch[1] - flinch_in, 0.0, anim.length)
+		# The clip's turns are made facing the hit; turned round about the
+		# up axis to face where this one came from.
+		var facing := Basis(up, -float(flinch[3]))
+		for entry: Array in clip[1]:
+			var moved: Quaternion = entry[3] * anim.rotation_track_interpolate(entry[1], time)
+			if moved.is_equal_approx(Quaternion.IDENTITY):
+				continue
+			var frame := skeleton.get_bone_global_pose(entry[2]).basis.orthonormalized()
+			var turn := (facing * frame * Basis(moved) * frame.inverse() * facing.inverse()).get_rotation_quaternion()
+			var pose := skeleton.get_bone_global_pose(entry[0])
+			pose.basis = Basis(Quaternion.IDENTITY.slerp(turn, share)) * pose.basis
+			skeleton.set_bone_global_pose(entry[0], pose)
 
 
 ## A landing squat: see `_sink`.
