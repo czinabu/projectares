@@ -1759,6 +1759,8 @@ func _tour_route(mark: String, place: Node3D) -> Array:
 	var out_there := mark == "depot" or mark.begins_with("portal:")
 	if place == base and out_there:
 		return ["door", "%s\nOut to %s first" % [objective, names.plaza]]
+	if place == base and mark == "lane" and base.lane_targets.is_empty() and not base.targets.is_empty():
+		return [mark, "Hit a target on the firing range"]
 	var safe := place == raid and raid != null and raid.world != null and raid.world.safe_zone
 	if safe and mark == "depot" and str(names.gentle_id) != "":
 		return ["portal:world:%s" % names.gentle_id, "%s\nThrough the gate to %s" % [objective, names.gentle]]
@@ -1788,8 +1790,14 @@ func _tour_mark_at(mark: String, place: Node3D, body: Actor) -> Variant:
 							fallback = display.global_position
 				return fallback
 			"lane":
+				# The starter bunker's test lane, or once the firing range is
+				# built (which clears the lane) the range's targets: a hit on
+				# either finishes the step.
 				var plates: Array = base.lane_targets.filter(func(target: Variant) -> bool:
 					return is_instance_valid(target))
+				if plates.is_empty():
+					plates = base.targets.filter(func(target: Variant) -> bool:
+						return is_instance_valid(target))
 				if not plates.is_empty():
 					return (plates[plates.size() / 2] as Node3D).global_position
 			"door":
