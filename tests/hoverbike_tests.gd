@@ -34,9 +34,10 @@ static func _test_item(t: Node) -> void:
 			"the hoverbike is a little faster than the Scrapper, and well over flight cruise")
 	var toy: Node3D = VehicleScript.toy_model("bike_raider")
 	var wheels := toy.find_children("*", "MeshInstance3D", true, false).filter(func(m: MeshInstance3D) -> bool:
-			return m.mesh is CylinderMesh and absf(m.rotation.z) > 1.0)
+			return m.mesh is CylinderMesh and absf(m.basis.y.normalized().x) > 0.7)
 	var thrusters := toy.find_children("Thruster*", "MeshInstance3D", true, false)
-	t.check(wheels.is_empty() and thrusters.size() == 4, "its toy is the hoverbike: four thrusters, no wheels")
+	t.check(wheels.is_empty() and thrusters.size() >= 2 and toy.find_children("Rotor*", "Node3D", true, false).size() == 2,
+			"its toy is the hoverbike: lift thrusters and two fans, no wheels")
 	toy.free()
 
 

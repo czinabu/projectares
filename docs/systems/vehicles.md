@@ -38,7 +38,26 @@ date in the same PR.
   `Vehicle.posed_grips()`, the item's `grip_points` turned with it. `Look`
   merges each wheel's and pivot's own pieces ("merge"), so a wheel is three
   draws and a pivot one a material: about 18 draws a bike, 25 a rover
-  (`tests/vehicle_parts_tests.gd`).
+  (`tests/vehicle_parts_tests.gd`). A fan's rotor ("Rotor...", merged the
+  same way) spins about its hub at `rotor_idle_rate` turns a second while
+  the machine runs, up to `rotor_speed_rate` more at top speed, each fan
+  the other way from the one before.
+- A bike or a hoverbike wears one of several bodies, picked by the item's
+  `body` stat (`Vehicle.body`, `VehicleModel.BODIES`, the first when the
+  item names none): bikes are "scrambler" (the Scrapper: a rat dirt bike,
+  bare tube frame, knobbly tread on the spinning part of each wheel, a
+  finned power drum, a caged lamp, a high pipe), "street" (the first
+  Scrapper, beaked), "fighter" (a naked streetfighter round a glowing
+  finned block) and "junker" (a café racer from salvage); hoverbikes are
+  "ducted" (the Raider: one hull over two open fans whose rotors spin),
+  "pontoon" (the first Raider), "manta" (a wide flat wing) and "lancer" (a
+  needle nose and two engine nacelles). Caleb picked the Scrapper's and
+  the Raider's; the rest are kept for new bikes, which are then only data.
+  Every body is built round the item's own seat, grips and pegs, so any
+  bike's tuning can wear any of its model's bodies; a bike stands on its
+  wheels and a hover hangs nothing below its cushion
+  (`tests/vehicle_bodies_tests.gd`). About 20 draws a Scrapper, 18 a
+  Raider.
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while

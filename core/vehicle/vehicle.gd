@@ -35,6 +35,11 @@ var display_name := "Vehicle"
 ## Which greybox body to build: "bike", "hoverbike", "rover", "mech", "jet"
 ## or "airship".
 var model := "bike"
+## Which of its model's bodies a bike or a hoverbike wears
+## (`VehicleModel.BODIES`, "" for the first): the Scrapper is a "scrambler",
+## the Raider a "ducted". A new bike can be another body and other tuning,
+## all as item data.
+var body := ""
 ## True for an item tagged "aircraft": it takes off past `takeoff_speed`.
 var flies := false
 ## True for an item tagged "airship" (DESIGN.md "Basalt Rift", the Sky
@@ -340,7 +345,8 @@ var _bob := 0.0
 # The model marks them: a "Wheel..." node with its "radius" (and "steers"),
 # whose "Spin" child turns with the speed,
 # a pivot with its "axis" and "share" of the steering (and "grips" when the
-# rider's hands are on it, `posed_grips`).
+# rider's hands are on it, `posed_grips`), a fan's "Rotor..." that spins
+# while it runs, faster with the speed.
 ## The steering's look, in radians at full lock at a standstill; at top
 ## speed a little of it (`steer_view_fast`), as a rider barely turns the bars.
 var steer_view_angle := 0.38
@@ -349,7 +355,12 @@ var steer_view_fast := 0.35
 var steer_view := 0.0
 var _wheels: Array[Node3D] = []
 var _pivots: Array[Node3D] = []
+var _rotors: Array[Node3D] = []
 var _wheel_turn := 0.0
+var _rotor_turn := 0.0
+## A fan rotor's turns a second: idling, and added at top speed.
+var rotor_idle_rate := 1.5
+var rotor_speed_rate := 4.0
 
 
 func setup(p_item_id: String) -> void:
@@ -501,8 +512,11 @@ func build_visual() -> Node3D:
 	var root: Node3D = VehicleModel.build(self)
 	_wheels.clear()
 	_pivots.clear()
+	_rotors.clear()
 	for node in root.find_children("*", "Node3D", true, false):
-		if node.has_meta("radius"):
+		if str(node.name).begins_with("Rotor"):
+			_rotors.append(node)
+		elif node.has_meta("radius"):
 			_wheels.append(node)
 		elif node.has_meta("axis"):
 			_pivots.append(node)
@@ -1238,7 +1252,7 @@ func _pose_model(delta: float) -> void:
 
 ## Spins the wheels with the speed and turns the steering parts (view only).
 func _turn_parts(delta: float) -> void:
-	if _wheels.is_empty() and _pivots.is_empty():
+	if _wheels.is_empty() and _pivots.is_empty() and _rotors.is_empty():
 		return
 	_wheel_turn = wrapf(_wheel_turn - speed * delta, 0.0, TAU * 1000.0)
 	for wheel in _wheels:
@@ -1249,6 +1263,11 @@ func _turn_parts(delta: float) -> void:
 			spin.basis = Basis(Vector3.RIGHT, _wheel_turn / float(wheel.get_meta("radius", 0.4)))
 	for pivot in _pivots:
 		pivot.basis = Basis(pivot.get_meta("axis") as Vector3, steer_view * float(pivot.get_meta("share", 1.0)))
+	if not _rotors.is_empty():
+		var pace := clampf(absf(speed) / maxf(max_speed, 0.1), 0.0, 1.0)
+		_rotor_turn = wrapf(_rotor_turn + TAU * (rotor_idle_rate + rotor_speed_rate * pace) * delta, 0.0, TAU)
+		for i in _rotors.size():
+			_rotors[i].basis = Basis(Vector3.UP, _rotor_turn * (1.0 if i % 2 == 0 else -1.0))
 
 
 ## Where the rider's hands go: `grip_points`, turned with the bars or the
