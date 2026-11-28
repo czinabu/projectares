@@ -4,6 +4,7 @@ extends Node
 ## show, so it goes straight in.
 
 const GAME_SCENE := "res://scenes/main.tscn"
+const GameSettings := preload("res://core/settings/game_settings.gd")
 
 var backdrop: TitleBackdrop
 var screen: StartScreen
@@ -17,6 +18,10 @@ func _ready() -> void:
 	# The project keeps its prototype name ("Project Ares") so the save folder
 	# under app_userdata never moves; the window shows the game's name.
 	DisplayServer.window_set_title("Verge")
+	# The volume settings first, then the plaza's track under the title
+	# (it plays on into the base and the plaza, `Sfx.music`).
+	GameSettings.ensure_loaded()
+	Sfx.music("plaza")
 	backdrop = TitleBackdrop.new()
 	add_child(backdrop)
 	var layer := CanvasLayer.new()
