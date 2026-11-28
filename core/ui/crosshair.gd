@@ -1,24 +1,29 @@
 extends Control
 ## The aiming mark in the middle of the screen, the same in first and third
-## person (Caleb's call): a centre dot and, with a gun in hand, four short
-## ticks whose gap is the gun's real spread right now (`Gun.current_spread_deg`
+## person (Caleb's call), in the game's systems palette (cyan for systems,
+## amber for key marks, red for hostile) and its angular shapes: a small
+## diamond in the middle and, with a gun in hand, four tapered blades whose
+## tips sit at the gun's real spread right now (`Gun.current_spread_deg`
 ## turned into pixels at the camera's field of view), so walking, jumping,
-## spraying and aiming open and close it by exactly what they do to the shots.
-## Each shot kicks the ticks out a little more on top (`kick`).
+## spraying and aiming open and close it by exactly what they do to the
+## shots. Each shot kicks the blades out and flares them (`kick`).
 ##
 ## It says a few more things by colour and shape, never by text:
-##   - "hostile": someone on the other side is under it, in range: red.
+##   - "hostile": someone on the other side is under it, in range: red, and
+##     corner brackets close in round it.
 ##   - "far": what is under it is past the gun's reach (`Gun.max_range`, or
-##     past `Gun.falloff_end` where the damage has fallen off): dim grey.
-##   - "empty": the magazine is out or the gun is jammed: dim red ticks (the
-##     reload prompt under it says what to press).
-##   - "reload": the ticks give way to a thin ring that fills as the reload
-##     goes on; a charging or spinning power weapon fills the same ring.
-##   - a melee weapon or empty hands: the dot alone (the swing marks round it
-##     are `Hud.StanceIndicator`'s).
+##     past `Gun.falloff_end` where the damage has fallen off): dim, and each
+##     blade broken in two.
+##   - "empty": the magazine is out or the gun is jammed: dim red, the
+##     diamond hollow (the reload prompt under it says what to press).
+##   - "reload": the blades give way to a ring of eight segments that light
+##     one by one as the reload goes on; a charging or spinning power weapon
+##     fills the same ring in amber.
+##   - a melee weapon or empty hands: the diamond alone (the swing marks
+##     round it are `Hud.StanceIndicator`'s).
 ## Looking down the sights in first person the mark fades out, since the
 ## sight sits in the middle of the view; in third person aiming only closes
-## the ticks, by the aimed spread. Hit and kill marks are `Hud.HitMarker`.
+## the blades, by the aimed spread. Hit and kill marks are `Hud.HitMarker`.
 ##
 ## View only: one ray along the aim every `probe_interval` for what is under
 ## it, nothing in the simulation. Load with
@@ -28,9 +33,9 @@ extends Control
 var actor: Actor
 var controller: PlayerController
 
-var tick_length := 6.0
-var tick_width := 2.0
-var dot_radius := 1.5
+var tick_length := 8.0
+var tick_width := 2.2
+var dot_radius := 1.6
 ## The smallest gap between the middle and the ticks, so a still, aimed gun
 ## still shows four ticks round the dot and not a blob.
 var min_gap := 4.0
@@ -43,11 +48,14 @@ var follow := 22.0
 var reload_radius := 11.0
 var probe_interval := 0.08
 
-const INK := Color(1.0, 1.0, 1.0, 0.92)
-const HOSTILE := Color(1.0, 0.32, 0.26, 0.95)
-const FAR := Color(0.8, 0.8, 0.8, 0.38)
-const EMPTY := Color(1.0, 0.35, 0.28, 0.5)
-const OUTLINE := Color(0.0, 0.0, 0.0, 0.55)
+## The palette Caleb picked for the game's systems: cyan for the systems,
+## amber for key marks only (a charge), red for hostile.
+const SYSTEMS := Color("4DD9FF")
+const KEY := Color("FF9E38")
+const HOSTILE := Color("FF4A3A")
+const FAR := Color(0.3, 0.85, 1.0, 0.35)
+const EMPTY := Color(1.0, 0.29, 0.23, 0.55)
+const OUTLINE := Color(0.0, 0.02, 0.04, 0.6)
 
 ## What the mark is showing now (see the class notes), for tests.
 var state := "none"
@@ -64,6 +72,8 @@ var _gun: Gun
 var _probe_wait := 0.0
 var _fade := 1.0
 var _ring := 0.0
+## How far the hostile brackets have closed in, 0 to 1.
+var _lock := 0.0
 
 
 func _ready() -> void:
@@ -120,6 +130,7 @@ func _process(delta: float) -> void:
 			_ring = 1.0 - gun.reload_left() / maxf(gun.reload_time, 0.01)
 		elif state == "charge":
 			_ring = maxf(gun.charge_fraction(), gun.spin_fraction())
+	_lock = move_toward(_lock, 1.0 if state == "hostile" else 0.0, delta * 8.0)
 	var sighted := controller != null and is_instance_valid(controller) and controller.sighted
 	_fade = move_toward(_fade, 0.0 if sighted else 1.0, delta * 10.0)
 	modulate.a = _fade
@@ -155,29 +166,86 @@ func _draw() -> void:
 	if state == "none":
 		return
 	var c := size * 0.5
-	var ink := INK
+	var ink := SYSTEMS
 	match state:
 		"hostile":
 			ink = HOSTILE
 		"far":
 			ink = FAR
-	_dot(c, ink if state != "empty" else EMPTY)
+		"empty":
+			ink = EMPTY
+	# The centre: a small diamond, hollow while the gun cannot fire.
+	_diamond(c, dot_radius + 1.0, ink, state == "empty" or state == "reload")
 	if state == "dot":
 		return
 	if state == "reload" or state == "charge":
-		var faint := INK
-		faint.a = 0.2
-		draw_arc(c, reload_radius, 0.0, TAU, 40, faint, 1.5, true)
-		draw_arc(c, reload_radius, -PI / 2.0, -PI / 2.0 + TAU * clampf(_ring, 0.0, 1.0), 40, INK, 2.0, true)
+		_segments(c, reload_radius, _ring, SYSTEMS if state == "reload" else KEY)
 		return
-	var color := EMPTY if state == "empty" else ink
+	# The spread: four blades pointing in, their tips where shots can land.
+	# Each shot flares them for a moment.
+	var flare := clampf(_kicked / kick, 0.0, 1.0)
+	var blade := ink.lerp(Color.WHITE, 0.45 * flare)
+	# Out of range, each blade is broken in two: the shot will not carry.
 	for dir: Vector2 in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
-		var a := c + dir * gap
-		var b := c + dir * (gap + tick_length)
-		draw_line(a - dir, b + dir, Color(OUTLINE, OUTLINE.a * color.a), tick_width + 2.0)
-		draw_line(a, b, color, tick_width)
+		var tip := c + dir * gap
+		_blade(tip, tip + dir * tick_length, 0.8, tick_width + 0.6, blade, state == "far")
+	# Someone to shoot: corner brackets close in round the mark.
+	if state == "hostile":
+		var at := gap + tick_length * 0.5 + 6.0 * (1.0 - _lock)
+		for corner: Vector2 in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
+			var k := c + corner * at
+			var arm := 5.0
+			_line(k - Vector2(corner.x * arm, 0.0), k, HOSTILE, 1.5)
+			_line(k, k - Vector2(0.0, corner.y * arm), HOSTILE, 1.5)
 
 
-func _dot(c: Vector2, color: Color) -> void:
-	draw_circle(c, dot_radius + 1.0, Color(OUTLINE, OUTLINE.a * color.a))
-	draw_circle(c, dot_radius, color)
+## A blade from `tip` (thin) to `back` (wide), cut square at the back. `split`
+## leaves a break in the middle.
+func _blade(tip: Vector2, back: Vector2, w_tip: float, w_back: float, color: Color, split := false) -> void:
+	var along := back - tip
+	var side := Vector2(-along.y, along.x).normalized()
+	var parts := [[0.0, 1.0]] if not split else [[0.0, 0.35], [0.6, 1.0]]
+	for part: Array in parts:
+		var a := tip + along * float(part[0])
+		var b := tip + along * float(part[1])
+		var wa := lerpf(w_tip, w_back, float(part[0])) * 0.5
+		var wb := lerpf(w_tip, w_back, float(part[1])) * 0.5
+		var shape := PackedVector2Array([a + side * wa, b + side * wb, b - side * wb, a - side * wa])
+		var halo := PackedVector2Array([a + side * (wa + 1.0) - along.normalized(), b + side * (wb + 1.0)
+				+ along.normalized(), b - side * (wb + 1.0) + along.normalized(), a - side * (wa + 1.0)
+				- along.normalized()])
+		draw_colored_polygon(halo, Color(OUTLINE, OUTLINE.a * color.a))
+		draw_colored_polygon(shape, color)
+
+
+func _diamond(c: Vector2, r: float, color: Color, hollow := false) -> void:
+	var pts := PackedVector2Array([c + Vector2(0, -r), c + Vector2(r, 0), c + Vector2(0, r), c + Vector2(-r, 0)])
+	var halo := PackedVector2Array([c + Vector2(0, -r - 1.2), c + Vector2(r + 1.2, 0), c + Vector2(0, r + 1.2),
+			c + Vector2(-r - 1.2, 0)])
+	draw_colored_polygon(halo, Color(OUTLINE, OUTLINE.a * color.a))
+	if hollow:
+		pts.append(pts[0])
+		draw_polyline(pts, color, 1.0, true)
+	else:
+		draw_colored_polygon(pts, color)
+
+
+## A ring of short segments that light one by one as `value` goes 0 to 1,
+## the one filling now brightest.
+func _segments(c: Vector2, radius: float, value: float, color: Color) -> void:
+	var count := 8
+	var gap_angle := 0.16
+	var lit := clampf(value, 0.0, 1.0) * count
+	for i in count:
+		var from := -PI / 2.0 + TAU * i / count + gap_angle * 0.5
+		var to := from + TAU / count - gap_angle
+		var on := clampf(lit - i, 0.0, 1.0)
+		var faint := Color(color, 0.18)
+		draw_arc(c, radius, from, to, 6, Color(OUTLINE, 0.35), 3.5, true)
+		draw_arc(c, radius, from, to, 6, faint.lerp(color, on), 2.0, true)
+
+
+func _line(a: Vector2, b: Vector2, color: Color, width: float) -> void:
+	var dir := (b - a).normalized()
+	draw_line(a - dir, b + dir, Color(OUTLINE, OUTLINE.a * color.a), width + 2.0)
+	draw_line(a, b, color, width)

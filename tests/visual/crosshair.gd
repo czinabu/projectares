@@ -2,8 +2,8 @@ extends RefCounted
 ## `--crosshair-only`, a mode `visual_check.gd` finds by itself.
 ## `-- <output_dir> --crosshair-only` shoots the crosshair in each of its
 ## states, in third person (top row) and first person (bottom row): still,
-## spraying, aimed, an enemy under it, out of range, empty, reloading, a hit
-## and a kill. Saves `crosshair.png` (the middle of each frame, enlarged)
+## spraying, aimed, an enemy under it, out of range, empty, reloading, a hit,
+## a head, plates breaking and a kill. Saves `crosshair.png` (the middle of each frame, enlarged)
 ## and the full frames under `crosshair/`.
 
 
@@ -30,7 +30,7 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 	controller.pitch = -0.05
 	var mark: Variant = hud.crosshair
 	var gun := p.get_active_weapon() as Gun
-	var states := ["still", "spray", "aimed", "enemy", "far", "empty", "reload", "hit", "kill"]
+	var states := ["still", "spray", "aimed", "enemy", "far", "empty", "reload", "hit", "head", "break", "kill"]
 	var crop := Vector2i(200, 140)
 	var scale := 2
 	var cell := crop * scale
@@ -63,14 +63,17 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 						gun.ammo_in_mag = 0
 					"reload":
 						gun._reload_left = gun.reload_time * 0.4
-				# A software renderer's frames are long enough to miss a flash:
-				# slow time for the last frames of a hit.
-				Engine.time_scale = 0.05 if k >= 20 and (state == "hit" or state == "kill") else 1.0
-				if k == 22 and (state == "hit" or state == "kill"):
-					hud._on_hit_confirmed(p, DamageInfo.make(5.0, p, "bullet", p.global_position), state == "kill")
+				# A software renderer's frames are long enough to miss a flash: a
+				# hit mark is held a third of the way through (snapped in, not fading).
+				var kinds := {"hit": "hit", "head": "head", "break": "armor_break", "kill": "kill"}
+				if k == 22 and kinds.has(state):
+					hud._hit_marker.flash(kinds[state])
+					hud._hit_marker._left = hud._hit_marker._duration * 0.7
+					hud._hit_marker.set_process(false)
 				await v.get_tree().process_frame
 			await RenderingServer.frame_post_draw
-			Engine.time_scale = 1.0
+			hud._hit_marker.set_process(true)
+			hud._hit_marker._left = 0.0
 			var frame := v.get_viewport().get_texture().get_image()
 			frame.save_png(out_dir.path_join("crosshair/%s_%s.png" % [["third", "first"][row], state]))
 			var mid := Vector2i(frame.get_width(), frame.get_height()) / 2
