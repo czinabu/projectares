@@ -106,8 +106,10 @@ do not match where they stand, no glowing pads, no floating ads):
 
 - **Spire plaza** in the middle, where you arrive: stages, benches, Dusk.
 - **Gate Terrace** to the north: an arch for each world, lit while you
-  stand in it, and Marlo the dispatcher at a desk, who reads out how each
-  world is doing.
+  stand in it, showing a live glimpse of its world, its risk and how busy
+  it is, with the full write-up on a console beside it; sealed arches tease
+  the worlds to come. Marlo the dispatcher sits at a desk and reads out how
+  each world is doing.
 - **Market Row** to the south: a covered street of real shopfronts facing
   each other (armory, outfitter, garage, tailor, furnisher, exchange), each
   fitted out for its trade with its goods on show and a keeper behind the
