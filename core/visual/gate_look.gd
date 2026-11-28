@@ -77,12 +77,14 @@ static func window_params(type: PlanetType) -> Dictionary:
 	return out
 
 
-## A gate's colour for a world on this planet: what its trim, its panels
+## A gate's colour for a world on this planet (its `accent` if it has one): what its trim, its panels
 ## and the edge of its glimpse glow in, so each gate reads as its world from
 ## across the plaza. Pure data, safe headless.
 static func world_color(type: PlanetType) -> Color:
 	if type == null:
 		return DEFAULT_COLOR
+	if type.accent.a > 0.0:
+		return type.accent
 	var storm := str(type.weather.get("storm", ""))
 	if storm == "":
 		storm = str(type.weather.get("air", ""))
