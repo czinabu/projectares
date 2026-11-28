@@ -10,6 +10,7 @@ extends RefCounted
 ## already saves it.)
 
 const SAVE_PATH := "user://settings.json"
+const SafeFile := preload("res://core/account/safe_file.gd")
 const SENSITIVITY_RANGE := Vector2(0.0005, 0.006)
 const FOV_RANGE := Vector2(60.0, 110.0)
 ## How far behind the character the third-person camera sits, in meters.
@@ -163,6 +164,8 @@ const SCHEMA := [
 			"label": "Names over other players", "default": true},
 	{"key": "master_volume", "tab": "system", "kind": "slider", "label": "Volume", "default": 0.8,
 			"range": Vector2(0.0, 1.0), "step": 0.05, "format": "percent"},
+	{"key": "music_volume", "tab": "system", "kind": "slider", "label": "Music", "default": 0.6,
+			"range": Vector2(0.0, 1.0), "step": 0.05, "format": "percent"},
 	# Kept but not on a Settings tab ("tab" ""): the watch's mission log.
 	{"key": "untracked", "tab": "", "kind": "list", "default": []},
 	{"key": "main_mission", "tab": "", "kind": "text", "default": ""},
@@ -204,6 +207,10 @@ static var eye_pullback: float:
 static var master_volume: float:
 	get: return _values["master_volume"]
 	set(v): _values["master_volume"] = v
+## 0 to 1, applied to the music's own bus (`MUSIC_BUS`), under the volume.
+static var music_volume: float:
+	get: return _values["music_volume"]
+	set(v): _values["music_volume"] = v
 static var fullscreen: bool:
 	get: return _values["fullscreen"]
 	set(v): _values["fullscreen"] = v
@@ -469,10 +476,29 @@ static func apply() -> void:
 	if bus >= 0:
 		AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(master_volume, 0.0001)))
 		AudioServer.set_bus_mute(bus, master_volume <= 0.001)
+	var music := music_bus()
+	AudioServer.set_bus_volume_db(music, linear_to_db(maxf(music_volume, 0.0001)))
+	AudioServer.set_bus_mute(music, music_volume <= 0.001)
 	if DisplayServer.get_name() == "headless":
 		return
 	apply_graphics()
 	apply_window()
+
+
+## The bus the music plays on (`Sfx.music`), so it has its own volume.
+const MUSIC_BUS := "Music"
+
+
+## The music's bus (`MUSIC_BUS`), made under the master bus the first
+## time it is asked for, so the music has a volume of its own.
+static func music_bus() -> int:
+	var bus := AudioServer.get_bus_index(MUSIC_BUS)
+	if bus < 0:
+		AudioServer.add_bus()
+		bus = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(bus, MUSIC_BUS)
+		AudioServer.set_bus_send(bus, &"Master")
+	return bus
 
 
 ## Whether the game's window is fullscreen now, read from the window
@@ -739,17 +765,15 @@ static func ink_shown() -> bool:
 static func save() -> void:
 	if not persist:
 		return
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if file == null:
+	# Whole or not at all, so a crash mid-save keeps the old settings.
+	if not SafeFile.write(SAVE_PATH, JSON.stringify(to_dict(), "\t")):
 		push_warning("GameSettings: could not write %s" % SAVE_PATH)
-		return
-	file.store_string(JSON.stringify(to_dict(), "\t"))
 
 
 static func load_settings() -> void:
-	if not persist or not FileAccess.file_exists(SAVE_PATH):
+	if not persist or not SafeFile.exists(SAVE_PATH):
 		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	var data: Variant = SafeFile.read_json(SAVE_PATH)
 	if typeof(data) != TYPE_DICTIONARY:
 		push_warning("GameSettings: %s is unreadable, using defaults" % SAVE_PATH)
 		return

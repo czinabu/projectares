@@ -32,6 +32,8 @@ static func _when_it_runs(t: Node) -> void:
 			and not UpdaterScript.enabled(true, 12, PackedStringArray(["--server"]), "Windows", false)
 			and not UpdaterScript.enabled(true, 12, PackedStringArray(["--no-update"]), "Windows", false),
 			"servers, headless runs and --no-update never update")
+	t.check(not UpdaterScript.enabled(true, 12, none, "Windows", false, true) and not UpdaterScript.on_steam(),
+			"a copy Steam installed never updates itself (Steam does), and this run is not one")
 	t.check(Updater.state == "off", "this test run's updater is off")
 	t.check(UpdaterScript.engine_version().begins_with("%d.%d" % [Engine.get_version_info().major,
 			Engine.get_version_info().minor]), "the engine is named as the release workflow names it")

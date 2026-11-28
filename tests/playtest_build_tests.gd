@@ -37,6 +37,9 @@ static func run(t: Node) -> void:
 			"the dev build is its own preset with every world")
 	t.check(features.has("Linux Dev") and "playtest" not in str(features["Linux Dev"]),
 			"the dev build has a Linux preset too, with every world")
+	t.check(["Windows Steam", "Linux Steam"].all(func(n: String) -> bool:
+		return Array(str(features.get(n, "")).split(",")) == ["playtest", "steam"]),
+			"the Steam builds are the release build (launch scope) tagged \"steam\", so they never update themselves")
 	var ready: PackedStringArray = ProjectSettings.get_setting("ares/release/playtest_worlds", PackedStringArray())
 	t.check(not ready.is_empty() and ready.has("plaza") and Array(ready).all(func(id: String) -> bool: return Worlds.get_world(id) != null),
 			"the ready list names real worlds and keeps the plaza (%s)" % ", ".join(ready))

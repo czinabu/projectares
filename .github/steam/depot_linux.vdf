@@ -1,0 +1,10 @@
+"DepotBuild"
+{
+	"DepotID" "LINUX_DEPOT_ID"
+	"FileMapping"
+	{
+		"LocalPath" "linux/*"
+		"DepotPath" "."
+		"Recursive" "1"
+	}
+}

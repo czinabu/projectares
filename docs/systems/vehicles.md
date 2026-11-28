@@ -11,6 +11,34 @@ date in the same PR.
   and anything under a child node (a walker's legs, an airship's weak
   spots) are left alone, so a part the vehicle moves or finds by name must
   be named or sit under its own node.
+- A vehicle's body is posed in `Vehicle._pose_model`, view only, every
+  frame on every machine (a client poses vehicles the server moves the same
+  way), from where it is and which way it points, never from the rider's
+  keys: the lean into a turn comes from how fast the heading swings. On the
+  ground it tips to the slope under its wheels (rays under each end, and
+  each side for a wide body, `contact_span`; a bike only pitches and leans,
+  a walker never follows the ground), read again only once it has moved and
+  only within `ground_view_range` of the camera, never headless (tests set
+  `pose_headless`). A spring (`spring_rate`, `pitch_per_accel`, `land_kick`)
+  dips the nose under braking, squats under the throttle and thumps down on
+  a landing, tipping about the wheel that stays down so no wheel sinks into
+  the ground. The simulation (collision, the seat, hitboxes) never reads
+  the pose; the seated riders follow it through the model
+  (`tests/vehicle_pose_tests.gd`).
+- Moving parts (`Vehicle._turn_parts`, view only, from the same pose):
+  each wheel is a "Wheel..." node (`VehicleModel._wheel_set`, with its
+  "radius" and, for the rover's front pair, "steers") whose "Spin" child
+  (the steel spokes and hub, all that shows the turning) spins with
+  `speed`; the round tyre, rim face and lit rings stay put, so its bounds
+  never dip below the ground. Parts that turn with the steering hang on a
+  pivot (`VehicleModel._pivot`: its "axis" and "share" of `steer_view`):
+  the bike's fork, front wheel and bars ("Steer"), the hoverbike's bars and
+  rudder fins ("Fin0", "Fin1"), the rover's wheel ("SteerWheel"). A pivot
+  with "grips" carries the rider's hands: the riding pose reads
+  `Vehicle.posed_grips()`, the item's `grip_points` turned with it. `Look`
+  merges each wheel's and pivot's own pieces ("merge"), so a wheel is three
+  draws and a pivot one a material: about 18 draws a bike, 25 a rover
+  (`tests/vehicle_parts_tests.gd`).
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
@@ -27,6 +55,11 @@ date in the same PR.
   bike's lean (`ActorSkin.ride_frame`). The left hand keeps its grip; the
   right takes its grip only with nothing in it, holds a gun out toward the
   aim, and leaves a blade to its usual hold, so melee windups still show.
+  The phone works riding too (Caleb's bug: it was unusable on a vehicle):
+  with it out, the right hand leaves its grip to hold it, measured from the
+  seated neck, the left keeps the bar (`Locomotion.phone_pose`), and the
+  vehicle gets no throttle or steering, so it coasts
+  (`tests/ride_phone_tests.gd`).
   Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
   clamped to a back rig's rails stay in their clamps. Riding, the
   first-person eyes follow the seated head as posed (`ActorSkin._note_head`,

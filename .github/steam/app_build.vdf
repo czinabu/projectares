@@ -1,0 +1,13 @@
+"AppBuild"
+{
+	"AppID" "STEAM_APP_ID"
+	"Desc" "BUILD_DESC"
+	"BuildOutput" "OUTPUT_DIR"
+	"ContentRoot" "CONTENT_ROOT"
+	"SetLive" "SET_LIVE"
+	"Depots"
+	{
+		"WINDOWS_DEPOT_ID" "depot_windows.vdf"
+		"LINUX_DEPOT_ID" "depot_linux.vdf"
+	}
+}

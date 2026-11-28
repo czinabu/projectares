@@ -1254,7 +1254,8 @@ func _ride_pose() -> void:
 		var on_shin: Transform3D = skeleton.get_bone_global_pose(leg[1]) * _foot_on_shin[leg[2]]
 		skeleton.set_bone_global_pose(leg[2], foot.interpolate_with(on_shin, w))
 
-	var grips: Array = _ride_on.get("grip_points")
+	# The bars (or wheel) turn with the steering, and the hands with them.
+	var grips: Array = _ride_on.call("posed_grips") if _ride_on.has_method("posed_grips") else _ride_on.get("grip_points")
 	for i in _arms.size():
 		var arm: Array[int] = _arms[i]
 		var hand := _hands.x if i == 0 else _hands.y
@@ -1306,14 +1307,24 @@ func phone_pose() -> void:
 		var pose := skeleton.get_bone_global_pose(chest)
 		pose.basis = Basis(right, -phone_chest * w) * pose.basis
 		skeleton.set_bone_global_pose(chest, pose)
+	# Seated, the hold is measured from where the neck is now (low and leant
+	# forward over the bars) instead of from a standing neck, and the left
+	# hand stays on its grip.
+	var seated := ride_weight > 0.0 and _ride_on != null and is_instance_valid(_ride_on)
+	var lift := Vector3.ZERO
+	if seated and _neck >= 0:
+		var to_actor := to_skeleton.affine_inverse()
+		lift = (to_actor * skeleton.get_bone_global_pose(_neck).origin
+				- to_actor * skeleton.get_bone_global_rest(_neck).origin) * smoothstep(0.0, 1.0, ride_weight)
 	for arm: Array[int] in _arms:
 		if arm.size() != 3:
 			continue
 		if _side_of(arm[0]) < 0.0:
-			_bend(arm, skeleton.get_bone_rest(arm[2]).origin, to_skeleton * phone_rest,
-					to_skeleton.basis * phone_rest_elbow, w)
+			if not seated:
+				_bend(arm, skeleton.get_bone_rest(arm[2]).origin, to_skeleton * phone_rest,
+						to_skeleton.basis * phone_rest_elbow, w)
 			continue
-		var wrist := to_skeleton * phone_wrist
+		var wrist := to_skeleton * (phone_wrist + lift)
 		var elbow := to_skeleton.basis * phone_elbow
 		_bend(arm, skeleton.get_bone_rest(arm[2]).origin, wrist, elbow, w)
 		# The phone sits in the palm, a hand's length on from the wrist.

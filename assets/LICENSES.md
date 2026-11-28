@@ -38,6 +38,10 @@ and add a row for each new source.
 | --- | --- | --- | --- | --- |
 | `assets/sounds` (not in this repository, see its `README.md`) | Clips from Extreme Winds Vol. 1 (344 Audio), Sci-Fi Drones (Cinematic Sound Design) and Effective Trailer Booms Vol. 2 (Federico Soler), cut, filtered and looped | Sonniss #GameAudioGDC 2026 bundle | Sonniss GDC bundle license: royalty-free, commercial use, no attribution; may ship inside the game but not be sold or handed out as they come | https://gdc.sonniss.com |
 
+| `assets/sounds/world` (`step_*`: footsteps on hard ground, dirt, snow, grass and wood; `engine_*`: the ground, hover and air engine loops) | Impact Sounds (`footstep_*`) and Sci-Fi Sounds (`spaceEngineLow_004`, `spaceEngineSmall_002`, `spaceEngineLarge_002`), cut, mixed (the dirt steps are the concrete taps dulled with a little of the grass under them), made mono and crossfaded into loops by `assets/sounds/world/make_world_sounds.py` | Kenney (www.kenney.nl) | CC0 1.0 | https://kenney.nl/assets/impact-sounds, https://kenney.nl/assets/sci-fi-sounds (fetched from the GitHub mirror `series-ai/jam-ready-assets`, which carries each pack's CC0 `License.txt`) |
+
+`assets/sounds/world/wind_cold.ogg` (Frostline's wind) and `music_plaza.ogg` (the start screen, home and the Concourse's music) were made for this project from code by `assets/sounds/world/make_world_sounds.py` and are CC0: no samples, nothing to credit.
+
 `assets/sounds/weapons` (every gun's shots, the hit and kill confirms, draws, the rail's charge and the rotary cannon's spin) was made for this project from code by `assets/sounds/weapons/make_weapon_sounds.py` and is CC0: no samples, nothing to credit.
 
 Shaders in `assets/shaders` were written for this project.
