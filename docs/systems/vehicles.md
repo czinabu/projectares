@@ -79,6 +79,18 @@ date in the same PR.
   seated neck, the left keeps the bar (`Locomotion.phone_pose`), and the
   vehicle gets no throttle or steering, so it coasts
   (`tests/ride_phone_tests.gd`).
+  Getting on and off is instant for the simulation (the seat, the exit
+  spot) and shown over `ActorSkin.board_time` (0.42 s on) and
+  `unboard_time` (0.32 s off): the skin starts the body where the actor
+  just was and carries it across with a hop over the seat while the riding
+  pose eases in or out, so a leg swings over; it is the one body, so first
+  person rides along on the posed head. Off a vehicle faster than
+  `board_max_speed` (a bail-out) or over a long step it stays instant.
+  `ActorSkin.boarding` (1 to 0) is there for a sound to follow, as are the
+  `Vehicle.mounted` and `dismounted` signals. Stopped on a bike
+  (`foot_down_speed`), the rider puts the left foot on the ground
+  (`Locomotion.ride_foot_down`, `foot_down_at`) and the bike rests tipped
+  onto it (`Vehicle.stand_lean`; `tests/vehicle_mount_tests.gd`).
   Back-slung weapons ride higher up the back (`ride_sling_lift`); weapons
   clamped to a back rig's rails stay in their clamps. Riding, the
   first-person eyes follow the seated head as posed (`ActorSkin._note_head`,

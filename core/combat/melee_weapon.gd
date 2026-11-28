@@ -1502,7 +1502,11 @@ func _animate(delta: float) -> void:
 	var arc := swing_arc()
 	if _swing_left > 0.0 and _windup_left <= 0.0:
 		_swing_left -= delta
-	if _slamming:
+	if is_kicking():
+		# A kick is the leg's: the weapon stays held as it rests (cocking
+		# it like a swing's windup flung a carried hammer out behind).
+		pass
+	elif _slamming:
 		pose = 1.3
 	elif showing_back_strike():
 		# A reverse grip, the point turned back past the hip, thrust back.

@@ -101,10 +101,12 @@ static func shoot(v: Node, out_dir: String, _args: PackedStringArray) -> void:
 	phone.dressing = false
 	mirror.visible = true
 	controller.toggle_view()
+	# As `Main` has it: the mirror stands, the view frames your reflection
+	# and the phone's screen is thrown up beside it.
+	phone.set_mirror_up(true)
 	await v._settle(40)
 	await v._shot(out_dir.path_join("phone_mirror_first.png"))
 	# Lowered to look in the mirror: the whole kit shows, in both views.
-	phone.mirror_up = true
 	phone.set_mirror_lowered(true)
 	controller.phone_out = phone.held()
 	await v._settle(40)

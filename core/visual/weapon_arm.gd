@@ -282,6 +282,10 @@ var _swivel: Array[float] = [0.0, 0.0]
 var clear_swivel_step := 0.15
 var clear_swivel_max := 1.5
 var clear_swivel_rate := 25.0
+## How fast a weapon in both hands takes up (and lets go of) the chest's
+## lean through a kick (`_keep_clear`), per second.
+var kick_ride_rate := 6.0
+var _kick_ride := 0.0
 ## Where the chest stands at the ready, for `_ride`.
 var _ride_base := Transform3D.IDENTITY
 var _ride_set := false
@@ -1381,6 +1385,13 @@ func _blade_turn(aimed: Basis) -> Basis:
 		turn = turn.slerp(across, _carry * hang)
 	if _pose().inspecting() == "melee":
 		turn = turn * _pose().inspect_basis()
+	if _kick_ride > 0.0 and _ride_set and skeleton != null:
+		# Held out with the chest through a kick (`_keep_clear`): the
+		# weapon turns with it too, so the off hand keeps its place.
+		var moved := (skeleton.get_bone_global_pose(_chest) * _ride_base.affine_inverse()).basis
+		var to_world := skeleton.global_basis.orthonormalized()
+		var leaned := (to_world * moved.orthonormalized() * to_world.inverse()) * turn
+		turn = turn.orthonormalized().slerp(leaned.orthonormalized(), smoothstep(0.0, 1.0, _kick_ride))
 	return turn
 
 
@@ -1764,6 +1775,15 @@ func _keep_clear(which: int) -> void:
 			reach_to += _ride(held)
 		elif which == 0:
 			_ride(0.0)
+			# Through a kick the body leans hard over its leg: a weapon
+			# carried in both hands is held out with the chest, turn and
+			# all (the off hand follows it on the handle), eased in and
+			# out. (A katana held ready keeps its hold: ridden, its off
+			# arm folded into the chest instead.)
+			var kicking: bool = (actor.get_active_weapon() as MeleeWeapon).is_kicking() and _carry > 0.5
+			_kick_ride = move_toward(_kick_ride, 1.0 if kicking else 0.0, dt * kick_ride_rate)
+			if _kick_ride > 0.0:
+				reach_to = reach_to.lerp(_ride_off(reach_to, held), smoothstep(0.0, 1.0, _kick_ride))
 		elif not on_handle:
 			reach_to = _ride_off(reach_to, held)
 		hand = clip_hand.lerp(reach_to, held)
@@ -1877,7 +1897,7 @@ func _clear_quiet(want: Vector3i) -> float:
 func _ride(held: float) -> Vector3:
 	var now := skeleton.get_bone_global_pose(_chest)
 	var dt := maxf(_clear_dt, 1.0 / 240.0)
-	var ready := _weight <= 0.05 and absf(_pose().footwork) < 0.01
+	var ready := _weight <= 0.05 and absf(_pose().footwork) < 0.01 and _kick_ride <= 0.0
 	if not _ride_set:
 		_ride_base = now
 		_ride_set = true

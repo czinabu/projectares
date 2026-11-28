@@ -347,6 +347,9 @@ var _bob := 0.0
 # a pivot with its "axis" and "share" of the steering (and "grips" when the
 # rider's hands are on it, `posed_grips`), a fan's "Rotor..." that spins
 # while it runs, faster with the speed.
+## Stopped with a rider aboard, a bike tips this far (radians) onto the
+## rider's left foot.
+var stand_lean := 0.09
 ## The steering's look, in radians at full lock at a standstill; at top
 ## speed a little of it (`steer_view_fast`), as a rider barely turns the bars.
 var steer_view_angle := 0.38
@@ -1211,6 +1214,9 @@ func _pose_model(delta: float) -> void:
 		steer = _turning
 	var grounded := _grounded()
 	var target_lean := steer * clampf(absf(speed) / max_speed, 0.0, 1.0) * lean_amount
+	if rider != null and grounded and absf(speed) < 0.6 and (model == "bike" or model == "hoverbike"):
+		# Stopped, the bike rests on the rider's left foot.
+		target_lean = -stand_lean
 	if flies and not grounded:
 		# A flier banks hard into its turns.
 		target_lean = steer * 0.6

@@ -18,6 +18,20 @@ date in the same PR.
   never from a cloaked body), the shivering hunch (`Locomotion._shiver_pose`,
   the neck taking the tremor back so the eyes stay steady) and frost on the
   visor glass (`VisorHud._draw_frost`, glass only, the middle kept clear).
+- Shelter (DESIGN.md "Frostline", Caleb's call): the cold hurts only out
+  in the open. A map's rooms are "indoors" markers (`Raid.rooms`,
+  `Raid.indoors_at`, a box of meta "size" turned with the marker; every
+  machine has them, so the view reads them too). In a room `_tick_cold`
+  never deals damage; an unheated one (meta "heat" 0, Frostline's shelf
+  ruins) still drains `WorldDef.indoor_chill` of the open cold, a heated
+  one (the huts, `HUT_HEAT`) warms anywhere inside through `warmth_at`,
+  gentler than standing at its heater so the frost wears off over seconds,
+  and a storm's extra bite (`weather_cold`) leaks in by the room's meta
+  "leak" (doorways, broken walls), slowing even a heater's warming. A
+  fire or heater inside an unheated room stops the chill like a heated
+  room. Shown in the world only: the visor's body heat cell says
+  "SHELTER" and does not warn, and the watch's zone line adds "shelter".
+  The Engine's inside is not a room: its cold is its own and still hurts.
 - Warm beacons (DESIGN.md "Frostline"): a world with
   `WorldDef.sign_out_at_beacons` lets `begin_sign_out` start only inside a
   "beacon" marker's radius (`Raid.beacon_at`; the portal home is a sign-out,
