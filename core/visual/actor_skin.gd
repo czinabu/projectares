@@ -917,10 +917,25 @@ func _play(key: String, speed := 1.0) -> void:
 		_player.seek(phase * _player.current_animation_length)
 
 
+static var PT := {}
+static func _pt(k: String, t0: int) -> void:
+	var d := Time.get_ticks_usec() - t0
+	PT[k] = PT.get(k, 0) + d
+	if d > 3000:
+		PT["big_" + k] = PT.get("big_" + k, 0) + d
+
 func _process(delta: float) -> void:
+	var T0 := Time.get_ticks_usec()
+	_process_i(delta)
+	_pt("total", T0)
+	PT["n"] = PT.get("n", 0) + 1
+
+func _process_i(delta: float) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
+	var t := Time.get_ticks_usec()
 	_steady_eyes(delta)
+	_pt("eyes", t)
 	# A body whose gun holds a lock before it fires shows the beam it holds.
 	if _def.get("beam", false) or float(actor.get_meta("lock_time", 0.0)) > 0.0:
 		_update_beam(delta)
@@ -933,25 +948,38 @@ func _process(delta: float) -> void:
 		# model's hand as it was last posed. The bones read back here are
 		# the clip's, not where the arm reached (an aimed gun, a look over),
 		# so the hand goes where it was last shown, carried with the actor.
+		t = Time.get_ticks_usec()
 		if arm != null and _skeleton != null:
 			arm.hold_shown()
+		_pt("hold", t)
+		PT["skip"] = PT.get("skip", 0) + 1
 		return
 	var step := _detail_delta
 	_detail_delta = 0.0
 	_detail_wait = 0
+	t = Time.get_ticks_usec()
 	_set_detail(detail_step())
+	_pt("detail", t)
+	PT["e%d" % _detail_every] = PT.get("e%d" % _detail_every, 0) + 1
 	if arrived and _detail_every > 1:
 		# Bodies a turn of the view brings in all come in on one frame;
 		# spread their next poses out again, as `_set_detail` does.
 		_detail_wait = int(get_instance_id() % _detail_every)
+	t = Time.get_ticks_usec()
 	_update(step)
+	_pt("update", t)
+	_pt("upd_e1" if _detail_every == 1 else "upd_far", t)
+	t = Time.get_ticks_usec()
 	if _detail_every > 1:
 		if _player:
 			_player.advance(step)
 		if _skeleton:
 			_skeleton.advance(step)
+	_pt("advance", t)
+	t = Time.get_ticks_usec()
 	if arm != null:
 		arm.step(step)
+	_pt("arm", t)
 
 
 ## How many frames apart this body is posed, from how far it is from the
@@ -1053,6 +1081,7 @@ func _gear_shadows(on: bool) -> void:
 
 
 func _update(delta: float) -> void:
+	var u := Time.get_ticks_usec()
 	if actor.body_mesh:
 		visible = actor.body_mesh.visible
 	if actor.weapons.size() != _weapons_seen or _has_bare_weapon():
@@ -1063,29 +1092,78 @@ func _update(delta: float) -> void:
 			_set_flash(0.0)
 	_flight_draw_left = aim_hold if actor.cmd.primary or actor.cmd.secondary else maxf(_flight_draw_left - delta, 0.0)
 	_flight_hold = move_toward(_flight_hold, 1.0 if _flight_draw_left > 0.0 else 0.0, glide_blend * delta)
+	u = Time.get_ticks_usec()
 	_update_boot_thrust(delta)
+	_pt("_update_boot_thrust", u)
+	u = Time.get_ticks_usec()
 	_update_sway(delta)
+	_pt("_update_sway", u)
+	u = Time.get_ticks_usec()
 	_update_rig(delta)
+	_pt("_update_rig", u)
+	u = Time.get_ticks_usec()
 	_update_glide(delta)
+	_pt("_update_glide", u)
+	u = Time.get_ticks_usec()
 	_update_stowed()
+	_pt("_update_stowed", u)
+	u = Time.get_ticks_usec()
 	_update_switch(delta)
+	_pt("_update_switch", u)
+	u = Time.get_ticks_usec()
 	_update_helmet()
+	_pt("_update_helmet", u)
+	u = Time.get_ticks_usec()
 	_update_lamp()
+	_pt("_update_lamp", u)
+	u = Time.get_ticks_usec()
 	_update_shadow_body()
+	_pt("_update_shadow_body", u)
+	u = Time.get_ticks_usec()
 	_update_frame()
+	_pt("_update_frame", u)
+	u = Time.get_ticks_usec()
 	_update_pack()
+	_pt("_update_pack", u)
+	u = Time.get_ticks_usec()
 	_fit_worn()
+	_pt("_fit_worn", u)
+	u = Time.get_ticks_usec()
 	_update_vitals()
+	_pt("_update_vitals", u)
+	u = Time.get_ticks_usec()
 	_update_phone()
+	_pt("_update_phone", u)
+	u = Time.get_ticks_usec()
 	_update_watch_glow(delta)
+	_pt("_update_watch_glow", u)
+	u = Time.get_ticks_usec()
 	_update_cloak()
+	_pt("_update_cloak", u)
+	u = Time.get_ticks_usec()
 	_update_breath(delta)
+	_pt("_update_breath", u)
+	u = Time.get_ticks_usec()
 	_update_materialize()
+	_pt("_update_materialize", u)
+	u = Time.get_ticks_usec()
 	_update_weapon_hum()
+	_pt("_update_weapon_hum", u)
+	u = Time.get_ticks_usec()
 	_update_toy(delta)
+	_pt("_update_toy", u)
+	u = Time.get_ticks_usec()
 	_update_bark(delta)
+	_pt("_update_bark", u)
+	u = Time.get_ticks_usec()
 	_update_lurk(delta)
+	_pt("_update_lurk", u)
 	_aim_left = maxf(_aim_left - delta, 0.0)
+	var ur := Time.get_ticks_usec()
+	_update_rest(delta)
+	_pt("rest", ur)
+
+func _update_rest(delta: float) -> void:
 	var weapon := actor.get_active_weapon()
 	if phone_up() or toy_up():
 		# Hands on the phone or a toy: stand as if empty-handed.
@@ -4162,6 +4240,7 @@ func _update_frame() -> void:
 	var key := id + ("|" + paint if paint != "" else "")
 	if key == _frame_id and (id == "" or (not _frame_parts.is_empty() and is_instance_valid(_frame_parts[0]))):
 		return
+	PT["frame_builds"] = PT.get("frame_builds", 0) + 1
 	_frame_id = key
 	_wear_undersuit(frame_style(id, paint) if id != "" else {})
 	# Armor holds the arms out from the body, so a hanging hand clears the
@@ -4266,6 +4345,7 @@ func _fit_worn() -> void:
 		nodes += "|" + str((item[1] as Node).get_instance_id())
 	if key + nodes == _fit_key:
 		return
+	PT["refit"] = PT.get("refit", 0) + 1
 	_fit_key = key + nodes
 	if _rig_holders.is_empty() and _pack_part == null and stowed.is_empty() and clip == null:
 		return
@@ -4277,7 +4357,10 @@ func _fit_worn() -> void:
 			_fit_key = ""
 			return
 		_fit_frame = frame
+		var wf := Time.get_ticks_usec()
 		_fits[key] = _work_out_fit(stowed, clip)
+		_pt("work_out_fit", wf)
+		PT["fits"] = PT.get("fits", 0) + 1
 	var fit: Dictionary = _fits[key]
 	var rig_holder := _rig_holder()
 	if rig_holder:

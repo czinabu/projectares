@@ -61,6 +61,9 @@ func _ready() -> void:
 	var warmup := float(_arg(args, "--warmup", "20"))
 	var third := _arg(args, "--view", "first") == "third"
 	Profile.persist = false
+	# A fresh profile is still on the new player's tour, which keeps it out
+	# of full-loot worlds (`Onboarding.locks`): the bench is past it.
+	preload("res://core/progression/onboarding.gd").skip(Profile.onboarding)
 	# Measured with the worlds' enemies unless `--no-enemies` (`Raid.enemies`),
 	# here and in any server this starts.
 	Raid.enemies = "--no-enemies" not in args
@@ -288,6 +291,8 @@ func _face(point: Vector3) -> void:
 
 
 func _measure(mode: String, seconds: float) -> void:
+	load("res://core/visual/actor_skin.gd").PT.clear()
+	var _f0 := Engine.get_process_frames()
 	var raid: Raid = _main.raid
 	var vp := get_viewport().get_viewport_rid()
 	var frame_ms: Array[float] = []
@@ -336,6 +341,7 @@ func _measure(mode: String, seconds: float) -> void:
 		for key in keys:
 			var spent: float = (prof[key] - prof_began.get(key, 0)) / 1000.0
 			print("  prof %-40s %7.2f ms a second, %6.2f ms a frame" % [key, spent / wall, spent / n])
+	print("SKINPT frames=%d %s" % [Engine.get_process_frames() - _f0, str(load("res://core/visual/actor_skin.gd").PT)])
 	var sorted := frame_ms.duplicate()
 	sorted.sort()
 	var p99: float = sorted[mini(int(sorted.size() * 0.99), sorted.size() - 1)] if not sorted.is_empty() else 0.0
