@@ -2770,12 +2770,16 @@ func _dress_horizon(art: Node3D) -> void:
 	var at := func(angle_deg: float, reach: float, up := 0.0) -> Vector3:
 		var a := deg_to_rad(angle_deg)
 		return Vector3(cos(a) * reach, floor_y + up, sin(a) * reach)
-	var put := func(size: Vector3, xform: Transform3D, material: Material = hulk) -> void:
-		var node := _slab(size, Vector3.ZERO, material)
-		node.transform = xform
-		art.add_child(node)
 	# The ruined city's blocks still have a little life in them.
 	var city := Look.trim("distant_lit")
+	# Every block of the skyline is gathered into one mesh, a draw for the
+	# dark hulks and one for the lit city.
+	var sky := KitMesh.new()
+	var put := func(size: Vector3, xform: Transform3D, material: Material = hulk) -> void:
+		sky.add_box("city" if material == city else "hulk", size, xform)
+	# Roofline detail has its own RNG, so it never shifts the rest.
+	var roof_rng := RandomNumberGenerator.new()
+	roof_rng.seed = LAYOUT_SEED + 41
 	# The capital ship, broadside to the field: nose buried in the west,
 	# hull rising away to the east.
 	var ship_at: Vector3 = at.call(-95.0, 490.0)
@@ -2785,6 +2789,11 @@ func _dress_horizon(art: Node3D) -> void:
 	put.call(Vector3(22, 36, 34), ship * Transform3D(Basis.IDENTITY, Vector3(0, 30, 95)))
 	for side: float in [-1.0, 1.0]:
 		put.call(Vector3(18, 18, 30), ship * Transform3D(Basis.IDENTITY, Vector3(side * 16, -4, 160)))
+	# Its hull's armour ribs, some torn half away, and a snapped mast.
+	for i in 8:
+		var torn := 0.5 if i % 3 == 1 else 1.0
+		put.call(Vector3(50, 44 * torn, 10), ship * Transform3D(Basis.IDENTITY, Vector3(0, 22 * (1.0 - torn), -120 + i * 34)))
+	put.call(Vector3(3, 46, 3), ship * Transform3D(Basis(Vector3.BACK, 0.5), Vector3(4, 70, 90)))
 	art.add_child(_plume(ship * Vector3(0, 12, 120), 10.0))
 	# Smokestacks, four to an army, behind each muster, joined by a hall.
 	for angle: float in [184.0, -4.0]:
@@ -2794,17 +2803,14 @@ func _dress_horizon(art: Node3D) -> void:
 		for n in 4:
 			var height: float = [150.0, 120.0, 135.0, 105.0][n]
 			var stack: Vector3 = hall_at + face * Vector3(0, 0, (n - 1.5) * 30.0)
-			var node := MeshInstance3D.new()
 			var tube := CylinderMesh.new()
 			tube.top_radius = 4.5
 			tube.bottom_radius = 6.5
 			tube.height = height
 			tube.radial_segments = 8
-			tube.material = hulk
-			node.mesh = tube
-			node.position = stack + Vector3(0, height * 0.5, 0)
-			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			art.add_child(node)
+			sky.add_mesh("hulk", tube, 0, Transform3D(Basis.IDENTITY, stack + Vector3(0, height * 0.5, 0)))
+			# A walkway ring near the top.
+			put.call(Vector3(16, 2.5, 16), Transform3D(Basis.IDENTITY, stack + Vector3(0, height - 14.0, 0)))
 			if n % 2 == 0:
 				art.add_child(_plume(stack + Vector3(0, height, 0), 4.0))
 	# The megabridge: two pylons, half the deck still up, half fallen.
@@ -2855,6 +2861,21 @@ func _dress_horizon(art: Node3D) -> void:
 				var side := _art_rng.randf_range(-0.3, 0.3) * width
 				var storey := _art_rng.randf_range(10.0, 26.0)
 				put.call(Vector3(width * 0.35, storey, width * 0.5), Transform3D(face, block_at + face * Vector3(side, (height + storey) * 0.5, 0)), city)
+			# A roofline that is not flat: tanks, plant, aerials and a
+			# shelled edge's slabs hanging off.
+			for n in roof_rng.randi_range(2, 4):
+				var spot := Vector3(roof_rng.randf_range(-0.4, 0.4) * width, height * 0.5, roof_rng.randf_range(-0.3, 0.3) * width)
+				match roof_rng.randi() % 4:
+					0:
+						put.call(Vector3(5, 6, 5), Transform3D(face, block_at + face * (spot + Vector3(0, 3, 0))))
+					1:
+						put.call(Vector3(width * 0.2, 4, width * 0.15), Transform3D(face, block_at + face * (spot + Vector3(0, 2, 0))))
+					2:
+						var tall := roof_rng.randf_range(10.0, 26.0)
+						put.call(Vector3(1.2, tall, 1.2), Transform3D(face, block_at + face * (spot + Vector3(0, tall * 0.5, 0))))
+					_:
+						var tilt := Basis(Vector3.BACK, roof_rng.randf_range(0.4, 0.9) * signf(spot.x + 0.01))
+						put.call(Vector3(width * 0.3, 2.5, width * 0.4), Transform3D(face * tilt, block_at + face * (spot + Vector3(0, -1, 0))), city)
 		angle += _art_rng.randf_range(7.0, 11.0)
 	# Smoke off the battle shelves, one column each, where their fights are.
 	var flats := shelf_flats()
@@ -2864,6 +2885,7 @@ func _dress_horizon(art: Node3D) -> void:
 		var flat: Vector2 = flats[_art_rng.randi() % flats.size()]
 		var spot := out * (flat.x + flat.y) * 0.5 + Vector2(-out.y, out.x) * _art_rng.randf_range(lateral.x + 30.0, lateral.y - 30.0)
 		art.add_child(_plume(Vector3(spot.x, scenery_height(spot.x, spot.y), spot.y), 6.0))
+	art.add_child(sky.node("Skyline", {"hulk": hulk, "city": city}, ["hulk", "city"]))
 
 
 ## A tall smoke plume for the skyline: the fire smoke, scaled up to be read

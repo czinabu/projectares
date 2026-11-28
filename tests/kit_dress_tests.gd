@@ -2,7 +2,8 @@ extends RefCounted
 ## Checks for Ashfront's kit-clad landmarks (`worlds/ashfront/kit_dress.gd`,
 ## docs/systems/marsh-and-ashfront.md): built only where `Look` is on, a few
 ## draws each, panels hugging their box, tank wrecks drawn as a tank, walls
-## faced and the hill's mast a lattice.
+## faced, the hill's mast a lattice, the giants plated and the skyline one
+## mesh with a broken roofline.
 
 const KIT_DRESS := preload("res://worlds/ashfront/kit_dress.gd")
 
@@ -48,6 +49,22 @@ static func run(t: Node) -> void:
 	var piles := map.find_child("ClutterClad", true, false) as MeshInstance3D
 	t.check(clutter.size() >= 10 and piles != null and piles.mesh.get_surface_count() <= 7,
 			"supply piles of kit crates and barrels stand about the camps and strongpoints, in one node")
+	# The giants and the skyline: each moving part one hull mesh, the ship
+	# with its lit ports, the skyline's blocks one mesh.
+	var giants := map.get_node_or_null("Giants") as Node3D
+	var body_hull := (giants.get("_body") as Node3D).get_node_or_null("Hull") as MeshInstance3D if giants != null else null
+	var ship_hull := (giants.get("_ship") as Node3D).get_node_or_null("Hull") as MeshInstance3D if giants != null else null
+	t.check(body_hull != null and ship_hull != null and ship_hull.mesh.get_surface_count() == 2
+			and ship_hull.mesh.get_aabb().size.z > 600.0,
+			"the Colossus and the capital ship are each one plated hull, the ship's ports lit")
+	var colossus_draws := 0
+	if giants != null:
+		for part in (giants.get("_colossus") as Node3D).find_children("*", "MeshInstance3D", true, false):
+			if not (part as MeshInstance3D).mesh is QuadMesh:
+				colossus_draws += 1
+	t.check(colossus_draws > 0 and colossus_draws <= 18, "the Colossus's hull is a mesh a moving part, not a node a box")
+	var skyline := map.find_child("Skyline", true, false) as MeshInstance3D
+	t.check(skyline != null and skyline.mesh.get_surface_count() <= 2, "the skyline's blocks and roofs are one mesh")
 	map.queue_free()
 	Look.enabled = was_on
 	# Without Look, none of it.

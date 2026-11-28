@@ -19,6 +19,10 @@ uniform float haze_amount = 0.42;
 uniform float low_from = 30.0;
 uniform float low_to = 160.0;
 uniform float lit = 0.0;
+// With `relief` on (`Look.trim("distant_relief")`, the giants) faces take
+// a little light by how they face, so plating and ribs read through the
+// haze instead of one flat cutout: tops palest, flanks less, undersides not.
+uniform float relief = 0.0;
 // A window's cell on a wall (m across, m up), and the share of cells lit.
 uniform vec2 cell = vec2(4.5, 3.6);
 uniform float windows = 0.07;
@@ -46,6 +50,10 @@ void fragment() {
 	// The thicker the air overall, the more even it gets top to bottom.
 	amount = mix(amount, haze_amount, smoothstep(0.6, 1.0, haze_amount));
 	vec3 colour = dark.rgb;
+	if (relief > 0.0) {
+		float face = 0.9 * max(normal_world.y, 0.0) + 0.45 * abs(normal_world.x) + 0.25 * abs(normal_world.z);
+		colour *= 1.0 + relief * face;
+	}
 	if (lit > 0.0 && abs(normal_world.y) < 0.5) {
 		vec2 along = normalize(vec2(-normal_world.z, normal_world.x));
 		vec2 uv = vec2(dot(world.xz, along), world.y) / cell;

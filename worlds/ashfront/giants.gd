@@ -9,6 +9,12 @@ extends Node3D
 ## a targeting line finds the Colossus, an orbital lance comes down on it
 ## out of the sky and it falls, lies burning a while, and is gone into the
 ## smoke before the next one walks out of it.
+##
+## Each moving part's hull is one mesh (`KitMesh`): the big boxes that make
+## its shape, broken up by armour ribs, blocks on its back, pipes, vents and
+## rows of lit ports, so it reads as a built machine and not a stack of
+## crates. All of it is hull in the skyline's own hand-hazed shading
+## (`Look.trim("distant_relief")`), the ports in `"distant_window"`.
 
 ## How far out the Colossus walks, and how high its hips ride (before `SCALE`).
 const WALK_RADIUS := 750.0
@@ -93,16 +99,25 @@ var _colossus_lights: Array[GeometryInstance3D] = []
 var _shown_fade := -1.0
 ## Seconds since the last strike when last placed, to hear each blow once.
 var _last_since := -INF
+## The hull pieces of each moving part, merged into one mesh as it is
+## built (`_merge_hulls`): parent node to `KitMesh`.
+var _kits := {}
+var _hull: Material
+## The detail's own RNG, so every machine shows the same giants.
+var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	name = "Giants"
 	set_meta("walk_through", "scenery past the rim")
-	var hull := Look.trim("distant")
+	_hull = Look.trim("distant_relief")
+	var hull := _hull
+	_rng.seed = 7171
 	_build_colossus(hull)
 	_build_ship(hull)
 	for i in WING_SIZE.y:
 		_wing.append(_build_dropship(hull))
+	_merge_hulls()
 	# Every part is far off and drawn as far as the sky goes: small parts
 	# would otherwise be cut off close by (`Look._limit_draw_distance`).
 	for part in find_children("*", "MeshInstance3D", true, false):
@@ -286,8 +301,20 @@ func _build_dropship(hull: Material) -> Node3D:
 	_box(Vector3(8, 5, 26), Transform3D.IDENTITY, hull, ship)
 	_box(Vector3(28, 1.2, 9), Transform3D(Basis(Vector3.UP, 0.0), Vector3(0, 0.5, 3)), hull, ship)
 	_box(Vector3(5, 3, 8), Transform3D.IDENTITY.translated(Vector3(0, 3.5, 6)), hull, ship)
+	# A chin under the nose, a lit canopy, a tail fin and a spine of plates.
+	_box(Vector3(6, 2.2, 8), Transform3D(Basis(Vector3.RIGHT, -0.2), Vector3(0, -2.6, -8)), hull, ship)
+	_kit(ship).add_box("window", Vector3(5.2, 0.8, 0.3), Transform3D(Basis(Vector3.RIGHT, -0.5), Vector3(0, 1.9, -12.9)))
+	_box(Vector3(0.8, 5, 6), Transform3D(Basis(Vector3.RIGHT, 0.35), Vector3(0, 6, 9)), hull, ship)
+	for i in 3:
+		_box(Vector3(6.4, 0.8, 3.4), Transform3D.IDENTITY.translated(Vector3(0, 2.7, -8.0 + i * 5.0)), hull, ship)
 	for side: float in [-1.0, 1.0]:
 		_box(Vector3(3.5, 3.5, 9), Transform3D.IDENTITY.translated(Vector3(side * 12, 0, 5)), hull, ship)
+		# The pod's intake ring and its burning exhaust.
+		_box(Vector3(4.4, 4.4, 1.4), Transform3D.IDENTITY.translated(Vector3(side * 12, 0, 1.2)), hull, ship)
+		_kit(ship).add_box("window", Vector3(2.6, 2.6, 0.3), Transform3D.IDENTITY.translated(Vector3(side * 12, 0, 9.55)))
+		# A wingtip fin and a rack of missiles under the wing.
+		_box(Vector3(0.6, 3.0, 5.0), Transform3D(Basis(Vector3.FORWARD, side * 0.3), Vector3(side * 14.2, 1.4, 4.5)), hull, ship)
+		_box(Vector3(1.0, 1.0, 6.0), Transform3D.IDENTITY.translated(Vector3(side * 7.0, -0.4, 2.0)), hull, ship)
 		_light("flash", 10.0, Vector3(side * 12, 0, 11), ship)
 	_light("halo", 3.0, Vector3(0, -2.5, -12), ship)
 	return ship
@@ -302,17 +329,30 @@ func _build_colossus(hull: Material) -> void:
 	_colossus.add_child(_body)
 	# A hunched hull: low and long, the shoulders humped over the back
 	# legs, the front dipping to a head thrust forward on a short neck.
-	_box(Vector3(72, 30, 112), Transform3D(Basis(Vector3.RIGHT, 0.12), Vector3(0, 6, 4)), hull, _body)
-	_box(Vector3(58, 30, 56), Transform3D(Basis(Vector3.RIGHT, -0.22), Vector3(0, 30, -26)), hull, _body)
-	_box(Vector3(40, 18, 40), Transform3D(Basis(Vector3.RIGHT, 0.3), Vector3(0, 30, 22)), hull, _body)
-	_box(Vector3(22, 16, 34), Transform3D(Basis(Vector3.RIGHT, 0.35), Vector3(0, -4, 64)), hull, _body)
+	_plated(Vector3(72, 30, 112), Transform3D(Basis(Vector3.RIGHT, 0.12), Vector3(0, 6, 4)), _body, 14.0, 5, 0.25)
+	_plated(Vector3(58, 30, 56), Transform3D(Basis(Vector3.RIGHT, -0.22), Vector3(0, 30, -26)), _body, 11.0, 4, 0.0)
+	_plated(Vector3(40, 18, 40), Transform3D(Basis(Vector3.RIGHT, 0.3), Vector3(0, 30, 22)), _body, 10.0, 3, 0.0)
+	_plated(Vector3(22, 16, 34), Transform3D(Basis(Vector3.RIGHT, 0.35), Vector3(0, -4, 64)), _body, 8.0, 0, 0.0)
+	# Pipe bundles down each side of its back, and hanging armour skirts
+	# along the flanks over the hips.
+	var back := Transform3D(Basis(Vector3.RIGHT, 0.12), Vector3(0, 6, 4))
+	for side: float in [-1.0, 1.0]:
+		_kit(_body).add("Column_Pipes", back * Transform3D(Basis(Vector3.RIGHT, PI * 0.5).scaled_local(Vector3(4.5, 18.0, 4.5)), Vector3(side * 27.0, 15.0, -44.0)))
+		for i in 5:
+			var skirt := back * Transform3D(Basis(Vector3.FORWARD, side * 0.18), Vector3(side * 37.5, -12.0, -42.0 + i * 21.0))
+			_box(Vector3(3.0, 16.0, 18.0), skirt, hull, _body)
 	var head := Node3D.new()
 	head.position = Vector3(0, -14, 86)
 	head.basis = Basis(Vector3.RIGHT, 0.25)
 	_body.add_child(head)
-	_box(Vector3(30, 18, 30), Transform3D.IDENTITY, hull, head)
+	_plated(Vector3(30, 18, 30), Transform3D.IDENTITY, head, 7.0, 0, 0.0)
 	_box(Vector3(34, 6, 22), Transform3D.IDENTITY.translated(Vector3(0, 10, -2)), hull, head)
 	_box(Vector3(10, 10, 16), Transform3D.IDENTITY.translated(Vector3(0, -12, 6)), hull, head)
+	# Cheek guards swept back past the face, sensor pods and horns of mast.
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(5, 14, 26), Transform3D(Basis(Vector3.UP, side * 0.2), Vector3(side * 17.5, -2, 4)), hull, head)
+		_box(Vector3(6, 6, 9), Transform3D.IDENTITY.translated(Vector3(side * 12, 15, -6)), hull, head)
+		_box(Vector3(1.4, 22, 1.4), Transform3D(Basis(Vector3.BACK, side * -0.35), Vector3(side * 15, 22, -10)), hull, head)
 	# One long eye slit across its face, and a glow round it to carry far.
 	_eye = Node3D.new()
 	head.add_child(_eye)
@@ -322,10 +362,15 @@ func _build_colossus(hull: Material) -> void:
 	# A gun along the spine and a mast, and vents on the hump trailing smoke.
 	_box(Vector3(5, 5, 90), Transform3D(Basis(Vector3.RIGHT, 0.05), Vector3(0, 46, 30)), hull, _body)
 	_box(Vector3(14, 10, 22), Transform3D.IDENTITY.translated(Vector3(0, 46, -6)), hull, _body)
+	_box(Vector3(8, 8, 8), Transform3D.IDENTITY.translated(Vector3(0, 46, 75)), hull, _body)
 	_box(Vector3(2.5, 50, 2.5), Transform3D.IDENTITY.translated(Vector3(14, 66, -30)), hull, _body)
+	# Yards across the mast, like a ship's.
+	for i in 3:
+		_box(Vector3(14.0 - i * 3.0, 1.0, 1.0), Transform3D.IDENTITY.translated(Vector3(14, 58 + i * 10, -30)), hull, _body)
 	_light("halo", 6.0, Vector3(14, 92, -30), _body)
 	for vent: Vector3 in [Vector3(-16, 46, -40), Vector3(16, 46, -44)]:
 		_box(Vector3(8, 14, 8), Transform3D.IDENTITY.translated(vent), hull, _body)
+		_kit(_body).add("Prop_Vent_Big", Transform3D(Basis.IDENTITY.scaled(Vector3(3.2, 3.2, 3.2)), vent + Vector3(0, 7, 0)))
 		if plume_maker.is_valid():
 			var plume: Node3D = plume_maker.call(Vector3.ZERO, 3.0)
 			plume.position = vent + Vector3(0, 8, 0)
@@ -368,7 +413,13 @@ func _build_colossus(hull: Material) -> void:
 		hip.position = _body.position + (leg[0] as Vector3)
 		_colossus.add_child(hip)
 		_box(Vector3(20, 16, 20), Transform3D.IDENTITY, hull, hip)
+		_box(Vector3(24, 6, 14), Transform3D.IDENTITY.translated(Vector3(0, 9, 0)), hull, hip)
 		_taper(9.0, 6.0, THIGH, Vector3(0, -THIGH * 0.5, 0), hull, hip)
+		# Armour rings down the thigh, and a ram along it to the knee.
+		for i in 3:
+			var ring := 2.0 * lerpf(9.0, 6.0, (i + 1) / 4.0) + 5.0
+			_box(Vector3(ring, 6.0, ring), Transform3D.IDENTITY.translated(Vector3(0, -THIGH * (i + 1) / 4.0, 0)), hull, hip)
+		_box(Vector3(3.0, THIGH * 0.8, 3.0), Transform3D.IDENTITY.translated(Vector3(0, -THIGH * 0.5, 10.5)), hull, hip)
 		var knee := Node3D.new()
 		knee.position = Vector3(0, -THIGH, 0)
 		hip.add_child(knee)
@@ -376,6 +427,11 @@ func _build_colossus(hull: Material) -> void:
 		_light("halo", 5.0, Vector3(0, 10, 0), knee)
 		_blinkers.append(_lights[_lights.size() - 1])
 		_taper(6.0, 2.6, SHIN, Vector3(0, -SHIN * 0.5, 0), hull, knee)
+		# A blade of armour down the front of the shin and bands round it.
+		_box(Vector3(3.0, SHIN * 0.45, 12.0), Transform3D.IDENTITY.translated(Vector3(0, -SHIN * 0.3, 8.0)), hull, knee)
+		for i in 4:
+			var band := 2.0 * lerpf(6.0, 2.6, (i + 1) / 5.0) + 4.0
+			_box(Vector3(band, 5.0, band), Transform3D.IDENTITY.translated(Vector3(0, -SHIN * (i + 1) / 5.0, 0)), hull, knee)
 		var foot := Node3D.new()
 		foot.position = Vector3(0, -SHIN, 0)
 		knee.add_child(foot)
@@ -398,17 +454,91 @@ func _build_ship(hull: Material) -> void:
 	# Broadside to the field, nose a little down, as if holding station.
 	_ship_home = Transform3D(Basis(Vector3.UP, -angle) * Basis(Vector3.RIGHT, -0.04),
 			Vector3(cos(angle) * SHIP_RADIUS, SHIP_HEIGHT, sin(angle) * SHIP_RADIUS))
-	_box(Vector3(150, 46, 600), Transform3D.IDENTITY, hull, _ship)
-	_box(Vector3(104, 34, 230), Transform3D.IDENTITY.translated(Vector3(0, 36, -110)), hull, _ship)
-	_box(Vector3(38, 58, 56), Transform3D.IDENTITY.translated(Vector3(28, 76, -160)), hull, _ship)
-	_box(Vector3(230, 12, 110), Transform3D.IDENTITY.translated(Vector3(0, -8, 150)), hull, _ship)
-	_box(Vector3(60, 22, 140), Transform3D.IDENTITY.translated(Vector3(0, -30, -60)), hull, _ship)
+	_plated(Vector3(150, 46, 600), Transform3D.IDENTITY, _ship, 40.0, 26, 1.0)
+	_plated(Vector3(104, 34, 230), Transform3D.IDENTITY.translated(Vector3(0, 36, -110)), _ship, 28.0, 12, 1.0)
+	_plated(Vector3(38, 58, 56), Transform3D.IDENTITY.translated(Vector3(28, 76, -160)), _ship, 14.0, 4, 1.0)
+	_plated(Vector3(230, 12, 110), Transform3D.IDENTITY.translated(Vector3(0, -8, 150)), _ship, 22.0, 8, 0.4)
+	_plated(Vector3(60, 22, 140), Transform3D.IDENTITY.translated(Vector3(0, -30, -60)), _ship, 20.0, 0, 0.6)
+	# A prow that steps down to a ram, and a tapering stern.
+	_box(Vector3(110, 30, 50), Transform3D.IDENTITY.translated(Vector3(0, -6, -324)), hull, _ship)
+	_box(Vector3(60, 16, 40), Transform3D.IDENTITY.translated(Vector3(0, -12, -368)), hull, _ship)
+	# Masts and aerials over the bridge.
+	for i in 3:
+		_box(Vector3(2.0, 40.0 + i * 16.0, 2.0), Transform3D.IDENTITY.translated(Vector3(18 + i * 10, 105 + i * 8, -168 + i * 8)), hull, _ship)
+	# Gun turrets down the spine, twin barrels laid forward.
+	for i in 5:
+		var at := Vector3(0, 23, 40 + i * 50) if i < 3 else Vector3((i - 3.5) * 70, 23, -280)
+		var turret := Transform3D(Basis(Vector3.UP, _rng.randf_range(-0.4, 0.4)), at)
+		_box(Vector3(18, 7, 20), turret.translated_local(Vector3(0, 3.5, 0)), hull, _ship)
+		for side: float in [-1.0, 1.0]:
+			_box(Vector3(2.2, 2.2, 34), turret.translated_local(Vector3(side * 4, 5, -24)), hull, _ship)
+	# Engine bells across the stern, burning.
+	for i in 5:
+		var bell := Vector3(-60 + i * 30, -4, 300)
+		_box(Vector3(24, 24, 14), Transform3D.IDENTITY.translated(bell + Vector3(0, 0, 7)), hull, _ship)
+		_kit(_ship).add_box("window", Vector3(18, 18, 0.5), Transform3D.IDENTITY.translated(bell + Vector3(0, 0, 14.3)))
 	for i in 5:
 		_light("flash", 46.0, Vector3(-60 + i * 30, -4, 306), _ship)
 		_light("halo", 10.0, Vector3(-72 + i * 36, -24, -220 + i * 90), _ship)
 
 
+## A hull box broken up: armour ribs across it every `every` m along its
+## length, standing proud of its top and flanks; `blocks` blocks of
+## machinery on its back; and, a share `ports` of the way, rows of lit
+## ports down its flanks.
+func _plated(size: Vector3, xform: Transform3D, parent: Node3D, every: float, blocks: int, ports: float) -> void:
+	_box(size, xform, _hull, parent)
+	var kit := _kit(parent)
+	var proud := 0.8 + size.x * 0.012
+	var count := maxi(1, int(size.z / every))
+	for i in count:
+		var z := -size.z * 0.5 + (i + 0.5) * size.z / count
+		kit.add_box("hull", Vector3(size.x + proud * 2.0, size.y * 0.8 + proud, every * 0.28), xform.translated_local(Vector3(0, size.y * 0.1 + proud * 0.5, z)))
+	for i in blocks:
+		var wide := Vector3(_rng.randf_range(0.08, 0.3) * size.x, _rng.randf_range(0.06, 0.3) * size.y, _rng.randf_range(0.04, 0.12) * size.z)
+		var at := Vector3(_rng.randf_range(-0.5, 0.5) * (size.x - wide.x), size.y * 0.5 + wide.y * 0.5, _rng.randf_range(-0.5, 0.5) * (size.z - wide.z))
+		kit.add_box("hull", wide, xform.translated_local(at))
+	if ports <= 0.0:
+		return
+	# Decks of lit ports down both flanks, in runs with gaps.
+	var decks := maxi(1, int(size.y / 8.0) - 1)
+	for side: float in [-1.0, 1.0]:
+		for d in decks:
+			var y := -size.y * 0.5 + (d + 1) * size.y / (decks + 1)
+			var z := -size.z * 0.5 + 4.0
+			while z < size.z * 0.5 - 8.0:
+				var run := _rng.randf_range(4.0, 22.0)
+				if _rng.randf() < ports * 0.55:
+					kit.add_box("window", Vector3(0.6, 1.3, run), xform.translated_local(Vector3(side * (size.x * 0.5 + 0.2), y, z + run * 0.5)))
+				z += run + _rng.randf_range(3.0, 14.0)
+
+
+## The `KitMesh` that gathers `parent`'s hull pieces.
+func _kit(parent: Node3D) -> KitMesh:
+	if not _kits.has(parent):
+		_kits[parent] = KitMesh.new()
+	return _kits[parent]
+
+
+## Turns each moving part's gathered hull pieces into one mesh under it:
+## hull and kit pieces in the hull's shading, ports in the window glow.
+func _merge_hulls() -> void:
+	var window := Look.trim("distant_window")
+	var materials := {"window": window, "glow": window}
+	for key: String in ["hull", "t1", "t2", "t3", "dark", "crates", "props"]:
+		materials[key] = _hull
+	for parent: Node3D in _kits:
+		var hull := (_kits[parent] as KitMesh).node("Hull", materials, ["hull", "window"])
+		parent.add_child(hull)
+	_kits.clear()
+
+
+## A box of the hull, gathered into its part's one mesh; anything else
+## (the eye's slit) is a node of its own.
 func _box(size: Vector3, xform: Transform3D, material: Material, parent: Node3D) -> MeshInstance3D:
+	if material == _hull:
+		_kit(parent).add_box("hull", size, xform)
+		return null
 	var node := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size
@@ -429,6 +559,9 @@ func _taper(top: float, bottom: float, length: float, at: Vector3, material: Mat
 	mesh.height = length
 	mesh.radial_segments = 8
 	mesh.material = material
+	if material == _hull:
+		_kit(parent).add_mesh("hull", mesh, 0, Transform3D(Basis.IDENTITY, at))
+		return
 	node.mesh = mesh
 	node.position = at
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
