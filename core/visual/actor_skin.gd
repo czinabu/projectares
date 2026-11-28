@@ -153,8 +153,12 @@ var land_time := 0.4
 ## crash: the body leans back against the skid by up to `run_out_lean`
 ## radians while it is still going faster than `run_out_speed` m/s, and the
 ## squat is kept to `run_out_squat` so it never folds up flat on the ground.
+## The skid lasts at most `run_out_time` seconds, and ends at once when the
+## player runs on (moving with the stick at running speed or slower), so
+## the legs never freeze in it while the body runs.
 var run_out_lean := 0.3
 var run_out_speed := 7.0
+var run_out_time := 0.9
 var run_out_squat := 0.4
 ## Vertical speed at which a jump counts as fully rising or fully falling.
 var air_rise_speed := 4.0
@@ -623,6 +627,7 @@ var _last_heading := 0.0
 ## Skating: the heading last frame, and the carve's lean now.
 var _skate_heading := NAN
 var _run_out := false
+var _run_out_left := 0.0
 var _skate_carve := 0.0
 var _has_heading := false
 ## The actor's yaw last frame: while the body lies flat in flight its
@@ -1478,6 +1483,7 @@ func _on_landed(impact_speed: float) -> void:
 	_land_left = 1.0
 	var flat := Vector2(actor.velocity.x, actor.velocity.z).length()
 	_run_out = (_glide > 0.05 or _boost > 0.05) and flat > run_out_speed
+	_run_out_left = run_out_time
 	if _run_out:
 		_land_depth = minf(_land_depth, run_out_squat)
 
@@ -5489,7 +5495,10 @@ func _update_glide(delta: float) -> void:
 		elif alive and _air > 0.0 and is_airborne():
 			# A running jump leans into it, and rights itself for the landing.
 			tilt = dir * leap_lean * clampf(speed / leap_lean_speed, 0.0, 1.0) * (1.0 - _air_fall)
-	_run_out = _run_out and alive and speed > run_out_speed * 0.5 and actor.is_on_floor()
+	_run_out_left = maxf(0.0, _run_out_left - delta)
+	var running_on := actor.cmd.move.length() > 0.1 and speed <= actor.sprint_speed + 0.5
+	_run_out = _run_out and alive and speed > run_out_speed * 0.5 and actor.is_on_floor() \
+			and _run_out_left > 0.0 and not running_on
 	if locomotion != null:
 		locomotion.skid = _run_out
 	# The actor turns with the view, and this model is its child. While the

@@ -48,7 +48,9 @@ date in the same PR.
   boost poses for the other two. Touching down out of a glide or a boost
   at speed is a run-out (`ActorSkin._run_out`): the body leans back
   against the skid (`run_out_lean`) with a shallow squat (`run_out_squat`)
-  until it slows, never pitched forward onto the ground, and the legs brace
+  until it slows (at most `run_out_time`, and over at once when the player
+  runs on with the stick at running speed, or the legs would freeze in
+  the skid while the body runs), never pitched forward onto the ground, and the legs brace
   in a skid on the feet (`Locomotion.skid`, `_skid_pose`: the lead leg out
   ahead nearly straight, the trailing leg bent under, the back straightened),
   shown in place of the slide when a wings landing slides. Check by eye with
