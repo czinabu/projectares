@@ -240,6 +240,15 @@ static func _solo_tour(t: Node) -> void:
 	t.check(again.size() == 2 and again[0].begins_with("Welcome home"),
 			"with the old messages cleared: the welcome again, then the step it passed to (%d)" % again.size())
 
+	Profile.onboarding = {"state": Onboarding.ACTIVE, "step": "bank"}
+	main._tour_show()
+	main._tour_guide_tick(0.1)
+	t.check(main._tour_guide != null and main._tour_guide.target.is_equal_approx(main.base.door.global_position)
+				and main._tour_guide.words().contains("first"),
+			"a step out in a world, seen from home, leads to the way out first")
+	Profile.onboarding = {"state": Onboarding.ACTIVE, "step": "watch"}
+	main._tour_show()
+
 	# DEV MODE: the tour never runs in dev mode.
 	DevMode.enabled = true
 	main._tour_show()
