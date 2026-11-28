@@ -715,6 +715,17 @@ blueprints. A new expedition daily: loot two caches inside the Engine.
   horde, the flak batteries and bursts, the low sky's runs and the flares;
   High and Medium keep Full, Low (laptops) picks Thinned and Lowest picks
   Light. All of it keeps happening, only less at once.
+- **A fortress line on the rim (Caleb's go-ahead to use the Modular
+  Sci-Fi Megakit).** The rim's crest is no longer a bare quarry edge: a
+  ruined wall of armour plate runs along all four sides just past the
+  map's edge walls (`worlds/ashfront/rim_fort.gd`, the map's
+  `make_rim_fort`), lengths of 15 m wall with towers every 80 m, each with
+  a red lamp, and furnace-orange slits along the cabled tops. In front of
+  each battle shelf it is broken down to low stubs and gaps, so the far war
+  shows through. Built once from Quaternius's Megakit pieces scaled up five
+  times and dressed in the game's own dark metal, merged into one mesh a
+  side: at most sixteen draws and nothing a frame. View only: no collision,
+  none on a server, and nothing of it reaches in over the rim's slope.
 - **The ruined city has life in it.** The skyline's city blocks
   (`Look.trim("distant_lit")`) keep a scattering of lit windows and a few
   floors still burning, flickering, drawn in the skyline shader with no

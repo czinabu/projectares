@@ -206,6 +206,7 @@ const SUNSHAFTS := preload("res://worlds/ashfront/sunshafts.gd")
 const LOWSKY := preload("res://worlds/ashfront/lowsky.gd")
 const HORDE := preload("res://worlds/ashfront/horde.gd")
 const FLARES := preload("res://worlds/ashfront/flares.gd")
+const RIM_FORT := preload("res://worlds/ashfront/rim_fort.gd")
 ## The burning horizon: a ring of fire-glow this far out, behind the
 ## skyline, glowing this much when quiet and in all-out war.
 const GLOW_RING := 560.0
@@ -340,6 +341,7 @@ func _ready() -> void:
 		var battle := make_battle()
 		add_child(battle)
 		add_child(make_horde())
+		add_child(make_rim_fort())
 		add_child(FLARES.new())
 		add_child(make_low_sky(battle))
 	set_process(Look.enabled)
@@ -363,6 +365,15 @@ func make_horde() -> Node3D:
 	horde.flats = shelf_flats()
 	horde.ground_at = scenery_height
 	return horde
+
+
+## The fortress line on the rim (view only, `rim_fort.gd`): past the map's
+## edge, broken down in front of each shelf so the far war shows through.
+func make_rim_fort() -> Node3D:
+	var fort: Node3D = RIM_FORT.new()
+	fort.shelves = SHELVES
+	fort.ground_at = scenery_height
+	return fort
 
 
 ## The busy low sky (view only): gunships raking the scenery army, fighters
