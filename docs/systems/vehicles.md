@@ -71,7 +71,15 @@ date in the same PR.
   skin seats the model from the vehicle's `seat_point`, `grip_points` and
   `peg_points` (`Locomotion._ride_pose`): hips on the seat, leaning forward,
   feet on the pegs, hands on the grips, the whole body tipped with the
-  bike's lean (`ActorSkin.ride_frame`). The left hand keeps its grip; the
+  bike's lean (`ActorSkin.ride_frame`). On a bike the rider also hangs
+  into a turn (Caleb's ask, "leaning left or right ... like for the player
+  model"): the item's `rider_hang` stat (radians at full lock, Scrapper 0.4,
+  Raider 0.35) times the steer the model shows (`Vehicle.steer_seen`), faded
+  in above a walking pace, slides the hips to the inside of the seat
+  (`Locomotion.ride_hang_hips`), rolls the spine into the turn and turns the
+  head back toward level (`ride_hang_level`). It is the skin's pose, so
+  first and third person see the same body (`tests/rider_hang_tests.gd`).
+  The left hand keeps its grip; the
   right takes its grip only with nothing in it, holds a gun out toward the
   aim, and leaves a blade to its usual hold, so melee windups still show.
   The phone works riding too (Caleb's bug: it was unusable on a vehicle):

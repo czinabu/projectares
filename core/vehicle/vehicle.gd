@@ -94,6 +94,11 @@ var grip_points: Array[Vector3] = [Vector3(-0.22, 1.2, -0.3), Vector3(0.22, 1.2,
 var peg_points: Array[Vector3] = [Vector3(-0.21, 0.44, 0.04), Vector3(0.21, 0.44, 0.04)]
 ## How far the rider leans forward from the hips, in radians.
 var rider_lean := 0.8
+## How far the rider hangs into a turn past the body's own lean, in
+## radians at full lock (view only, `Locomotion._ride_pose`, by
+## `steer_seen`): a bike's rider drops the hips to the inside and rolls the
+## back over. 0 sits upright in the seat.
+var rider_hang := 0.0
 ## Where the rider lands when getting off, relative to the vehicle.
 var exit_offset := Vector3(1.4, 0.1, 0.0)
 var body_color := Color(0.85, 0.45, 0.15)
@@ -386,6 +391,9 @@ var steer_view_angle := 0.38
 var steer_view_fast := 0.35
 ## The steering shown now, in radians (positive turns left).
 var steer_view := 0.0
+## How hard it is turning, as the pose sees it: -1 full left to 1 full right,
+## from how the heading swings (so the same on every machine).
+var steer_seen := 0.0
 var _wheels: Array[Node3D] = []
 var _pivots: Array[Node3D] = []
 var _rotors: Array[Node3D] = []
@@ -1415,6 +1423,7 @@ func _pose_model(delta: float) -> void:
 	var steer := clampf(-_yaw_rate / maxf(turn_rate, 0.1), -1.0, 1.0)
 	if floats:
 		steer = _turning
+	steer_seen = steer
 	var grounded := _grounded()
 	var target_lean := steer * clampf(absf(speed) / max_speed, 0.0, 1.0) * lean_amount
 	if rider != null and grounded and absf(speed) < 0.6 and (model == "bike" or model == "hoverbike"):
