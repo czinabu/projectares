@@ -72,7 +72,8 @@ if __name__ == "__main__":
     e = emblem(300)
     splash.alpha_composite(e, ((W - 300) // 2, 200))
     d = ImageDraw.Draw(splash)
-    f = ImageFont.truetype("assets/fonts/Rajdhani-SemiBold.ttf", 64)
+    f = ImageFont.truetype("assets/fonts/Oxanium.ttf", 64)
+    f.set_variation_by_axes([600])
     text = "V E R G E"
     tw = d.textlength(text, font=f)
     d.text(((W - tw) / 2, 540), text, font=f, fill=(240, 237, 230, 255))

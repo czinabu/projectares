@@ -6,6 +6,8 @@ extends RefCounted
 ## Loaded at runtime, not preloaded: a preload fails to parse on a fresh
 ## checkout before Godot has imported the font.
 const FONT_PATH := "res://assets/fonts/Rajdhani-SemiBold.ttf"
+## The title screen's display face (a variable font; the screen asks for weight 600).
+const DISPLAY_FONT_PATH := "res://assets/fonts/Oxanium.ttf"
 
 const ACCENT := Color(1.0, 0.62, 0.22)
 const INK := Color(0.9, 0.88, 0.84)

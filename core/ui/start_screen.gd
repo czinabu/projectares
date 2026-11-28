@@ -246,6 +246,23 @@ func _add_shade() -> void:
 	wash.stretch_mode = TextureRect.STRETCH_SCALE
 	wash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(wash)
+	# And a dark edge round the whole picture, so the eye settles on the lane.
+	var edge := Gradient.new()
+	edge.set_color(0, Color(0.0, 0.0, 0.0, 0.0))
+	edge.set_color(1, Color(0.0, 0.0, 0.02, 0.7))
+	edge.set_offset(0, 0.55)
+	var edge_texture := GradientTexture2D.new()
+	edge_texture.gradient = edge
+	edge_texture.fill = GradientTexture2D.FILL_RADIAL
+	edge_texture.fill_from = Vector2(0.5, 0.5)
+	edge_texture.fill_to = Vector2(1.0, 1.0)
+	var vignette := TextureRect.new()
+	vignette.texture = edge_texture
+	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vignette.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	vignette.stretch_mode = TextureRect.STRETCH_SCALE
+	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(vignette)
 
 
 func _label(text: String, size: int, color: Color, spacing: int) -> Label:
@@ -266,8 +283,9 @@ func _label(text: String, size: int, color: Color, spacing: int) -> Label:
 func _spaced(spacing: int) -> FontVariation:
 	var font := FontVariation.new()
 	font.base_font = ThemeDB.fallback_font
-	var own := load(UiTheme.FONT_PATH) as Font
+	var own := load(UiTheme.DISPLAY_FONT_PATH) as Font
 	if own:
 		font.base_font = own
+		font.variation_opentype = {2003265652: 600}  # the "wght" axis
 	font.spacing_glyph = spacing
 	return font
