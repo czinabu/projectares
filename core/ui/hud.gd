@@ -239,7 +239,8 @@ func _process(delta: float) -> void:
 			"map": controller.map_pick, "standing": controller.standing_pick, "pack": controller.pack_pick,
 			"race": controller.race_pick, "race_open": controller.watch_open == "contract",
 			"ghost": controller.ghost_pick, "life_time": life_time,
-			"mission": controller.mission_pick, "mission_open": controller.watch_open == "contract"} \
+			"mission": controller.mission_pick, "mission_open": controller.watch_open == "contract",
+			"abandon": controller.abandon_progress()} \
 			if controller != null else {"life_time": life_time}
 	picks["objective"] = objective
 	if controller != null:
@@ -458,7 +459,34 @@ static func watch_slots(p_raid: Raid, p: Actor, picked_toy := 0, pack_name := ""
 		slots.append(_slot("leave", "", "Banking", [], banking, false, true))
 	else:
 		slots.append(_slot("leave", banked_value(p), "Sign out" + banked_line(p), ["click", "key:L"], -1.0, false, false))
+	slots.append(abandon_slot(p_raid, p, float(picks.get("abandon", -1.0))))
 	return slots
+
+
+## The Abandon icon: hold fire on it to give this life up where you stand
+## (`Raid.abandon`), a quick way out that costs what you carry. It says
+## what that is, and what is already home and safe. `held` is the hold's
+## progress (below 0 for none). Empty where nothing is at stake.
+static func abandon_slot(p_raid: Raid, p: Actor, held := -1.0) -> Dictionary:
+	if p_raid == null or not p_raid.can_abandon(p):
+		return _slot("abandon", "", "Nothing to abandon here", [], -1.0, true, false)
+	if held >= 0.0:
+		return _slot("abandon", "", "Keep holding to abandon this life", ["click"], held, false, true)
+	return _slot("abandon", "", "Hold to abandon · " + abandon_cost(p_raid, p) + banked_line(p),
+			["click"], -1.0, false, false)
+
+
+## What abandoning would cost, in words: what you carry falls in your bag
+## or as the world's death rule says (only the loot you found where a world
+## keeps your gear on death).
+static func abandon_cost(p_raid: Raid, p: Actor) -> String:
+	var keeps := p_raid.world.keep_gear_on_death
+	var at_stake: Array[String] = []
+	at_stake.assign(p.inventory.items if keeps else p.get_drop_items())
+	var worth := ItemDB.total_value(at_stake) + maxi(p.scrip, 0)
+	if at_stake.is_empty() and p.scrip <= 0:
+		return "nothing on you to lose"
+	return ("lose the loot you found, worth %d" if keeps else "lose what you carry, worth %d") % worth
 
 
 ## The small holographic map on the watch's Map icon (Status tab), as plain
@@ -901,6 +929,7 @@ static func base_watch_slots(base_name: String, loadout: Dictionary, held: Array
 	slots.append(portal_slot(Portal.from_base(), portal_pick))
 	slots.append(mission_slot(mission_entries(held, objective), {}, mission_pick, mission_open))
 	slots.append(_slot("leave", "", "Home", [], -1.0, true, false))
+	slots.append(_slot("abandon", "", "Nothing to abandon at home", [], -1.0, true, false))
 	return slots
 
 
@@ -1790,16 +1819,16 @@ class Wrist:
 	const TAB_SLOTS := {
 		"summon": ["weapon", "vehicle", "artifact", "pack"],
 		"status": ["map", "standing"],
-		"mission": ["portal", "contract", "leave"],
+		"mission": ["portal", "contract", "leave", "abandon"],
 	}
 	## What each tab holds, the line shown on the tab row.
 	const TAB_LINES := {
 		"summon": "Weapons · vehicles · artifacts · pack",
 		"status": "Map · standing",
-		"mission": "Portal · missions · sign out",
+		"mission": "Portal · missions · sign out · abandon",
 	}
 	## Every icon, left to right, tab after tab (see `Hud.watch_slots`).
-	const SLOTS := ["weapon", "vehicle", "artifact", "pack", "map", "standing", "portal", "contract", "leave"]
+	const SLOTS := ["weapon", "vehicle", "artifact", "pack", "map", "standing", "portal", "contract", "leave", "abandon"]
 	const HOLO_TINT := Color(0.75, 1.0, 1.0, 0.95)
 	const GLOW_COLOR := Color(0.35, 0.95, 1.0)
 	## The card as projected light: faint scanlines that crawl up it, a
@@ -3111,6 +3140,13 @@ void fragment() {
 					_lines(ring, c, r, color, width)
 					draw_arc(c, 0.3 * r, 0.0, PI * 1.4, 12, color, width * 0.7, true)
 					_lines(PackedVector2Array([Vector2(-0.9, 1.0), Vector2(0.9, 1.0)]), c, r, color, width * 0.7)
+				"abandon":
+					# A flag on a broken pole: giving up.
+					_lines(PackedVector2Array([Vector2(-0.55, 1.0), Vector2(-0.55, 0.2)]), c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.45, 0.05), Vector2(-0.55, -1.0)]), c, r, color, width)
+					_lines(PackedVector2Array([Vector2(-0.53, -0.95), Vector2(0.8, -0.7), Vector2(-0.48, -0.35)]),
+							c, r, color, width * 0.8)
+					_lines(PackedVector2Array([Vector2(-0.9, 1.0), Vector2(0.3, 1.0)]), c, r, color, width * 0.7)
 				"leave":
 					_lines(PackedVector2Array([Vector2(-0.75, -0.1), Vector2(-0.75, 1), Vector2(0.75, 1),
 							Vector2(0.75, -0.1)]), c, r, color, width)

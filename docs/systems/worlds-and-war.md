@@ -262,3 +262,19 @@ date in the same PR.
   where protection ends; the gate's sign hangs from a beam over the posts
   and reads on its front only (the rule outside, "leaving" inside), never
   floating or mirrored. Ashfront dresses its gates in `_dress_outposts`.
+
+## Abandon
+
+- `Raid.abandon` ends a life where it stands, for the watch's Abandon
+  icon: a quick way out that is never a way to leave with the loot. It is
+  a death in every way (outcome "died", cause "abandon", through
+  `Actor.kill`): the world's death rule decides what drops (a bag, a scrip
+  pile, or only the loot found where gear is kept on death), the insured
+  item is recalled and salvage paid. The result carries "abandoned", and
+  the game then goes straight home instead of offering a new life.
+- If the player was hurt within `WorldDef.combat_time`, the last attacker
+  (`PlayerState.last_hit_by`) is the killer, so abandoning never takes a
+  kill, renown or a bounty from anyone.
+- Only where `Raid.can_abandon`: out in a world where gear is at stake,
+  alive, and playing the body (never a body a dropped connection left
+  standing). Authority only; a client asks with `NetSession.abandon`.

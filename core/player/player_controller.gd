@@ -10,6 +10,9 @@ extends Node
 ## The player pressed the sign-out key. Alive, that starts or cancels a
 ## sign-out. Dead, it means going back to the hub.
 signal sign_out_requested
+## Fire was held on the watch's Abandon icon for `abandon_hold` seconds:
+## give this life up where you stand (`Raid.abandon`).
+signal abandon_requested
 ## The player, dead, asked to drop back in.
 signal redeploy_requested
 ## While down: a place to land was picked, with a click on the watch's
@@ -351,6 +354,12 @@ var map_targets: Array[Dictionary] = []
 var drop_pick := 0
 ## The artifact icon was clicked; sent as `artifact_pressed` next command.
 var _artifact_click := false
+## Seconds fire must be held on the Abandon icon, so a stray click never
+## throws a life away. View only.
+var abandon_hold := 3.0
+## How long fire has been held on it, from a click that began there.
+var abandon_held := 0.0
+var _abandon_armed := false
 ## Seconds left of the throw just made: the hand is busy, so the weapon
 ## stays put away and takes no input (`ActionPose.toy_throw_time`).
 var _toy_busy_left := 0.0
@@ -721,6 +730,11 @@ func click_watch() -> bool:
 	if is_on_sign_out():
 		sign_out_requested.emit()
 		return true
+	if is_on_abandon():
+		# Only arms it: fire held on from here counts up (`tick_abandon`).
+		_abandon_armed = true
+		abandon_held = 0.0
+		return true
 	if is_watch_on("map") and _is_open("map") and not map_targets.is_empty():
 		map_target_clicked.emit(clampi(map_pick, 0, map_targets.size() - 1))
 		return true
@@ -753,7 +767,7 @@ func click_watch() -> bool:
 ## True while fire works the raised watch instead of the weapon.
 func watch_takes_fire() -> bool:
 	return (watch_tabs and is_watch_up()) or (watch_open == "" and watch_entries(focused_watch_icon()) > 1) or is_picking_toys() or pack_target() != null or is_picking_weapons() or is_on_artifact() \
-			or is_watch_on("portal") or is_on_sign_out() \
+			or is_watch_on("portal") or is_on_sign_out() or is_on_abandon() \
 			or (is_watch_on("map") and not map_targets.is_empty()) \
 			or (watch_open == "standing" and is_watch_on(watch_open)) \
 			or (is_watch_on("pack") and _is_open("pack") and not actor.inventory.items.is_empty()) or is_on_race() \
@@ -771,6 +785,35 @@ func is_on_missions() -> bool:
 ## nothing to sign out of.
 func is_on_sign_out() -> bool:
 	return is_watch_on("leave") and Raid.of(actor) != null
+
+
+## True while the raised watch is on the Abandon icon where a life can be
+## given up (`Raid.can_abandon`).
+func is_on_abandon() -> bool:
+	var raid := Raid.of(actor)
+	return is_watch_on("abandon") and raid != null and raid.can_abandon(actor)
+
+
+## Counts fire held on the Abandon icon (`held`), from a click that began
+## there; at `abandon_hold` seconds it asks for the abandon and lowers the
+## watch. Letting go, or looking away, starts it over.
+func tick_abandon(delta: float, held: bool) -> void:
+	if not _abandon_armed or not held or not is_on_abandon():
+		_abandon_armed = false
+		abandon_held = 0.0
+		return
+	abandon_held += delta
+	if abandon_held >= abandon_hold:
+		_abandon_armed = false
+		abandon_held = 0.0
+		wrist_raised = false
+		watch_open = ""
+		abandon_requested.emit()
+
+
+## How far the Abandon hold is, 0..1, or below 0 when it is not held.
+func abandon_progress() -> float:
+	return clampf(abandon_held / maxf(abandon_hold, 0.01), 0.0, 1.0) if _abandon_armed else -1.0
 
 
 ## True while the raised watch is on the race icon on a race track (the
@@ -1440,6 +1483,7 @@ func _process(delta: float) -> void:
 	if actor.is_dead and held_toy != "":
 		hold_toy("")
 	_toy_busy_left = maxf(_toy_busy_left - delta, 0.0)
+	tick_abandon(delta, Input.is_action_pressed("fire"))
 	var weapon := actor.get_active_weapon()
 	var aiming := weapon != null and weapon.is_aiming()
 	var target_dist := 0.0
