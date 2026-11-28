@@ -9,6 +9,8 @@ const VIEWS := [
 	["forge_near", Vector2(28, -4), Vector2(2, -2), 1.7, 12.0],
 	["forge_mouth", Vector2(2, 18), Vector2(2, -2), 1.7, 3.0],
 	["forge_air", Vector2(-40, -36), Vector2(2, -2), 30.0, 20.0],
+	["walls_breach", Vector2(-130, 100), Vector2(-142, 114), 1.7, 2.0],
+	["walls_hill", Vector2(-128, -104), Vector2(-150, -118), 3.0, 10.0],
 	["carrier_far", Vector2(90, 100), Vector2(134, 132), 2.0, 6.0],
 	["carrier_near", Vector2(112, 150), Vector2(134, 128), 1.7, 6.0],
 	["carrier_air", Vector2(100, 180), Vector2(134, 132), 28.0, 4.0],

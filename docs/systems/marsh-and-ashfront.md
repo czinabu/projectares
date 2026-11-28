@@ -154,4 +154,6 @@ date in the same PR.
   drawn as the tank wreck model with its boxes hidden, the other kinds
   have their boxes plated (`clad_box`, `HULL_PANELS`). Check with
   `--kit-only` (`--kit-only wreck` for the wrecks, one of each kind up
-  close).
+  close). Every wall `_add_wall` builds and every steel plate is faced
+  in short kit panels (`_dress_walls`, `SHORT_PANELS`); the relay mast on
+  Signal Hill is a box drawn as a lattice of pipe columns (`_mast`).

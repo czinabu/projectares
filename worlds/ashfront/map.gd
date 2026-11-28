@@ -271,6 +271,10 @@ const RUSTED := {"t1": "t1_rust", "t2": "t2_rust", "t3": "t3_rust"}
 ## The crashed carrier's hull, fin and wing boxes (`_boxes_since`), for the
 ## dressing to plate.
 var _carrier_boxes := []
+## The relay mast on Signal Hill, drawn as a lattice tower by the dressing.
+var _mast: StaticBody3D
+## Every length of wall `_add_wall` built, for the dressing to plate.
+var _walls: Array[StaticBody3D] = []
 var _noise := FastNoiseLite.new()
 ## Flat ground: { at: Vector2, radius, height }.
 var _pads: Array[Dictionary] = []
@@ -908,8 +912,9 @@ func _build_forge(at: Vector2) -> void:
 func _build_hill(at: Vector2) -> void:
 	_add_building(at + Vector2(-6, -4), Vector3(8.0, 4.0, 6.0), true)
 	_add_building(at + Vector2(8, 6), Vector3(5.0, 3.0, 5.0), false)
-	# The mast.
+	# The mast: a plain box to stand against, drawn as a lattice tower.
 	_add_building(at + Vector2(7, -9), Vector3(1.6, 26.0, 1.6), false)
+	_mast = nav_region.get_child(nav_region.get_child_count() - 1)
 	for i in 5:
 		var spot := at + Vector2.from_angle(TAU * i / 5.0 + 0.3) * 19.0
 		_add_wall(_ground(spot), Vector3(6.0, 1.3, 1.0), -Vector2.from_angle(TAU * i / 5.0 + 0.3).angle() + PI * 0.5)
@@ -1108,6 +1113,7 @@ func _add_building(at: Vector2, size: Vector3, lootable: bool) -> void:
 func _add_wall(base: Vector3, size: Vector3, yaw: float) -> void:
 	var body := _box(size + Vector3(0, 1.0, 0), base + Vector3(0, size.y * 0.5 - 0.5, 0), COVER_CONCRETE)
 	body.rotation.y = yaw
+	_walls.append(body)
 
 
 ## A barricade facing the middle of the map: a short bowed line of jersey
@@ -1717,6 +1723,7 @@ func _dress() -> void:
 	_dress_forge(art)
 	_dress_wrecks(art)
 	_dress_cover(art)
+	_dress_walls(art)
 	_dress_cracks(art)
 	_dress_roads(art)
 	_dress_outposts(art)
@@ -2386,6 +2393,42 @@ func _dress_wrecks(art: Node3D) -> void:
 				var from := Vector2(base.x, base.z) + behind * size.z * 0.5
 				furrows.append(PackedVector2Array([from, from + behind * size.z * 1.6]))
 	_ground_strips(art, furrows, 2.2, Look.trim("scorch"), 0.04)
+
+
+## Every wall (outposts, camps, the breach line, the hill's ring, the drop
+## points' cover) and every steel plate faced in kit wall panels, all in
+## one mesh, the walls' tops decked where they are thick enough.
+func _dress_walls(art: Node3D) -> void:
+	var kit := KitMesh.new()
+	var clad_rng := RandomNumberGenerator.new()
+	clad_rng.seed = LAYOUT_SEED + 31
+	for body in _walls:
+		var size: Vector3 = ((body.get_child(1) as MeshInstance3D).mesh as BoxMesh).size
+		KIT_DRESS.clad_box(kit, body.transform, size, clad_rng, KIT_DRESS.SHORT_PANELS.slice(0, 3), [], {}, 2.0)
+	for piece in _cover_pieces:
+		if piece.get_meta("cover", "") != "plate":
+			continue
+		var size: Vector3 = ((piece.get_child(1) as MeshInstance3D).mesh as BoxMesh).size
+		KIT_DRESS.clad_box(kit, piece.transform, size, clad_rng, [KIT_DRESS.SHORT_PANELS[3]], [], RUSTED, 1.0)
+	# The relay mast: a lattice of pipe-bundle columns up its box, a red
+	# lamp on top.
+	if _mast != null:
+		var shown := _mast.get_child(1) as MeshInstance3D
+		var size: Vector3 = (shown.mesh as BoxMesh).size
+		shown.visible = false
+		var levels := 5
+		var rise := size.y / levels
+		var foot := _mast.position - Vector3(0, size.y * 0.5, 0)
+		for level in levels:
+			var across := size.x / 0.88
+			kit.add("Column_Pipes", Transform3D(Basis(Vector3.UP, level * PI * 0.5).scaled_local(Vector3(across, rise / 5.0, across)), foot + Vector3(0, level * rise, 0)))
+		kit.add_box("beacon", Vector3(0.6, 0.6, 0.6), Transform3D(Basis.IDENTITY, foot + Vector3(0, size.y + 0.3, 0)))
+	if kit.is_empty():
+		return
+	var looks := KitMesh.trims(Color(0.72, 0.66, 0.6))
+	looks.merge(KitMesh.trims(Color(0.82, 0.52, 0.36), "_rust"))
+	looks["beacon"] = Look.trim("beacon")
+	art.add_child(kit.node("WallClad", looks))
 
 
 ## Each barricade piece drawn over its plain box: a jersey barrier's sloped

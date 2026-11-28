@@ -1,7 +1,8 @@
 extends RefCounted
 ## Checks for Ashfront's kit-clad landmarks (`worlds/ashfront/kit_dress.gd`,
 ## docs/systems/marsh-and-ashfront.md): built only where `Look` is on, a few
-## draws each, panels hugging their box, and tank wrecks drawn as a tank.
+## draws each, panels hugging their box, tank wrecks drawn as a tank, walls
+## faced and the hill's mast a lattice.
 
 const KIT_DRESS := preload("res://worlds/ashfront/kit_dress.gd")
 
@@ -39,6 +40,10 @@ static func run(t: Node) -> void:
 		for part: Array in wreck["boxes"]:
 			hidden = hidden and not (part[3] as MeshInstance3D).visible
 	t.check(tanks > 0 and hidden, "a tank wreck is drawn as a tank model, its boxes left as collision only")
+	var walls := map.find_child("WallClad", true, false) as MeshInstance3D
+	t.check(walls != null and walls.mesh.get_surface_count() <= 8, "the walls are faced in kit panels, all in one node")
+	var mast: StaticBody3D = map.get("_mast")
+	t.check(mast != null and not (mast.get_child(1) as MeshInstance3D).visible, "the hill's mast is drawn as a lattice, not a block")
 	map.queue_free()
 	Look.enabled = was_on
 	# Without Look, none of it.
