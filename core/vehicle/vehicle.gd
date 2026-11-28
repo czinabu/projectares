@@ -286,6 +286,55 @@ var _pillions: Array[Pillion] = []
 ## Seconds of hover bob, for the look only.
 var _bob_time := 0.0
 
+# The body's pose on the ground (view only, `_pose_model`, run on every
+# machine from where the vehicle is and which way it points, so a ride looks
+# the same from the saddle and across the street). The body tips to the
+# ground under its wheels, read by a ray under each end (and each side for
+# a wide one), and rides a spring that dips the nose under braking, squats
+# under the throttle and thumps down on landing. The simulation never reads
+# any of it.
+## Half the track and half the wheelbase (m): where the rays look for the
+## ground, across (x) and along (y). Zero across: it never rolls to the
+## ground (a bike leans instead). Zero along: it never pitches to it (a
+## walker strides its own way). Unset (-1), it comes from the model.
+var contact_span := Vector2(-1.0, -1.0)
+## How hard the spring pulls the body back (per second squared) and how much
+## it damps the swing (per second).
+var spring_rate := 140.0
+var spring_damp := 14.0
+## Radians the nose dips (or the tail squats) per m/s² of slowing (or
+## speeding up), and the most it will.
+var pitch_per_accel := 0.006
+var max_body_pitch := 0.12
+## How hard a landing kicks the nose down, per m/s it came down at.
+var land_kick := 0.08
+## How fast the body turns onto the ground's slope (per second).
+var ground_follow := 12.0
+## Further than this from the camera (m) the rays are left alone and the
+## body keeps the slope it last read: nobody sees it tip from there.
+var ground_view_range := 90.0
+## Reads the ground headless too (tests only: a server never poses bodies).
+var pose_headless := false
+## Pitch and roll of the ground under the body (radians), and the spring's
+## pitch with its rate.
+var _ground_tilt := Vector2.ZERO
+var _sway := 0.0
+var _sway_rate := 0.0
+## Where the ground was last read from, so a parked one reads it once.
+var _ground_at := Vector3.INF
+var _ground_heading := INF
+## The last frame's place, heading, speed and fall, for the rates the pose
+## follows (it works from what every machine has, not the rider's input).
+var _pose_heading := INF
+var _pose_speed := 0.0
+var _pose_fall := 0.0
+var _pose_y := INF
+var _yaw_rate := 0.0
+var _accel_seen := 0.0
+var _was_grounded := true
+## The hover's bob, added to the body's heave.
+var _bob := 0.0
+
 
 func setup(p_item_id: String) -> void:
 	item_id = p_item_id
@@ -301,6 +350,24 @@ func setup(p_item_id: String) -> void:
 			push_warning("Vehicle: no property '%s' for %s" % [key, p_item_id])
 	_fill_seats()
 	cargo.resize(cargo_points.size())
+	if contact_span.x < 0.0 or contact_span.y < 0.0:
+		contact_span = _default_span()
+
+
+## Where a model's wheels (or a hover's pontoons) meet the ground, for
+## `contact_span`: the bikes along only, the rover's four corners, a jet's
+## gear; a walker and an airship never follow the ground.
+func _default_span() -> Vector2:
+	match model:
+		"bike":
+			return Vector2(0.0, 0.75)
+		"hoverbike":
+			return Vector2(0.0, 0.95)
+		"rover":
+			return Vector2(1.0, 1.35)
+		"jet":
+			return Vector2(0.0, body_size.z * 0.3)
+	return Vector2.ZERO
 
 
 ## The pillion seat from the `pillion_*` vars, unless the item lists its own.
@@ -474,6 +541,7 @@ func _process(delta: float) -> void:
 	if floats and _model != null:
 		_show_parts()
 	_puff_slide(delta)
+	_pose_model(delta)
 
 
 ## An airship's weak spots: a seat's piece ("Part<n>") shows broken
@@ -520,7 +588,7 @@ func _puff_slide(delta: float) -> void:
 func _animate_hover(delta: float) -> void:
 	_bob_time = fmod(_bob_time + delta, TAU * 10.0)
 	var pace := clampf(absf(speed) / maxf(max_speed, 0.1), 0.0, 1.0)
-	_model.position.y = sin(_bob_time * 2.4) * 0.035 * (1.0 - 0.6 * pace)
+	_bob = sin(_bob_time * 2.4) * 0.035 * (1.0 - 0.6 * pace)
 	for node in _model.get_children():
 		if node.name.begins_with("Thruster"):
 			var mat := (node as MeshInstance3D).material_override as StandardMaterial3D
@@ -785,7 +853,6 @@ func _physics_process(delta: float) -> void:
 	# dearest part of a tick. Anything that moves, turns or pushes it wakes it.
 	if rider == null and is_on_floor() and speed == 0.0 and velocity.is_zero_approx() and slip == 0.0 \
 			and _boost_left == 0.0 and global_position == _rest_at and heading == _rest_heading:
-		_update_visual(0.0, delta)
 		return
 	var on_floor := is_on_floor()
 	_turning = steer
@@ -868,7 +935,6 @@ func _physics_process(delta: float) -> void:
 	_rest_at = global_position
 	_rest_heading = heading
 	_place_rider()
-	_update_visual(steer, delta)
 
 
 ## Flying: the throttle sets the speed (never under `stall_speed` while it is
@@ -1092,30 +1158,150 @@ func _place_rider() -> void:
 			aboard.velocity = velocity
 
 
-func _update_visual(steer: float, delta: float) -> void:
-	if _model == null:
+## Poses the body (view only, every frame, on every machine): the lean
+## into a turn, a flier's bank and climb, and on the ground the slope under
+## it and the spring (`contact_span`, `spring_rate`). The turn is read from
+## how fast the heading swings, not from the rider's keys, so a vehicle
+## someone else drives leans the same.
+func _pose_model(delta: float) -> void:
+	if _model == null or delta <= 0.0:
 		return
+	var turned := 0.0 if _pose_heading == INF else wrapf(heading - _pose_heading, -PI, PI)
+	_pose_heading = heading
+	_yaw_rate = lerpf(_yaw_rate, turned / delta, 1.0 - exp(-12.0 * delta))
+	var steer := clampf(-_yaw_rate / maxf(turn_rate, 0.1), -1.0, 1.0)
+	if floats:
+		steer = _turning
+	var grounded := _grounded()
 	var target_lean := steer * clampf(absf(speed) / max_speed, 0.0, 1.0) * lean_amount
-	if flies and not is_on_floor():
+	if flies and not grounded:
 		# A flier banks hard into its turns.
 		target_lean = steer * 0.6
 	lean = lerpf(lean, target_lean, 1.0 - exp(-8.0 * delta))
+	var fall := 0.0 if _pose_y == INF else (global_position.y - _pose_y) / delta
+	_pose_y = global_position.y
 	var pitch := 0.0
-	if flies and not is_on_floor():
-		pitch = clampf(velocity.y / maxf(climb_rate, 0.1), -1.0, 1.0) * flight_pitch
-	elif not is_on_floor() and jump_speed <= 0.0:
-		pitch = clampf(velocity.y * 0.03, -0.4, 0.4)
+	if flies and not grounded:
+		pitch = clampf(fall / maxf(climb_rate, 0.1), -1.0, 1.0) * flight_pitch
+	elif not grounded and jump_speed <= 0.0:
+		pitch = clampf(fall * 0.03, -0.4, 0.4)
 	if floats:
 		# An airship rolls a little into its turns and noses down falling.
 		lean = lerpf(lean, steer * lean_amount, 1.0 - exp(-2.0 * delta))
-		pitch = clampf(velocity.y * 0.03, -0.35, 0.1) if course == Vector3.INF else 0.0
+		pitch = clampf(fall * 0.03, -0.35, 0.1) if course == Vector3.INF else 0.0
+	_settle_body(grounded, fall, delta)
 	var tilt := Vector3(pitch, 0.0, -lean)
-	if flies and not is_on_floor():
+	if flies and not grounded:
 		# Near the ground a flier levels out, so a banked wingtip or a
 		# pitched nose or tail never dips into the ground it is landing on.
 		tilt *= _clearance_share()
-	# A positive lean rolls the right side down.
-	_model.rotation = tilt
+	# A positive lean rolls the right side down; the ground's pitch lifts the
+	# nose up a rise, its roll lifts the uphill side.
+	tilt += Vector3(_ground_tilt.x, 0.0, _ground_tilt.y)
+	# The spring tips the body about the wheel that stays down: the front
+	# one as the nose dips, the back one as the tail squats, so no wheel
+	# ever sinks into the ground.
+	var pivot := Vector3(0.0, 0.0, contact_span.y * (1.0 if _sway > 0.0 else -1.0))
+	var sprung := Basis(Vector3.RIGHT, _sway)
+	_model.transform = Transform3D(Basis.from_euler(tilt), Vector3(0.0, _bob, 0.0)) \
+			* Transform3D(sprung, pivot - sprung * pivot)
+
+
+## True while it stands or rolls on the ground. Where this machine moves it
+## that is the move's own answer; where the server's state does, the ground
+## close under it.
+func _grounded() -> bool:
+	if floats:
+		return false
+	if is_physics_processing():
+		return is_on_floor() or airborne_time < 0.05
+	if not is_inside_tree() or (DisplayServer.get_name() == "headless" and not pose_headless) \
+			or global_position.distance_squared_to(_under_at) < 0.0004:
+		return _under_ground
+	_under_at = global_position
+	var below := _ground_height(Vector3.ZERO)
+	_under_ground = not is_nan(below) and global_position.y - below < 0.5
+	return _under_ground
+
+
+## Where the ground under a vehicle moved from elsewhere was last looked
+## for, and whether it was found close under it.
+var _under_at := Vector3.INF
+var _under_ground := true
+
+
+## The slope under the wheels and the spring on top of it.
+func _settle_body(grounded: bool, fall: float, delta: float) -> void:
+	# The body's spring: slowing dips the nose, speeding up squats the tail,
+	# and a landing sinks it by how hard it came down.
+	var gained := (speed - _pose_speed) / delta
+	_pose_speed = speed
+	_accel_seen = lerpf(_accel_seen, gained, 1.0 - exp(-10.0 * delta))
+	var want_pitch := 0.0
+	if grounded and pivot_turn <= 0.0:
+		# A positive pitch lifts the nose: speeding up lifts it, slowing drops it.
+		want_pitch = clampf(_accel_seen * pitch_per_accel, -max_body_pitch, max_body_pitch)
+	if grounded and not _was_grounded and _pose_fall < -2.0 and contact_span.y > 0.0:
+		# A landing thumps the nose down onto the front wheel and back.
+		_sway_rate -= minf(-_pose_fall * land_kick, max_body_pitch * 12.0)
+	_was_grounded = grounded
+	_pose_fall = fall
+	# Stepped in short slices, so a long frame cannot throw it off.
+	var left := minf(delta, 0.1)
+	while left > 0.0:
+		var step := minf(left, 1.0 / 120.0)
+		left -= step
+		_sway_rate += ((want_pitch - _sway) * spring_rate - _sway_rate * spring_damp) * step
+		_sway += _sway_rate * step
+	_sway = clampf(_sway, -max_body_pitch * 1.5, max_body_pitch * 1.5)
+	var want := _ground_tilt
+	if grounded and contact_span != Vector2.ZERO:
+		want = _read_ground()
+	elif not grounded:
+		want = Vector2.ZERO
+	_ground_tilt = _ground_tilt.lerp(want, 1.0 - exp(-ground_follow * delta))
+
+
+## The ground's pitch (x, nose up positive) and roll (y, positive lifts the
+## right side, as the model's turn about its long axis does) under the wheels, from a ray under each end and each side.
+## Read again only once the vehicle has moved or turned, and only within
+## `ground_view_range` of the camera; otherwise the last answer stands.
+func _read_ground() -> Vector2:
+	if not is_inside_tree() or (DisplayServer.get_name() == "headless" and not pose_headless):
+		return _ground_target
+	if global_position.distance_squared_to(_ground_at) < 0.0004 and absf(heading - _ground_heading) < 0.002:
+		return _ground_target
+	var cam := get_viewport().get_camera_3d()
+	if cam != null and cam.global_position.distance_to(global_position) > ground_view_range:
+		return _ground_target
+	_ground_at = global_position
+	_ground_heading = heading
+	var turn := Basis(Vector3.UP, heading)
+	var front := _ground_height(turn * Vector3(0.0, 0.0, -contact_span.y))
+	var back := _ground_height(turn * Vector3(0.0, 0.0, contact_span.y))
+	var target := Vector2.ZERO
+	if not is_nan(front) and not is_nan(back) and contact_span.y > 0.0:
+		target.x = atan2(front - back, contact_span.y * 2.0)
+	if contact_span.x > 0.0:
+		var left := _ground_height(turn * Vector3(-contact_span.x, 0.0, 0.0))
+		var right := _ground_height(turn * Vector3(contact_span.x, 0.0, 0.0))
+		if not is_nan(left) and not is_nan(right):
+			target.y = atan2(right - left, contact_span.x * 2.0)
+	var most := deg_to_rad(max_slope)
+	_ground_target = target.clamp(Vector2(-most, -most), Vector2(most, most))
+	return _ground_target
+
+
+var _ground_target := Vector2.ZERO
+
+
+## The world's height at `offset` from the vehicle (in the world's frame),
+## from a ray down past the wheels, or NAN where it finds nothing near.
+func _ground_height(offset: Vector3) -> float:
+	var from := global_position + offset + Vector3.UP * 1.2
+	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 2.6, Actor.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return NAN if hit.is_empty() else (hit.position as Vector3).y
 
 
 ## The interact target for a vehicle. It rides along on the vehicle and only
