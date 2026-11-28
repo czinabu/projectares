@@ -184,7 +184,7 @@ static func run(t: Node) -> void:
 			"an owned outfit shows up in the pickers")
 	# What the phone's mirror scrolls through.
 	t.check(panel.pick_keys() == ["build", "style", "facial", "hair", "eyes", "skin", "face", "body", "legs", "feet", "top",
-			"bottom", "pattern"],
+			"bottom", "trim", "pattern"],
 			"the mirror lists the body, the head's choices, then the suit")
 	t.check(panel.options_for("style").size() == Human.STYLES.size() and panel.options_for("facial").size() == Human.FACIAL.size()
 			and panel.pick_title("style") == "Hairstyle" and panel.pick_title("hair") == "Hair colour",
@@ -335,7 +335,7 @@ static func _run_mirror(t: Node) -> void:
 	await t.frames(1)
 	t.check(phone.mirror_open() and ups == [true], "the Mirror app asks for a mirror")
 	var rows: Array = phone._body.get_children().filter(func(child: Node) -> bool: return child is PanelContainer)
-	t.check(rows.size() == 13, "the app has a row for the body, the face, each hair, eye and skin choice, the suit and its pattern")
+	t.check(rows.size() == 14, "the app has a row for the body, the face, each hair, eye and skin choice, the suit, its trim and its pattern")
 	var looks: Array = []
 	hub.look_changed.connect(func(appearance: Dictionary) -> void: looks.append(appearance))
 	var key := KEY_DOWN

@@ -407,8 +407,8 @@ static func suit_for(appearance: Dictionary, slot: String) -> Dictionary:
 ## a very light one darkens, so the panels always show.
 static func second_shade(cloth: Color, contrast: float) -> Color:
 	var lum := cloth.get_luminance()
-	if contrast < 0.0 and lum < 0.07:
-		return cloth.lightened(-contrast * 0.35)
+	if contrast < 0.0 and lum < 0.2:
+		return cloth.lightened(-contrast * 0.3)
 	if contrast > 0.0 and lum > 0.75:
 		return cloth.darkened(contrast * 0.4)
 	return cloth.darkened(-contrast) if contrast < 0.0 else cloth.lightened(contrast)

@@ -569,11 +569,11 @@ vec3 suit_weave(int kind, vec3 p, vec2 plane, float around, float near) {
 		// Leather: a fine grain, worn lighter in broad patches.
 		float grain = noise3(p * 700.0);
 		float worn = noise3(p * 14.0);
-		return vec3(0.88 + 0.22 * worn, 0.5 + 0.14 * grain, (grain - 0.5) * 0.00012 * near);
+		return vec3(0.88 + 0.22 * worn, 0.62 + 0.12 * grain, (grain - 0.5) * 0.00012 * near);
 	}
 	if (kind == 4) {
 		// Satin: smooth, with a soft sheen.
-		return vec3(1.0, 0.5, 0.0);
+		return vec3(1.0, 0.6, 0.0);
 	}
 	if (kind == 5) {
 		// Quilted: stitched diamonds, each puffed up.
@@ -586,7 +586,7 @@ vec3 suit_weave(int kind, vec3 p, vec2 plane, float around, float near) {
 	if (kind == 6) {
 		// Rubberised: smooth and a little shiny.
 		float n = noise3(p * 120.0);
-		return vec3(0.96 + 0.06 * n, 0.58, 0.0);
+		return vec3(0.96 + 0.06 * n, 0.64, 0.0);
 	}
 	if (kind == 7) {
 		// Denim: a diagonal twill, heathered.
@@ -695,7 +695,11 @@ void fragment() {
 			SuitLook s = suit_style(suit_cut, p, rn);
 			float k = bare * suit_kit;
 			cloth *= mix(1.0, s.tone, k);
-			cloth *= 1.0 - 0.42 * clamp(s.line, 0.0, 1.0) * k;
+			// Seams darken the cloth, but on near-black cloth they show as
+			// lighter stitching instead, so a dark suit keeps its cut.
+			float line = clamp(s.line, 0.0, 1.0) * k;
+			float dark = 1.0 - smoothstep(0.04, 0.12, dot(suit_color, vec3(0.299, 0.587, 0.114)));
+			cloth = mix(cloth * (1.0 - 0.42 * line), cloth + vec3(0.07) * line, dark);
 			cloth = mix(cloth, suit_second, clamp(s.second, 0.0, 1.0) * k);
 			cloth = mix(cloth, suit_trim * 0.8, clamp(s.paint, 0.0, 1.0) * k);
 			cloth = mix(cloth, vec3(0.8, 0.8, 0.78), clamp(s.light, 0.0, 1.0) * k);
@@ -703,7 +707,7 @@ void fragment() {
 			glow += suit_trim * clamp(s.glow, 0.0, 1.0) * 1.4 * k * suited;
 			metal_at = clamp(s.metal, 0.0, 1.0) * k;
 			rough_at = clamp(rough_at + s.rough * k, 0.08, 1.0);
-			height += (s.height - clamp(s.line, 0.0, 1.0) * 0.0004) * k;
+			height += s.height * k - line * 0.0004;
 		}
 		c = mix(c, cloth, suited);
 		r = mix(r, mix(rough_at, 0.3, metal_at), suited);
