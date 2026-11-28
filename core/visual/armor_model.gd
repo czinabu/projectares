@@ -320,11 +320,9 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 	# heavier the frame.
 	# Out past the carrier (and the straps' ends) under it.
 	# (A cuirass a little further: its high neckline goes over the straps.)
-	# Heavy plate stands further off again, so a cuirass is broader than a
-	# medium frame's plates, not just more of them.
-	var pg := 0.046 if heavy else 0.034
+	var pg := 0.036 if heavy else 0.034
 	var pt: float = {"light": 0.012, "medium": 0.016, "heavy": 0.018}[weight]
-	var pw: float = {"light": 0.85, "medium": 0.98, "heavy": 1.18}[weight]
+	var pw: float = {"light": 0.85, "medium": 0.98, "heavy": 1.12}[weight]
 	var chest_low := 0.42 if heavy else 0.5
 	# Heavy is a cuirass with a keel down its middle, narrowing to the
 	# shoulders so it never reads as a box.
@@ -332,14 +330,14 @@ static func torso(weight: String, style: Dictionary, build := "m") -> Node3D:
 			DRAPE), pt, m.plate, 20, 9)
 	# The back plate stays between the shoulder blades and narrows to the
 	# top, so from behind it never reads wider than the back.
-	var back_w: float = {"light": 0.68, "medium": 0.76, "heavy": 0.92}[weight]
+	var back_w: float = {"light": 0.68, "medium": 0.76, "heavy": 0.98}[weight]
 	plate(root, "Back", b.wrap(0.44 if heavy else 0.48, 0.9, PI - back_w, PI + back_w, pg, 0.03, 0.004, 0.2, 0.2), pt, m.plate, 20, 9)
 	_plate_lines(root, m, b, chest_low, pw, pg + pt, heavy, back_w)
 	if heavy:
 		# The cuirass closes down the sides, layered abdominal lames under it,
 		# each edged in steel.
 		for side: float in [-1.0, 1.0]:
-			plate(root, "SidePlate", b.wrap(0.44, 0.62, side * 1.5 - 0.26, side * 1.5 + 0.26, 0.056, 0.0, 0.0, 0.0, DRAPE), pt * 0.7, m.plate2, 8, 6)
+			plate(root, "SidePlate", b.wrap(0.44, 0.62, side * 1.5 - 0.26, side * 1.5 + 0.26, 0.048, 0.0, 0.0, 0.0, DRAPE), pt * 0.7, m.plate2, 8, 6)
 		# Edge to edge down from the chest plate, over the carrier; the
 		# lowest stops above the belt.
 		for k in 3:
@@ -585,7 +583,7 @@ static func pauldron(weight: String, style: Dictionary, out: float, build := "m"
 	# Stood off the arm and reaching further down it than the arm's own
 	# shape asks, by weight (Caleb's proportions pass: the shoulders carry
 	# the silhouette, and a heavy frame reads heavy from across a field).
-	var stand := arm_shortfall(build) + float({"light": 0.008, "medium": 0.013, "heavy": 0.022}[weight])
+	var stand := arm_shortfall(build) + float({"light": 0.008, "medium": 0.013, "heavy": 0.01}[weight])
 	gap += stand
 	# The cap: over the top of the shoulder, from in past the joint out
 	# over the deltoid, swelling at its crown.
@@ -609,7 +607,12 @@ static func pauldron(weight: String, style: Dictionary, out: float, build := "m"
 	if "admin" in m.details or "stripe" in m.details:
 		# A unit patch on the cap.
 		on(root, "Patch", Vector3(0.036, 0.026, 0.004), m.glow, arm.at(0.12, lateral, gap + thick + 0.012), arm.at(0.12, lateral) - arm.at(0.12, lateral + PI))
-	if weight != "light":
+	if weight == "heavy":
+		# All the way round the upper arm, from under the lames to the
+		# elbow, its top flared out to meet them: the arm reads armored
+		# down its length, not a cap over a bare limb (Caleb).
+		plate(root, "Rerebrace", arm.wrap(0.55, 0.97, lateral, 1.4, 0.012, 0.0, gap - 0.014), thick * 0.8, m.plate, 14, 5)
+	elif weight != "light":
 		plate(root, "Rerebrace", arm.wrap(0.5, 0.82, lateral, 1.3, gap * 0.6), thick * 0.8, m.plate, 10, 4)
 	return G.merge(root)
 
@@ -641,9 +644,12 @@ static func forearm(weight: String, style: Dictionary, out: float, build := "m")
 	# The elbow: round the point of it, at the back in the rest pose.
 	plate(root, "Elbow", arm.wrap(-0.12, 0.12, PI, 1.2, 0.01, 0.014), thick, m.plate if weight == "heavy" else m.rubber, 10, 5)
 	var half: float = {"light": 1.3, "medium": 1.6, "heavy": 2.5}[weight]
-	plate(root, "Bracer", arm.wrap(0.3, 0.9, lateral, half, 0.013, 0.004, -0.005), thick, m.plate, 14, 6)
+	# A heavy vambrace starts at the elbow cop, so the forearm is armored
+	# its whole length.
+	var top := 0.13 if weight == "heavy" else 0.3
+	plate(root, "Bracer", arm.wrap(top, 0.9, lateral, half, 0.013, 0.004, -0.005), thick, m.plate, 14, 6)
 	if weight != "light":
-		plate(root, "BracerEdge", arm.wrap(0.3, 0.33, lateral, half - 0.05, 0.01 + thick), 0.004, m.metal, 14, 1)
+		plate(root, "BracerEdge", arm.wrap(top, top + 0.03, lateral, half - 0.05, 0.01 + thick), 0.004, m.metal, 14, 1)
 	if out < 0.0:
 		var at := arm.at(0.62, lateral, 0.012 + thick)
 		on(root, "Display", Vector3(0.04, 0.028, 0.004), m.dim, at, arm.at(0.62, lateral) - arm.at(0.62, lateral + PI), 0.001)

@@ -309,11 +309,14 @@ date in the same PR.
   of shrinking to a slim shoulder (Caleb: Build B's read a third
   smaller), and starts that much further out, clear of the collar.
   Proportions by weight (Caleb's pass: the shoulders carry the
-  silhouette, and heavy reads heavy at a glance): every pad stands off
-  further and reaches further down the arm the heavier the frame, thigh
-  plates stay narrower than the leg is round on light and medium, and a
-  cuirass stands further off the chest than a medium frame's plates, its
-  back plate narrowed to keep clear of the pads; a piece reaching past a
+  silhouette): a medium pad stands off further than a light one, thigh
+  plates stay narrower than the leg is round on light and medium, and
+  heavy is more armor, not more width (Caleb: wide caps over bare limbs
+  read disproportionate). A heavy pad stands no further off than
+  medium's, but its rerebrace runs from under the lames to the elbow,
+  flared at the top to meet them, and its vambrace starts at the elbow
+  cop, so each arm reads plated its whole length; its cuirass sits as
+  close as a medium frame's plates; a piece reaching past a
   knee or elbow goes over the limb above it, and plates layer in a fixed
   order (carrier, then straps, then plates, then what is mounted on
   them) so none cuts through another. `tools/armor_fit/clip_check.tscn`

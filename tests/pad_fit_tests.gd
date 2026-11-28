@@ -20,14 +20,17 @@ static func run(t: Node) -> void:
 	_by_weight(t)
 
 
-## The heavier the frame, the broader its pads stand (the shoulders carry
-## the silhouette).
+## A medium pad stands broader than a light one; a heavy one is no broader
+## than medium but armors the whole upper arm down to the elbow, so the arm
+## reads plated its length instead of a wide cap over a bare limb (Caleb).
 static func _by_weight(t: Node) -> void:
 	var light := _size(ArmorModel.pauldron("light", STYLE, 1.0, "m"))
 	var medium := _size(ArmorModel.pauldron("medium", STYLE, 1.0, "m"))
 	var heavy := _size(ArmorModel.pauldron("heavy", STYLE, 1.0, "m"))
-	t.check(light.x < medium.x and medium.x < heavy.x and light.z < medium.z and medium.z < heavy.z,
-			"pads stand broader and deeper the heavier the frame (%.3f, %.3f, %.3f across)" % [light.x, medium.x, heavy.x])
+	t.check(light.x < medium.x and heavy.x <= medium.x * 1.1,
+			"a medium pad stands broader than a light one, a heavy one no broader than medium (%.3f, %.3f, %.3f across)" % [light.x, medium.x, heavy.x])
+	t.check(heavy.y > medium.y + 0.02,
+			"a heavy pad armors further down the arm than a medium one (%.3f against %.3f)" % [heavy.y, medium.y])
 
 
 static func _size(pad: Node3D) -> Vector3:
