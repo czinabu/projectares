@@ -35,7 +35,9 @@ jobs:
     # Some other label added: nothing changed, so nothing to run.
     if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The tier takes about nine minutes on a hosted runner now; a slow one
+    # ran past ten and was cut off with every test passing so far.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-godot
