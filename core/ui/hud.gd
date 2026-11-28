@@ -62,6 +62,9 @@ var contracts: Array[Dictionary] = []
 ## The new player's tour objective (`Onboarding.objective`), set by
 ## `main.gd`: a small line on the watch card and the visor glass, "" for none.
 var objective := ""
+## What to press for a tour step with nothing to walk to (`Onboarding.hint`),
+## on the line under the crosshair while nothing else is offered there.
+var tour_hint := ""
 ## On a race track, the run in one line (`Race.run_line`): the watch card
 ## and the visor's objective block show it in the tour's place.
 var race_line := ""
@@ -205,6 +208,8 @@ func _process(delta: float) -> void:
 		# On a vehicle, F gets you off, so nothing else is offered.
 		var target := p.find_interactable() if p.vehicle == null else null
 		_prompt.text = target.get_prompt() if target else reload_prompt(p)
+		if _prompt.text == "" and not (controller != null and controller.wrist_raised):
+			_prompt.text = tour_hint
 
 	if progress_ring:
 		progress_ring.show_progress(-1.0 if p.is_dead else (leaving if leaving >= 0.0 else (banking if banking > 0.0 else -1.0)),

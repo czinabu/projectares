@@ -11,12 +11,15 @@ const DevMode := preload("res://core/dev/dev_mode.gd")
 
 static func run(t: Node) -> void:
 	print("Onboarding: the handler walks a new player through the basics")
+	Profile.tour_on_reset = true
 	_rules(t)
 	_saves(t)
+	await _notices(t)
 	await _solo_tour(t)
 	Profile.reset()
 	Profile.welcome_granted = true
 	Profile.onboarding = Onboarding.finished()
+	Profile.tour_on_reset = false
 
 
 static func _rules(t: Node) -> void:
@@ -51,9 +54,31 @@ static func _rules(t: Node) -> void:
 				and Onboarding.clean({"state": "skipped"}).state == Onboarding.SKIPPED,
 			"a saved tour is checked; anything odd counts as finished")
 	var names := Onboarding.names("X", "1")
+	var launch_names := names
+	Worlds.choose_offered(true)
+	if LaunchScope.on:
+		launch_names = Onboarding.names("X", "1")
+	Worlds.choose_offered(false)
+	var at_launch: Dictionary = {}
+	for world in Worlds.raid_worlds():
+		if world.id in LaunchScope.worlds():
+			at_launch[world.keep_gear_on_death] = at_launch.get(world.keep_gear_on_death, world)
+	t.check(at_launch.has(true) and names.gentle_id == at_launch[true].id
+				and at_launch.has(false) and names.harsh == at_launch[false].display_name,
+			"the tour sends you to the launch's worlds, %s to learn in and %s for full loot, in every build"
+			% [names.gentle, names.harsh])
+	t.check(launch_names.gentle == names.gentle and launch_names.harsh == names.harsh,
+			"and the release build names the same ones")
 	var gentle: WorldDef = null
 	var harsh: WorldDef = null
+	var ordered: Array[WorldDef] = []
 	for world in Worlds.raid_worlds():
+		if world.id in LaunchScope.worlds():
+			ordered.append(world)
+	for world in Worlds.raid_worlds():
+		if not world.id in LaunchScope.worlds():
+			ordered.append(world)
+	for world in ordered:
 		if world.keep_gear_on_death and gentle == null:
 			gentle = world
 		if world.gear_at_risk and not world.keep_gear_on_death and harsh == null:
@@ -71,6 +96,19 @@ static func _rules(t: Node) -> void:
 	for step: Dictionary in Onboarding.STEPS:
 		t.check(Onboarding.fill(step.objective, names).length() <= 40,
 				"%s's objective is short enough for the watch card" % step.id)
+		t.check(step.has("mark") and (str(step.mark) != "" or str(step.get("hint", "")) != ""),
+				"%s points at something in the world or says what to press" % step.id)
+	tour = {"state": Onboarding.ACTIVE, "step": "deploy"}
+	t.check(Onboarding.mark(tour, names) == "portal:world:%s" % gentle.id,
+			"the deploy step points at the gentle world's gate: %s" % Onboarding.mark(tour, names))
+	t.check(Onboarding.locks(tour, harsh) and not Onboarding.locks(tour, gentle)
+				and not Onboarding.locks(tour, Worlds.social_world()),
+			"while the tour runs the full-loot world is closed, the gentle one and the plaza open")
+	t.check(not Onboarding.locks(Onboarding.finished(), harsh) and not Onboarding.locks({"state": Onboarding.SKIPPED, "step": ""}, harsh),
+			"finished or skipped, the full-loot world opens")
+	tour = {"state": Onboarding.ACTIVE, "step": "watch"}
+	t.check(Onboarding.mark(tour, names) == "" and Onboarding.hint(tour, names) == "Press X to raise your watch",
+			"the watch step has nothing to walk to and says what to press instead")
 
 
 static func _saves(t: Node) -> void:
@@ -91,6 +129,45 @@ static func _saves(t: Node) -> void:
 	Profile.reset()
 
 
+## The phone's pop-ups come one at a time in the order sent, and a keyed one
+## (the tour's step) replaces its stale self instead of waiting behind it.
+static func _notices(t: Node) -> void:
+	var PhoneScript: GDScript = load("res://core/phone/phone.gd")
+	var phone: CanvasLayer = PhoneScript.new()
+	t.add_child(phone)
+	await t.frames(2)
+	phone.show_notice("one")
+	phone.show_notice("two")
+	phone.show_notice("two")
+	t.check(phone.notice_showing() == "one" and phone.notices_waiting() == (["two"] as Array[String]),
+			"a pop-up sent while another is up waits its turn, and the same words are not queued twice")
+	phone.show_notice("Handler: step A", -1.0, "tour", true)
+	phone.show_notice("Handler: step B", -1.0, "tour", true)
+	t.check(phone.notices_waiting() == (["Handler: step B", "two"] as Array[String]),
+			"the tour's step goes ahead of other news, and a newer step replaces one not yet shown: %s"
+			% [phone.notices_waiting()])
+	phone._notice_left = 0.01
+	phone._tick_notice(0.02)
+	t.check(phone.notice_showing() == "Handler: step B", "when one goes the next comes up, in order")
+	phone.show_notice("Handler: step C", -1.0, "tour", true)
+	t.check(phone.notice_showing() == "Handler: step C" and phone.notices_waiting() == (["two"] as Array[String]),
+			"a step up now is replaced in place by the next one")
+	phone.notices_paused = true
+	var left: float = phone._notice_left
+	phone._tick_notice(1.0)
+	t.check(is_equal_approx(phone._notice_left, left), "between places a pop-up keeps its time")
+	phone.notices_paused = false
+	phone.drop_notice("tour")
+	t.check(phone.notice_showing() == "two" and phone.notices_waiting().is_empty(),
+			"a tour that ends takes its pop-up down")
+	for i in 10:
+		phone.show_notice("news %d" % i)
+	t.check(phone.notices_waiting().size() == phone.notices_kept and phone.notices_waiting()[-1] == "news 9",
+			"at most %d wait, the oldest dropped" % phone.notices_kept)
+	phone.queue_free()
+	await t.frames(2)
+
+
 ## A new player solo: the base, the watch, the lane, Settings, dev mode, then
 ## a world and a depot.
 static func _solo_tour(t: Node) -> void:
@@ -107,6 +184,16 @@ static func _solo_tour(t: Node) -> void:
 			"offline too, as an unread message in Messages")
 	t.check(main.base_hud.objective == "Put on your gear in the armory" and main.base_hud.wrist.objective == main.base_hud.objective,
 			"the objective is on the watch card: %s" % main.base_hud.objective)
+	main._tour_guide_tick(0.1)
+	var guide: Node3D = main._tour_guide
+	var rack: Node3D = main.base.display_for("rifle_carbine")
+	t.check(guide != null and rack != null and guide.get_parent() == main.base
+				and guide.target.is_equal_approx(rack.global_position)
+				and guide.words().begins_with("Put on your gear"),
+			"the guide's light stands on the welcome rifle with the step written over it")
+	t.check(phone.notice_showing() == "Handler: Put on your gear in the armory" or phone.notices_paused
+				or "Handler: Put on your gear in the armory" in phone.notices_waiting(),
+			"the handler's pop-up says the step")
 	phone.open("messages")
 	phone.open_chat(Onboarding.HANDLER_ID)
 	await t.frames(3)
@@ -123,6 +210,11 @@ static func _solo_tour(t: Node) -> void:
 	await t.frames(5)
 	t.check(Profile.onboarding.step == "watch" and _handler_texts(phone).size() == 2,
 			"putting on a weapon finishes the step and the handler sends the next")
+	main._tour_guide_tick(0.1)
+	t.check(main._tour_guide == null and main.base_hud.tour_hint.begins_with("Press "),
+			"with nothing to walk to, the guide goes and the key to press waits under the crosshair")
+	t.check(not phone.notices_waiting().any(func(text: String) -> bool: return text.contains("Put on your gear")),
+			"the step already done is never told")
 	main.controller.wrist_raised = true
 	await t.frames(3)
 	main.controller.wrist_raised = false
@@ -131,6 +223,9 @@ static func _solo_tour(t: Node) -> void:
 	await t.frames(2)
 	t.check(Profile.onboarding.step == "plaza" and main.base_hud.objective.begins_with("Head out to "),
 			"a hit on the test lane sends you out to the plaza")
+	main._tour_guide_tick(0.1)
+	t.check(main._tour_guide != null and main._tour_guide.target.is_equal_approx(main.base.door.global_position),
+			"and the guide moves to the base's way out")
 
 	phone.tour_requested.emit("skip")
 	await t.frames(2)
@@ -160,10 +255,21 @@ static func _solo_tour(t: Node) -> void:
 			gentle = world.id
 			break
 	Profile.onboarding = {"state": Onboarding.ACTIVE, "step": "deploy"}
+	for world in Worlds.raid_worlds():
+		if Onboarding.locks(Profile.onboarding, world):
+			main.start_raid(world.id)
+			await t.frames(2)
+			t.check(main.raid == null and phone.notices_waiting().any(func(text: String) -> bool: return text.contains("full loot"))
+						or phone.notice_showing().contains("full loot"),
+					"a new player is turned back from %s, and the handler says why" % world.display_name)
+			break
 	main.start_raid(gentle)
 	await t.frames(10)
 	t.check(Profile.onboarding.step == "bank" and main.hud != null and main.hud.objective == "Bank your loot at a depot",
 			"arriving in a world finishes the deploy step, and the objective rides on the raid's watch and visor")
+	main._tour_guide_tick(0.1)
+	t.check(main._tour_guide != null and main._tour_guide.get_parent() == main.raid,
+			"out in the world the guide stands on the nearest depot")
 	if main.raid != null and main.raid.player != null:
 		main.raid.player_banked.emit(main.raid.player, ["medkit"])
 		await t.frames(2)

@@ -238,6 +238,11 @@ var _redeploy_at := 0
 ## How many items the server's account held at the last snapshot, so the
 ## tour can tell a depot banking (the stash grows mid-life). -1 unknown.
 var _tour_stash_size := -1
+## The tour's light over the next thing to use (`TourGuide`), in the place
+## you are; null while there is nothing to point at.
+var _tour_guide: TourGuide
+## Seconds to the next look for what the guide points at.
+var _tour_guide_look := 0.0
 
 
 func _ready() -> void:
@@ -344,6 +349,10 @@ func _process(delta: float) -> void:
 			_tick_ahead(0.5)
 	if controller != null and is_instance_valid(controller) and controller.wrist_raised:
 		_tour_event("watch")
+	if phone != null:
+		# Between places nobody sees a pop-up: it keeps its time for after.
+		phone.notices_paused = _cover != null and _cover.color.a > 0.5
+	_tour_guide_tick(delta)
 	_keep_mirror_view()
 
 
@@ -450,6 +459,7 @@ func _open_base(stash: Array, loadout: Dictionary, owner_name: String, upgrades:
 	_apply_settings()
 	_tour_check()
 	_tour_show()
+	_tour_remind()
 
 
 ## Gives the base's player a camera and controls. Called again whenever
@@ -893,7 +903,7 @@ func leave_arena() -> void:
 
 func start_raid(world_id: String, drop := "") -> void:
 	var world := Worlds.get_world(world_id)
-	if world == null or raid != null or net != null:
+	if world == null or raid != null or net != null or _tour_refuses(world):
 		return
 	# Through a squad portal: out of the base and into the world.
 	leave_base()
@@ -964,6 +974,7 @@ func _attach_player_view() -> void:
 		hud.notice_sink = phone.show_notice
 	raid.add_child(hud)
 	_tour_show()
+	_tour_remind()
 	if nameplates != null and is_instance_valid(nameplates):
 		# The same world, a new life: they only need to know who you are now.
 		nameplates.viewer = raid.player
@@ -1182,6 +1193,8 @@ func _on_ping_requested() -> void:
 ## base opens it; in a world the world's authority does.
 func _on_portal_requested(destination: String) -> void:
 	var why := ""
+	if _tour_refuses(Worlds.get_world(destination)):
+		return
 	if raid == null and base != null:
 		why = base.open_portal(destination)
 		if base_hud:
@@ -1217,7 +1230,7 @@ func go_through_portal(destination: String) -> void:
 		open_arena()
 		return
 	var world := Worlds.get_world(destination)
-	if world == null or world.safe_zone:
+	if world == null or world.safe_zone or _tour_refuses(world):
 		return
 	if net == null:
 		if raid == null and base != null and not base.read_only:
@@ -1441,6 +1454,10 @@ func _on_phone_preview(on: bool) -> void:
 # view of the player's progress and never changes a rule of the game. Dev
 # mode never runs it.
 
+## The key the tour's pop-ups go under on the phone (`Phone.show_notice`).
+const TOUR_NOTICE := "tour"
+
+
 ## True while the tour runs here (never in dev mode).
 func _tour_running() -> bool:
 	return Onboarding.is_active(Profile.onboarding) and not DevMode.active()  # DEV MODE
@@ -1468,7 +1485,7 @@ func _tour_start() -> void:
 	# Only the newest is unread.
 	phone.read_upto[Onboarding.HANDLER_ID] = texts.size() - 1
 	phone.refresh(false)
-	phone.show_notice("%s: %s" % [Onboarding.HANDLER_NAME, Onboarding.objective(Profile.onboarding, names)])
+	_tour_remind()
 
 
 ## The player did `event` (see `Onboarding.notify`).
@@ -1532,12 +1549,28 @@ func _tour_moved() -> void:
 			_tour_start()
 		else:
 			phone.add_local_message(Onboarding.HANDLER_ID, Onboarding.HANDLER_NAME,
-					Onboarding.fill(Onboarding.current(Profile.onboarding).message, names),
-					Onboarding.objective(Profile.onboarding, names))
+					Onboarding.fill(Onboarding.current(Profile.onboarding).message, names), "", true)
+			_tour_remind()
 	elif Profile.onboarding.get("state", "") == Onboarding.DONE and phone != null:
 		phone.add_local_message(Onboarding.HANDLER_ID, Onboarding.HANDLER_NAME,
-				Onboarding.fill(Onboarding.DONE_MESSAGE, names))
+				Onboarding.fill(Onboarding.DONE_MESSAGE, names), "", true)
+		phone.show_notice("%s: %s" % [Onboarding.HANDLER_NAME, Onboarding.fill(Onboarding.DONE_TITLE, names)],
+				-1.0, TOUR_NOTICE, true)
 	_tour_show()
+
+
+## Pops up the step the tour is on ("Handler: <objective>"), ahead of other
+## news, in place of the step before it if that was still up or waiting
+## (`Phone.show_notice`'s key): a step already done is never told.
+func _tour_remind() -> void:
+	if phone == null:
+		return
+	if not _tour_running():
+		phone.drop_notice(TOUR_NOTICE)
+		return
+	Sfx.play("phone_buzz")
+	phone.show_notice("%s: %s" % [Onboarding.HANDLER_NAME, Onboarding.objective(Profile.onboarding, _tour_names())],
+			-1.0, TOUR_NOTICE, true)
 
 
 ## A life ended: a sign-out from a world counts as getting loot home.
@@ -1546,15 +1579,147 @@ func _tour_life_ended(result: Dictionary) -> void:
 		_tour_event("banked")
 
 
-## The objective on whichever HUD is up, and the phone's Settings button.
+## The objective on whichever HUD is up, what to press for a step with
+## nothing to walk to (on the line under the crosshair), the guide's light
+## and the phone's Settings button.
 func _tour_show() -> void:
-	var line := Onboarding.objective(Profile.onboarding, _tour_names()) if _tour_running() else ""
+	var names := _tour_names()
+	var line := Onboarding.objective(Profile.onboarding, names) if _tour_running() else ""
+	var hint := Onboarding.hint(Profile.onboarding, names) if _tour_running() else ""
 	if hud != null and is_instance_valid(hud):
 		hud.objective = line
+		hud.tour_hint = hint
 	if base_hud != null and is_instance_valid(base_hud):
 		base_hud.objective = line
+		base_hud.tour_hint = hint
 	if phone != null:
 		phone.tour_running = _tour_running()
+	if plaza_view != null and is_instance_valid(plaza_view):
+		var closed: Array = []
+		if _tour_running():
+			for world in Worlds.raid_worlds():
+				if Onboarding.locks(Profile.onboarding, world):
+					closed.append(world.id)
+		plaza_view.tour_closed = closed
+	# Look again for what the guide points at.
+	_tour_guide_look = 0.0
+
+
+## Where the player is now: the base or the world, or null between places.
+func _tour_place() -> Node3D:
+	if raid != null and is_instance_valid(raid):
+		return raid
+	if base != null and is_instance_valid(base) and not base.read_only:
+		return base
+	return null
+
+
+## True (and the handler says why, on the phone) if the tour keeps `world`
+## closed: a full-loot world before the tour is finished or skipped
+## (`Onboarding.locks`). Dev mode never runs the tour, so never locks.
+func _tour_refuses(world: WorldDef) -> bool:
+	if world == null or not _tour_running() or not Onboarding.locks(Profile.onboarding, world):
+		return false
+	if phone != null:
+		Sfx.play("phone_buzz")
+		phone.show_notice("%s: %s" % [Onboarding.HANDLER_NAME, Onboarding.fill(Onboarding.LOCKED_MESSAGE, _tour_names())],
+				-1.0, "tour_locked", true)
+	return true
+
+
+## The player's own body where they are, or null.
+func _tour_body() -> Actor:
+	var place := _tour_place()
+	if place == raid and place != null:
+		return raid.player
+	if place == base and place != null:
+		return base.player
+	return null
+
+
+## Keeps the guide's light over what the current step points at
+## (`Onboarding.mark`), looked for again every `TourGuide.LOOK_EVERY`, and
+## takes it away when there is nothing (no tour, nothing to walk to, or the
+## thing is not in this place).
+func _tour_guide_tick(delta: float) -> void:
+	var place := _tour_place()
+	var body := _tour_body()
+	var running := _tour_running() and place != null and body != null and is_instance_valid(body)
+	if not running:
+		_drop_tour_guide()
+		return
+	_tour_guide_look -= delta
+	if _tour_guide_look <= 0.0 or _tour_guide == null or not is_instance_valid(_tour_guide):
+		_tour_guide_look = TourGuide.LOOK_EVERY
+		var at: Variant = _tour_mark_at(Onboarding.mark(Profile.onboarding, _tour_names()), place, body)
+		if at == null:
+			_drop_tour_guide()
+			return
+		if _tour_guide == null or not is_instance_valid(_tour_guide) or _tour_guide.get_parent() != place:
+			_drop_tour_guide()
+			_tour_guide = TourGuide.new()
+			_tour_guide.name = "TourGuide"
+			place.add_child(_tour_guide)
+		_tour_guide.target = at
+		_tour_guide.text = Onboarding.objective(Profile.onboarding, _tour_names())
+	_tour_guide.follow(body.global_position, delta)
+
+
+func _drop_tour_guide() -> void:
+	if _tour_guide != null and is_instance_valid(_tour_guide):
+		_tour_guide.queue_free()
+	_tour_guide = null
+
+
+## Where in `place` the step's `mark` is (see `Onboarding.STEPS`), or null
+## when it is not there: a weapon on show not on yet, the test lane's
+## plates, the base's way out, a safe zone's portal by destination, or the
+## depot or gate outpost nearest `body`.
+func _tour_mark_at(mark: String, place: Node3D, body: Actor) -> Variant:
+	if mark == "":
+		return null
+	if place == base:
+		match mark:
+			"gear":
+				# Gear the player owns first (the welcome crate's rifle the
+				# handler names), else any weapon on show.
+				var owned := hub.stash_items()
+				var fallback: Variant = null
+				for display in base.displays:
+					if is_instance_valid(display) and not display.equipped \
+							and display.slot in ["primary", "sidearm", "melee"]:
+						if display.item_id in owned:
+							return display.global_position
+						if fallback == null:
+							fallback = display.global_position
+				return fallback
+			"lane":
+				var plates: Array = base.lane_targets.filter(func(target: Variant) -> bool:
+					return is_instance_valid(target))
+				if not plates.is_empty():
+					return (plates[plates.size() / 2] as Node3D).global_position
+			"door":
+				if base.door != null and is_instance_valid(base.door):
+					return base.door.global_position
+		return null
+	if mark.begins_with("portal:"):
+		var destination := mark.trim_prefix("portal:")
+		for node in get_tree().get_nodes_in_group("portal"):
+			if node is Node3D and place.is_ancestor_of(node) and str(node.get_meta("destination", "")) == destination:
+				return (node as Node3D).global_position
+		return null
+	if mark == "depot":
+		var best: Variant = null
+		var best_d := INF
+		for group: String in ["depot", "outpost"]:
+			for node in get_tree().get_nodes_in_group(group):
+				if node is Node3D and place.is_ancestor_of(node):
+					var d := body.global_position.distance_squared_to((node as Node3D).global_position)
+					if d < best_d:
+						best_d = d
+						best = (node as Node3D).global_position
+		return best
+	return null
 
 
 ## The phone's Settings asked to skip the tour or play it again.
@@ -1734,6 +1899,8 @@ func _on_world_invite_accepted(invite: Dictionary) -> void:
 ## because there is no way out of a world but a sign-out.
 func join_world(world_id: String) -> void:
 	var world := Worlds.get_world(world_id)
+	if _tour_refuses(world):
+		return
 	if net == null:
 		phone.show_notice("Join a server first, from the Servers app.")
 		return
@@ -2556,6 +2723,7 @@ func _on_online_joined(p_raid: Raid) -> void:
 		net.world_status_changed.connect(plaza_view.refresh_heat.unbind(1))
 		plaza_view.portal_used.connect(use_portal)
 		plaza_view.account = net.account
+		_tour_show()
 		plaza_view.contract_asked.connect(func(action: String, job_id: String) -> void:
 			if net:
 				net.contract_ask(action, job_id))
@@ -2577,6 +2745,8 @@ func use_portal(destination: String) -> void:
 		var way := _route(destination.trim_prefix("world:"))
 		if world == null or way.is_empty():
 			plaza_view.show_notice("That world is not running on this server.")
+			return
+		if _tour_refuses(world):
 			return
 		_leave_raid()
 		_show_travel("Travelling to %s..." % world.display_name)
@@ -3152,6 +3322,110 @@ static func _arg(args: PackedStringArray, flag: String, fallback: String) -> Str
 
 ## What a storefront's terminal shows: the shop panel on the screen's dark
 ## glass, and a way out (the button or Esc).
+## The new player's tour's guide (`_tour_guide_tick`): a soft amber column
+## of light standing on the thing the current step wants you to use, the
+## step written over it with how far it is, seen through walls so it leads
+## you from anywhere in the place. Only you see it, it is never solid, and
+## it fades its column as you get close, leaving the words over the thing.
+## View only: it reads the body's position and changes nothing.
+class TourGuide:
+	extends Node3D
+
+	## Seconds between looks for where the step's thing is (a depot moves
+	## nearer as you walk; a rack's weapon goes on).
+	const LOOK_EVERY := 0.5
+	const INK := Color(1.0, 0.78, 0.36)
+
+	## Where it stands (the thing's own position).
+	var target := Vector3.ZERO
+	## The step's objective, written over it.
+	var text := ""
+	## The column's height over the thing, metres.
+	var height := 2.4
+	## Within this many metres the column fades out; the words stay.
+	var near := 3.5
+	## How fast it glides to a new spot, per second.
+	var glide := 6.0
+
+	var _column: MeshInstance3D
+	var _ring: MeshInstance3D
+	var _label: Label3D
+	var _material: StandardMaterial3D
+	var _time := 0.0
+	var _placed := false
+
+	func _init() -> void:
+		top_level = true
+		_material = StandardMaterial3D.new()
+		_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_material.no_depth_test = true
+		_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_material.albedo_color = Color(INK, 0.5)
+		var shaft := CylinderMesh.new()
+		shaft.top_radius = 0.015
+		shaft.bottom_radius = 0.06
+		shaft.height = height
+		shaft.radial_segments = 12
+		shaft.rings = 1
+		shaft.material = _material
+		_column = MeshInstance3D.new()
+		_column.name = "Column"
+		_column.mesh = shaft
+		_column.position = Vector3(0.0, height * 0.5, 0.0)
+		_column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_column)
+		var torus := TorusMesh.new()
+		torus.inner_radius = 0.34
+		torus.outer_radius = 0.4
+		torus.rings = 24
+		torus.ring_segments = 6
+		torus.material = _material
+		_ring = MeshInstance3D.new()
+		_ring.name = "Ring"
+		_ring.mesh = torus
+		_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_ring)
+		_label = Label3D.new()
+		_label.name = "Words"
+		_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_label.no_depth_test = true
+		_label.fixed_size = true
+		_label.pixel_size = 0.0013
+		_label.font_size = 40
+		_label.outline_size = 10
+		_label.outline_modulate = Color(0.0, 0.0, 0.0, 0.85)
+		_label.modulate = INK.lightened(0.35)
+		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		_label.render_priority = 2
+		add_child(_label)
+
+	## Moves it toward `target` and writes the words for a body at `from`.
+	func follow(from: Vector3, delta: float) -> void:
+		if not _placed:
+			global_position = target
+			_placed = true
+		else:
+			global_position = global_position.lerp(target, clampf(glide * delta, 0.0, 1.0))
+		_time += delta
+		var away := Vector2(from.x - target.x, from.z - target.z).length()
+		var lit := clampf((away - near * 0.5) / near, 0.0, 1.0)
+		var pulse := 0.5 + 0.5 * sin(_time * 3.0)
+		_material.albedo_color = Color(INK, lerpf(0.0, 0.32 + 0.2 * pulse, lit))
+		_column.visible = lit > 0.01
+		_ring.scale = Vector3.ONE * (1.0 + 0.12 * pulse)
+		_ring.visible = lit > 0.01
+		var top := height if lit > 0.01 else 0.7
+		_label.position = Vector3(0.0, top + 0.25, 0.0)
+		_label.text = text if away < near else "%s\n%d m" % [text, roundi(away)]
+
+	## The words over it now (for tests).
+	func words() -> String:
+		return _label.text
+
+
 class ShopView:
 	extends Control
 

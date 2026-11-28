@@ -24,6 +24,9 @@ var contracts: Array[Dictionary] = []
 ## The new player's tour objective, a small line on the watch card (set by
 ## `main.gd`, "" for none).
 var objective := ""
+## What to press for a tour step with nothing to walk to (`Onboarding.hint`),
+## on the line under the crosshair while nothing else is offered there.
+var tour_hint := ""
 
 ## Rarity, worth and description of the gear you look at, floating over it.
 var tag: Label3D
@@ -106,6 +109,8 @@ func _process(delta: float) -> void:
 	var target := base.player.find_interactable() if base.player.vehicle == null else null
 	var lines := describe(target)
 	_prompt.text = lines[0] if target != null else Hud.reload_prompt(base.player)
+	if _prompt.text == "" and not (controller != null and controller.wrist_raised):
+		_prompt.text = tour_hint
 	_show_tag(target as HomeBase.Display, lines[1])
 	_update_wrist(delta)
 	if _notice_left > 0.0:

@@ -114,6 +114,15 @@ date in the same PR.
   (`PlayerController.watch_shortcut`, `quick_emote`, `Phone.shortcut`),
   never a menu of their own; a new one is an `InputSetup` action and a
   `Phone.CONTROLS` row, and no two actions share a key (a test checks it).
+- The phone's pop-ups (`Phone.show_notice`) come one at a time in the order
+  sent, never over each other (Caleb's "they stack in random order"): one
+  sent while another is up waits (`notices_kept`, the oldest plain one
+  dropped past it), the same words are never queued twice, and a `key`
+  names news that a newer one replaces, up or waiting, so a stale step or
+  update notice is never shown (`drop_notice` takes one down). `first`
+  puts one ahead of plain news (the tour's step). While the screen is
+  covered between places (`notices_paused`, set by `main.gd`) the one up
+  keeps its time. A new kind of news that can go stale sends a key.
 - Bug reports (the must-work checklist's "Bug reporting with logs"): the
   phone's Report app (`Phone.report_requested`) hands `Main` a line of
   text, and `core/report/bug_report.gd` (`Main.bug_report`, view and
@@ -133,12 +142,35 @@ date in the same PR.
   phone (`Phone.add_local_message`, kept on the phone only, so it works
   offline), one step at a time, and the step's objective is a small line on
   the watch card (`Hud.Wrist.objective`) and the visor glass (`Hud.objective`,
-  drawn by `VisorHud._draw_objectives`), never an overlay. Steps finish on the
+  drawn by `VisorHud._draw_objectives`), never an overlay. A new player
+  has no helmet, so the tour also leads through the world (Caleb's "it
+  doesn't follow the player"): each step names what it points at
+  (`STEPS[i].mark`, `Onboarding.mark`: a weapon on show, the test lane, the
+  base's way out, a safe zone's portal by destination, the nearest depot),
+  and `main.gd` stands the guide's light on it (`Main.TourGuide`, view only,
+  only you see it, through walls), the objective and the distance written
+  over it, its column fading as you get close (`_tour_guide_tick`,
+  `_tour_mark_at`, looked for again every `TourGuide.LOOK_EVERY`). A step
+  with nothing to walk to (raising the watch) says what to press instead,
+  on the line under the crosshair while nothing else is offered there
+  (`Onboarding.hint`, `Hud.tour_hint`, `BaseHud.tour_hint`). The handler's
+  pop-up says the current step only (`_tour_remind`, key `TOUR_NOTICE`), on
+  each step and again on arriving in a new place or a new life. Places are
+  found through the map contract (`WorldDef`'s "portal", "depot" and
+  "outpost" groups), never by world. Steps finish on the
   action itself, reported by `main.gd` as events (`_tour_event`) and as what
   is already true (`_tour_check`), never on a button. It is a view of the
-  player's own progress: it never locks, unlocks or hands out anything, and
-  a server never reads it. It names worlds by what they are (`Onboarding.names`),
-  never by id. A save from before it starts it only if nothing was played or
+  player's own progress, with one rule (Caleb's call): while it runs a
+  full-loot world (gear at risk, not kept on death) is closed
+  (`Onboarding.locks`), until the tour is finished or skipped. `main.gd`
+  turns every way in back with the handler saying why
+  (`_tour_refuses`: the plaza's gates, whose prompt says it is closed
+  (`PlazaView.tour_closed`), a squad portal, the watch's portal, joining a
+  friend, a solo start). It hands out nothing, and a server never reads
+  it, so the lock is the client's (the tour lives in the local profile). It names worlds by what they are (`Onboarding.names`),
+  never by id, picking the launch's worlds first (`LaunchScope.worlds`:
+  Frostline to learn in, Ashfront for full loot, Caleb's call) in every
+  build that has them. A save from before it starts it only if nothing was played or
   equipped. Settings' System tab skips or replays it, and dev mode never
   runs it. A new step is an entry in `Onboarding.STEPS` and an event reported
   where the action happens.

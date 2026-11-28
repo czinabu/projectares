@@ -43,6 +43,10 @@ const FRESH_START_BACKUP := "user://profile_before_fresh_start.json"
 
 ## Tests turn this off so they never touch a real save.
 var persist := true
+## Whether `reset` starts the new player's tour. Tests turn this off: a
+## profile reset in a check is a player who knows the game, free to go into
+## a full-loot world (`Onboarding.locks`); the tour's own checks turn it on.
+var tour_on_reset := true
 ## The file this profile saves to: `SAVE_PATH`, or `DEV_SAVE_PATH` in dev mode.
 var save_path := SAVE_PATH
 var stash: Array[String] = []
@@ -166,7 +170,7 @@ func reset() -> void:
 	base_plan = BasePlan.clean(null)
 	blueprints.clear()
 	insurance = SafetyNets.fresh()
-	onboarding = Onboarding.fresh()
+	onboarding = Onboarding.fresh() if tour_on_reset else Onboarding.finished()
 
 
 func record_arena(won: bool) -> void:
