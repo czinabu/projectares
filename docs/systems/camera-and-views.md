@@ -52,9 +52,29 @@ date in the same PR.
   `skate_carve_roll`, `boost_rumble_deg`), read from the skin
   (`ActorSkin.flight_bank`, `skate_carve`, `stride_phase`, `boost_push`).
   Camera only and first person only (`_eyes_weight`): the body is the same
-  in both views and third person sees it roll. The phone's "Camera motion
+  in both views and third person sees it roll. It also leans with the
+  turn the body leads into in a hover or skate (`ActorSkin.flight_lean`,
+  `flight_lean_roll`), and the eyes bob on a spring stepped in short
+  slices (`_update_flight_bob`: sunk by a hard push up, `flight_bob_gain`
+  up to `flight_bob_max`, a hover's slow breath `hover_bob`, a skate's
+  stride `skate_bob`). The phone's "Camera motion
   in flight" slider (`GameSettings.flight_camera_motion`) scales it, down
   to none.
+- The watch's flight hologram (`FlightHolo`, `core/ui/flight_holo.gd`,
+  mounted by `Hud.Wrist._mount_flight_holo`): first person only, while
+  flying (`FlightHolo.flying`: in the air or skating with a working rig),
+  not with the phone out, the card up or the sights up, and only with the
+  phone's "Flight hologram" toggle (`GameSettings.flight_hologram`). It
+  is drawn in one draw a frame, an unshaded line mesh with no depth test,
+  from the body's own bones as posed this frame (read by a probe modifier
+  added after all the others), so it is never a second model or pose. It
+  is the watch's projection (Caleb's call): a faint beam runs to it from
+  the watch on the wrist (`Wrist.watch_position`; no watch, no
+  hologram), and since the wrist is out of view while flying it stands
+  `ahead` of the eyes at a share of the screen (`corner`) worked
+  out from the field of view, seen from `view_down` above and `view_side`
+  round, against a ring level with the world. The skin's `rig_marks` give
+  the wingtips and lit flames, `bones` the skeleton.
 - Bodies are shown between physics ticks (Caleb plays at 144 Hz):
   `ShownMotion` (`core/visual/shown_motion.gd`, added by `Look` to every
   actor and vehicle it dresses, so a server has none) puts its parent

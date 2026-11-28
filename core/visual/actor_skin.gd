@@ -272,6 +272,45 @@ var skate_stride := 1.3
 var skate_push := 0.35
 var kick_spin_time := 0.5
 var dash_tuck := 0.7
+## Set by the first-person view each frame (`PlayerController`): this is
+## your own body and the camera is in its head. The rig's voice is then
+## heard whole and steady, panned only `worn_pan` and at a fixed level
+## `worn_db` under its full voice, never louder for being at the ear nor
+## swinging side to side as the head turns (Caleb: the rigs sounded wrong
+## in first person); boot pops likewise. View only.
+var worn_view := false
+var worn_pan := 0.15
+var worn_db := -5.0
+## The limbs are kept clear of the rig worn while flying (Caleb: no limb may
+## clip through any flight rig): after every flight pose, any part of an arm
+## or leg that would sink into the pack, a spread wing or the other foot's
+## boot thruster is turned out of it at the shoulder or hip. How far each
+## limb stays off a rig's surface (metres: the arm's and leg's thickness
+## with a little air), the most it is turned in one go (radians), and
+## whether it is done at all (the tests turn it off to see what it saves).
+var rig_clear_arm := 0.055
+var rig_clear_leg := 0.075
+var rig_clear_turn := 1.2
+var rig_clear_on := true
+## Each rig's takeoff (Caleb's ask): a pose of its own for the first
+## `rig_takeoff_time` seconds of a flight from the ground, laid over the
+## flight pose and the same in both views. Directions are in the body's
+## frame like `glide_arm` (x out to the side, y up the body, z back), as
+## [arm, thigh, shin] with a lean (radians forward) and how far the toes
+## point. The jetpack lifts: knees giving as the jets catch, arms pressed
+## down and back, then the legs hang straight under the thrust. The boots
+## spring: a knee driven up, the other leg pushing off, arms thrown up and
+## forward. The wings launch: arms swept back along the wings, the body
+## pitched into the dive, legs together.
+var rig_takeoff_time := 0.75
+var takeoff_poses := {
+	"jetpack": {"arm": Vector3(0.4, -1.0, 0.35), "thigh": [Vector3(0.06, -1.0, -0.45), Vector3(0.06, -1.0, -0.3)],
+			"shin": [Vector3(0.0, -1.0, 0.55), Vector3(0.0, -1.0, 0.45)], "lean": 0.12, "toes": 0.7, "head": -0.25},
+	"boots": {"arm": Vector3(0.3, 0.5, -0.8), "thigh": [Vector3(0.06, -0.35, -1.0), Vector3(0.05, -1.0, 0.35)],
+			"shin": [Vector3(0.0, -1.0, 0.2), Vector3(0.0, -1.0, 0.6)], "lean": 0.22, "toes": 0.9, "head": -0.1},
+	"wings": {"arm": Vector3(0.3, -0.45, 0.9), "thigh": [Vector3(0.04, -1.0, 0.12), Vector3(0.04, -1.0, 0.12)],
+			"shin": [Vector3(0.0, -1.0, 0.2), Vector3(0.0, -1.0, 0.2)], "lean": 0.45, "toes": 1.0, "head": -0.35},
+}
 ## Secondary motion in flight (Caleb's ask: the body moves with every turn
 ## and change of speed, never holding one stiff pose). The limbs carry on a
 ## little as the body speeds up, slows, climbs or turns: the pull is the
@@ -1505,6 +1544,7 @@ func _update_air(delta: float, airborne: bool) -> void:
 	else:
 		_air_push = move_toward(_air_push, 0.0, delta / takeoff_time)
 	_was_airborne = airborne
+	_update_takeoff(delta)
 	_land_left = move_toward(_land_left, 0.0, delta / land_time)
 	if locomotion:
 		# Down fast, up slow: sin over the squat's life, peaking early.
@@ -5336,10 +5376,16 @@ func _update_rig_voice(burning: bool) -> void:
 	var f := actor.flight
 	var dashing := f.can_skim() and actor.air_dash_left > 0.0
 	if dashing and not _was_dashing and not actor.is_dead:
-		Sfx.play("boot_pop", global_position + Vector3(0, 0.3, 0), -4.0, maxf(f.noise_range, 8.0), maxf(f.noise_range, 8.0) / 6.0)
+		_boot_pop(-4.0)
 	_was_dashing = dashing
 	if _rig_voice == null:
 		return
+	# Worn in first person, the rig is on your own back and feet: heard
+	# whole and steady from inside it, not as a sound beside the ear that
+	# swings side to side as the head turns and the body tips.
+	_rig_voice.panning_strength = worn_pan if worn_view else 1.0
+	_rig_voice.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED if worn_view \
+			else AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 	var air := actor.velocity.length()
 	var on := false
 	var volume := -80.0
@@ -5361,7 +5407,7 @@ func _update_rig_voice(burning: bool) -> void:
 		_rig_voice.play()
 	elif not on and _rig_voice.playing:
 		_rig_voice.stop()
-	_rig_voice.volume_db = volume
+	_rig_voice.volume_db = volume + (worn_db if worn_view else 0.0)
 	_rig_voice.pitch_scale = pitch
 
 
@@ -5404,7 +5450,41 @@ func _update_wing_air(gliding: bool, delta: float) -> void:
 ## round, NAN when not skating) and how hard a jetpack boost is pushing
 ## (0..1, more as it lights).
 func flight_bank() -> float:
-	return _bank * smoothstep(0.0, 1.0, _glide) * (1.0 - smoothstep(0.0, 1.0, _boost))
+	var lead := lead_bank * _lead_turn * _lead_w
+	return (_bank + lead) * smoothstep(0.0, 1.0, _glide) * (1.0 - smoothstep(0.0, 1.0, _boost))
+
+
+## The skeleton the body is posed on (the flight hologram draws from it,
+## `FlightHolo`), or null.
+func bones() -> Skeleton3D:
+	return _skeleton
+
+
+## The worn rig as a few strokes for the flight hologram (`FlightHolo`),
+## world points: each wing from its root to its tip light, and each lit
+## flame along its blast (a third entry marks a flame). Empty with no rig.
+func rig_marks() -> Array:
+	var marks := []
+	if _rig_back != null and is_instance_valid(_rig_back):
+		for wing_name: String in ["WingL", "WingR"]:
+			var wing := _rig_back.get_node_or_null(wing_name) as Node3D
+			var tip := _rig_back.get_node_or_null(wing_name + "/Panel/TipLight") as Node3D
+			if wing != null and tip != null and wing.visible:
+				marks.append([wing.global_position, tip.global_position])
+	for flame: Node3D in _flames:
+		if is_instance_valid(flame) and flame.is_visible_in_tree():
+			var blast := flame.global_basis * Vector3.DOWN * 0.35
+			marks.append([flame.global_position, flame.global_position + blast, true])
+	return marks
+
+
+## For the first-person camera's lean in turns: how far the upright flying
+## body (a hover, the boots' flight or a skate, not a glide) leans to the
+## left (radians, negative to the right), with the turn the pilot is asking
+## for on top (`_lead_turn`), so the view leans into a turn as the body does.
+func flight_lean() -> float:
+	var upright := 1.0 - smoothstep(0.0, 1.0, maxf(_glide, _boost))
+	return (-_tilt.x + lead_lean * _lead_turn * _lead_w) * upright
 
 
 func skate_carve() -> float:
@@ -5796,6 +5876,9 @@ func _pose_glide() -> void:
 	_pose_air()
 	_pose_flat()
 	_pose_lead_arms()
+	_pose_takeoff()
+	if rig_clear_on:
+		_keep_clear_of_rig()
 
 
 ## The flat flying pose of `_pose_glide`, while the glide or a boost has it.
@@ -5912,6 +5995,301 @@ func _leg_lead() -> Vector3:
 	if _lead_w <= 0.0:
 		return Vector3.ZERO
 	return _heading_to_body(-Vector3(_lead_reach.x, 0.0, _lead_reach.z) * lead_legs * _lead_w)
+
+
+# --- Limbs clear of the rig ------------------------------------------------------
+
+## What each rig part a limb must stay out of is: the pack on the back as a
+## box, each spread wing as a thin plate of its own outline, and a boot's
+## heel thruster as a box only the other leg is kept out of. World frame,
+## posed as the skeleton is this frame (read inside the pose pass, before
+## anything hung on a bone has followed it).
+var _rig_boxes := {}
+## The takeoff running (1 at liftoff down to 0, `rig_takeoff_time`), and
+## which rig's.
+var _takeoff := 0.0
+var _takeoff_kind := ""
+var _flew_last := false
+var _wing_shape := RigModel.new()
+
+
+func _rig_shapes() -> Array:
+	var out := []
+	if _skeleton == null:
+		return out
+	var frame := _skeleton.global_transform
+	for holder in _rig_holders:
+		var attach := holder as BoneAttachment3D
+		if attach == null or not is_instance_valid(attach):
+			continue
+		var bone := attach.get_bone_idx()
+		if bone < 0:
+			continue
+		var posed := frame * _skeleton.get_bone_global_pose(bone) * attach.global_transform.affine_inverse()
+		var part := _rig_part_in(attach)
+		if part == null:
+			continue
+		var leg := -1
+		if part.name.begins_with("Boot"):
+			leg = 0 if part.name == "BootL" else 1
+			var heel := part.get_node_or_null("Heel") as Node3D
+			if heel != null:
+				out.append({"kind": "box", "xf": posed * heel.global_transform, "box": _rig_box(heel), "own": leg})
+			continue
+		out.append({"kind": "box", "xf": posed * part.global_transform, "box": _rig_box(part), "own": -1})
+		for wing_name: String in ["WingL", "WingR"]:
+			var hinge := part.get_node_or_null(wing_name) as Node3D
+			if hinge != null and hinge.visible:
+				out.append({"kind": "wing", "xf": posed * hinge.global_transform, "side": -1.0 if wing_name == "WingL" else 1.0, "own": -1,
+						"span": _wing_shape.wing_span, "root": _wing_shape.wing_root_chord, "sweep": _wing_shape.wing_sweep,
+						"tip": _wing_shape.wing_tip_chord})
+	return out
+
+
+func _rig_part_in(attach: Node3D) -> Node3D:
+	var holder := attach.get_node_or_null("Part")
+	if holder == null or holder.get_child_count() == 0:
+		return null
+	return holder.get_child(0) as Node3D
+
+
+## The box round a rig part's own pieces (its frame), leaving out what
+## moves or is laid elsewhere: the wings, the generic straps and anything
+## hung on a weapon rail. Worked out once per part.
+func _rig_box(part: Node3D) -> AABB:
+	var key := part.get_instance_id()
+	if _rig_boxes.has(key):
+		return _rig_boxes[key]
+	var box := AABB()
+	var first := true
+	var to_part := part.global_transform.affine_inverse()
+	for node in part.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		var skip := false
+		var up: Node = mesh
+		while up != null and up != part:
+			# Flames and screens hang off markers: they are light, not the rig.
+			if String(up.name) in ["WingL", "WingR", "Straps"] or up is Marker3D:
+				skip = true
+				break
+			up = up.get_parent()
+		if skip or mesh.mesh == null:
+			continue
+		var seen := (to_part * mesh.global_transform) * mesh.get_aabb()
+		box = seen if first else box.merge(seen)
+		first = false
+	_rig_boxes[key] = box
+	return box
+
+
+## How far (world, metres) the point `at` must move to stand `clear` off
+## the rig part `shape`, or zero if it already does. `root` is where the
+## limb starts, and a plate is left toward its side.
+static func rig_push(shape: Dictionary, at: Vector3, clear: float, root: Vector3) -> Vector3:
+	var xf: Transform3D = shape.xf
+	var local := xf.affine_inverse() * at
+	if shape.kind == "box":
+		var box: AABB = (shape.box as AABB).grow(clear)
+		if not box.has_point(local):
+			return Vector3.ZERO
+		var best := Vector3.ZERO
+		var least := INF
+		for axis in 3:
+			var low := local[axis] - box.position[axis]
+			var high := box.end[axis] - local[axis]
+			if low < least:
+				least = low
+				best = Vector3.ZERO
+				best[axis] = -low
+			if high < least:
+				least = high
+				best = Vector3.ZERO
+				best[axis] = high
+		return xf.basis * best
+	# A wing: its outline as `RigModel` builds it, reaching out along the
+	# side from the hinge, leading edge forward and swept back to the tip.
+	var side: float = shape.side
+	var out := local.x * side
+	var span: float = shape.span
+	if out < 0.0 or out > span:
+		return Vector3.ZERO
+	var share := out / span
+	var chord: float = shape.root
+	var sweep: float = shape.sweep
+	var lead := -chord * 0.5 + sweep * share
+	var trail := chord * 0.5 + (sweep + float(shape.tip) - chord) * share
+	if local.z < lead - clear or local.z > trail + clear:
+		return Vector3.ZERO
+	var half := RigModel.WING_THICK * 0.5 + clear
+	if absf(local.y) >= half:
+		return Vector3.ZERO
+	var toward := signf((xf.affine_inverse() * root).y)
+	if toward == 0.0:
+		toward = 1.0
+	return xf.basis * Vector3(0.0, toward * half - local.y, 0.0)
+
+
+## The points along a limb that are kept clear: [point, root], world.
+func _limb_samples(limb: Array, arm: bool) -> PackedVector3Array:
+	var frame := _skeleton.global_transform
+	var root := frame * _skeleton.get_bone_global_pose(limb[0]).origin
+	var elbow := frame * _skeleton.get_bone_global_pose(limb[1]).origin
+	var hand := frame * _skeleton.get_bone_global_pose(limb[2]).origin
+	var out := PackedVector3Array()
+	for t: float in [0.5, 0.75, 1.0]:
+		out.append(root.lerp(elbow, t))
+	for t: float in [0.33, 0.66, 1.0]:
+		out.append(elbow.lerp(hand, t))
+	if arm and elbow.distance_squared_to(hand) > 0.0001:
+		var along := (hand - elbow).normalized()
+		out.append(hand + along * 0.08)
+		out.append(hand + along * 0.16)
+	return out
+
+
+## The deepest any limb sinks into the rig this frame (metres), read
+## after the pose. 0 when clear.
+func rig_intrusion() -> float:
+	if _skeleton == null:
+		return 0.0
+	var shapes := _rig_shapes()
+	var worst := 0.0
+	for limbs: Array in [_glide_arms, _glide_legs]:
+		var arm := limbs == _glide_arms
+		for i in limbs.size():
+			var limb: Array = limbs[i]
+			if limb.is_empty():
+				continue
+			var root := _skeleton.global_transform * _skeleton.get_bone_global_pose(limb[0]).origin
+			var samples := _limb_samples(limb, arm)
+			for k in samples.size():
+				for shape: Dictionary in shapes:
+					if shape.own >= 0 and (arm or shape.own == i):
+						continue
+					# What the limb's own thickness covers, less the air kept.
+					var push := rig_push(shape, samples[k], (rig_clear_arm if arm else rig_clear_leg) - 0.02, root)
+					if push.length() > worst:
+						worst = push.length()
+						rig_worst = "%s %d point %d in the %s" % ["arm" if arm else "leg", i, k, shape.kind]
+	return worst
+
+
+## Where `rig_intrusion` found the deepest, for a test to name.
+var rig_worst := ""
+
+
+## Turns any limb sunk into the rig out of it at its shoulder or hip, a
+## few times over so a limb pushed off one part does not stay in another.
+func _keep_clear_of_rig() -> void:
+	if _rig_holders.is_empty() or not (is_airborne() or _lead_w > 0.0 or _glide > 0.0):
+		return
+	var shapes := _rig_shapes()
+	if shapes.is_empty():
+		return
+	var to_skeleton := _skeleton.global_transform.basis.inverse()
+	for limbs: Array in [_glide_arms, _glide_legs]:
+		var arm := limbs == _glide_arms
+		var clear := rig_clear_arm if arm else rig_clear_leg
+		for i in limbs.size():
+			var limb: Array = limbs[i]
+			if limb.is_empty():
+				continue
+			for pass_i in 4:
+				var root := _skeleton.global_transform * _skeleton.get_bone_global_pose(limb[0]).origin
+				var deepest := Vector3.ZERO
+				var from := Vector3.ZERO
+				for at in _limb_samples(limb, arm):
+					if at.distance_to(root) < 0.1:
+						continue
+					for shape: Dictionary in shapes:
+						if shape.own >= 0 and (arm or shape.own == i):
+							continue
+						var push := rig_push(shape, at, clear, root)
+						if push.length_squared() > deepest.length_squared():
+							deepest = push
+							from = at
+				if deepest == Vector3.ZERO:
+					break
+				var was := to_skeleton * (from - root)
+				var now := to_skeleton * (from + deepest * 1.25 - root)
+				if was.length_squared() < 0.000001 or now.length_squared() < 0.000001:
+					break
+				var axis := was.cross(now)
+				if axis.length_squared() < 1e-12:
+					break
+				var angle := minf(was.angle_to(now), rig_clear_turn)
+				var pose := _skeleton.get_bone_global_pose(limb[0])
+				pose.basis = Basis(axis.normalized(), angle) * pose.basis
+				_skeleton.set_bone_global_pose(limb[0], pose)
+
+
+## Starts a rig's takeoff when its flight lights up off the ground (the
+## jets or the boots firing, or the wings' launch) and runs it down.
+func _update_takeoff(delta: float) -> void:
+	var f := actor.flight
+	var flying := f.enabled and not actor.is_dead and actor.vehicle == null \
+			and (f.is_thrusting or f.is_hovering or f.is_gliding or f.is_boosting or f.is_skimming)
+	var kind := RigModel.kind_for(_rig_id) if _rig_id != "" else ""
+	if flying and not _flew_last and kind != "" and actor.airborne_time < (1.5 if kind == "wings" else 0.6):
+		_takeoff = 1.0
+		_takeoff_kind = kind
+	elif delta > 0.0:
+		_takeoff = move_toward(_takeoff, 0.0, delta / maxf(rig_takeoff_time, 0.05))
+	_flew_last = flying
+
+
+## How far into its takeoff pose the body is: in fast, held, out as the
+## flight pose takes over.
+func takeoff_weight() -> float:
+	if _takeoff <= 0.0:
+		return 0.0
+	var t := 1.0 - _takeoff
+	return smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.55, 1.0, t))
+
+
+## The rig's own takeoff pose (`takeoff_poses`), laid over the flight pose
+## while `_takeoff` runs. The arms keep their hold on a weapon being aimed.
+func _pose_takeoff() -> void:
+	var w := takeoff_weight()
+	if w <= 0.001 or not takeoff_poses.has(_takeoff_kind):
+		return
+	var pose: Dictionary = takeoff_poses[_takeoff_kind]
+	var to_skeleton := _skeleton.basis.orthonormalized().inverse() * _model_basis_inverse() * Basis(Vector3.UP, PI)
+	var right := (to_skeleton * Vector3.RIGHT).normalized()
+	# The first part of it gives at the knees, then the legs drive out.
+	var drive := smoothstep(0.15, 0.5, 1.0 - _takeoff)
+	var lean: float = pose.lean
+	for bone in _spine_bones:
+		var b := _skeleton.get_bone_global_pose(bone)
+		b.basis = Basis(right, -lean * w / maxf(_spine_bones.size(), 1)) * b.basis
+		_skeleton.set_bone_global_pose(bone, b)
+	if _glide_neck >= 0:
+		var n := _skeleton.get_bone_global_pose(_glide_neck)
+		n.basis = Basis(right, float(pose.head) * w) * n.basis
+		_skeleton.set_bone_global_pose(_glide_neck, n)
+	for i in _glide_legs.size():
+		var limb: Array = _glide_legs[i]
+		if limb.is_empty():
+			continue
+		var at := mini(i, 1)
+		var thigh: Vector3 = (pose.thigh as Array)[at]
+		var shin: Vector3 = (pose.shin as Array)[at]
+		# Driving out, a bent knee straightens toward the thigh's line.
+		shin = shin.lerp(thigh, drive * 0.6)
+		_pose_leg(limb, to_skeleton * Vector3(thigh.x * limb[3], thigh.y, thigh.z), right, w,
+				to_skeleton * Vector3(shin.x * limb[3], shin.y, shin.z), float(pose.toes))
+	var arm_w := w * (1.0 - smoothstep(0.0, 1.0, _flight_hold))
+	if _in_hand != null:
+		arm_w *= lead_armed
+	if arm_w <= 0.001:
+		return
+	var arm: Vector3 = pose.arm
+	for limb: Array in _glide_arms:
+		if limb.is_empty():
+			continue
+		var wanted := to_skeleton * Vector3(arm.x * limb[3], arm.y, arm.z)
+		_aim_bone(limb[0], limb[1], wanted, arm_w)
+		_aim_bone(limb[1], limb[2], wanted, arm_w)
 
 
 ## The limbs' secondary motion (`sway_stiffness`): the pull of the body's
@@ -6239,13 +6617,26 @@ func _aim_flame(flame: Node3D) -> void:
 func _on_burst() -> void:
 	_burst_left = burst_burn
 	if actor.flight.can_skim() and not actor.is_dead:
-		var reach := maxf(actor.flight.noise_range, 8.0)
-		Sfx.play("boot_pop", global_position + Vector3(0, 0.3, 0), -2.0, reach, reach / 6.0)
+		_boot_pop(-2.0)
+	if _rig_id != "" and actor.airborne_time < 0.6 and not actor.flight.is_skating and not actor.is_dead:
+		# A kick or launch straight off the ground is the rig's takeoff.
+		_takeoff = 1.0
+		_takeoff_kind = RigModel.kind_for(_rig_id)
 	if actor.flight.is_skating and _flight_hold < 0.5 and not actor.is_dead:
 		# A kick off a skate: a spin, the way the strafe key or the carve leans.
 		var side := actor.cmd.move.x if absf(actor.cmd.move.x) > 0.1 else -_skate_carve
 		_spin_dir = -1.0 if side < 0.0 else 1.0
 		_spin_left = kick_spin_time
+
+
+## A boots' kick or dash pop: from the feet for everyone else, and whole
+## for the wearer in first person (`worn_view`).
+func _boot_pop(volume_db: float) -> void:
+	if worn_view:
+		Sfx.play("boot_pop", null, volume_db + worn_db)
+		return
+	var reach := maxf(actor.flight.noise_range, 8.0)
+	Sfx.play("boot_pop", global_position + Vector3(0, 0.3, 0), volume_db, reach, reach / 6.0)
 
 
 ## Swaps the rig model for the one `id` needs ("" takes it off).

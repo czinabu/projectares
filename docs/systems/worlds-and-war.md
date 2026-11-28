@@ -71,7 +71,11 @@ date in the same PR.
   also sets the map's "weather_here" meta, which blends `Look.atmosphere`'s storm mood in and lowers the fog floor
   (`Look.weather_cover`, `soften_weather`: gone by about 70 m at the heart,
   Caleb's pick); an ash storm also settles ash on the visor glass
-  (`VisorHud._draw_ash`, `ash_settling`: glass only, the middle kept clear). Told in the world only: the visor's heading tape
+  (`VisorHud._draw_ash`, `ash_settling`: glass only, the middle kept clear).
+  Flying fast through any storm, or through the cold, the weather streaks
+  across the glass in its own streak colour (`VisorHud._draw_streaks`,
+  `streaks_wanted`: from `streak_from` to `streak_full` m/s, the storm's
+  strength or `streak_cold` in the cold, first person only). Told in the world only: the visor's heading tape
   ("storm"), the watch map's ring and zone line, the plaza's heat signs.
 - The planet kit (DESIGN.md "Planet kit", `core/world/planet/`): a
   `PlanetType` is a kind of planet as data (sky, calm and storm light,

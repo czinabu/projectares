@@ -37,8 +37,10 @@ date in the same PR.
   (Caleb's call, DESIGN.md "Cruising"): the jetpack's boost is its cruise;
   boots skate (`Actor._wants_skate`, `_skate_velocity`,
   `_simulate_skate`, `FlightRig.is_skating`: `skate_height` over whatever
-  the ray finds below, within `skate_reach`, at `skate_speed`, for
-  nothing; a skate that touches down lifts straight off again, back brakes
+  the ray finds below, within `skate_reach`, at `skate_speed`, building
+  `skate_heat` a second (about 20 s on a Mk1, Caleb's call that every rig
+  has a fair limit; overheated, the skate drops you until the heat is back
+  under `recover_heat`, and it cools on the ground); a skate that touches down lifts straight off again, back brakes
   out); wings soar (`FlightRig.is_soaring`, `soar_accel`, `soar_climb`:
   held sprint keeps a glide going with jump let go, level at glide speed,
   on glide stamina). All three are read from the command, so clients
@@ -68,7 +70,7 @@ date in the same PR.
   `sprint_out_time` as out of a sprint, and free look (E) holds the boost's
   heading (`_boost_yaw`) like the wings'; it is loud and clumsy under a roof;
   the boots are ground agility and stealth: no heat, `max_charges` pay for
-  kicks and dashes, a short skim (`skim_time`), a free skate, faster on foot
+  kicks and dashes, a short skim (`skim_time`), a skate on heat, faster on foot
   (`ground_speed_mult`), no fall damage, a graze window on every dash
   (`Actor.graze_left`, checked in `Actor.modify_incoming`), but a 10 m
   ceiling; the wings are distance and speed: a launch, a fast glide on glide
@@ -112,10 +114,18 @@ date in the same PR.
   speed is momentum, a turn costs speed, a bank sinks faster, pulling up in a
   turn tightens it, and below the stall speed the wings stall
   (`Actor.glide_stalled`: they barely turn and drop at `stall_sink` until the
-  nose drops and the speed comes back). Gliding, Shift is a wing boost
-  instead of a dash (`FlightRig.glide_boost`): it thrusts you the way you
-  face and the glide keeps that speed, and Shift + S boosts upward
-  (`glide_boost_climb`); wings never dash sideways. The glide's attitude is
+  nose drops and the speed comes back). The nose follows the view's pitch
+  (Caleb's call, `Actor.glide_trim` from `cmd.pitch`: `glide_pitch_dead`
+  either side of level holds it, `glide_pitch_full` dives or pulls up all
+  the way). Gliding, Shift or a fresh press of W is a wing boost instead
+  of a dash (`FlightRig.glide_boost`, `Actor._glide_w_pressed`; W held from
+  the ground into a glide never fires one): it thrusts you the way you
+  face and the glide keeps that speed, or boosts upward
+  (`glide_boost_climb`) while the nose is pulled well up; S held is the
+  airbrake (`Actor.glide_braking`, `FlightRig.glide_brake`), bleeding the
+  speed down to the stall, never pitching. Wings never dash sideways. The
+  first `Hud.takeoff_tips` takeoffs on each rig put its controls on the
+  watch (`FlightRig.takeoff_hint`, `Hud._rig_takeoff_tip`). The glide's attitude is
   held in the world while the view turns, so spinning the camera never
   drags the body round (`ActorSkin._update_glide`). And a jetpack boost
   runs along the view's heading, climbing only on jump and descend, never
@@ -149,8 +159,12 @@ date in the same PR.
   heavy gunship, the boots a skater and free-runner, the wings a bird of
   prey. Gameplay, simulated from the command like the rest: a wing swoop
   (`Actor._glide_velocity`: pulled up with speed past the glide's, the
-  climb pays only `glide_climb_cost`, no drag on top, so a 30 m/s dive
-  pulls back up about 20 m and never above where the dive began; at the
+  climb pays only `glide_climb_cost` (10, about gravity's own: Caleb's
+  call for more height), no drag on top, so a dive gives back all the
+  height it spent, and never more: a pull-up rises no faster than would
+  carry it to `Actor._glide_high` (where the glide last flew at its own
+  speed, raised by what a boost bought) and is slowed past it at
+  `glide_climb_over` g; at the
   glide's speed a pull-up bleeds speed as before), and the boots' wall kick
   (`Actor._wall_kick`, `wall_beside`, `FlightRig.wall_kick` and
   `wall_kick_push`: jump in the air beside a wall kicks up and away from
@@ -191,12 +205,38 @@ date in the same PR.
   a little ahead (`lead_*` tuning, `_pose_lead_arms`, `_leg_lead`; the arms
   only `lead_armed` of it with a weapon in hand). A check of a posed bone
   must read it from a modifier after them all, since the skeleton puts its
-  poses back once drawn (`rig_style_tests._probe`). Each rig has its own voice from the body, heard by
+  poses back once drawn (`rig_style_tests._probe`). No limb sinks into a
+  rig (Caleb's rule): last in the flight pose (`ActorSkin._keep_clear_of_rig`,
+  airborne only), points along each arm (with the hand) and leg are
+  tested against the rig as posed this frame (`_rig_shapes`: the pack as
+  the box round its own pieces, leaving out the wings, the generic straps
+  and anything hung off a marker such as flames; each visible wing as a
+  plate of its built outline, `RigModel.WING_THICK`; a boot's heel
+  thruster as a box only the other leg avoids), and a limb sunk in is
+  turned out at its shoulder or hip, up to four times, to stand
+  `rig_clear_arm` or `rig_clear_leg` off (a plate is left toward the
+  limb's own side). One body, so both views. `rig_intrusion` measures it;
+  `tests/flight_immersion_tests.gd` flies every rig model's poses on both
+  builds (about 10 cm deep without it, under 1 cm with it). Each rig
+  takes off in its own pose (Caleb's ask, `ActorSkin._pose_takeoff`,
+  `takeoff_poses`, `rig_takeoff_time`): started when the rig's flight
+  lights within a moment of leaving the ground (`_update_takeoff`; the
+  wings' launch a little later) or a kick or launch fires off the ground
+  (`_on_burst`), laid over the flight pose before the keep-clear pass, the
+  arms keeping a weapon's hold; `takeoff_weight` says how far in it is. Each rig has its own voice from the body, heard by
   everyone as far as its `noise_range` (`ActorSkin._update_rig_voice`:
   the jetpack's roar with its throttle, the wings' rush with the airspeed,
   the skate's hum, a pop on each boots kick and dash), and the player hears
-  the wind past their ears at speed (`PlayerController._update_air_rush`).
-  The first-person camera's share of it is in `camera-and-views.md`.
+  the wind past their ears at speed (`PlayerController._update_air_rush`:
+  from `air_rush_from` to `air_rush_full` m/s, its level on the square
+  root of the share so it is heard early, its pitch rising, and a
+  wavering buffet past `air_rush_buffet_from`). Worn in first person
+  (`ActorSkin.worn_view`, set by the controller) the rig is heard whole
+  from inside it, not as a sound beside the ear that swings round as the
+  head turns: its voice barely pans (`worn_pan`), does not fall off with
+  distance and sits `worn_db` lower, and the boots' pops play flat
+  (`_boot_pop`). The first-person camera's share of it is in
+  `camera-and-views.md`.
   Checked by `tests/rig_style_tests.gd`.
 - Helmets are items tagged `helmet` in the `helmet` loadout slot, and data
   like abilities: `Visor` (`core/abilities/visor.gd`, `Actor.visor`) is one

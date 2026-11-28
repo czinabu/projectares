@@ -124,7 +124,11 @@ date in the same PR.
   mouse picks a slice, `wheel_slice`, and never turns the view while it is
   up), drawn on the visor (`VisorHud._draw_emote_wheel`) or, with no
   working visor, as a hologram from the wrist (`Hud.EmoteHolo`,
-  `emote_wheel_holo`), the same in both views. Shortcut keys (DESIGN.md "Shortcut keys") only
+  `emote_wheel_holo`), the same in both views. Flying in first person the
+  watch also throws a small hologram of your own body into the corner of
+  the view (`FlightHolo`; its rules are in `camera-and-views.md`), turned
+  off by the phone's "Flight hologram" toggle on the view tab
+  (`GameSettings.flight_hologram`). Shortcut keys (DESIGN.md "Shortcut keys") only
   raise the same watch or take out the same phone at an icon or app
   (`PlayerController.watch_shortcut`, `quick_emote`, `Phone.shortcut`),
   never a menu of their own; a new one is an `InputSetup` action and a

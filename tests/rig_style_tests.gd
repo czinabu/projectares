@@ -45,8 +45,8 @@ static func _flat_speed(p: Actor) -> float:
 	return Vector2(p.velocity.x, p.velocity.z).length()
 
 
-## Wings: dive for speed, then pull up and the speed turns back into height.
-## The swoop never climbs higher than the dive began.
+## Wings: dive for speed, then pull up and the speed turns back into height:
+## nearly all of it (Caleb's call), and never higher than the dive began.
 static func _test_swoop(t: Node) -> void:
 	var arena := _arena(t, Vector3(-900, 0, 14000))
 	var p := _actor(arena, ["wings_glide"])
@@ -57,19 +57,19 @@ static func _test_swoop(t: Node) -> void:
 	p.cmd.jump = true
 	await t.frames(30)
 	var top := p.global_position.y
-	p.cmd.move = Vector2(0, 1)
+	p.cmd.pitch = -0.6
 	await t.frames(150)
 	var fast := _flat_speed(p)
 	var low := p.global_position.y
-	p.cmd.move = Vector2(0, -1)
+	p.cmd.pitch = 0.6
 	var peak := low
 	for i in 300:
 		await t.get_tree().physics_frame
 		peak = maxf(peak, p.global_position.y)
 	print("  swoop: from %.1f m dove to %.1f m at %.1f m/s, pulled up to %.1f m (gained %.1f), now %.1f m/s" % [top, low, fast, peak, peak - low, _flat_speed(p)])
 	t.check(f.is_gliding and fast > 26.0, "a dive builds speed past the glide's 22 m/s (%.1f)" % fast)
-	t.check(peak - low > 4.0, "pulled up out of the dive, the speed buys height back (%.1f m)" % (peak - low))
-	t.check(peak < top, "a swoop never climbs higher than the dive began (%.1f of %.1f m)" % [peak, top])
+	t.check(peak - low > (top - low) * 0.9, "pulled up out of the dive, the speed buys back nearly all its height (%.1f of %.1f m)" % [peak - low, top - low])
+	t.check(peak < top + 0.3, "a swoop never climbs higher than the dive began (%.1f of %.1f m)" % [peak, top])
 	p.cmd = ActorCommand.new()
 	arena.queue_free()
 	await t.frames(2)

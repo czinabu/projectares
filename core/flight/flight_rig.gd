@@ -134,7 +134,9 @@ var load_heat := 1.0
 ## sinking up to `glide_dive_fall`, gaining `glide_dive_accel` m/s²), and
 ## looking up trades speed for height until you are down to the stall speed
 ## (`glide_stall` of `glide_speed`); each meter climbed costs speed
-## (`glide_climb_cost`, a little more than the dive gave).
+## (`glide_climb_cost`: about gravity's own, so a swoop gives back the
+## height a dive spent, and the speed a boost bought, but never more;
+## Caleb's call, so the wings climb out of a dive and a boost).
 ## Below glide speed you only pick speed back up slowly (`glide_recover`).
 var glide_turn_rate := 1.6
 var glide_dive_gain := 0.6
@@ -142,7 +144,14 @@ var glide_dive_fall := 10.0
 var glide_dive_accel := 5.0
 var glide_drag := 2.0
 var glide_stall := 0.6
-var glide_climb_cost := 15.0
+var glide_climb_cost := 10.0
+## A pull-up rising faster than would carry it to the glide's high point
+## (`Actor._glide_high`) is slowed at this many g, so a swoop never tops
+## where its dive began.
+var glide_climb_over := 3.0
+## The wings' airbrake (S held in a glide, Caleb's call): how fast it bleeds
+## airspeed (m/s a second), never under the stall speed.
+var glide_brake := 9.0
 var glide_recover := 6.0
 var glide_lift_accel := 36.0
 ## How hard the wings catch a fall or a dive back to the glide's own sink, in
@@ -199,10 +208,14 @@ var skim_probe := 30.0
 ## its own sustained forward flight). A jetpack's is its boost
 ## (`boost_speed`, `boost_heat_mult`). Boots skate: held sprint within
 ## `skate_reach` meters of a surface flies you `skate_height` over it at
-## `skate_speed`, carving after the view at `skate_turn_rate`, for nothing
+## `skate_speed`, carving after the view at `skate_turn_rate`, building
+## `skate_heat` a second (Caleb's call: every rig has a fair limit, so a
+## Mk1 skates about 20 s from cold and then drops off it, overheated, until
+## the heat is back under `recover_heat`; it cools on the ground)
 ## (a kick hops you off it and you skate again once you are back down in
 ## reach). 0 speed: no skate.
 var skate_speed := 0.0
+var skate_heat := 0.0
 var skate_accel := 14.0
 var skate_height := 1.6
 var skate_reach := 4.0
@@ -235,10 +248,10 @@ var air_dash_speed := 16.0
 var air_dash_time := 0.25
 var air_dash_heat := 15.0
 var air_dash_cooldown := 0.7
-## Wings: Shift (or Shift + W) in a glide is a boost instead of a dash. It
-## thrusts you the way you face, adding `glide_boost` m/s of airspeed that
-## the glide keeps and bleeds off at `glide_drag`, and Shift + S climbs at
-## `glide_boost_climb` m/s, keeping the airspeed. Either costs
+## Wings: Shift or a press of W in a glide is a boost instead of a dash.
+## It thrusts you the way you face, adding `glide_boost` m/s of airspeed
+## that the glide keeps and bleeds off at `glide_drag`, or, the nose pulled
+## well up, climbs at `glide_boost_climb` m/s, keeping the airspeed. Either costs
 ## `glide_boost_heat` (0 boost: the ordinary dash).
 var glide_boost := 0.0
 var glide_boost_climb := 0.0
@@ -335,6 +348,14 @@ func tick(wants_thrust: bool, delta: float, heat_mult := 1.0) -> float:
 			is_boosting = false
 		return thrust_accel
 	_since_thrust += delta
+	if is_skating and skate_heat > 0.0:
+		_since_thrust = 0.0
+		heat += _heat(skate_heat * delta)
+		if heat >= max_heat:
+			heat = max_heat
+			overheated = true
+			is_skating = false
+		return 0.0
 	if is_gliding and not in_updraft and (glide_cool > 0.0 or glide_heat > 0.0):
 		heat = maxf(0.0, heat + (_heat(glide_heat) - glide_cool) * delta)
 		if heat >= max_heat:
@@ -548,6 +569,18 @@ func can_glide() -> bool:
 	return working() and glide_fall_speed > 0.0 and not overheated and indoor_factor() > 0.0
 
 
+## The rig's controls in one short line, put on the watch as you take off
+## (Caleb's ask: each rig flies differently, so it says how).
+func takeoff_hint() -> String:
+	if not enabled:
+		return ""
+	if glide_fall_speed > 0.0:
+		return "%s: the nose follows the mouse (look down to dive, up to climb), W boosts, S airbrakes, hold Shift to soar" % display_name
+	if thrust_accel > 0.0:
+		return "%s: hold Space to climb, right mouse hovers, C coasts down, Shift boosts" % display_name
+	return "%s: Space in the air kicks, hold Shift near the ground to skate, C sinks, S brakes" % display_name
+
+
 ## What the jump key does with this rig, for the HUD.
 func controls_hint() -> String:
 	if not enabled:
@@ -562,13 +595,13 @@ func controls_hint() -> String:
 	if can_skim():
 		parts.append("hold in the air to skim a moment (C sinks)")
 	if can_glide():
-		parts.append("hold while falling to glide (look to steer, W dives, S climbs, Shift boosts%s)"
+		parts.append("hold while falling to glide (the nose follows the mouse: look down to dive, up to climb; W boosts, S airbrakes%s)"
 				% (", press again to pulse up" if pulse_velocity > 0.0 else ""))
 	if boost_speed > 0.0 or skate_speed > 0.0 or soar_accel > 0.0:
 		parts.append("hold Shift in the air to cruise" if skate_speed <= 0.0 and soar_accel <= 0.0
 				else ("hold Shift near the ground to skate" if skate_speed > 0.0 else "hold Shift in a glide to soar level"))
 	if air_dash_speed > 0.0:
-		parts.append("Shift + a move key dashes that way in the air%s" % (" (gliding, Shift boosts ahead and Shift + S climbs)" if can_glide() else ""))
+		parts.append("Shift + a move key dashes that way in the air%s" % (" (gliding, W or Shift boosts ahead, looking up it climbs)" if can_glide() else ""))
 	return ", ".join(parts)
 
 

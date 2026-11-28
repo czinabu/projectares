@@ -2809,7 +2809,7 @@ measures them.
 | Climb | 8 m/s | kicks (about 6 m/s on average) | none of their own |
 | Max height | 40 m | 10 m | their launch height |
 | Hover | 8 s | 1.5 s skim per jump | none |
-| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, cruise 0.18x (about 45 s, 720 m a bar) | 4 charges for kicks and dashes; the skate is free | about 62 s of glide stamina (gliding or soaring) |
+| Fuel | Heat: hover 1x (12.5 a second), climb 1.3x, cruise 0.18x (about 45 s, 720 m a bar) | 4 charges for kicks and dashes; the skate runs on heat, about 20 s from cold, cooled on the ground in 4 s (Caleb's call: every rig has a fair limit) | about 62 s of glide stamina (gliding or soaring) |
 | Recharge | 4 s on the ground (coasting cools too) | 1 charge per 1.5 s, anywhere | 5 s, on the ground only |
 | Cross Ashfront (550 m) | about 36 s cruising (measured 35) | about 32 s skating (measured 31) | about 25 s from a 30 m perch (measured 26) |
 | Air aim spread | +10% with the jets lit | +0% mid-dash or skimming low | +50% gliding |
@@ -2820,7 +2820,7 @@ measures them.
 | Indoors (a roof within 8 m) | clumsy: half speed and climb | full use | cannot open |
 
 The wings keep their boost (Caleb's call): two a flight, each +8 m/s ahead
-or a small lift (Shift + S), refilled only on the ground. That launches them
+or a small lift (looking up), refilled only on the ground. That launches them
 off flat ground or saves a dying glide, but it never climbs for long, so the
 jetpack keeps vertical play. A launch is free, once per time in the air.
 
@@ -2843,8 +2843,10 @@ Each rig flies with a character of its own, seen, heard and felt:
   wings sweep back and the arms tuck, the tips bend up in a hard turn, a
   stall shudders them, and the wingtips stream vapor when fast or pulling
   hard. Pulled up out of a dive, the speed past 22 m/s buys height back (a
-  swoop): a 30 m/s dive pulls back up about 20 m, never above where the
-  dive began, so the jetpack still owns height. A rush of air heard 30 m
+  swoop): a dive gives back all the height it spent (Caleb's call; a dive
+  from 35 m to 12 m swoops back to 35 m), never above where it began, and a
+  boost's speed swooped climbs a few metres above where the boost was
+  fired, so the jetpack still owns height. A rush of air heard 30 m
   away.
 
 On every rig the flyer leads and the rig answers (Caleb's ask): the
@@ -2854,8 +2856,30 @@ way you push, the hands tip like ailerons and the legs swing to balance,
 before the flight itself bends; then the arms and legs swing on with
 each change of speed and settle. Wind rushes past your ears at speed on every rig. In first person the view
 rolls with a third of the wings' bank and a little with a skate's carve,
-and rumbles in a boost; the phone's "Camera motion in flight" turns it
-down or off. The vapor is off on the Low and Lowest graphics.
+and rumbles in a boost, leans with a hover's or skate's turn, and bobs
+with the push (a hard climb sinks the eyes, a hover breathes, a skate's
+strides bounce); the phone's "Camera motion in flight" turns it down or
+off. The vapor is off on the Low and Lowest graphics.
+
+First person flight (Caleb's ask): the watch throws a small hologram of
+your own body into the top left corner of the view, drawn from the same
+bones the body is posed with this frame, seen from behind and above
+against a level ring, so pitch, roll and the limbs read from outside while
+you look out of your own eyes; the rig shows as its wingtips and lit
+flames, a line shows where you are really going, and a faint beam runs to
+it from the watch, so it is the watch's projection in the world, not a
+screen overlay (Caleb's call: the wrist is out of view while flying, so
+the watch beams it ahead and to the left; the phone's "Flight hologram"
+turns it off). Each rig takes off in a pose of its own, the same in both
+views: the jetpack lifts with the knees giving as the jets catch and the
+arms pressed down and back, the boots spring off one leg with a knee
+driven up and the arms thrown forward, and the wings launch with the arms
+swept back and the body pitched into the dive. Your own rig is heard whole from inside it rather than
+panning round your ears, the wind grows with speed, and flying fast
+through a storm or the cold streaks the visor glass with the weather. No
+limb ever sinks into a rig: any arm or leg a flight pose would put into
+the pack, a spread wing or the other boot is turned out of it at the
+shoulder or hip, in both views.
 
 ### Cruising (Caleb's call)
 
@@ -2899,7 +2923,7 @@ Strengths and weaknesses:
   is the slowest cruise of the three.
 - **Boots:** the fastest on foot, the only rig with a dodge, quiet, and they
   work anywhere, the Foundry's buildings included; their skate cruises low
-  for as long as you like. But they top out at 10 m, so jetpacks shoot down
+  for about 20 s on a bar of heat, then drops you until it cools. But they top out at 10 m, so jetpacks shoot down
   at them and wings outrun them.
 - **Wings:** the fastest across the map, great for flanking and escaping.
   But they cannot hover, they climb only slowly in a soar, aim is poor in
@@ -2966,9 +2990,14 @@ trigger ends it: the body eases up out of prone into a hover over about
 half a second (never a snap). Wings are the exception to the mouse only looking: they fly
 where you look, like a bird, with momentum (hold E to free look while
 they fly straight on). Turns cost speed and pulling up
-hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
-the way you face and keeps the speed, and Shift + S boosts upward; wings
-never dash sideways. Q and E fly nothing (E holds free look). Every rig dashes, so the dash is not an
+hard in a turn stalls them. The nose follows the mouse too (Caleb's call):
+looking down dives for speed and looking up pulls up, a little either side
+of level holds level. W and S are not the pitch: W is a wing boost that
+thrusts you the way you face and keeps the speed (as Shift is), boosting
+upward instead while you look well up, and S is the airbrake, bleeding the
+speed down to the stall but never pulling up. Wings never dash sideways.
+The first few takeoffs on each rig put its controls on the watch, since
+each flies its own way. Q and E fly nothing (E holds free look). Every rig dashes, so the dash is not an
 edge by itself: boots dash furthest (14 m/s for 0.3 s, on a charge, with
 the graze window), jetpacks middling (16 m/s for 0.25 s, 15 heat), wings
 shortest (12 m/s for 0.25 s, on a boost charge, a barrel roll sideways).
