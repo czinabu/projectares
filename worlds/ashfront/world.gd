@@ -296,8 +296,10 @@ const BOT_TABLE := [
 
 
 ## The most enemies Ashfront holds at once under the project's cap
-## (`WorldDef.enemy_cap`), measured against the frame and battle benches.
-const ENEMY_CAP := 24
+## (`WorldDef.enemy_cap`), measured against the frame and battle benches:
+## on an RTX 5070, 16 holds about 55 fps (24 about 48, held back by the
+## processor, not the graphics card). Back to 24 once far bots cost less.
+const ENEMY_CAP := 16
 
 
 func _init() -> void:

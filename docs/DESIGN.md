@@ -1211,7 +1211,8 @@ its war"). Each has no army and its own enemy budget of 12
   hound pack (five, one fight). The mesas are 85 m apart; the perches
   stay empty, for events.
 - **Ashfront keeps its war**: its armies roam and fight as before, under
-  a budget of its own of 24, so a battle in view has both sides in it.
+  a budget of its own, 16 for now (24 once far bots cost less: at 24 a
+  5070 holds about 48 fps), so a battle in view has both sides in it.
 - Frostline keeps the project's 8 for now.
 
 ### Own rosters for the Dune Sea and the Rift (Caleb's call)

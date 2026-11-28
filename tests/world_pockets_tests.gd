@@ -61,11 +61,11 @@ static func _layout(t: Node, world: WorldDef) -> void:
 
 
 ## Under the project's cap each world holds its own budget: 12 in a world of
-## pockets, 24 for Ashfront's war.
+## pockets, 16 for Ashfront's war (24 once far bots cost less).
 static func _budgets(t: Node) -> void:
 	var kept := Raid.enemy_cap
 	Raid.enemy_cap = 8
-	for plan: Array in [["ashfront", 24], ["dunes", 12]]:
+	for plan: Array in [["ashfront", 16], ["dunes", 12]]:
 		var raid := Raid.new()
 		t.add_child(raid)
 		raid.start(Worlds.get_world(plan[0]), 9)
