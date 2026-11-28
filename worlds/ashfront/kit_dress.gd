@@ -17,6 +17,12 @@ const PANEL_GAP := 0.03
 const SKIN := 0.3
 ## How wide a panel is laid, about (m).
 const PANEL_WIDTH := 4.0
+## A box face narrower or lower than this is left plain (m).
+const MIN_FACE := 0.9
+## Flat deck plates, laid over a box's top.
+const DECKS := ["Platform_DarkPlates", "Platform_Metal"]
+## Panels for a wreck's hull: no windows.
+const HULL_PANELS := ["WallBand_Straight", "WallPipe_Straight", "WallWideBand_Straight_TallBand"]
 
 
 ## The Forge: every tier's faces clad in panels, its windows glowing like a
@@ -39,7 +45,7 @@ static func forge(kit: KitMesh, base: Vector3, tiers: Array, tower: Vector2, mou
 			var skip := func(_i: int, _bottom: float, _top: float) -> bool: return false
 			if t == 0:
 				skip = func(i: int, bottom: float, _top: float) -> bool: return i == count / 2 and bottom < mouth.y
-			clad_face(kit, foot, out, tier.x, height, count, skip, rng)
+			clad_face(kit, foot, out, Vector3.UP, tier.x, height, count, skip, rng)
 		# A dark post up each corner of the tiers above the plinth, set in so
 		# it stands out of each face by little.
 		if t > 0:
@@ -71,26 +77,56 @@ static func forge(kit: KitMesh, base: Vector3, tiers: Array, tower: Vector2, mou
 
 ## Clads one face of a box: a grid of `count` panels across `width` and as
 ## many rows as keep them about square, up `height` from `foot` (the face's
-## bottom middle), facing `out`. A cell `skip.call(column, bottom, top)`
-## turns down is left bare.
-static func clad_face(kit: KitMesh, foot: Vector3, out: Vector3, width: float, height: float, count: int, skip: Callable, rng: RandomNumberGenerator) -> void:
+## bottom middle), facing `out` with `up` its up. A cell
+## `skip.call(column, bottom, top)` turns down is left bare. Each column
+## takes one of `files`, and now and then a cell above the first row one
+## of `windows`.
+static func clad_face(kit: KitMesh, foot: Vector3, out: Vector3, up: Vector3, width: float, height: float, count: int, skip: Callable, rng: RandomNumberGenerator,
+		files: Array = FLAT_PANELS.slice(0, 3), windows: Array = FLAT_PANELS.slice(3), recolor := {}) -> void:
 	var across := width / (4.0 * count)
 	var rows := maxi(1, roundi(height / (3.0 * across)))
-	var up := height / (3.0 * rows)
+	var tall := height / (3.0 * rows)
 	# Not so deep that a panel's relief stands out past `SKIN`.
 	var deep := minf(across, (SKIN - PANEL_GAP) / 0.12)
-	var along := out.cross(Vector3.UP)
-	var basis := Basis(out, Vector3.UP, along).scaled_local(Vector3(deep, up, across))
-	# One look per column, so a face reads as built in bays, with a window
-	# now and then.
+	var along := out.cross(up)
+	var basis := Basis(out, up, along).scaled_local(Vector3(deep, tall, across))
 	for i in count:
-		var file: String = FLAT_PANELS[rng.randi() % 3]
+		var file: String = files[rng.randi() % files.size()]
 		for j in rows:
 			var bottom := j * height / rows
 			if skip.call(i, bottom, bottom + height / rows):
 				continue
 			var cell := file
-			if j > 0 and rng.randf() < 0.22:
-				cell = FLAT_PANELS[3 + rng.randi() % 2]
-			var at := foot + along * (-width * 0.5 + (i + 0.5) * width / count) + Vector3(0, bottom, 0)
-			kit.add(cell, Transform3D(basis, at + out * (PANEL_GAP - PANEL_PLANE * deep)))
+			if j > 0 and not windows.is_empty() and rng.randf() < 0.22:
+				cell = windows[rng.randi() % windows.size()]
+			var at := foot + along * (-width * 0.5 + (i + 0.5) * width / count) + up * bottom
+			kit.add(cell, Transform3D(basis, at + out * (PANEL_GAP - PANEL_PLANE * deep)), recolor)
+
+
+## Clads a box of `size` placed at `xform` (its centre and turn): panels on
+## its four sides and deck plates on top. Faces smaller than `MIN_FACE`
+## either way are left plain.
+static func clad_box(kit: KitMesh, xform: Transform3D, size: Vector3, rng: RandomNumberGenerator, files: Array, windows: Array = [], recolor := {}) -> void:
+	var basis := xform.basis.orthonormalized()
+	var up := basis.y
+	var bottom := xform.origin - up * size.y * 0.5
+	var none := func(_i: int, _b: float, _t: float) -> bool: return false
+	for k in 4:
+		var out: Vector3 = [basis.x, -basis.x, basis.z, -basis.z][k]
+		var half: float = (size.x if k < 2 else size.z) * 0.5
+		var width: float = size.z if k < 2 else size.x
+		if width < MIN_FACE or size.y < MIN_FACE:
+			continue
+		var count := maxi(1, roundi(width / PANEL_WIDTH))
+		clad_face(kit, bottom + out * half, out, up, width, size.y, count, none, rng, files, windows, recolor)
+	if size.x < MIN_FACE or size.z < MIN_FACE:
+		return
+	# Deck plates: the kit's flat 4 m platform, laid in tiles over the top.
+	var nx := maxi(1, roundi(size.x / PANEL_WIDTH))
+	var nz := maxi(1, roundi(size.z / PANEL_WIDTH))
+	var tile := Basis(basis.x, up, basis.z).scaled_local(Vector3(size.x / (4.0 * nx), 1.0, size.z / (4.0 * nz)))
+	var top := xform.origin + up * (size.y * 0.5 + PANEL_GAP)
+	for i in nx:
+		for j in nz:
+			var at := top + basis.x * (-size.x * 0.5 + (i + 0.5) * size.x / nx) + basis.z * (-size.z * 0.5 + (j + 0.5) * size.z / nz)
+			kit.add(DECKS[rng.randi() % DECKS.size()], Transform3D(tile, at), recolor)

@@ -145,4 +145,9 @@ date in the same PR.
   collision check's own skin), so nothing you can see is a ghost: wall
   panels only from `FLAT_PANELS`, posts set into the corners, and
   anything deeper needs a solid of its own in the gameplay pass. Cladding
-  draws from its own RNG. Check with `--kit-only`.
+  draws from its own RNG. Wrecks keep the boxes `_add_wreck` builds as
+  their collision (`_boxes_since` records them for the dressing): a tank is
+  drawn as the tank wreck model with its boxes hidden, the other kinds
+  have their boxes plated (`clad_box`, `HULL_PANELS`). Check with
+  `--kit-only` (`--kit-only wreck` for the wrecks, one of each kind up
+  close).
