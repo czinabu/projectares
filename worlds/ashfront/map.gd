@@ -168,6 +168,9 @@ const FORGE_AT := Vector2(2, -2)
 const FORGE_TIERS := [Vector2(14.0, 10.0), Vector2(10.0, 14.0), Vector2(7.0, 22.0), Vector2(4.5, 18.0), Vector2(2.0, 16.0)]
 ## The four towers on the plinth's corners: width and height.
 const FORGE_TOWER := Vector2(3.0, 34.0)
+## The furnace mouth in each face of the plinth: width, and how far up from
+## the plinth's sunk foot its opening in the cladding goes.
+const FORGE_MOUTH := Vector2(2.8, 6.0)
 ## A dropship wreck's engine, before its `big`.
 const WRECK_ENGINE := Vector3(1.3, 1.3, 2.6)
 ## The old front: which trench lines face across no man's land, so sandbags
@@ -207,6 +210,7 @@ const LOWSKY := preload("res://worlds/ashfront/lowsky.gd")
 const HORDE := preload("res://worlds/ashfront/horde.gd")
 const FLARES := preload("res://worlds/ashfront/flares.gd")
 const RIM_FORT := preload("res://worlds/ashfront/rim_fort.gd")
+const KIT_DRESS := preload("res://worlds/ashfront/kit_dress.gd")
 ## The burning horizon: a ring of fire-glow this far out, behind the
 ## skyline, glowing this much when quiet and in all-out war.
 const GLOW_RING := 560.0
@@ -2134,25 +2138,24 @@ func _dress_forge(art: Node3D) -> void:
 	for tier: Vector2 in FORGE_TIERS:
 		var height := tier.y + (1.0 if y < 0.0 else 0.0)
 		y += height
-		art.add_child(_slab(Vector3(tier.x + 0.2, 0.35, tier.x + 0.2), base + Vector3(0, y - 0.9, 0), teal))
+		art.add_child(_slab(Vector3(tier.x + 0.64, 0.35, tier.x + 0.64), base + Vector3(0, y - 0.9, 0), teal))
 	var plinth: Vector2 = FORGE_TIERS[0]
 	var tower: Vector2 = FORGE_TIERS[1]
-	# Ribs up the tower's faces, so it reads as built, not a plain block.
-	var rib_y := plinth.y - 1.0
-	for t in range(1, 4):
-		var tier: Vector2 = FORGE_TIERS[t]
-		for k in 4:
-			var face := Vector3.FORWARD.rotated(Vector3.UP, k * PI * 0.5)
-			for side: float in [-1.0, 1.0]:
-				var rib := _slab(Vector3(0.7, tier.y, 0.5), base + face * (tier.x * 0.5 + 0.2)
-						+ face.cross(Vector3.UP) * side * (tier.x * 0.5 - 0.9) + Vector3(0, rib_y + tier.y * 0.5, 0), WALL, true)
-				rib.rotation.y = k * PI * 0.5
-				art.add_child(rib)
-		rib_y += tier.y
-	art.add_child(_slab(Vector3(plinth.x + 0.12, 0.7, plinth.x + 0.12), base + Vector3(0, plinth.y - 1.6, 0), Look.trim("hazard")))
+	# Clad in kit panels and posts, so it reads as built, not a plain block;
+	# each face of the plinth left open in the middle for the furnace mouth.
+	var kit := KitMesh.new()
+	var clad_rng := RandomNumberGenerator.new()
+	clad_rng.seed = LAYOUT_SEED + 23
+	KIT_DRESS.forge(kit, base, FORGE_TIERS, FORGE_TOWER, FORGE_MOUTH, clad_rng)
+	art.add_child(kit.node("ForgeClad", {
+		"plate": Look.surface("metal", {"tint": Color(0.9, 0.8, 0.7), "grime": 1.0, "scale": 0.08}),
+		"dark": Look.surface("metal", {"tint": Color(0.46, 0.42, 0.39), "grime": 1.0, "scale": 0.08}),
+		"glow": Look.trim("orange"),
+	}, ["plate", "dark", "glow"]))
+	art.add_child(_slab(Vector3(plinth.x + 0.64, 0.7, plinth.x + 0.64), base + Vector3(0, plinth.y - 1.6, 0), Look.trim("hazard")))
 	for k in 4:
 		var face := Vector3.FORWARD.rotated(Vector3.UP, k * PI * 0.5)
-		var mouth := _slab(Vector3(3.2, 5.0, 0.2), base + face * (plinth.x * 0.5 + 0.05) + Vector3(0, 2.5, 0), Look.trim("orange"))
+		var mouth := _slab(Vector3(FORGE_MOUTH.x, FORGE_MOUTH.y - 0.4, 0.2), base + face * (plinth.x * 0.5 + 0.05) + Vector3(0, (FORGE_MOUTH.y - 0.4) * 0.5, 0), Look.trim("orange"))
 		mouth.rotation.y = k * PI * 0.5
 		art.add_child(mouth)
 		var glow := Look.lamp(Color(1.0, 0.45, 0.15), 4.0, 24.0)
@@ -2164,9 +2167,9 @@ func _dress_forge(art: Node3D) -> void:
 			var slag := Look.trim("slag")
 			var aside := face.cross(Vector3.UP) * 2.6
 			var parts := [
-				[Vector3(1.5, tower.y - 4.0, 0.3), face * (tower.x * 0.5 + 0.1) + Vector3(0, plinth.y - 1.0 + (tower.y - 4.0) * 0.5, 0)],
+				[Vector3(1.5, tower.y - 4.0, 0.16), face * (tower.x * 0.5 + 0.24) + Vector3(0, plinth.y - 1.0 + (tower.y - 4.0) * 0.5, 0)],
 				[Vector3(1.5, 0.25, (plinth.x - tower.x) * 0.5 + 0.3), face * ((plinth.x + tower.x) * 0.25 + 0.1) + Vector3(0, plinth.y - 0.85, 0)],
-				[Vector3(1.6, plinth.y - 1.0, 0.3), face * (plinth.x * 0.5 + 0.2) + Vector3(0, (plinth.y - 1.0) * 0.5, 0)],
+				[Vector3(1.6, plinth.y - 1.0, 0.16), face * (plinth.x * 0.5 + 0.24) + Vector3(0, (plinth.y - 1.0) * 0.5, 0)],
 			]
 			for part: Array in parts:
 				var pour := _slab(part[0], base + aside + part[1], slag)
