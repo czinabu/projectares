@@ -167,7 +167,7 @@ const SCHEMA := [
 			"label": "Names over other players", "default": true},
 	{"key": "master_volume", "tab": "system", "kind": "slider", "label": "Volume", "default": 0.8,
 			"range": Vector2(0.0, 1.0), "step": 0.05, "format": "percent"},
-	{"key": "music_volume", "tab": "system", "kind": "slider", "label": "Music", "default": 0.6,
+	{"key": "music_volume", "tab": "system", "kind": "slider", "label": "Music", "default": 0.8,
 			"range": Vector2(0.0, 1.0), "step": 0.05, "format": "percent"},
 	# Kept but not on a Settings tab ("tab" ""): the watch's mission log.
 	{"key": "untracked", "tab": "", "kind": "list", "default": []},

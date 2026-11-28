@@ -23,8 +23,11 @@ date in the same PR.
   view setting's slider is dragged on the phone (`GameSettings.SCHEMA`'s "preview")
   all of that lets go (`PlayerController.phone_preview`) so the change is
   seen live, and the slider follows the mouse's motion. The Mirror app
-  lowers the phone (`Phone.mirror_lowered`, `held`, Caleb's call) so the
-  mirror shows the whole kit; a click, right click or Esc brings it up.
+  keeps the phone up, its screen thrown beside your reflection as the
+  third-person dressing room has it (Caleb's comparison of the two views);
+  its "Put the phone down" button lowers it (`Phone.mirror_lowered`, `held`)
+  so the mirror shows the whole kit, and a click, right click or Esc brings
+  it up.
   The third-person camera stands over the right shoulder
   (`PlayerController.shoulder`) and, aiming, moves in and further out
   over it (`shoulder_aim`), so the head never sits on the sight line;
