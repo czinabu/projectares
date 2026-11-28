@@ -4,8 +4,9 @@ extends RefCounted
 ## legs and feet, everyone in the tactical suit. An "appearance" is a small
 ## dictionary naming a hairstyle (`STYLES`), facial hair (`FACIAL`), a face
 ## shape (`FACES`), a suit pattern (`PATTERNS`), an
-## outfit per part (the body, legs and feet pick the suit's colours, `SUITS`)
-## and colours for skin, hair, eyes and the suit. A look saved before the
+## outfit per part (the body, legs and feet pick the suit's style,
+## `SUIT_STYLES`, and the colours it comes in, `SUITS`) and colours for skin,
+## hair, eyes, the suit and its trim. A look saved before the
 ## hairstyle was its own choice takes the head outfit's hair (`HAIR`). This
 ## script checks one, makes random ones, and builds the model.
 ##
@@ -14,6 +15,7 @@ extends RefCounted
 
 const SuitShape := preload("res://core/visual/suit_shape.gd")
 const HeadShape := preload("res://core/visual/head_shape.gd")
+const BodyFitData := preload("res://core/visual/body_fit_data.gd")
 const DIR := "res://assets/characters/humans/"
 const SLOTS: Array[String] = ["head", "body", "legs", "feet"]
 const SLOT_NAMES := {"head": "Head", "body": "Torso", "legs": "Legs", "feet": "Shoes"}
@@ -64,6 +66,14 @@ const CLOTH_COLORS: Array[Color] = [
 ]
 const CLOTH_NAMES: Array[String] = ["As made", "Black", "Grey", "Olive", "Tan", "Rust", "Navy", "Orange", "White"]
 const SKIN_NAMES: Array[String] = ["Tone 1", "Tone 2", "Tone 3", "Tone 4", "Tone 5", "Tone 6"]
+## Trim colours: the lit cuffs and piping, and the stripes, braid and
+## stitching a style draws in it. Index 0 keeps the outfit's own; "Unlit"
+## turns the glow off and draws the trim dark.
+const TRIM_COLORS: Array[Color] = [
+	Color.WHITE, Color(0.35, 0.85, 1.0), Color(1.0, 0.55, 0.15), Color(1.0, 0.8, 0.4), Color(0.55, 1.0, 0.45),
+	Color(1.0, 0.25, 0.75), Color(1.0, 0.22, 0.18), Color(0.9, 0.92, 1.0), Color(0.03, 0.03, 0.035),
+]
+const TRIM_NAMES: Array[String] = ["As made", "Cyan", "Orange", "Gold", "Green", "Pink", "Red", "White", "Unlit"]
 ## Patterns the suit can be printed in (`character.gdshader`), drawn in
 ## the suit's own colour: index -> name. 0 is plain.
 const PATTERNS: Array[String] = ["Plain", "Woodland", "Digital", "Tiger stripe", "Splinter"]
@@ -71,7 +81,7 @@ const PATTERNS: Array[String] = ["Plain", "Woodland", "Digital", "Tiger stripe",
 const COLOR_KEYS := {
 	"skin": ["Skin", SKIN_NAMES], "hair": ["Hair colour", HAIR_NAMES], "eyes": ["Eyes", EYE_NAMES],
 	"top": ["Top colour", CLOTH_NAMES], "bottom": ["Bottom colour", CLOTH_NAMES],
-	"pattern": ["Suit pattern", PATTERNS],
+	"trim": ["Trim colour", TRIM_NAMES], "pattern": ["Suit pattern", PATTERNS],
 }
 ## Hairstyles, picked on their own on either body: id -> [name, the hair
 ## meshes in the body file (`tools/human_rig`)]. Every one is free.
@@ -268,6 +278,33 @@ const SUITS := {
 	"Witch": [Color(0.19, 0.09, 0.24), Color(0.55, 1.0, 0.45)],
 }
 
+## What each outfit's suit looks like beyond its colour (Caleb asked for
+## real styles, not only a colour): outfit -> [cut, cloth, second colour].
+## The cut (`character.gdshader` `suit_style`) lays out panels, seams,
+## pockets, stripes and trims; the cloth (`suit_weave`) is the weave and
+## sheen; the second colour is a shade of the suit's own (`second_shade`:
+## below 0 darker, above 0 lighter), so a style still reads under any dye or
+## armor paint. Everything is drawn on the one suit shape (`SuitShape`), so a
+## style can never poke through armor and looks the same in either view.
+## The boots are their own cut (`BOOT_CUT`) in the outfit's cloth.
+const SUIT_STYLES := {
+	"Swat": [0, 0, -0.55], "Soldier": [0, 0, -0.55],
+	"Spacesuit": [1, 6, 0.45], "SciFi": [1, 6, 0.45],
+	"Adventurer": [2, 1, -0.35],
+	"Casual_Hoodie": [3, 2, -0.3],
+	"Casual_2": [4, 4, 0.55], "Casual": [4, 4, 0.55],
+	"Punk": [5, 3, -0.45],
+	"Farmer": [6, 7, -0.4],
+	"Suit": [7, 8, -0.5],
+	"Beach": [8, 9, 0.7],
+	"King": [9, 5, -0.45],
+	"Worker": [10, 1, -0.45],
+	"Medieval": [11, 10, -0.6],
+	"Witch": [12, 4, -0.5],
+	"Formal": [13, 4, -0.4],
+}
+const BOOT_CUT := 50
+
 
 ## Builds the model: the build's body (skeleton, animations and the four
 ## parts), with the look's hairstyle and facial hair showing. Returns null if art is
@@ -340,18 +377,54 @@ static func iris_for(appearance: Dictionary) -> Variant:
 	return EYE_COLORS[pick] if pick > 0 and pick < EYE_COLORS.size() else null
 
 
-## The suit a part is drawn in: {"color", "trim", "pattern"} for the body, legs and
-## feet ({} for the head). The boots are the cloth darkened.
+## The suit a part is drawn in: {"color", "trim", "pattern", "cut",
+## "material", "contrast", "second"} for the body, legs and feet ({} for the
+## head). The boots are the cloth darkened, in their own cut.
 static func suit_for(appearance: Dictionary, slot: String) -> Dictionary:
 	if slot == "head" or slot == "":
 		return {}
-	var style: Array = SUITS.get(appearance.get(slot, ""), SUITS["Swat"])
+	var outfit: String = appearance.get(slot, "")
+	var style: Array = SUITS.get(outfit, SUITS["Swat"])
+	var cut: Array = SUIT_STYLES.get(outfit, SUIT_STYLES["Swat"])
 	var cloth: Color = style[0]
 	var pick: int = appearance.get("top" if slot == "body" else "bottom", 0)
 	if pick > 0:
 		cloth = CLOTH_COLORS[pick]
 	if slot == "feet":
 		cloth = cloth.darkened(0.55)
-	return {"color": cloth, "trim": style[1], "pattern": appearance.get("pattern", 0)}
+	var trim: Color = style[1]
+	var trim_pick: int = appearance.get("trim", 0)
+	if trim_pick > 0 and trim_pick < TRIM_COLORS.size():
+		trim = TRIM_COLORS[trim_pick]
+	var contrast: float = cut[2]
+	return {"color": cloth, "trim": trim, "pattern": appearance.get("pattern", 0),
+			"cut": BOOT_CUT if slot == "feet" else cut[0], "material": cut[1], "contrast": contrast,
+			"second": second_shade(cloth, contrast)}
 
 
+## A style's second colour from the suit's: `contrast` below 0 darkens it,
+## above 0 lightens it, by that much. A very dark suit lightens instead and
+## a very light one darkens, so the panels always show.
+static func second_shade(cloth: Color, contrast: float) -> Color:
+	var lum := cloth.get_luminance()
+	if contrast < 0.0 and lum < 0.2:
+		return cloth.lightened(-contrast * 0.3)
+	if contrast > 0.0 and lum > 0.75:
+		return cloth.darkened(contrast * 0.4)
+	return cloth.darkened(-contrast) if contrast < 0.0 else cloth.lightened(contrast)
+
+
+## Where a build's body is at rest, for the suit's styles to sit on
+## (`character.gdshader` `suit_trunk`, `suit_arm`, `suit_leg`), from the
+## measured bones (`BodyFitData`). Those are in the actor's frame (front
+## -Z); the rest body the shader reads is front +Z, so depths are flipped.
+static func body_marks(build: String) -> Dictionary:
+	var data: Dictionary = BodyFitData.DATA.get(build, BodyFitData.DATA["m"])
+	var bones: Dictionary = data["bones"]
+	var arm: Vector3 = bones["UpperArm"]
+	var leg: Vector3 = bones["UpperLeg"]
+	return {
+		"suit_trunk": Vector4(bones["Hips"].y, bones["Chest"].y, bones["Neck"].y, absf(arm.x)),
+		"suit_arm": Vector4(arm.y, -arm.z, absf(bones["LowerArm"].x), absf(bones["Wrist"].x)),
+		"suit_leg": Vector4(absf(leg.x), bones["LowerLeg"].y, bones["Foot"].y, -leg.z),
+	}

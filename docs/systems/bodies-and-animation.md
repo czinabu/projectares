@@ -286,12 +286,34 @@ date in the same PR.
   woodland, digital, tiger stripe, splinter, from the rest body so it stays
   put; gloves stay plain) and keeps only a little of the
   body's normal map. An outfit no longer swaps meshes: it picks
-  the suit's colours (`Human.SUITS`), and the
+  the suit's style and colours. The style (Caleb asked for real styles,
+  not only a colour, and no separate clothes for now: armor covers the
+  body in the worlds) is `Human.SUIT_STYLES`, outfit -> [cut, cloth,
+  second colour]: the cut (`suit_cut`, `suit_style` in the shader) lays
+  out panels, seams, pockets, stripes, piping and trims on the rest body
+  (tactical kit, pressure suit, field jacket, hoodie, track suit, leather,
+  work bib, formal, Breton, warlord, hi-vis, sellsword, mystic, envoy; the
+  boots their own `BOOT_CUT`), and the cloth (`suit_material`,
+  `suit_weave`) is the weave and sheen (hex weave, canvas, knit, leather,
+  satin, quilted, rubberised, denim, worsted, linen, channel quilting).
+  Each part is its own surface, so a top and legs of different outfits
+  mix; every cut draws the whole body and a part shows what falls on it
+  (the top's lowest edge is `hip + 0.1`, where the torso mesh ends). A
+  style sits on either build through `Human.body_marks` (`suit_trunk`,
+  `suit_arm`, `suit_leg`, from `BodyFitData`'s bones). Its second colour
+  is a shade of the suit's own (`Human.second_shade`), so a dye, the trim
+  colour (`Human.TRIM_COLORS`, the Mirror's "Trim colour") and an armor
+  paint all carry through it. A style is drawn only in the shader, never
+  in the mesh, so it cannot change the suit's shape or poke through armor,
+  and it is the same in first and third person. Check it with
+  `visual_check.tscn -- <dir> --suit-styles-only`. The colours are
+  `Human.SUITS`, and the
   shader draws every surface below the head as a fitted tactical suit
   (`suit`, `suit_color`, `suit_trim`, gloves and a lit cuff;
   `Human.surface_kind` says which surfaces it covers) over the body's own
   normal and roughness maps. An armor frame recolours the same suit in its
-  "suit" and "accent" colours (`ActorSkin._wear_undersuit`, view only, the
+  "suit" and "accent" colours, keeping its style with its second colour
+  a shade of the paint (`ActorSkin._wear_undersuit`, view only, the
   outfit's colours given back when it comes off, the appearance
   untouched). Check by eye with `body_check.tscn -- <dir> [--suit]`.
   Online it travels in the spawn data as
@@ -302,7 +324,8 @@ date in the same PR.
   Wardrobe, a standing mirror (`HomeBase._dress_wardrobe`) whose glass the
   app uses in first person (`Main._use_wardrobe`). Its rows are
   `CharacterPanel.PICKS`: body, hairstyle, facial hair, hair colour, eyes,
-  skin, face, then the suit and its pattern.
+  skin, face, then the suit: its top, legs and boots styles, top and
+  bottom colours, trim colour and pattern.
   A look changed while in a world (the phone's Mirror app) is checked by the
   server in `_request_look` and passed to everyone there with `_look_changed`.
   The mirror itself (`core/visual/mirror.gd`) is a client-side view: no

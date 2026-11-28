@@ -4602,7 +4602,8 @@ func _hang_limb(part: Node3D, bone: String, child: String, offset: Vector3) -> N
 
 
 ## Everyone wears the tactical suit (`Human.suit_for`); under a frame it
-## takes the frame look's colours, the cuffs lit in its accent. `style`
+## takes the frame look's colours, the cuffs lit in its accent, and keeps
+## its style (cut and cloth). `style`
 ## empty gives each part its own suit back. View only; the appearance is
 ## untouched.
 func _wear_undersuit(style: Dictionary) -> void:
@@ -4616,6 +4617,8 @@ func _wear_undersuit(style: Dictionary) -> void:
 			cloth = cloth.darkened(0.4)
 		mat.set_shader_parameter("suit_color", cloth)
 		mat.set_shader_parameter("suit_trim", style["accent"] if not style.is_empty() else own["trim"])
+		# The style stays; its second colour follows the paint.
+		mat.set_shader_parameter("suit_second", Human.second_shade(cloth, own.get("contrast", -0.5)))
 
 
 ## A frame's carrier and plates, front toward -Z, built round the chest
