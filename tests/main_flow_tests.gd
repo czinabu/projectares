@@ -191,7 +191,8 @@ static func run(t: Node) -> void:
 	t.check(wrist.get_parent() == p and holo.visible,
 			"in first person the card rises off the watch on your own wrist, as in third person")
 	var card_angle := holo.global_basis.get_scale().x * wrist.face_size.x / controller.camera.global_position.distance_to(holo.global_position)
-	t.check(card_angle < 0.6, "the card is card-sized, not a panel (%.2f)" % card_angle)
+	t.check(card_angle > 0.5 and card_angle < 0.8,
+			"the card is big enough to read mid-fight, yet card-sized, not a panel (%.2f)" % card_angle)
 	t.check(wrist.get_node("Beam").visible and (wrist.get_node("Beam") as MeshInstance3D).mesh.get_surface_count() > 0
 			and is_equal_approx(float((holo.material_override as ShaderMaterial).get_shader_parameter("open")), 1.0),
 			"light is thrown up from the watch face to the card, which is drawn as a hologram")

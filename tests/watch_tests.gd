@@ -29,10 +29,20 @@ static func _rules(t: Node) -> void:
 	# of it: drawn over everything, it showed through a held pistol.
 	var worn := Hud.Wrist._watch()
 	var hidden_by_things := true
-	for box: MeshInstance3D in worn.find_children("*", "MeshInstance3D", true, false):
-		var mat := (box.mesh as BoxMesh).material as BaseMaterial3D
-		hidden_by_things = hidden_by_things and mat != null and not mat.no_depth_test
+	var parts := worn.find_children("*", "MeshInstance3D", true, false)
+	for part: MeshInstance3D in parts:
+		for i in part.mesh.get_surface_count():
+			var mat := part.mesh.surface_get_material(i) as BaseMaterial3D
+			hidden_by_things = hidden_by_things and mat != null and not mat.no_depth_test
 	t.check(hidden_by_things, "the worn watch is hidden behind a gun held in front of it")
+	# A real device (Caleb's ask), not a block: a strap, a case, a bezel, a
+	# lens and a glowing face, and still only a few draws.
+	var face := worn.get_node_or_null("Face") as MeshInstance3D
+	var surfaces := 0
+	for part: MeshInstance3D in parts:
+		surfaces += part.mesh.get_surface_count()
+	t.check(face != null and face.mesh is CylinderMesh and parts.size() >= 2 and surfaces <= 6,
+			"the watch is a device with a round glowing face, merged to a few draws (%d)" % surfaces)
 	worn.free()
 	t.check(Loadout.summonable("rifle_carbine") and Loadout.summonable("knife_gutter")
 			and Loadout.summonable("pistol_machine") and not Loadout.summonable("scrap_metal")

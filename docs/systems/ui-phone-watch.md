@@ -379,10 +379,24 @@ date in the same PR.
   on the back of the wrist (`Hud.Wrist.FACE_AXIS`, out on the skin by
   `wrist_skin` and depth tested like anything worn, so a gun or hand in
   front of it hides it), looks at the eyes
-  (`WeaponArm._face_watch`). From the eyes the card opens just over the
-  face, sized to read like a card at arm's length (`fp_card_reads_at`). Check it by eye with
+  (`WeaponArm._face_watch`). From the eyes the card is placed for reading,
+  not pinned to the wrist (Caleb's feedback: too small and off to the
+  side): up and left of the crosshair, over the raised hand so the hand
+  never shows through it (`Wrist.fp_at`), as deep as the wrist and a share
+  of the view tall whatever the field of view (`fp_screen`, about one and a
+  half times its old size), with the light still running up to it from
+  the face. The card's text is sized to be read mid-fight and drawn with a
+  dark rim round every letter on a darker plate (`Card._text`, `TEXT_RIM`,
+  `PLATE`), and its scan lines stay faint (`Wrist.line_depth`) so they
+  never dim a line. The worn watch is a device, not a block (Caleb's ask,
+  `Wrist._watch`): a segmented strap curling round the wrist, an
+  eight-sided gunmetal case with side keys, a raised bezel, a projector
+  lens and the round glowing face ("Face", tinted by health and the rest),
+  the still pieces merged one mesh per material (`Look.merge_pieces`). Check it by eye with
   `visual_check.tscn -- <dir> --watch-only` (`--base-watch-only` for just
-  the base).
+  the base; `--watch-read-only` for the pack list read against Frostline's
+  snow on both builds, bare and under a heavy frame, and a close look at
+  the worn watch).
 - The launch scope (`docs/systems/launch-scope.md`) hides the phone's
   Racing app and the "Invite to base" button, and leaves the artifact icon
   off the watch: ask `Hud.Wrist.row(tab)` and `tab_line`, never `TAB_SLOTS`
