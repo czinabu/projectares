@@ -560,6 +560,8 @@ func start_client(p_world: WorldDef) -> void:
 func _setup(p_world: WorldDef, p_seed: int) -> void:
 	world = p_world
 	Worlds.current = world
+	# The world's music, or the music fading out for the war (view only).
+	Sfx.music(world.music)
 	if p_seed >= 0:
 		rng.seed = p_seed
 	else:

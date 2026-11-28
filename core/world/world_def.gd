@@ -199,6 +199,12 @@ var depot_hold_time := 4.0
 var planet := ""
 ## The ground's grip where the world's own `surface_grip` does not say.
 var planet_grip := 1.0
+## What a footstep on the open ground sounds like (`Sfx.STEP_GROUNDS`), or
+## "" for the planet's own (`PlanetType.footsteps`). See `footstep_ground`.
+var footsteps := ""
+## The music played while in this world (`Sfx.music`): a track name, or ""
+## for none, so the war is heard and not a score.
+var music := ""
 ## Body heat (of 100) a player loses each second out in the open; 0 for a
 ## world with no cold. See "The cold" above and `cold_at`.
 var cold := 0.0
@@ -791,6 +797,18 @@ func cold_at(_pos: Vector3) -> float:
 ## By default the planet's grip (`take_planet`), the same everywhere.
 func surface_grip(_pos: Vector3) -> float:
 	return planet_grip
+
+
+## What a footstep on the open ground at `pos` sounds like (`Footsteps`):
+## ground slick enough to be ice (`surface_grip` under half) is hard,
+## anywhere else the world's own `footsteps`, or its planet's. View only.
+func footstep_ground(pos: Vector3) -> String:
+	if surface_grip(pos) < 0.5:
+		return "hard"
+	if footsteps != "":
+		return footsteps
+	var type := planet_type()
+	return type.footsteps if type != null else "dirt"
 
 
 ## Whether the ground at a point is thin ice (see `thin_ice`).

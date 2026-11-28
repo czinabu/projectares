@@ -362,6 +362,9 @@ var _camp := Vector3.ZERO
 ## `bot_count` markers at the start, so a mix of both factions comes first.
 var _bot_spots: Array[Dictionary] = []
 var _weather: Node3D
+## The cold heard (view only; null where `Look` is off): the wind off the
+## ice, the Engine's hum under it and the ice groaning far off.
+var _soundscape: Soundscape
 ## The planet the map stands on (`WorldDef.planet_type`), set before it
 ## enters the tree; a map made on its own (as the checks do) takes the
 ## Glacier.
@@ -406,7 +409,27 @@ func _ready() -> void:
 	_place_bot_spots()
 	_art_rng.seed = LAYOUT_SEED
 	_dress()
+	if Look.enabled:
+		add_child(make_soundscape())
 	set_process(Look.enabled)
+
+
+## The valley's sound (`docs/systems/audio.md`): a cold wind always blowing, the
+## Engine's deep hum under everything (louder inside it, where the wind
+## drops away), now and then far gunfire from the posts, and the ice
+## groaning somewhere out in the valley.
+func make_soundscape() -> Soundscape:
+	_soundscape = Soundscape.new()
+	_soundscape.name = "Soundscape"
+	_soundscape.wind_sound = "wind_cold"
+	_soundscape.wind_db = -14.0
+	_soundscape.rumble_db = Vector2(-34.0, -26.0)
+	_soundscape.fire_rate = Vector2(0.02, 0.3)
+	_soundscape.fire_distance = 70.0
+	_soundscape.accents = [
+		{"sound": "ice_crack", "rate": 0.05, "db": Vector2(-30.0, -20.0), "distance": Vector2(40.0, 120.0)},
+	]
+	return _soundscape
 
 
 func _seed_layout() -> void:
@@ -483,6 +506,8 @@ func _process(_delta: float) -> void:
 	if camera != null and is_instance_valid(_weather):
 		# None falls inside the Engine.
 		_weather.visible = not inside_engine(camera.global_position)
+		if _soundscape != null:
+			_soundscape.shelter = 0.0 if _weather.visible else 1.0
 		_weather.global_position = Vector3(camera.global_position.x, camera.global_position.y - 8.0,
 				camera.global_position.z)
 
