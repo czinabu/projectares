@@ -243,8 +243,8 @@ the forward stops working when it gets a new one. The account service
 
 **3. Install the game and start the server.** Install the game on the PC
 as usual, then run `tools/host/host_playtest.bat` (copy it anywhere).
-Windows asks once whether the game may use the network: allow it on
-private and public networks. The window shows `Cluster: account service
+Windows asks once whether the game may use the network: allow it on the
+kind of network the PC is on (your home network is usually "Private"). The window shows `Cluster: account service
 on port 24700` and a `Server: running ...` line for each world. Leave it
 open; closing it stops every world.
 
@@ -267,6 +267,14 @@ type that name instead.
 game's version. When a new build is out, close the server window, start
 the game once so it updates itself, quit it, and run the script again.
 Players on an older game are told to update, as with any server.
+
+**Keep it safe.** The forwarded ports reach only the game server, which
+checks every sign-in in the handshake, encrypts connections and limits each
+player's requests. Still, give it a PC of its own with nothing personal on
+it, run it under a normal (not administrator) Windows account, keep Windows
+updated, and put it on the router's guest network if it has one, so it
+cannot see your other devices. Never forward the account service's port
+(24700).
 
 **Before strangers play.** A home server shows every player your home
 address, a busy PvP game can draw someone who floods it with traffic and
