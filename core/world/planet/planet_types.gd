@@ -78,6 +78,7 @@ static func ashland() -> PlanetType:
 		{"kind": "spire", "per_ha": 0.25, "size": Vector2(7.0, 16.0), "max_slope": 0.3, "out": 0.6},
 	]
 	t.rules = {"cold": 0.0, "surface_grip": 1.0, "shot_carry": 1.0}
+	t.footsteps = "dirt"
 	return t
 
 
@@ -136,6 +137,7 @@ static func glacier() -> PlanetType:
 		{"kind": "shard", "per_ha": 1.2, "size": Vector2(1.5, 5.0), "max_slope": 0.35, "low": -1.0},
 	]
 	t.rules = {"cold": 1.2, "surface_grip": 0.55, "shot_carry": 1.3}
+	t.footsteps = "snow"
 	return t
 
 
@@ -190,11 +192,14 @@ static func saltflat() -> PlanetType:
 	}
 	t.horizon = {"reach": 3200.0, "peaks": 110.0}
 	t.weather = {"air": "", "storm": "sand"}
+	# Salt-white and violet under its purple sky, not the dunes' gold.
+	t.accent = Color(0.82, 0.7, 1.0)
 	t.props = [
 		{"kind": "spire", "per_ha": 0.14, "size": Vector2(14.0, 40.0), "max_slope": 0.3, "out": 0.45},
 		{"kind": "slab", "per_ha": 0.6, "size": Vector2(2.0, 4.0), "max_slope": 0.4},
 	]
 	t.rules = {"cold": 0.0, "surface_grip": 0.9, "shot_carry": 1.15}
+	t.footsteps = "hard"
 	return t
 
 
@@ -251,11 +256,14 @@ static func basalt() -> PlanetType:
 	}
 	t.horizon = {"reach": 2600.0, "peaks": 260.0}
 	t.weather = {"air": "ash", "storm": "ash"}
+	# Lava red, not the ash plains' orange.
+	t.accent = Color(1.0, 0.22, 0.2)
 	t.props = [
 		{"kind": "spire", "per_ha": 0.5, "size": Vector2(4.0, 12.0), "max_slope": 0.4},
 		{"kind": "boulder", "per_ha": 4.0, "size": Vector2(0.6, 2.2), "max_slope": 0.6},
 	]
 	t.rules = {"cold": 0.0, "surface_grip": 1.0, "shot_carry": 0.9}
+	t.footsteps = "hard"
 	return t
 
 
@@ -315,6 +323,7 @@ static func dunes() -> PlanetType:
 		{"kind": "boulder", "per_ha": 0.8, "size": Vector2(0.8, 2.5), "max_slope": 0.5},
 	]
 	t.rules = {"cold": 0.0, "surface_grip": 0.75, "shot_carry": 1.0}
+	t.footsteps = "soft"
 	return t
 
 
@@ -393,4 +402,5 @@ static func marsh() -> PlanetType:
 		"banks": {"count": 5, "cell": 55.0, "size": Vector3(30.0, 7.0, 20.0), "density": 0.35,
 			"drift": 0.8, "wind": 0.6}}
 	t.rules = {"cold": 0.0, "surface_grip": 0.8, "shot_carry": 0.85}
+	t.footsteps = "soft"
 	return t

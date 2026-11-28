@@ -649,6 +649,8 @@ class Door:
 
 
 func _ready() -> void:
+	# Home plays the plaza's track, like the start screen (view only).
+	Sfx.music("plaza")
 	_apply_shape()
 	_display_root.name = "Displays"
 	add_child(_display_root)

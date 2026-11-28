@@ -122,6 +122,18 @@ static func run(t: Node) -> void:
 	t.check(GateLook.world_color(ash_type).r > 0.9 and GateLook.world_color(ice_type).b > 0.9
 			and GateLook.world_color(ice_type).r < 0.6 and GateLook.world_color(null) == GateLook.DEFAULT_COLOR,
 			"each gate glows in its world's colour: an ash world warm, a glacier icy")
+	var colors := {}
+	for id: String in ["ashland", "glacier", "saltflat", "basalt", "dunes", "marsh"]:
+		colors[id] = GateLook.world_color(PlanetTypes.get_type(id))
+	var apart := true
+	for a: String in colors:
+		for b: String in colors:
+			var ca: Color = colors[a]
+			var cb: Color = colors[b]
+			if a < b and absf(ca.r - cb.r) + absf(ca.g - cb.g) + absf(ca.b - cb.b) < 0.25:
+				apart = false
+				print("    %s and %s gates look alike: %s %s" % [a, b, ca.to_html(false), cb.to_html(false)])
+	t.check(apart, "every planet's gate has a colour of its own")
 	t.check(GateLook.crest_kind(ash_type) == 1 and GateLook.crest_kind(ice_type) == 2
 			and GateLook.crest_kind(PlanetTypes.get_type("marsh")) == 3 and GateLook.crest_kind(PlanetTypes.get_type("dunes")) == 4,
 			"each world's crest comes from its weather: a flame, a snowflake, a spore, dunes")
