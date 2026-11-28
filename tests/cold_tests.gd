@@ -17,7 +17,8 @@ static func run(t: Node) -> void:
 	raid.start(Worlds.get_world("frostline"), 4242)
 	# Nobody new comes in: a bot that walked up mid-test could kill the
 	# player it watches (it did, now and then, after the camera group).
-	raid.enemies = false
+	var enemies_were := Raid.enemies
+	Raid.enemies = false
 	for bot in raid.bots:
 		bot.get_node("Brain").set_physics_process(false)
 		bot.set_physics_process(false)
@@ -31,6 +32,7 @@ static func run(t: Node) -> void:
 	raid.queue_free()
 	await t.frames(2)
 	Raid.zone_rules = false
+	Raid.enemies = enemies_were
 
 
 static func _rules(t: Node) -> void:

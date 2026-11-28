@@ -114,6 +114,9 @@ static func _controls(cmd: ActorCommand, move: String, tick: int) -> void:
 	cmd.secondary = false
 	cmd.slide = false
 	cmd.move = Vector2.ZERO
+	if move.begins_with("wings"):
+		# The wings' nose follows the view (W and S are the boost and brake).
+		cmd.pitch = 0.0
 	match move:
 		"jetpack_takeoff":
 			# Stand, jump and hold to climb, hold aim to hover drifting
@@ -160,7 +163,7 @@ static func _controls(cmd: ActorCommand, move: String, tick: int) -> void:
 			cmd.sprint = tick >= 45 and tick < 460
 			cmd.sprint_pressed = tick == 45
 			if tick >= 120 and tick < 240:
-				cmd.move = Vector2(0, -0.6)
+				cmd.pitch = 0.4
 		"jetpack_hover":
 			# Up on held jump with aim held (the jets), then a drift ahead,
 			# a stop, a slide right and a stop.
@@ -175,9 +178,9 @@ static func _controls(cmd: ActorCommand, move: String, tick: int) -> void:
 			# Off a height: the glide, a dive for speed, a pull back up.
 			cmd.jump = tick >= 15
 			if tick >= 60 and tick < 160:
-				cmd.move = Vector2(0, 1.0)
+				cmd.pitch = -0.6
 			elif tick >= 160 and tick < 250:
-				cmd.move = Vector2(0, -1.0)
+				cmd.pitch = 0.6
 		"jetpack_land_side":
 			# A hop and the rocket cruise, set down onto the ground while it
 			# still cruises (`_fly`), as a cruise skimming into a rise does.
@@ -192,6 +195,7 @@ static func _controls(cmd: ActorCommand, move: String, tick: int) -> void:
 			# the ground at speed (the run-out), then a step back.
 			cmd.jump = tick >= 25
 			if tick >= 110 and tick < 190:
-				cmd.move = Vector2(0, 1.0)
+				cmd.pitch = -0.6
 			elif tick >= 200:
+				# On the ground by now: a step back.
 				cmd.move = Vector2(0, -1.0)

@@ -161,6 +161,23 @@ static func _test_takeoffs(t: Node) -> void:
 		for i in 60:
 			await t.get_tree().process_frame
 		t.check(float(skin.call("takeoff_weight")) == 0.0, "and the %s's flight pose takes over after" % kind)
+		# The watch says how this rig flies, the first few takeoffs only.
+		var hud := Hud.new()
+		var said: Array[String] = []
+		for k in 5:
+			p.airborne_time = 0.1
+			f.is_gliding = rig.begins_with("wings")
+			f.is_thrusting = not rig.begins_with("wings")
+			hud._rig_takeoff_tip(p)
+			f.is_gliding = false
+			f.is_thrusting = false
+			hud._rig_takeoff_tip(p)
+		for m: Dictionary in hud._messages:
+			said.append(m.text)
+		var keys := "W boosts, S airbrakes" if kind == "wings" else ("right mouse hovers" if kind == "jetpack" else "kicks")
+		t.check(said.size() == hud.takeoff_tips and said[0].contains(keys),
+				"taking off, the watch shows the %s's controls, the first %d times only (%s)" % [kind, said.size(), said[0] if said.size() > 0 else ""])
+		hud.free()
 		p.queue_free()
 		await t.frames(2)
 	arena.queue_free()

@@ -145,14 +145,14 @@ static func _wings(t: Node) -> void:
 			"held Shift soars level at 22 m/s, jump let go (%.1f m/s, %.1f m)" % [_flat_speed(p), p.global_position.y - y])
 	var rate := (f.heat - heat) / 3.0
 	t.check(absf(rate - f.glide_heat) < 0.1, "a soar spends glide stamina, %.1f a second, a bar in about 62 s" % rate)
-	p.cmd.move = Vector2(0, -1)
+	p.cmd.pitch = 0.6
 	await t.frames(30)
 	y = p.global_position.y
 	await t.frames(60)
 	var climb := p.global_position.y - y
 	t.check(climb > 1.0 and climb <= f.soar_climb + 0.2 and _flat_speed(p) > 22.0 * f.glide_stall,
 			"pulled up, it climbs %.1f m in a second and keeps flying" % climb)
-	p.cmd.move = Vector2.ZERO
+	p.cmd.pitch = 0.0
 	p.cmd.sprint = false
 	p.cmd.jump = true
 	await t.frames(30)

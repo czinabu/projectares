@@ -114,10 +114,18 @@ date in the same PR.
   speed is momentum, a turn costs speed, a bank sinks faster, pulling up in a
   turn tightens it, and below the stall speed the wings stall
   (`Actor.glide_stalled`: they barely turn and drop at `stall_sink` until the
-  nose drops and the speed comes back). Gliding, Shift is a wing boost
-  instead of a dash (`FlightRig.glide_boost`): it thrusts you the way you
-  face and the glide keeps that speed, and Shift + S boosts upward
-  (`glide_boost_climb`); wings never dash sideways. The glide's attitude is
+  nose drops and the speed comes back). The nose follows the view's pitch
+  (Caleb's call, `Actor.glide_trim` from `cmd.pitch`: `glide_pitch_dead`
+  either side of level holds it, `glide_pitch_full` dives or pulls up all
+  the way). Gliding, Shift or a fresh press of W is a wing boost instead
+  of a dash (`FlightRig.glide_boost`, `Actor._glide_w_pressed`; W held from
+  the ground into a glide never fires one): it thrusts you the way you
+  face and the glide keeps that speed, or boosts upward
+  (`glide_boost_climb`) while the nose is pulled well up; S held is the
+  airbrake (`Actor.glide_braking`, `FlightRig.glide_brake`), bleeding the
+  speed down to the stall, never pitching. Wings never dash sideways. The
+  first `Hud.takeoff_tips` takeoffs on each rig put its controls on the
+  watch (`FlightRig.takeoff_hint`, `Hud._rig_takeoff_tip`). The glide's attitude is
   held in the world while the view turns, so spinning the camera never
   drags the body round (`ActorSkin._update_glide`). And a jetpack boost
   runs along the view's heading, climbing only on jump and descend, never

@@ -71,19 +71,19 @@ static func _test_wings(t: Node) -> void:
 	var worst := await _jolt(t, p, 60)
 	t.check(p.flight.is_gliding and fall < -10.0 and p.velocity.y >= -p.flight.glide_fall_speed - 0.01,
 			"wings opened in a fall catch it and settle into the glide")
-	p.cmd.move = Vector2(0, 1)
+	p.cmd.pitch = -0.6
 	worst = maxf(worst, await _jolt(t, p, 120))
 	var dive := p.velocity.y
-	p.cmd.move = Vector2.ZERO
+	p.cmd.pitch = 0.0
 	await t.frames(1)
 	t.check(dive < -9.0 and p.velocity.y < dive * 0.8, "letting go of a dive eases out of it (%.1f then %.1f m/s down)" % [dive, p.velocity.y])
 	worst = maxf(worst, await _jolt(t, p, 30))
 	t.check(p.velocity.y >= -p.flight.glide_fall_speed - 0.01, "and is level again within half a second")
-	p.cmd.move = Vector2(0, 1)
+	p.cmd.pitch = -0.6
 	await t.frames(120)
-	p.cmd.move = Vector2(0, -1)
+	p.cmd.pitch = 0.6
 	worst = maxf(worst, await _jolt(t, p, 90))
-	p.cmd.move = Vector2.ZERO
+	p.cmd.pitch = 0.0
 	t.check(worst < 90.0, "opening the wings, diving, levelling and pulling up never snap (hardest %.0f m/s² in a tick)" % worst)
 	# The bank rolls in: a tap nudges the heading, a hold comes right round,
 	# and letting go the wings come back onto the view.
@@ -157,11 +157,11 @@ static func _test_wings(t: Node) -> void:
 	var side := (Basis(Vector3.UP, p.cmd.yaw).inverse() * p.velocity).x
 	t.check(absf(side) < 2.0, "Shift + D in a glide never throws you sideways (%.1f m/s)" % side)
 	await t.frames(240)
-	# Shift + S with the wings pulled up climbs, keeping the heading.
+	# Shift looking up, the wings pulled up, climbs, keeping the heading.
 	var climb_heading := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	var height := p.global_position.y
 	p.flight.charges = p.flight.max_charges
-	p.cmd.move = Vector2(0, -1)
+	p.cmd.pitch = 0.6
 	p.cmd.sprint = true
 	p.cmd.sprint_pressed = true
 	await t.frames(1)
@@ -171,23 +171,48 @@ static func _test_wings(t: Node) -> void:
 	p.cmd.sprint = false
 	var flat := Vector3(p.velocity.x, 0, p.velocity.z)
 	t.check(rise > p.flight.glide_boost_climb * 0.8 and p.flight.charges == p.flight.max_charges - 1,
-			"Shift + S in a glide boosts upward, on a charge (%.1f m/s up)" % rise)
+			"Shift looking up in a glide boosts upward, on a charge (%.1f m/s up)" % rise)
 	t.check(p.global_position.y > height + 2.0 and flat.normalized().dot(climb_heading) > 0.95
 			and flat.length() >= p.flight.glide_speed * p.flight.glide_stall - 0.01 and p.flight.is_gliding,
 			"and gains height flying on the same way, never backwards (%.1f m higher)" % (p.global_position.y - height))
-	p.cmd.move = Vector2.ZERO
+	p.cmd.pitch = 0.0
 	# Pulled up hard in a turn, the wings bleed their speed and stall into a
 	# sinking spiral instead of circling in place for free.
 	await t.frames(240)
-	p.cmd.move = Vector2(1, -1)
+	p.cmd.move = Vector2(1, 0)
+	p.cmd.pitch = 0.6
 	await t.frames(300)
 	var spiral := Vector2(p.velocity.x, p.velocity.z).length()
 	t.check(p.glide_stalled() and p.velocity.y < -p.flight.stall_sink + 0.5,
-			"S + D bleeds the speed into a stall that sinks (%.1f m/s ahead, %.1f down)" % [spiral, -p.velocity.y])
+			"looking up in a turn (D) bleeds the speed into a stall that sinks (%.1f m/s ahead, %.1f down)" % [spiral, -p.velocity.y])
 	p.cmd.move = Vector2.ZERO
+	p.cmd.pitch = 0.0
 	await t.frames(120)
 	t.check(not p.glide_stalled() and Vector2(p.velocity.x, p.velocity.z).length() > p.flight.glide_speed * p.flight.glide_stall,
 			"letting go, the nose drops and the wings fly again")
+	# The nose follows the view (Caleb's call): W is a boost and S the
+	# airbrake, never the pitch.
+	await t.frames(120)
+	p.flight.charges = p.flight.max_charges
+	var level := Vector2(p.velocity.x, p.velocity.z).length()
+	p.cmd.move = Vector2(0, 1)
+	await t.frames(1)
+	var pushed := Vector2(p.velocity.x, p.velocity.z).length()
+	await t.frames(30)
+	t.check(pushed > level + p.flight.glide_boost * 0.9 and p.flight.charges == p.flight.max_charges - 1,
+			"a press of W in a glide is a wing boost (%.1f to %.1f m/s)" % [level, pushed])
+	t.check(p.flight.charges == p.flight.max_charges - 1, "and holding W does not fire another")
+	p.cmd.move = Vector2.ZERO
+	await t.frames(90)
+	var fast := Vector2(p.velocity.x, p.velocity.z).length()
+	var sink_was := p.velocity.y
+	p.cmd.move = Vector2(0, -1)
+	await t.frames(60)
+	var braked := Vector2(p.velocity.x, p.velocity.z).length()
+	t.check(braked < fast - 3.0 and braked >= p.flight.glide_speed * p.flight.glide_stall - 0.01,
+			"S is the airbrake: it bleeds the speed (%.1f to %.1f m/s), never past the stall" % [fast, braked])
+	t.check(p.velocity.y <= sink_was + 0.5, "and it never pulls the nose up")
+	p.cmd.move = Vector2.ZERO
 	arena.queue_free()
 	await t.frames(2)
 

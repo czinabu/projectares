@@ -1068,14 +1068,13 @@ func _check_glide_flying(p: Actor) -> void:
 	var cruise := Vector2(p.velocity.x, p.velocity.z).length()
 	check(absf(cruise - p.flight.glide_speed) < 0.5, "a level glide settles at glide speed (%.1f)" % cruise)
 	# The wings fly where you look, like a bird's: turning the view banks
-	# the glide round onto it, and looking down never dives it.
+	# the glide round onto it (its pitch is the nose's, below).
 	var before := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	p.cmd.yaw -= PI / 2.0
-	p.cmd.pitch = -0.9
 	await frames(20)
 	var turning := Vector3(p.velocity.x, 0, p.velocity.z).normalized()
 	check(before.signed_angle_to(turning, Vector3.UP) < -0.2 and p.velocity.y > -p.flight.glide_fall_speed * 2.5,
-			"looking right banks the glide round to the right, without diving")
+			"looking right banks the glide round to the right, level")
 	await frames(100)
 	var view := Basis(Vector3.UP, p.cmd.yaw) * Vector3.FORWARD
 	before = Vector3(p.velocity.x, 0, p.velocity.z).normalized()
@@ -1095,14 +1094,14 @@ func _check_glide_flying(p: Actor) -> void:
 	check(after.dot(view) > 0.999, "letting go, the wings come back onto the view")
 	await frames(30)
 	check(after.dot(Vector3(p.velocity.x, 0, p.velocity.z).normalized()) > 0.999, "and then fly straight on")
-	p.cmd.move = Vector2(0, 1)
+	p.cmd.pitch = -0.6
 	await frames(150)
 	var dived := Vector2(p.velocity.x, p.velocity.z).length()
-	check(dived > cruise * 1.3 and p.velocity.y < -8.0, "forward dives for speed (%.1f m/s)" % dived)
-	p.cmd.move = Vector2(0, -1)
+	check(dived > cruise * 1.3 and p.velocity.y < -8.0, "looking down dives for speed (%.1f m/s)" % dived)
+	p.cmd.pitch = 0.6
 	var low := p.global_position.y
 	await frames(60)
-	check(p.flight.is_gliding and p.global_position.y > low + 4.0, "back pulls up and climbs on that speed (%.1f m)" % (p.global_position.y - low))
+	check(p.flight.is_gliding and p.global_position.y > low + 4.0, "looking up pulls up and climbs on that speed (%.1f m)" % (p.global_position.y - low))
 	await frames(240)
 	var slow := Vector2(p.velocity.x, p.velocity.z).length()
 	check(slow < cruise * 0.8 and p.velocity.y < 0.0, "the climb runs out as the speed does")

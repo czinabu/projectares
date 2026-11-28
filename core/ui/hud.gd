@@ -231,6 +231,7 @@ func _process(delta: float) -> void:
 	for m in _messages:
 		log_lines.append(m.text)
 
+	_rig_takeoff_tip(p)
 	wrist.raised = p.is_dead or (controller != null and controller.wrist_raised)
 	wrist.mount(p, controller, visible, delta)
 	var picked := controller.watch_index if controller != null else 0
@@ -1513,6 +1514,28 @@ func _on_war_feed(text: String) -> void:
 ## Puts a line on the wrist display.
 func notify(text: String) -> void:
 	_on_notice(text)
+
+
+## How many takeoffs on each rig put its controls on the watch
+## (`FlightRig.takeoff_hint`), and how many each has had this session.
+var takeoff_tips := 3
+var _tips_given := {}
+var _was_flying := false
+
+
+## Each rig flies its own way: the first few times one takes off, the
+## watch says how.
+func _rig_takeoff_tip(p: Actor) -> void:
+	var flying := FlightHolo.flying(p)
+	if flying and not _was_flying and p.airborne_time < 1.5:
+		var rig := p.flight.display_name
+		var given: int = _tips_given.get(rig, 0)
+		if given < takeoff_tips:
+			_tips_given[rig] = given + 1
+			var tip := p.flight.takeoff_hint()
+			if tip != "":
+				_log(tip, 7.0)
+	_was_flying = flying
 
 
 ## Someone pinged a spot (`Raid.ping`). Yours and your side's stand in the

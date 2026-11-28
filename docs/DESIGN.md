@@ -2819,7 +2819,7 @@ measures them.
 | Indoors (a roof within 8 m) | clumsy: half speed and climb | full use | cannot open |
 
 The wings keep their boost (Caleb's call): two a flight, each +8 m/s ahead
-or a small lift (Shift + S), refilled only on the ground. That launches them
+or a small lift (looking up), refilled only on the ground. That launches them
 off flat ground or saves a dying glide, but it never climbs for long, so the
 jetpack keeps vertical play. A launch is free, once per time in the air.
 
@@ -2989,9 +2989,14 @@ trigger ends it: the body eases up out of prone into a hover over about
 half a second (never a snap). Wings are the exception to the mouse only looking: they fly
 where you look, like a bird, with momentum (hold E to free look while
 they fly straight on). Turns cost speed and pulling up
-hard in a turn stalls them. Gliding, Shift is a wing boost that thrusts you
-the way you face and keeps the speed, and Shift + S boosts upward; wings
-never dash sideways. Q and E fly nothing (E holds free look). Every rig dashes, so the dash is not an
+hard in a turn stalls them. The nose follows the mouse too (Caleb's call):
+looking down dives for speed and looking up pulls up, a little either side
+of level holds level. W and S are not the pitch: W is a wing boost that
+thrusts you the way you face and keeps the speed (as Shift is), boosting
+upward instead while you look well up, and S is the airbrake, bleeding the
+speed down to the stall but never pulling up. Wings never dash sideways.
+The first few takeoffs on each rig put its controls on the watch, since
+each flies its own way. Q and E fly nothing (E holds free look). Every rig dashes, so the dash is not an
 edge by itself: boots dash furthest (14 m/s for 0.3 s, on a charge, with
 the graze window), jetpacks middling (16 m/s for 0.25 s, 15 heat), wings
 shortest (12 m/s for 0.25 s, on a boost charge, a barrel roll sideways).

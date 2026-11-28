@@ -59,7 +59,7 @@ static func _test_boost_swoop(t: Node) -> void:
 	p.cmd.sprint_pressed = false
 	p.cmd.move = Vector2.ZERO
 	await t.frames(20)
-	p.cmd.move = Vector2(0, -1)
+	p.cmd.pitch = 0.6
 	var peak := p.global_position.y
 	for i in 300:
 		await t.get_tree().physics_frame

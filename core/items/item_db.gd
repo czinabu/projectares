@@ -802,8 +802,8 @@ const BOOTS_MK1 := {
 
 ## Glide wings: distance and speed. A free launch, then a 22 m/s glide that
 ## dives to 30, held level on Shift (a soar, `soar_accel`), on about 62 s
-## of glide stamina (`glide_heat`) that refills in 5 s on the ground only. Two boosts a flight (+8 m/s, or a small lift on
-## Shift + S), refilled on the ground. No hover and no climb of their own,
+## of glide stamina (`glide_heat`) that refills in 5 s on the ground only. Two boosts a flight (+8 m/s, or a small lift
+## looking up), refilled on the ground. No hover and no climb of their own,
 ## poor aim (+50% spread), sidearm only, 5% slower on foot, no fall damage
 ## out of a glide, cannot open indoors, seen 80 m away.
 const WINGS_MK1 := {

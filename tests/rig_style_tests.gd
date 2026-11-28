@@ -57,11 +57,11 @@ static func _test_swoop(t: Node) -> void:
 	p.cmd.jump = true
 	await t.frames(30)
 	var top := p.global_position.y
-	p.cmd.move = Vector2(0, 1)
+	p.cmd.pitch = -0.6
 	await t.frames(150)
 	var fast := _flat_speed(p)
 	var low := p.global_position.y
-	p.cmd.move = Vector2(0, -1)
+	p.cmd.pitch = 0.6
 	var peak := low
 	for i in 300:
 		await t.get_tree().physics_frame

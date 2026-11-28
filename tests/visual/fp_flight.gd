@@ -55,7 +55,8 @@ static func _fly(v: Node, out_dir: String, move: String) -> void:
 		Flight._controls(p.cmd, move, tick)
 		if move != "jetpack_hover":
 			p.cmd.yaw = yaw0 - 0.5 * sin(float(tick - 120) / 120.0 * PI) * clampf((tick - 120) / 60.0, 0.0, 1.0)
-		p.cmd.pitch = -0.15
+		if not move.begins_with("wings"):
+			p.cmd.pitch = -0.15
 		controller.yaw = p.cmd.yaw
 		controller.pitch = p.cmd.pitch
 		p.cmd.aim_dir = -p.global_basis.z

@@ -559,7 +559,8 @@ static func _fly_course(t: Node, base: HomeBase, id: String) -> float:
 					p.cmd.jump_pressed = (p.is_on_floor() or not f.launched) and i % 2 == 0
 					if air and f.is_gliding:
 						# Pull up to bleed speed coming in to land.
-						p.cmd.move = Vector2(0, -1) if stage == 1 and h < 12.0 else Vector2.ZERO
+						p.cmd.move = Vector2.ZERO
+						p.cmd.pitch = 0.6 if stage == 1 and h < 12.0 else 0.0
 		if OS.get_environment("COURSE_DEBUG") != "" and i % 20 == 0:
 			print("  %s t=%.2f stage=%d lp=%s v=%s floor=%s charges=%d glide=%s" % [id, float(i) / tps, base.course_stage,
 					str(lp.snapped(Vector3.ONE * 0.1)), str(p.velocity.snapped(Vector3.ONE * 0.1)), p.is_on_floor(), f.charges, f.is_gliding])
