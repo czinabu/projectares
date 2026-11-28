@@ -11,6 +11,20 @@ date in the same PR.
   and anything under a child node (a walker's legs, an airship's weak
   spots) are left alone, so a part the vehicle moves or finds by name must
   be named or sit under its own node.
+- A vehicle's body is posed in `Vehicle._pose_model`, view only, every
+  frame on every machine (a client poses vehicles the server moves the same
+  way), from where it is and which way it points, never from the rider's
+  keys: the lean into a turn comes from how fast the heading swings. On the
+  ground it tips to the slope under its wheels (rays under each end, and
+  each side for a wide body, `contact_span`; a bike only pitches and leans,
+  a walker never follows the ground), read again only once it has moved and
+  only within `ground_view_range` of the camera, never headless (tests set
+  `pose_headless`). A spring (`spring_rate`, `pitch_per_accel`, `land_kick`)
+  dips the nose under braking, squats under the throttle and thumps down on
+  a landing, tipping about the wheel that stays down so no wheel sinks into
+  the ground. The simulation (collision, the seat, hitboxes) never reads
+  the pose; the seated riders follow it through the model
+  (`tests/vehicle_pose_tests.gd`).
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while
