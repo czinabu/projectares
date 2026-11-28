@@ -4069,3 +4069,9 @@ func _dress_vehicle(vehicle: Node3D) -> void:
 	# (thrusters, engines, the canopy) and anything under a moving part (a
 	# walker's legs, an airship's weak spots) stay as they are.
 	merge_pieces(model, true, false, true)
+	# A wheel or a steering pivot turns as one: its own pieces are merged
+	# among themselves ("merge", `VehicleModel._wheel_set`, `_pivot`).
+	var turning := model.find_children("*", "Node3D", true, false).filter(
+			func(part: Node) -> bool: return part.get_meta("merge", false))
+	for part: Node3D in turning:
+		merge_pieces(part, true, false, true)

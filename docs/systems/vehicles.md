@@ -25,6 +25,20 @@ date in the same PR.
   the ground. The simulation (collision, the seat, hitboxes) never reads
   the pose; the seated riders follow it through the model
   (`tests/vehicle_pose_tests.gd`).
+- Moving parts (`Vehicle._turn_parts`, view only, from the same pose):
+  each wheel is a "Wheel..." node (`VehicleModel._wheel_set`, with its
+  "radius" and, for the rover's front pair, "steers") whose "Spin" child
+  (the steel spokes and hub, all that shows the turning) spins with
+  `speed`; the round tyre, rim face and lit rings stay put, so its bounds
+  never dip below the ground. Parts that turn with the steering hang on a
+  pivot (`VehicleModel._pivot`: its "axis" and "share" of `steer_view`):
+  the bike's fork, front wheel and bars ("Steer"), the hoverbike's bars and
+  rudder fins ("Fin0", "Fin1"), the rover's wheel ("SteerWheel"). A pivot
+  with "grips" carries the rider's hands: the riding pose reads
+  `Vehicle.posed_grips()`, the item's `grip_points` turned with it. `Look`
+  merges each wheel's and pivot's own pieces ("merge"), so a wheel is three
+  draws and a pivot one a material: about 18 draws a bike, 25 a rover
+  (`tests/vehicle_parts_tests.gd`).
 - Vehicles are items tagged `vehicle`, tuned by their stats, and spawned by
   `Raid` (never carried). `core/vehicle/vehicle.gd` reads its rider's
   `ActorCommand` and moves the rider; `Actor` skips its own movement while

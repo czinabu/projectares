@@ -335,6 +335,22 @@ var _was_grounded := true
 ## The hover's bob, added to the body's heave.
 var _bob := 0.0
 
+# Moving parts (view only, `_turn_parts`): wheels spin with the speed,
+# steering wheels, forks, bars and a hover's rudders turn with the steering.
+# The model marks them: a "Wheel..." node with its "radius" (and "steers"),
+# whose "Spin" child turns with the speed,
+# a pivot with its "axis" and "share" of the steering (and "grips" when the
+# rider's hands are on it, `posed_grips`).
+## The steering's look, in radians at full lock at a standstill; at top
+## speed a little of it (`steer_view_fast`), as a rider barely turns the bars.
+var steer_view_angle := 0.38
+var steer_view_fast := 0.35
+## The steering shown now, in radians (positive turns left).
+var steer_view := 0.0
+var _wheels: Array[Node3D] = []
+var _pivots: Array[Node3D] = []
+var _wheel_turn := 0.0
+
 
 func setup(p_item_id: String) -> void:
 	item_id = p_item_id
@@ -483,6 +499,13 @@ func _build_body() -> void:
 ## "LegL" and "LegR".
 func build_visual() -> Node3D:
 	var root: Node3D = VehicleModel.build(self)
+	_wheels.clear()
+	_pivots.clear()
+	for node in root.find_children("*", "Node3D", true, false):
+		if node.has_meta("radius"):
+			_wheels.append(node)
+		elif node.has_meta("axis"):
+			_pivots.append(node)
 	_legs.clear()
 	for leg_name: String in ["LegL", "LegR"]:
 		var leg := root.get_node_or_null(leg_name) as Node3D
@@ -1205,6 +1228,42 @@ func _pose_model(delta: float) -> void:
 	var sprung := Basis(Vector3.RIGHT, _sway)
 	_model.transform = Transform3D(Basis.from_euler(tilt), Vector3(0.0, _bob, 0.0)) \
 			* Transform3D(sprung, pivot - sprung * pivot)
+	var pace := clampf(absf(speed) / maxf(max_speed, 0.1), 0.0, 1.0)
+	var lock := -steer * steer_view_angle * lerpf(1.0, steer_view_fast, pace)
+	if pivot_turn > 0.0 and absf(speed) < 0.5:
+		lock = 0.0
+	steer_view = lerpf(steer_view, lock, 1.0 - exp(-10.0 * delta))
+	_turn_parts(delta)
+
+
+## Spins the wheels with the speed and turns the steering parts (view only).
+func _turn_parts(delta: float) -> void:
+	if _wheels.is_empty() and _pivots.is_empty():
+		return
+	_wheel_turn = wrapf(_wheel_turn - speed * delta, 0.0, TAU * 1000.0)
+	for wheel in _wheels:
+		if wheel.get_meta("steers", false):
+			wheel.basis = Basis(Vector3.UP, steer_view)
+		var spin := wheel.get_node_or_null("Spin") as Node3D
+		if spin != null:
+			spin.basis = Basis(Vector3.RIGHT, _wheel_turn / float(wheel.get_meta("radius", 0.4)))
+	for pivot in _pivots:
+		pivot.basis = Basis(pivot.get_meta("axis") as Vector3, steer_view * float(pivot.get_meta("share", 1.0)))
+
+
+## Where the rider's hands go: `grip_points`, turned with the bars or the
+## wheel they hold (`steer_view`), so the hands stay on them. In the
+## vehicle's frame, read by the riding pose.
+func posed_grips() -> Array[Vector3]:
+	for pivot in _pivots:
+		if not pivot.get_meta("grips", false):
+			continue
+		var turn := Basis(pivot.get_meta("axis") as Vector3, steer_view * float(pivot.get_meta("share", 1.0)))
+		var out: Array[Vector3] = []
+		for grip in grip_points:
+			out.append(pivot.position + turn * (grip - pivot.position))
+		return out
+	return grip_points
 
 
 ## True while it stands or rolls on the ground. Where this machine moves it
