@@ -1659,7 +1659,8 @@ func _tour_guide_tick(delta: float) -> void:
 	_tour_guide_look -= delta
 	if _tour_guide_look <= 0.0 or _tour_guide == null or not is_instance_valid(_tour_guide):
 		_tour_guide_look = TourGuide.LOOK_EVERY
-		var at: Variant = _tour_mark_at(Onboarding.mark(Profile.onboarding, _tour_names()), place, body)
+		var route := _tour_route(Onboarding.mark(Profile.onboarding, _tour_names()), place)
+		var at: Variant = _tour_mark_at(route[0], place, body)
 		if at == null:
 			_drop_tour_guide()
 			return
@@ -1669,7 +1670,7 @@ func _tour_guide_tick(delta: float) -> void:
 			_tour_guide.name = "TourGuide"
 			place.add_child(_tour_guide)
 		_tour_guide.target = at
-		_tour_guide.text = Onboarding.objective(Profile.onboarding, _tour_names())
+		_tour_guide.text = route[1]
 	_tour_guide.follow(body.global_position, delta)
 
 
@@ -1677,6 +1678,23 @@ func _drop_tour_guide() -> void:
 	if _tour_guide != null and is_instance_valid(_tour_guide):
 		_tour_guide.queue_free()
 	_tour_guide = null
+
+
+## Where the guide goes for `mark` from `place`, and what it says:
+## [mark, words]. A step done out in a world, seen from where that world is
+## not, leads the way there: from the base to its way out, and from a safe
+## zone to the gentle world's gate (a save left on "bank" at home, Caleb's
+## "the markers don't show"), with the step and that leg written over it.
+func _tour_route(mark: String, place: Node3D) -> Array:
+	var names := _tour_names()
+	var objective := Onboarding.objective(Profile.onboarding, names)
+	var out_there := mark == "depot" or mark.begins_with("portal:")
+	if place == base and out_there:
+		return ["door", "%s\nOut to %s first" % [objective, names.plaza]]
+	var safe := place == raid and raid != null and raid.world != null and raid.world.safe_zone
+	if safe and mark == "depot" and str(names.gentle_id) != "":
+		return ["portal:world:%s" % names.gentle_id, "%s\nThrough the gate to %s" % [objective, names.gentle]]
+	return [mark, objective]
 
 
 ## Where in `place` the step's `mark` is (see `Onboarding.STEPS`), or null
